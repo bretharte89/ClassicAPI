@@ -36,6 +36,31 @@ enum Offsets {
     // Registers a single global Lua function. __fastcall(name, func).
     FUN_FRAMESCRIPT_REGISTER_FUNCTION = 0x00704120,
 
+    // Game::ResolveUnitToken — __fastcall(ecx = const char *token) → CGUnit_C *.
+    // Returns the unit pointer for "player", "target", "party1", etc. Use this
+    // rather than the global at 0x00B41414 — that global holds something
+    // related (its +0xC0 has the player GUID) but is NOT the same CGPlayer_C
+    // pointer the inventory routines expect.
+    FUN_RESOLVE_UNIT_TOKEN = 0x00515940,
+    // Per-player inventory manager lives at this offset on the player object.
+    OFF_PLAYER_INVENTORY_MANAGER = 0x1D38,
+    // ItemMgr::GetItemBySlot — __thiscall(this, slot) → CGItem* (NULL if empty).
+    // Slot is the engine's linearized slot index, not bagID/slot tuple.
+    FUN_ITEMMGR_GET_ITEM_BY_SLOT = 0x006228A0,
+    // PackBagSlot — __fastcall(L, void **outInvMgr, int *outLinearSlot, int *outUnused) → bool.
+    // Reads bagID at Lua stack[1] and slot at stack[2], validates them, and
+    // returns the inventory manager + linear slot ready to feed into GetItemBySlot.
+    FUN_PACK_BAG_SLOT = 0x004F9820,
+    // Per-item descriptor block (object/item-field array) lives at this offset
+    // on the CGItem instance.
+    OFF_ITEM_DESCRIPTOR = 0x114,
+    // Within the descriptor, ITEM_FIELD_FLAGS is at +0x3C (a single dword).
+    // Bit 0 = soulbound, bit 3 = broken (see GetInventoryItemBroken at 0x4C8626
+    // which tests `[descriptor+0x3C] & 0x08`). Confirmed empirically by dumping
+    // descriptor bytes for a worn-and-bound item.
+    OFF_DESCRIPTOR_FLAGS = 0x3C,
+    ITEM_FLAG_SOULBOUND = 0x01,
+
     // Quest log: 16-byte-stride entry array and active count.
     // Field +0 of each entry is the questID for real quests (a category index
     // for headers); field +8 is the header indicator: non-NULL = header,
