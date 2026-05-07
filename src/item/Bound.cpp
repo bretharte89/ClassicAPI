@@ -44,121 +44,85 @@ static bool ItemIsSoulbound(const uint8_t *item) {
     return (flags & Offsets::ITEM_FLAG_SOULBOUND) != 0;
 }
 
-// Equipment-slot path: Lua passes 1-based INVSLOT_* indices, but
-// ItemMgr::GetItemBySlot expects 0-based (the engine's validators all do
-// `dec eax` after lua_tonumber — see helper at 0x004C8520).
-static int __fastcall Script_IsBoundEquipment(void *L) {
-    if (!Game::Lua::IsNumber(L, 1)) {
-        Game::Lua::Error(L, "Usage: C_Item.IsBound: equipmentSlotIndex must be a number");
-        return 0;
-    }
+// Reads `loc.fieldName` and returns it as an int. Returns false via the
+// boolean result if the field is missing or non-numeric. Always leaves the
+// Lua stack as it found it.
+static bool TryReadIntField(void *L, int locIdx, const char *fieldName, int *out) {
+    Game::Lua::PushString(L, fieldName);
+    Game::Lua::GetTable(L, locIdx); // pops key, pushes value
+    const bool ok = Game::Lua::IsNumber(L, -1);
+    if (ok)
+        *out = static_cast<int>(Game::Lua::ToNumber(L, -1));
+    Game::Lua::SetTop(L, -2); // pop value (or nil)
+    return ok;
+}
 
+static bool LookupEquipment(int luaSlot, bool *outBound) {
     void *invMgr = ResolveActivePlayerInvMgr();
-    if (invMgr == nullptr) {
-        Game::Lua::PushBoolean(L, 0);
-        return 1;
-    }
-
-    const int slot = static_cast<int>(Game::Lua::ToNumber(L, 1)) - 1;
+    if (invMgr == nullptr)
+        return false;
+    // GetItemBySlot expects 0-based linearized slot indices. The built-in
+    // Lua functions all do `dec eax` on the slot argument before calling —
+    // see helper at 0x004C8520.
+    const int slot = luaSlot - 1;
     auto GetItemBySlot = reinterpret_cast<GetItemBySlot_t>(
         Offsets::FUN_ITEMMGR_GET_ITEM_BY_SLOT);
     auto *item = static_cast<const uint8_t *>(GetItemBySlot(invMgr, slot));
-    if (item == nullptr) {
-        Game::Lua::PushBoolean(L, 0);
-        return 1;
-    }
-
-    Game::Lua::PushBoolean(L, ItemIsSoulbound(item) ? 1 : 0);
-    return 1;
+    *outBound = (item != nullptr) && ItemIsSoulbound(item);
+    return true;
 }
 
-// Bag path: PackBagSlot reads bagID at stack[1] and slotIndex at stack[2]
-// (which is exactly the Lua call convention) and returns both the inventory
-// manager and the linearized slot. The third output is unused for our purposes.
-static int __fastcall Script_IsBoundBag(void *L) {
+static bool LookupBag(void *L, int bagID, int slotIndex, bool *outBound) {
+    // PackBagSlot reads bagID/slotIndex from Lua stack[1] and stack[2] (it's
+    // designed to be called from a Lua-callback context like
+    // Script_GetContainerItemInfo). Replace the stack so positions 1 and 2
+    // hold the raw values for PackBagSlot's internal lua_tonumber reads.
+    Game::Lua::SetTop(L, 0);
+    Game::Lua::PushNumber(L, static_cast<double>(bagID));
+    Game::Lua::PushNumber(L, static_cast<double>(slotIndex));
+
     void *invMgr = nullptr;
     int linearSlot = 0;
     int unused = 0;
-
     auto PackBagSlot = reinterpret_cast<PackBagSlot_t>(Offsets::FUN_PACK_BAG_SLOT);
-    if (!PackBagSlot(L, &invMgr, &linearSlot, &unused) || invMgr == nullptr) {
-        Game::Lua::PushBoolean(L, 0);
-        return 1;
-    }
+    if (!PackBagSlot(L, &invMgr, &linearSlot, &unused) || invMgr == nullptr)
+        return false;
 
     auto GetItemBySlot = reinterpret_cast<GetItemBySlot_t>(
         Offsets::FUN_ITEMMGR_GET_ITEM_BY_SLOT);
     auto *item = static_cast<const uint8_t *>(GetItemBySlot(invMgr, linearSlot));
-    if (item == nullptr) {
-        Game::Lua::PushBoolean(L, 0);
-        return 1;
-    }
-
-    Game::Lua::PushBoolean(L, ItemIsSoulbound(item) ? 1 : 0);
-    return 1;
+    *outBound = (item != nullptr) && ItemIsSoulbound(item);
+    return true;
 }
 
-// Diagnostic — given an equipment slot, returns the item pointer plus the
-// first 24 dwords (96 bytes) of the descriptor sub-object at *(item+0x114).
-// Soulbound is a bit somewhere in there; comparing a bound vs. not-bound item
-// will tell us exactly which offset+bit.
-static int __fastcall Script_DebugItem(void *L) {
-    if (!Game::Lua::IsNumber(L, 1)) {
-        Game::Lua::Error(L, "Usage: _classicapi_dbg_item(eqSlot)");
+static int __fastcall Script_IsBound(void *L) {
+    if (Game::Lua::Type(L, 1) != Game::Lua::TYPE_TABLE) {
+        Game::Lua::Error(L, "Usage: C_Item.IsBound(itemLocation)");
         return 0;
     }
 
-    void *invMgr = ResolveActivePlayerInvMgr();
-    if (invMgr == nullptr) {
-        Game::Lua::PushNil(L);
+    bool bound = false;
+    int eqSlot = 0;
+    if (TryReadIntField(L, 1, "equipmentSlotIndex", &eqSlot)) {
+        LookupEquipment(eqSlot, &bound);
+        Game::Lua::PushBoolean(L, bound ? 1 : 0);
         return 1;
     }
 
-    const int slot = static_cast<int>(Game::Lua::ToNumber(L, 1)) - 1;
-    auto GetItemBySlot = reinterpret_cast<GetItemBySlot_t>(
-        Offsets::FUN_ITEMMGR_GET_ITEM_BY_SLOT);
-    auto *item = static_cast<const uint8_t *>(GetItemBySlot(invMgr, slot));
-    if (item == nullptr) {
-        Game::Lua::PushNumber(L, 0);
+    int bagID = 0, slotIndex = 0;
+    if (TryReadIntField(L, 1, "bagID", &bagID) &&
+        TryReadIntField(L, 1, "slotIndex", &slotIndex)) {
+        LookupBag(L, bagID, slotIndex, &bound);
+        Game::Lua::PushBoolean(L, bound ? 1 : 0);
         return 1;
     }
 
-    auto *descriptor = *reinterpret_cast<const uint8_t *const *>(item + 0x114);
-
-    Game::Lua::PushNumber(L, static_cast<double>(reinterpret_cast<uintptr_t>(item)));
-    Game::Lua::PushNumber(L, static_cast<double>(reinterpret_cast<uintptr_t>(descriptor)));
-
-    if (descriptor == nullptr)
-        return 2;
-
-    for (int i = 0; i < 24; ++i) {
-        Game::Lua::PushNumber(L, static_cast<double>(
-            *reinterpret_cast<const uint32_t *>(descriptor + i * 4)));
-    }
-    return 2 + 24;
+    Game::Lua::PushBoolean(L, 0);
+    return 1;
 }
 
-// We can't register directly into a Lua *table* via the engine's
-// FrameScript_RegisterFunction (that only does globals). Workaround: register
-// each C function under a temp global, then run a small Lua snippet that wires
-// them under C_Item.IsBound as a dispatcher and clears the temps.
 void RegisterLuaFunctions() {
-    Game::Lua::RegisterGlobalFunction("_classicapi_C_Item_IsBound_eq",
-                                      &Script_IsBoundEquipment);
-    Game::Lua::RegisterGlobalFunction("_classicapi_C_Item_IsBound_bag",
-                                      &Script_IsBoundBag);
-    Game::Lua::RegisterGlobalFunction("_classicapi_dbg_item", &Script_DebugItem);
-
-    Game::FrameScript_Execute(
-        "if not C_Item then C_Item = {} end "
-        "local eq, bag = _classicapi_C_Item_IsBound_eq, _classicapi_C_Item_IsBound_bag "
-        "function C_Item.IsBound(loc) "
-        "  if loc.equipmentSlotIndex then return eq(loc.equipmentSlotIndex) end "
-        "  return bag(loc.bagID, loc.slotIndex) "
-        "end "
-        "_classicapi_C_Item_IsBound_eq = nil "
-        "_classicapi_C_Item_IsBound_bag = nil",
-        "ClassicAPI.lua");
+    Game::Lua::RegisterTableFunction("C_Item", "IsBound", &Script_IsBound);
 }
 
 } // namespace Item::Bound

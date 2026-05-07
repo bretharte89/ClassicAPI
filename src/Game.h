@@ -24,12 +24,33 @@ using LoadScriptFunctions_t = void(__fastcall *)();
 namespace Lua {
 using CFunction = int(__fastcall *)(void *L);
 
+// Lua 5.0 pseudo-index used to read/write entries on the globals table.
+constexpr int GLOBALS_INDEX = -10001;
+
+// Type tag values returned by `Type()` (lua_type).
+constexpr int TYPE_NIL = 0;
+constexpr int TYPE_BOOLEAN = 1;
+constexpr int TYPE_LIGHTUSERDATA = 2;
+constexpr int TYPE_NUMBER = 3;
+constexpr int TYPE_STRING = 4;
+constexpr int TYPE_TABLE = 5;
+constexpr int TYPE_FUNCTION = 6;
+
 using lua_isnumber_t = bool(__fastcall *)(void *L, int index);
 using lua_tonumber_t = double(__fastcall *)(void *L, int index);
 using lua_pushnumber_t = void(__fastcall *)(void *L, double n);
 using lua_pushnil_t = void(__fastcall *)(void *L);
 using lua_pushboolean_t = void(__fastcall *)(void *L, int b);
 using lua_pushstring_t = void(__fastcall *)(void *L, const char *s);
+using lua_pushvalue_t = void(__fastcall *)(void *L, int idx);
+using lua_pushcclosure_t = void(__fastcall *)(void *L, CFunction fn, int upvals);
+using lua_newtable_t = void(__fastcall *)(void *L);
+using lua_gettable_t = void(__fastcall *)(void *L, int idx);
+using lua_rawget_t = void(__fastcall *)(void *L, int idx);
+using lua_settable_t = void(__fastcall *)(void *L, int idx);
+using lua_rawset_t = void(__fastcall *)(void *L, int idx);
+using lua_insert_t = void(__fastcall *)(void *L, int idx);
+using lua_settop_t = void(__fastcall *)(void *L, int idx);
 using lua_type_t = int(__fastcall *)(void *L, int index);
 using lua_error_t = void(__cdecl *)(void *L, const char *);
 
@@ -39,8 +60,21 @@ extern const lua_pushnumber_t PushNumber;
 extern const lua_pushnil_t PushNil;
 extern const lua_pushboolean_t PushBoolean;
 extern const lua_pushstring_t PushString;
+extern const lua_pushvalue_t PushValue;
+extern const lua_pushcclosure_t PushCClosure;
+extern const lua_newtable_t NewTable;
+extern const lua_gettable_t GetTable;
+extern const lua_rawget_t RawGet;
+extern const lua_settable_t SetTable;
+extern const lua_rawset_t RawSet;
+extern const lua_insert_t Insert;
+extern const lua_settop_t SetTop;
 extern const lua_type_t Type;
 extern const lua_error_t Error;
+
+// Returns the global `lua_State *` (read on demand from the engine's global).
+// Callable outside a Lua callback, e.g. during LoadScriptFunctions setup.
+void *State();
 
 // Registers a single global Lua function (e.g. `GetSpellInfo`). The function
 // must use the WoW Lua C function ABI: `int __fastcall(void *L)`.
@@ -58,6 +92,13 @@ struct FrameMethodEntry {
 // GameTooltipMethodRegistry for `tooltip:Foo()` calls). `context` is the
 // registry address — see Offsets::VAR_*_METHOD_REGISTRY.
 void RegisterFrameMethods(void *context, const FrameMethodEntry *table, int count);
+
+// Registers `func` at `_G[tableName][methodName]`, creating the namespace
+// table if it doesn't already exist. This is how modern WoW C_*-style APIs
+// are bound — the engine has no built-in support for table-bound Lua
+// functions, so we manipulate the globals table directly via the Lua C API.
+void RegisterTableFunction(const char *tableName, const char *methodName,
+                           CFunction func);
 } // namespace Lua
 
 extern const FrameScript_Execute_t FrameScript_Execute;

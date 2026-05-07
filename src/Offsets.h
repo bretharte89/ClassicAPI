@@ -87,7 +87,20 @@ enum Offsets {
     LUA_PUSH_NIL = 0x6F37F0,
     LUA_PUSH_BOOLEAN = 0x6F39F0,
     LUA_PUSH_STRING = 0x6F3890,
+    LUA_PUSH_VALUE = 0x6F30D0,    // (was 0x6F3350, which is lua_replace — see docs/LuaCAPI.md)
+    LUA_PUSH_CCLOSURE = 0x6F3920,
+    LUA_NEW_TABLE = 0x6F3C90,
+    LUA_GET_TABLE = 0x6F3A40,     // (was 0x6F3EA0, which is lua_rawset)
+    LUA_RAW_GET = 0x6F3B00,
+    LUA_SET_TABLE = 0x6F3E20,
+    LUA_RAW_SET = 0x6F3EA0,
+    LUA_INSERT = 0x6F31A0,
     LUA_TYPE = 0x6F3400,
     LUA_SET_TOP = 0x6F3080,
     LUA_ERROR = 0x6F4940,
+
+    // Global `lua_State *`. The engine keeps one main thread state here; we
+    // read it on demand in helpers that run outside a Lua callback (e.g.
+    // RegisterTableFunction during LoadScriptFunctions).
+    VAR_LUA_STATE = 0x00CEEF74,
 };
