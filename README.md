@@ -45,6 +45,46 @@ for i = 1, GetNumQuestLogEntries() do
 end
 ```
 
+### `C_Item.IsBound(itemLocation)`
+
+Returns `true` if the item at the given location is soulbound, `false` otherwise
+(including when the slot is empty or the location is malformed). The 1.12
+client tracks the soulbound bit on each item instance directly; previously
+the only way to read it from Lua was a scan-tooltip hack
+(`SetBagItem` + string-compare against the localized `ITEM_SOULBOUND`
+constant) — slow, locale-fragile, and one of the hottest paths during bag
+updates.
+
+`itemLocation` is a table with one of these shapes (matching the modern
+`ItemLocation` mixin):
+
+```lua
+{ equipmentSlotIndex = N }     -- 1-based, character pane
+{ bagID = B, slotIndex = S }   -- both required
+```
+
+```lua
+if C_Item.IsBound({equipmentSlotIndex = INVSLOT_HEAD}) then ... end
+if C_Item.IsBound({bagID = 0, slotIndex = 1}) then ... end
+```
+
+### `C_Item.GetItemID(itemLocation)`
+
+Returns the itemID of the item at the given location, or `nil` if the slot
+is empty or the location is malformed. Useful as the input to
+`GetItemInfoInstant`/`GetItemInfo` when you only know which slot an item
+came from (rather than its link or ID).
+
+Accepts the same `itemLocation` shapes as `IsBound`:
+
+```lua
+local id = C_Item.GetItemID({equipmentSlotIndex = INVSLOT_HEAD})
+if id then
+    local _, type, subtype = C_Item.GetItemInfoInstant(id)
+    -- ...
+end
+```
+
 ### `C_Item.GetItemInfoInstant(item)`
 
 Modern-style accessor for the always-available subset of item info — the
