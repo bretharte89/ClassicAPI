@@ -25,6 +25,23 @@ const lua_pushboolean_t PushBoolean = reinterpret_cast<lua_pushboolean_t>(Offset
 const lua_pushstring_t PushString = reinterpret_cast<lua_pushstring_t>(Offsets::LUA_PUSH_STRING);
 const lua_type_t Type = reinterpret_cast<lua_type_t>(Offsets::LUA_TYPE);
 const lua_error_t Error = reinterpret_cast<lua_error_t>(Offsets::LUA_ERROR);
+
+namespace {
+using FrameScript_RegisterFunction_t = void(__fastcall *)(const char *name, CFunction func);
+using RegisterFrameMethods_t = void(__fastcall *)(const FrameMethodEntry *table, int count,
+                                                  void *context);
+} // namespace
+
+void RegisterGlobalFunction(const char *name, CFunction func) {
+    auto fn = reinterpret_cast<FrameScript_RegisterFunction_t>(
+        Offsets::FUN_FRAMESCRIPT_REGISTER_FUNCTION);
+    fn(name, func);
+}
+
+void RegisterFrameMethods(void *context, const FrameMethodEntry *table, int count) {
+    auto fn = reinterpret_cast<RegisterFrameMethods_t>(Offsets::FUN_REGISTER_FRAME_METHODS);
+    fn(table, count, context);
+}
 } // namespace Lua
 
 const FrameScript_Execute_t FrameScript_Execute =

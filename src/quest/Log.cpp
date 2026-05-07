@@ -11,17 +11,14 @@
 // You should have received a copy of the GNU Lesser General Public License along with
 // ClassicAPI. If not, see <https://www.gnu.org/licenses/>.
 
-#include "QuestLog.h"
+#include "Log.h"
 
 #include "Game.h"
 #include "Offsets.h"
 
 #include <cstdint>
 
-namespace QuestLog {
-
-using lua_CFunction = int(__fastcall *)(void *L);
-using FrameScript_RegisterFunction_t = void(__fastcall *)(const char *name, lua_CFunction func);
+namespace Quest::Log {
 
 static int __fastcall Script_GetQuestIDFromLogIndex(void *L) {
     if (!Game::Lua::IsNumber(L, 1)) {
@@ -53,9 +50,7 @@ static int __fastcall Script_GetQuestIDFromLogIndex(void *L) {
 }
 
 void RegisterLuaFunctions() {
-    auto Register = reinterpret_cast<FrameScript_RegisterFunction_t>(
-        Offsets::FUN_FRAMESCRIPT_REGISTER_FUNCTION);
-    Register("GetQuestIDFromLogIndex", &Script_GetQuestIDFromLogIndex);
+    Game::Lua::RegisterGlobalFunction("GetQuestIDFromLogIndex", &Script_GetQuestIDFromLogIndex);
 }
 
-} // namespace QuestLog
+} // namespace Quest::Log

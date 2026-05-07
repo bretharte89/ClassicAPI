@@ -13,8 +13,8 @@
 
 #pragma once
 
-namespace QuestLog {
+namespace Spell::Info {
 
 void RegisterLuaFunctions();
 
-} // namespace QuestLog
+} // namespace Spell::Info

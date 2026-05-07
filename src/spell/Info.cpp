@@ -11,17 +11,14 @@
 // You should have received a copy of the GNU Lesser General Public License along with
 // ClassicAPI. If not, see <https://www.gnu.org/licenses/>.
 
-#include "SpellInfo.h"
+#include "Info.h"
 
 #include "Game.h"
 #include "Offsets.h"
 
 #include <cstdint>
 
-namespace SpellInfo {
-
-using lua_CFunction = int(__fastcall *)(void *L);
-using FrameScript_RegisterFunction_t = void(__fastcall *)(const char *name, lua_CFunction func);
+namespace Spell::Info {
 
 // Spell.dbc record offsets (from BuildSpellTooltip / Script_GetSpellName / Script_GetSpellTexture).
 static constexpr int OFF_ATTRIBUTES_EX = 0x1C;
@@ -94,7 +91,7 @@ static int __fastcall Script_GetSpellInfo(void *L) {
     Game::Lua::PushNumber(L, static_cast<double>(
                                  *reinterpret_cast<const int *>(record + OFF_MANA_COST)));
 
-    // 5. isFunnel
+    // 5. isFunnel — real boolean to match 3.3.5 behavior.
     const uint32_t attrEx = *reinterpret_cast<const uint32_t *>(record + OFF_ATTRIBUTES_EX);
     Game::Lua::PushBoolean(L, (attrEx & SPELL_ATTR_EX_FUNNEL) != 0);
 
@@ -126,9 +123,7 @@ static int __fastcall Script_GetSpellInfo(void *L) {
 }
 
 void RegisterLuaFunctions() {
-    auto Register = reinterpret_cast<FrameScript_RegisterFunction_t>(
-        Offsets::FUN_FRAMESCRIPT_REGISTER_FUNCTION);
-    Register("GetSpellInfo", &Script_GetSpellInfo);
+    Game::Lua::RegisterGlobalFunction("GetSpellInfo", &Script_GetSpellInfo);
 }
 
-} // namespace SpellInfo
+} // namespace Spell::Info

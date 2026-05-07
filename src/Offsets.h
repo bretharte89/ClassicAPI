@@ -27,9 +27,10 @@ enum Offsets {
     // __thiscall(spellID, 0, 0, isPet, 0, 0, 0); we always pass isPet=0.
     FUN_GAMETOOLTIP_BUILD_SPELL_TOOLTIP = 0x0052E610,
 
-    // Iterator that registers an array of GameTooltip method bindings.
+    // Iterator that registers an array of frame-method bindings on a per-frame-type
+    // method registry (e.g. VAR_GAMETOOLTIP_METHOD_REGISTRY for GameTooltip).
     // __fastcall(ecx = MethodEntry table, edx = count, [stack] = context).
-    FUN_REGISTER_GAMETOOLTIP_METHODS = 0x00701D80,
+    FUN_REGISTER_FRAME_METHODS = 0x00701D80,
     VAR_GAMETOOLTIP_METHOD_REGISTRY = 0x00C0CF20,
 
     // Registers a single global Lua function. __fastcall(name, func).

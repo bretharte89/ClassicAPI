@@ -13,8 +13,8 @@
 
 #pragma once
 
-namespace SpellTooltip {
+namespace Spell::Tooltip {
 
 void RegisterLuaFunctions();
 
-} // namespace SpellTooltip
+} // namespace Spell::Tooltip

@@ -11,14 +11,14 @@
 // You should have received a copy of the GNU Lesser General Public License along with
 // ClassicAPI. If not, see <https://www.gnu.org/licenses/>.
 
-#include "SpellTooltip.h"
+#include "Tooltip.h"
 
 #include "Game.h"
 #include "Offsets.h"
 
 #include <cstdint>
 
-namespace SpellTooltip {
+namespace Spell::Tooltip {
 
 using BuildSpellTooltip_t = void(__thiscall *)(void *thisObj, int spellID, int arg2, int arg3,
                                                int isPet, int arg5, int arg6, int arg7);
@@ -80,26 +80,15 @@ static int __fastcall Script_GameTooltipSetSpellByID(void *L) {
     return 0;
 }
 
-struct GameTooltipMethodEntry {
-    const char *name;
-    void *func;
-};
-
-using RegisterGameTooltipMethods_t = void(__fastcall *)(const GameTooltipMethodEntry *table,
-                                                         int count, void *context);
-
-static const GameTooltipMethodEntry g_gameTooltipMethods[] = {
-    {"SetSpellByID", reinterpret_cast<void *>(&Script_GameTooltipSetSpellByID)},
+static const Game::Lua::FrameMethodEntry g_methods[] = {
+    {"SetSpellByID", &Script_GameTooltipSetSpellByID},
 };
 
 void RegisterLuaFunctions() {
-    auto Register = reinterpret_cast<RegisterGameTooltipMethods_t>(
-        Offsets::FUN_REGISTER_GAMETOOLTIP_METHODS);
-    auto *context = reinterpret_cast<void *>(Offsets::VAR_GAMETOOLTIP_METHOD_REGISTRY);
-
-    Register(g_gameTooltipMethods,
-             static_cast<int>(sizeof(g_gameTooltipMethods) / sizeof(g_gameTooltipMethods[0])),
-             context);
+    Game::Lua::RegisterFrameMethods(
+        reinterpret_cast<void *>(Offsets::VAR_GAMETOOLTIP_METHOD_REGISTRY),
+        g_methods,
+        static_cast<int>(sizeof(g_methods) / sizeof(g_methods[0])));
 }
 
-} // namespace SpellTooltip
+} // namespace Spell::Tooltip

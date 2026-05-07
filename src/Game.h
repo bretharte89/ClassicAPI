@@ -22,6 +22,8 @@ using FrameScript_Execute_t = bool(__fastcall *)(const char *script, const char 
 using LoadScriptFunctions_t = void(__fastcall *)();
 
 namespace Lua {
+using CFunction = int(__fastcall *)(void *L);
+
 using lua_isnumber_t = bool(__fastcall *)(void *L, int index);
 using lua_tonumber_t = double(__fastcall *)(void *L, int index);
 using lua_pushnumber_t = void(__fastcall *)(void *L, double n);
@@ -39,6 +41,23 @@ extern const lua_pushboolean_t PushBoolean;
 extern const lua_pushstring_t PushString;
 extern const lua_type_t Type;
 extern const lua_error_t Error;
+
+// Registers a single global Lua function (e.g. `GetSpellInfo`). The function
+// must use the WoW Lua C function ABI: `int __fastcall(void *L)`.
+void RegisterGlobalFunction(const char *name, CFunction func);
+
+// Frame-method registration entry: { name, func } pairs walked by the engine's
+// per-frame-type method-table iterator. Layout matches what the engine expects
+// natively — name first, then function pointer.
+struct FrameMethodEntry {
+    const char *name;
+    CFunction func;
+};
+
+// Registers a batch of methods on a per-frame-type registry (e.g.
+// GameTooltipMethodRegistry for `tooltip:Foo()` calls). `context` is the
+// registry address — see Offsets::VAR_*_METHOD_REGISTRY.
+void RegisterFrameMethods(void *context, const FrameMethodEntry *table, int count);
 } // namespace Lua
 
 extern const FrameScript_Execute_t FrameScript_Execute;
