@@ -32,8 +32,20 @@ enum Offsets {
     FUN_REGISTER_GAMETOOLTIP_METHODS = 0x00701D80,
     VAR_GAMETOOLTIP_METHOD_REGISTRY = 0x00C0CF20,
 
+    // Registers a single global Lua function. __fastcall(name, func).
+    FUN_FRAMESCRIPT_REGISTER_FUNCTION = 0x00704120,
+
+    // Quest log: 16-byte-stride entry array and active count.
+    // Field +0 of each entry is the questID for real quests (a category index
+    // for headers); field +8 is the header indicator: non-NULL = header,
+    // NULL = real quest. Verified by Script_GetQuestLogTitle's isHeader push
+    // at 0x004DF9A9 and by the helper at 0x004DF150 used by IsUnitOnQuest.
+    VAR_QUEST_LOG_ENTRIES = 0x00BB71C0,
+    VAR_QUEST_LOG_ENTRY_COUNT = 0x00BB7478,
+
     LUA_IS_NUMBER = 0x6F34D0,
     LUA_TO_NUMBER = 0x6F3620,
+    LUA_PUSH_NUMBER = 0x6F3810,
     LUA_TYPE = 0x6F3400,
     LUA_SET_TOP = 0x6F3080,
     LUA_ERROR = 0x6F4940,

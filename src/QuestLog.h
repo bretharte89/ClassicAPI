@@ -11,20 +11,10 @@
 // You should have received a copy of the GNU Lesser General Public License along with
 // ClassicAPI. If not, see <https://www.gnu.org/licenses/>.
 
-#include "Game.h"
-#include "Offsets.h"
+#pragma once
 
-namespace Game {
+namespace QuestLog {
 
-namespace Lua {
-const lua_isnumber_t IsNumber = reinterpret_cast<lua_isnumber_t>(Offsets::LUA_IS_NUMBER);
-const lua_tonumber_t ToNumber = reinterpret_cast<lua_tonumber_t>(Offsets::LUA_TO_NUMBER);
-const lua_pushnumber_t PushNumber = reinterpret_cast<lua_pushnumber_t>(Offsets::LUA_PUSH_NUMBER);
-const lua_type_t Type = reinterpret_cast<lua_type_t>(Offsets::LUA_TYPE);
-const lua_error_t Error = reinterpret_cast<lua_error_t>(Offsets::LUA_ERROR);
-} // namespace Lua
+void RegisterLuaFunctions();
 
-const FrameScript_Execute_t FrameScript_Execute =
-    reinterpret_cast<FrameScript_Execute_t>(Offsets::FUN_FRAME_SCRIPT_EXECUTE);
-
-} // namespace Game
+} // namespace QuestLog

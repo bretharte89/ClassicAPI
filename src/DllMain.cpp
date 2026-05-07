@@ -15,6 +15,7 @@
 #include "Game.h"
 #include "MinHook.h"
 #include "Offsets.h"
+#include "QuestLog.h"
 #include "SpellTooltip.h"
 
 #include <string>
@@ -35,6 +36,7 @@ static bool __fastcall FrameScript_Initialize_h() {
 static void __fastcall LoadScriptFunctions_h() {
     LoadScriptFunctions_o();
     SpellTooltip::RegisterLuaFunctions();
+    QuestLog::RegisterLuaFunctions();
 }
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved) {
