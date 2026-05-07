@@ -43,9 +43,24 @@ enum Offsets {
     VAR_QUEST_LOG_ENTRIES = 0x00BB71C0,
     VAR_QUEST_LOG_ENTRY_COUNT = 0x00BB7478,
 
+    // Spell.dbc and friends. Pointer-to-records-array + record-count pairs.
+    // Used by Script_GetSpellName/Texture and BuildSpellTooltip.
+    VAR_SPELL_RECORDS = 0x00C0D788,            // SpellRecord *records[spellID]
+    VAR_SPELL_RECORD_COUNT = 0x00C0D78C,       // max spellID
+    VAR_SPELL_RANGE_RECORDS = 0x00C0D79C,      // SpellRange.dbc
+    VAR_SPELL_RANGE_COUNT = 0x00C0D7A0,
+    VAR_SPELL_ICON_RECORDS = 0x00C0D7EC,       // SpellIcon.dbc
+    VAR_SPELL_ICON_COUNT = 0x00C0D7F0,
+    VAR_SPELL_CAST_TIMES_RECORDS = 0x00C0D878, // SpellCastTimes.dbc
+    VAR_SPELL_CAST_TIMES_COUNT = 0x00C0D87C,
+    VAR_LOCALE_INDEX = 0x00C0E080,             // 0..8, picks one of the 9 localized strings
+
     LUA_IS_NUMBER = 0x6F34D0,
     LUA_TO_NUMBER = 0x6F3620,
     LUA_PUSH_NUMBER = 0x6F3810,
+    LUA_PUSH_NIL = 0x6F37F0,
+    LUA_PUSH_BOOLEAN = 0x6F39F0,
+    LUA_PUSH_STRING = 0x6F3890,
     LUA_TYPE = 0x6F3400,
     LUA_SET_TOP = 0x6F3080,
     LUA_ERROR = 0x6F4940,

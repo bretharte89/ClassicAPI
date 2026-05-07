@@ -45,6 +45,27 @@ for i = 1, GetNumQuestLogEntries() do
 end
 ```
 
+### `GetSpellInfo(spellID)`
+
+Returns the same nine values as 3.3.5's `GetSpellInfo`, for **any** spell ID
+— including spells the player has not learned. Stock 1.12 has no
+`GetSpellInfo` Lua function at all (only `GetSpellName`/`GetSpellTexture`,
+both of which take a spellbook *slot* rather than an ID), so addons that
+need spell metadata for arbitrary IDs (raid frames, debuff trackers, aura
+libraries) currently can't get it.
+
+Returns `name, rank, icon, cost, isFunnel, powerType, castTime, minRange,
+maxRange`. All read directly from `Spell.dbc` (with `SpellIcon.dbc`,
+`SpellCastTimes.dbc`, and `SpellRange.dbc` for the indirected fields). Cast
+time is in milliseconds; ranges are floats in yards. `isFunnel` is a real
+boolean (`true`/`false`), matching 3.3.5's behavior. Returns `nil` if the
+spell ID is out of range.
+
+```lua
+local name, rank, icon = GetSpellInfo(133)  -- Fireball Rank 1
+-- name="Fireball", rank="Rank 1", icon="Spell\\Fire\\..."
+```
+
 ## Global
 
 The DLL also defines a Lua global `CLASSIC_API_VERSION` once FrameScript has

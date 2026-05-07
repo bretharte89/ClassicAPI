@@ -25,12 +25,18 @@ namespace Lua {
 using lua_isnumber_t = bool(__fastcall *)(void *L, int index);
 using lua_tonumber_t = double(__fastcall *)(void *L, int index);
 using lua_pushnumber_t = void(__fastcall *)(void *L, double n);
+using lua_pushnil_t = void(__fastcall *)(void *L);
+using lua_pushboolean_t = void(__fastcall *)(void *L, int b);
+using lua_pushstring_t = void(__fastcall *)(void *L, const char *s);
 using lua_type_t = int(__fastcall *)(void *L, int index);
 using lua_error_t = void(__cdecl *)(void *L, const char *);
 
 extern const lua_isnumber_t IsNumber;
 extern const lua_tonumber_t ToNumber;
 extern const lua_pushnumber_t PushNumber;
+extern const lua_pushnil_t PushNil;
+extern const lua_pushboolean_t PushBoolean;
+extern const lua_pushstring_t PushString;
 extern const lua_type_t Type;
 extern const lua_error_t Error;
 } // namespace Lua

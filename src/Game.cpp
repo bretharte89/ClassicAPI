@@ -20,6 +20,9 @@ namespace Lua {
 const lua_isnumber_t IsNumber = reinterpret_cast<lua_isnumber_t>(Offsets::LUA_IS_NUMBER);
 const lua_tonumber_t ToNumber = reinterpret_cast<lua_tonumber_t>(Offsets::LUA_TO_NUMBER);
 const lua_pushnumber_t PushNumber = reinterpret_cast<lua_pushnumber_t>(Offsets::LUA_PUSH_NUMBER);
+const lua_pushnil_t PushNil = reinterpret_cast<lua_pushnil_t>(Offsets::LUA_PUSH_NIL);
+const lua_pushboolean_t PushBoolean = reinterpret_cast<lua_pushboolean_t>(Offsets::LUA_PUSH_BOOLEAN);
+const lua_pushstring_t PushString = reinterpret_cast<lua_pushstring_t>(Offsets::LUA_PUSH_STRING);
 const lua_type_t Type = reinterpret_cast<lua_type_t>(Offsets::LUA_TYPE);
 const lua_error_t Error = reinterpret_cast<lua_error_t>(Offsets::LUA_ERROR);
 } // namespace Lua
