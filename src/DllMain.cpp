@@ -16,6 +16,7 @@
 #include "MinHook.h"
 #include "Offsets.h"
 #include "item/Bound.h"
+#include "item/Info.h"
 #include "quest/Log.h"
 #include "spell/Info.h"
 #include "spell/Tooltip.h"
@@ -41,6 +42,7 @@ static void __fastcall LoadScriptFunctions_h() {
     Spell::Info::RegisterLuaFunctions();
     Quest::Log::RegisterLuaFunctions();
     Item::Bound::RegisterLuaFunctions();
+    Item::Info::RegisterLuaFunctions();
 }
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved) {

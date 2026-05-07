@@ -61,6 +61,69 @@ enum Offsets {
     OFF_DESCRIPTOR_FLAGS = 0x3C,
     ITEM_FLAG_SOULBOUND = 0x01,
 
+    // Item stats cache (the client-side cache of ItemSparse-style records that
+    // gets populated by SMSG_ITEM_QUERY_SINGLE_RESPONSE). The cache instance
+    // lives directly at this VA — `_GetRecord`'s `this` argument is the literal
+    // address `0xC0E2A0`, not a pointer to it. See Script_GetItemInfo at
+    // 0x0048E070 which calls `mov ecx, 0xC0E2A0` before the call.
+    VAR_ITEMDB_CACHE = 0x00C0E2A0,
+    // ItemStats_C *(__thiscall *)(void *cache, uint32_t itemID,
+    //                             const uint64_t *guid /*may point to zero*/,
+    //                             void *callback, void *userData,
+    //                             bool requestIfMissing).
+    // With `requestIfMissing=false`, returns NULL if not in cache (no server
+    // round-trip) — exactly the "instant" semantics we want.
+    FUN_DBCACHE_ITEMSTATS_GET_RECORD = 0x0055BA30,
+    // ItemStats_C field offsets we read. Full struct layout in
+    // VanillaHelpers's `Game.h` (`struct ItemStats_C`); we only need these.
+    OFF_ITEMSTATS_CLASS = 0x00,
+    OFF_ITEMSTATS_SUBCLASS = 0x04,
+    OFF_ITEMSTATS_DISPLAY_INFO_ID = 0x18,
+    OFF_ITEMSTATS_INVENTORY_TYPE = 0x2C,
+
+    // ItemClass.dbc — standard 5-DWORD class shape. Records is an array of
+    // record pointers indexed directly by classID. Each record has a 9-slot
+    // localized name array at +0x0C (4 bytes per locale).
+    VAR_ITEMCLASS_RECORDS = 0x00C0DC24,
+    VAR_ITEMCLASS_COUNT = 0x00C0DC28,
+    OFF_ITEMCLASS_NAMES = 0x0C,
+
+    // ItemSubClass.dbc — class instance at 0x00C0DB90 has the standard 5-DWORD
+    // shape (records at +0x08, count at +0x0C, per the reset at 0x53B700), but
+    // the engine ALSO maintains a parallel (records, count) pair in the first
+    // two unused slots (+0x00, +0x04) for fast compound-key iteration.
+    // Script_GetItemInfo and three other callers all read from this parallel
+    // pair, NOT the standard slots — verified by greping every reader of
+    // 0xC0DB94. Records there is a flat array of 0x74-byte structs (not the
+    // standard array-of-pointers); linear scan keyed by (classID, subClassID)
+    // at record +0x00 / +0x04.
+    //
+    // Each record has TWO localized name string arrays:
+    //   +0x28  short name (e.g. "Sword")          — 9 locale ptrs, stride 4
+    //   +0x4C  verbose/display name (e.g. "One-Handed Swords") — same shape
+    // Engine pattern: try verbose first; if that locale's slot is empty,
+    // fall back to short. Many subclasses (e.g. Miscellaneous→Junk) only
+    // populate the short array, so the fallback matters.
+    VAR_ITEMSUBCLASS_RECORDS = 0x00C0DB90,
+    VAR_ITEMSUBCLASS_COUNT = 0x00C0DB94,
+    OFF_ITEMSUBCLASS_RECORD_STRIDE = 0x74,
+    OFF_ITEMSUBCLASS_NAME = 0x28,
+    OFF_ITEMSUBCLASS_DISPLAY_NAME = 0x4C,
+
+    // ItemDisplayInfo.dbc — standard layout. Icon path char* at record +0x14
+    // (per the helper at 0x005D88B0 that Script_GetItemInfo uses).
+    VAR_ITEMDISPLAYINFO_RECORDS = 0x00C0DC10,
+    VAR_ITEMDISPLAYINFO_COUNT = 0x00C0DC14,
+    OFF_ITEMDISPLAYINFO_ICON = 0x14,
+
+    // INVTYPE_* string table — array of char* indexed by m_inventoryType.
+    // Index 0 is empty (0=INVTYPE_NON_EQUIP), indices 1..28 are valid
+    // INVTYPE_HEAD..INVTYPE_RELIC, index 29 is empty (sentinel), and indices
+    // 30+ are unrelated combat-log strings (MISS/WOUND/DODGE/...). Always
+    // bound-check before indexing.
+    VAR_INVTYPE_STRING_TABLE = 0x0083DDB0,
+    INVTYPE_TABLE_MAX_INDEX = 28,
+
     // Quest log: 16-byte-stride entry array and active count.
     // Field +0 of each entry is the questID for real quests (a category index
     // for headers); field +8 is the header indicator: non-NULL = header,
@@ -82,7 +145,9 @@ enum Offsets {
     VAR_LOCALE_INDEX = 0x00C0E080,             // 0..8, picks one of the 9 localized strings
 
     LUA_IS_NUMBER = 0x6F34D0,
+    LUA_IS_STRING = 0x6F3510,
     LUA_TO_NUMBER = 0x6F3620,
+    LUA_TO_STRING = 0x6F3690,
     LUA_PUSH_NUMBER = 0x6F3810,
     LUA_PUSH_NIL = 0x6F37F0,
     LUA_PUSH_BOOLEAN = 0x6F39F0,

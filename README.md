@@ -45,6 +45,47 @@ for i = 1, GetNumQuestLogEntries() do
 end
 ```
 
+### `C_Item.GetItemInfoInstant(item)`
+
+Modern-style accessor for the always-available subset of item info — the
+fields that depend only on classification, not on player-specific state.
+Returns immediately from the client-side item cache; no server round-trip,
+no async polling. Returns `nil` if the item isn't in cache.
+
+Accepts a numeric `itemID` or a string containing `"item:NNN"` (matches both
+the bare `"item:1234"` shorthand and full chat links like
+`"|cff...|Hitem:1234:...|h[Name]|h|r"`). Item names are not accepted —
+vanilla itself has no name → ID resolver, and it's rarely the form addon code
+actually has on hand.
+
+Returns seven values:
+
+```
+itemID, itemType, itemSubType, itemEquipLoc, icon, classID, subClassID
+```
+
+- `itemType` / `itemSubType` are the localized class / subclass names
+  (e.g. `"Weapon"` / `"One-Handed Swords"`), read from `ItemClass.dbc` and
+  `ItemSubClass.dbc`.
+- `itemEquipLoc` is the `"INVTYPE_*"` constant (e.g. `"INVTYPE_HEAD"`), or
+  `""` for non-equippable items.
+- `icon` is a path string (`"Interface\\Icons\\..."`), matching what the
+  rest of the 1.12 API returns. Modern WoW returns a numeric fileID here,
+  but 1.12 has no fileID system, so a path is the only meaningful value.
+- `classID` / `subClassID` are the raw enum integers (e.g. `2`, `7` for
+  one-handed swords).
+
+```lua
+local id, type, subtype, equipLoc, icon, classID, subClassID
+    = C_Item.GetItemInfoInstant(6948)  -- Hearthstone
+-- type="Miscellaneous", subtype="Junk", equipLoc="",
+-- icon="Interface\\Icons\\INV_Misc_Rune_01", classID=15, subClassID=0
+```
+
+The actual class/subclass values reflect 1.12.1's data, which differs from
+modern WoW. For example, vanilla had no Cloth subclass under Trade Goods —
+Silk Cloth lives at `(7, 0)` in this client, not the modern `(7, 5)`.
+
 ### `GetSpellInfo(spellID)`
 
 Returns the same nine values as 3.3.5's `GetSpellInfo`, for **any** spell ID

@@ -37,7 +37,9 @@ constexpr int TYPE_TABLE = 5;
 constexpr int TYPE_FUNCTION = 6;
 
 using lua_isnumber_t = bool(__fastcall *)(void *L, int index);
+using lua_isstring_t = bool(__fastcall *)(void *L, int index);
 using lua_tonumber_t = double(__fastcall *)(void *L, int index);
+using lua_tostring_t = const char *(__fastcall *)(void *L, int index);
 using lua_pushnumber_t = void(__fastcall *)(void *L, double n);
 using lua_pushnil_t = void(__fastcall *)(void *L);
 using lua_pushboolean_t = void(__fastcall *)(void *L, int b);
@@ -55,7 +57,9 @@ using lua_type_t = int(__fastcall *)(void *L, int index);
 using lua_error_t = void(__cdecl *)(void *L, const char *);
 
 extern const lua_isnumber_t IsNumber;
+extern const lua_isstring_t IsString;
 extern const lua_tonumber_t ToNumber;
+extern const lua_tostring_t ToString;
 extern const lua_pushnumber_t PushNumber;
 extern const lua_pushnil_t PushNil;
 extern const lua_pushboolean_t PushBoolean;
