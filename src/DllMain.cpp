@@ -16,6 +16,7 @@
 #include "MinHook.h"
 #include "Offsets.h"
 #include "item/Bound.h"
+#include "item/ID.h"
 #include "item/Info.h"
 #include "quest/Log.h"
 #include "spell/Info.h"
@@ -42,6 +43,7 @@ static void __fastcall LoadScriptFunctions_h() {
     Spell::Info::RegisterLuaFunctions();
     Quest::Log::RegisterLuaFunctions();
     Item::Bound::RegisterLuaFunctions();
+    Item::ID::RegisterLuaFunctions();
     Item::Info::RegisterLuaFunctions();
 }
 

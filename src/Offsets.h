@@ -61,6 +61,22 @@ enum Offsets {
     OFF_DESCRIPTOR_FLAGS = 0x3C,
     ITEM_FLAG_SOULBOUND = 0x01,
 
+    // CGItem has TWO descriptor-like pointers and they hold different things:
+    //   +0x114 = m_objectFields (the UpdateField array we read FLAGS from at
+    //            +0x3C). For item instances, OBJECT_FIELD_ENTRY in this array
+    //            is empirically 0 — don't try to read itemID from here.
+    //   +0x08  = a separate identification block. Contains the item's GUID at
+    //            +0x00 (qword) and the itemID at +0x0C (dword).
+    // The canonical "look up the cache record for this item" sequence is:
+    //   item = GetItemBySlot(invMgr, slot)
+    //   id   = *(uint32_t *)(*(void **)(item + 0x08) + 0x0C)
+    //   _GetRecord(cache, id, ...)
+    // Verified at 0x004C8B1F-2D (inventory→cache lookup right after a
+    // GetItemBySlot call). The same shape appears in many other inventory
+    // sites that call _GetRecord.
+    OFF_ITEM_INSTANCE_BLOCK = 0x08,
+    OFF_INSTANCE_BLOCK_ITEM_ID = 0x0C,
+
     // Item stats cache (the client-side cache of ItemSparse-style records that
     // gets populated by SMSG_ITEM_QUERY_SINGLE_RESPONSE). The cache instance
     // lives directly at this VA — `_GetRecord`'s `this` argument is the literal

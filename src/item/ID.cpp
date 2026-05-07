@@ -11,7 +11,7 @@
 // You should have received a copy of the GNU Lesser General Public License along with
 // ClassicAPI. If not, see <https://www.gnu.org/licenses/>.
 
-#include "Bound.h"
+#include "ID.h"
 
 #include "Game.h"
 #include "Offsets.h"
@@ -19,32 +19,33 @@
 
 #include <cstdint>
 
-namespace Item::Bound {
+namespace Item::ID {
 
-static bool ItemIsSoulbound(const uint8_t *item) {
-    auto *descriptor = *reinterpret_cast<const uint8_t *const *>(
-        item + Offsets::OFF_ITEM_DESCRIPTOR);
-    if (descriptor == nullptr)
-        return false;
-    const uint32_t flags = *reinterpret_cast<const uint32_t *>(
-        descriptor + Offsets::OFF_DESCRIPTOR_FLAGS);
-    return (flags & Offsets::ITEM_FLAG_SOULBOUND) != 0;
-}
-
-static int __fastcall Script_IsBound(void *L) {
+static int __fastcall Script_GetItemID(void *L) {
     if (Game::Lua::Type(L, 1) != Game::Lua::TYPE_TABLE) {
-        Game::Lua::Error(L, "Usage: C_Item.IsBound(itemLocation)");
+        Game::Lua::Error(L, "Usage: C_Item.GetItemID(itemLocation)");
         return 0;
     }
 
     const uint8_t *item = Item::Location::Resolve(L, 1);
-    const bool bound = (item != nullptr) && ItemIsSoulbound(item);
-    Game::Lua::PushBoolean(L, bound ? 1 : 0);
+    if (item == nullptr) {
+        Game::Lua::PushNil(L);
+        return 1;
+    }
+    auto *instance = *reinterpret_cast<const uint8_t *const *>(
+        item + Offsets::OFF_ITEM_INSTANCE_BLOCK);
+    if (instance == nullptr) {
+        Game::Lua::PushNil(L);
+        return 1;
+    }
+    const uint32_t itemID = *reinterpret_cast<const uint32_t *>(
+        instance + Offsets::OFF_INSTANCE_BLOCK_ITEM_ID);
+    Game::Lua::PushNumber(L, static_cast<double>(itemID));
     return 1;
 }
 
 void RegisterLuaFunctions() {
-    Game::Lua::RegisterTableFunction("C_Item", "IsBound", &Script_IsBound);
+    Game::Lua::RegisterTableFunction("C_Item", "GetItemID", &Script_GetItemID);
 }
 
-} // namespace Item::Bound
+} // namespace Item::ID
