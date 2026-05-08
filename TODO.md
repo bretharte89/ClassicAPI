@@ -614,3 +614,118 @@ limitation prominently in the API doc. Defer Path B until either a
 concrete addon need surfaces or we end up doing the network-layer
 disassembly for another reason (e.g. a packet-driven feature like
 `C_FriendList` or `BNGetFriendInfo` polyfilling).
+
+## 36. `GetTalentSpellID(tabIndex, talentIndex[, rank])` — easy
+
+The highest-value talent helper because it bridges the talent system
+to the spell system: once you have the spellID, every spell API
+chains naturally (`GetSpellInfo`, `C_Spell.GetSpellDescription`,
+`GameTooltip:SetSpellByID`, `IsPassiveSpell`, `C_Spell.GetSpellLink`,
+…). 1.12's `GetTalentInfo` returns `(name, icon, tier, column,
+currentRank, maxRank)` — no spellID — and addons currently have to
+maintain their own `(class, tab, idx) → spellID` lookup tables.
+
+`Talent.dbc` instance at `0x00C0D6E0` (records ptr at `+0x08`, count
+at `+0x0C`, per the standard 5-DWORD shape — see `docs/DBCs.md`). The
+record has a `SpellRank[5]` array (5 spellIDs, one per rank). Modern
+WoW exposes the current-rank spellID as part of `GetTalentInfo`'s
+tuple; we'd just expose it directly.
+
+Defaults to `rank = currentRank` if omitted. With explicit `rank`,
+returns the spellID at that rank (1..5) regardless of how many points
+the player has put in — useful for tooltip-on-hover-without-respec
+scenarios.
+
+Field offsets within the Talent.dbc record need to be derived. The
+engine's `Script_GetTalentInfo` (find via `raw_globals.txt`) does this
+exact read; mirror its offsets.
+
+## 37. `GetSpellSchool(spellID)` — easy
+
+Returns the spell's damage school as a 1-based index and locale-
+independent string: `(schoolID, schoolName)` where `schoolName` is
+one of `"Physical"`, `"Holy"`, `"Fire"`, `"Nature"`, `"Frost"`,
+`"Shadow"`, `"Arcane"`. Modern `GetSchoolString(school)` does the
+mapping; we'd expose both the raw ID and the string in one call.
+
+`Spell.dbc` has the `SchoolMask` byte field (single dword, only one
+bit set in 1.12 — multi-school is a TBC+ thing). Offset within the
+record needs to be derived; the engine's `Script_GetSpellInfo` /
+spell tooltip builder reads it.
+
+Used by combat log breakdown addons, dispel logic (which schools your
+class can dispel), resistance-aware aura libraries, and damage meter
+school tagging. Currently addons either maintain hardcoded
+spellID→school tables or scan tooltips for the first-line color tag.
+
+## 38. `GetSpellRadius(spellID)` — easy
+
+Returns the AOE radius in yards, or `nil` for non-AOE spells.
+`Spell.dbc` has a `SpellRadiusIndex` field that points into
+`SpellRadius.dbc` (instance at `0x00C0D7A8` per `docs/DBCs.md`,
+already wired up via `VAR_SPELL_RANGE_RECORDS`-style helpers in
+`src/spell/Info.cpp`).
+
+Stride and field layout for `SpellRadius.dbc`: needs derivation
+(should be `{id, radius_min, radius, radius_max}` per the public
+schema, but verify). Sub-DBC lookup pattern matches what
+`LookupSubRecord` already does in `Info.cpp` for icon / cast time /
+range.
+
+Useful for AOE damage trackers, ground-effect addons, and any aura
+library that wants to render an indicator radius. Modern WoW exposes
+this via `GetSpellRadius` (deprecated) or returns from
+`C_Spell.GetSpellInfo`.
+
+## 39. `GetFactionParentID(factionID)` — trivial
+
+Returns the parent factionID for a faction in a hierarchy (e.g.
+`Stormwind`'s parent is `Alliance`; `The Defilers`'s parent is
+`Horde Forces`). Modern WoW returns this as the 13th value of
+`GetFactionInfoByID`. We'd just add it as its own getter.
+
+`Faction.dbc` `ParentFactionID` is at `+0x48` of the record (already
+documented in [`src/Offsets.h`](src/Offsets.h)'s Faction section as
+"`ParentFactionID +0x48`"; the existing `Faction::Info::FactionRecord`
+helper returns the record pointer ready to read). This is a 5-line
+addition.
+
+Used by reputation addons that group factions hierarchically
+(`Stormwind` rolls up under `Alliance`, etc.), and by character-
+sheet-style displays.
+
+## 40. `UnitRaceBase(unit)` — easy
+
+Sibling to TODO #22 `UnitClassBase` — locale-independent race string
+(`"Human"`, `"Orc"`, `"Dwarf"`, `"NightElf"`, `"Scourge"`, `"Tauren"`,
+`"Gnome"`, `"Troll"`). 1.12's `UnitRace(unit)` returns the localized
+display name only; addons currently match against locale-specific
+strings or maintain their own race-byte → name maps.
+
+Read from `UNIT_FIELD_BYTES_0` (byte 0 = race). Same `[unit + 0x110]`
+descriptor path `InCombatLockdown` already uses (see
+`OFF_UNIT_DESCRIPTOR` / `OFF_UNIT_FIELD_FLAGS` for the pattern). The
+9 race strings are static — encode as a small table.
+
+Modern WoW added `UnitRace`'s second return as the locale-independent
+form in 5.0; we surface it via this distinct call rather than
+modifying `UnitRace`'s 1.12 signature.
+
+## 41. `GetActiveTalentGroup()` / `GetCurrentSpec()` — easy
+
+Vanilla has no formal "spec" system but every class has 3 talent tabs
+and the player always invests in one primarily. Returns the
+1-based tab index (1, 2, or 3) of the tab with the most points spent,
+or `0` if the player has no points spent at all (low-level
+characters, or after a respec).
+
+Trivial implementation: walk `GetNumTalentTabs()` (= 3), call
+`GetTalentTabInfo(tab)` for each, compare `pointsSpent`. Pick max.
+No DBC reads, no engine internals — pure Lua-equivalent computation
+that's just easier to call than write inline every time.
+
+Modern WoW's `GetSpecialization()` returns 1..4 for the player's
+active spec. This is the closest 1.12 analog, useful for class
+addons that want to render different UI per spec ("am I tanking?
+healing? DPS?") without having to do the talent-counting dance
+themselves.
