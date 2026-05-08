@@ -9,6 +9,7 @@ build instructions.
 - [Spell](#spell)
   - [`GetSpellInfo(spellID)`](#getspellinfospellid)
   - [`GameTooltip:SetSpellByID(spellID)`](#gametooltipsetspellbyidspellid)
+  - [`C_Spell.GetSpellDescription(spellID)`](#c_spellgetspelldescriptionspellid)
 - [Quest](#quest)
   - [`GetQuestIDFromLogIndex(index)`](#getquestidfromlogindexindex)
   - [`C_QuestLog.RequestLoadQuestByID(questID)`](#c_questlogrequestloadquestbyidquestid)
@@ -64,6 +65,36 @@ GameTooltip:Show()
 ```
 
 Equivalent to the function of the same name introduced in 3.0.
+
+### `C_Spell.GetSpellDescription(spellID)`
+
+Returns the formatted spell description for any `spellID` — including
+spells the player has not learned. `$s1`/`$s2`/`$o1`/`$d`-style
+placeholders are resolved to base-rank values; ranges and durations
+appear as actual numbers (e.g. `"14 to 22 Fire damage"`, not
+`"$s1 to $s2 Fire damage"`). Returns `nil` if the spell ID is out of
+range or has no description in the current locale.
+
+The 1.12 client doesn't expose this from Lua at all — the only existing
+path is the scan-tooltip hack (set a hidden tooltip via
+`SetHyperlink("spell:"..ID)` and read each `TextLeftN:GetText()` line).
+That's slow, GC-heavy, and shares the global scan tooltip with every
+other addon. This function calls the engine's own description formatter
+directly — same code path the in-game tooltip uses, no UI side effects.
+
+```lua
+local desc = C_Spell.GetSpellDescription(133)  -- Fireball Rank 1
+-- "Hurls a fiery ball that causes 14 to 22 Fire damage and an additional
+--  2 Fire damage over 4 sec."
+```
+
+Equivalent to the function of the same name introduced in 4.0.
+
+> **No caster scaling.** Values reflect the spell's base rank — caster
+> level / spell power / talents are not applied. Modern WoW behaves the
+> same way when called outside a unit context. If you need the
+> "currently displayed" tooltip text with caster scaling, use
+> `GameTooltip:SetSpellByID` and read line strings from there.
 
 ## Quest
 

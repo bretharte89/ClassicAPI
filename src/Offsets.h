@@ -199,6 +199,30 @@ enum Offsets {
     VAR_QUEST_LOG_ENTRIES = 0x00BB71C0,
     VAR_QUEST_LOG_ENTRY_COUNT = 0x00BB7478,
 
+    // Spell description format helper. Reads the locale-resolved description
+    // string from `record[+0x228 + locale*4]` and walks it character-by-
+    // character substituting `$s1`/`$d`/`$o`/etc. placeholders with values
+    // computed from the spell record. Engine has 8 callers (the spell
+    // tooltip builder at 0x52F717, the talent UI, the trainer, ...). The
+    // global cursor at `0x00BE0B80` is the helper's parser state; it sets
+    // and walks it internally, so callers don't manage it.
+    //
+    // Calling convention (verified at 0x52F717 et al.):
+    //   void __fastcall(
+    //     void  *spellRecord,      // ecx — Spell.dbc record ptr
+    //     char  *outputBuffer,     // edx — caller-provided, null-terminated on return
+    //     int   bufLen,            // [ebp+0x08]
+    //     int   contextFlag,       // [ebp+0x0C] — small int the talent/trainer paths
+    //                              //   compute from a UI-state global; 0 is the safe
+    //                              //   "no scaling context" default
+    //     int   reserved3,         // [ebp+0x10] — always 0 across the 8 callers
+    //     int   useToolTipText,    // [ebp+0x14] — 0=description (+0x228),
+    //                              //   non-zero=ToolTip (+0x24C with fallback to +0x228)
+    //     int   reserved5,         // [ebp+0x18] — always 1 across the 8 callers
+    //     int   reserved6          // [ebp+0x1C] — always 0 across the 8 callers
+    //   );
+    FUN_FORMAT_SPELL_DESCRIPTION = 0x005075F0,
+
     // Spell.dbc and friends. Pointer-to-records-array + record-count pairs.
     // Used by Script_GetSpellName/Texture and BuildSpellTooltip.
     VAR_SPELL_RECORDS = 0x00C0D788,            // SpellRecord *records[spellID]

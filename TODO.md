@@ -23,16 +23,33 @@ SavedVariables-style persistence across sessions to amortize the
 round-trip — all of which belong on the Lua side, not in this DLL.
 There's nothing the DLL can usefully add here.
 
-## 2. `C_Spell.GetSpellDescription(spellID)` — easy
+## ~~2. `C_Spell.GetSpellDescription(spellID)`~~ — DONE
 
-Lua addon creates a hidden `__CAPIScanTooltip`, calls `SetHyperlink("spell:"..ID)`,
-then reads `TextLeft<N>:GetText()` of the last line. Fragile, GC-heavy, and
-collides with anything else using the scan tooltip. Engine has the
-description string in `Spell.dbc` directly — and we already know how to
-reach the spell-tooltip internals from `SetSpellByID`, so resolving any
-description-format placeholders is a known path.
+Calls the engine's own spell-description formatter at `0x005075F0`,
+which reads the description string from `Spell.dbc` (record `+0x228`,
+locale-applied) and resolves `$s1`/`$s2`/`$o1`/`$d`-style placeholders
+character-by-character. 8 callers in the engine (spell tooltip builder,
+talent UI, trainer, etc.); we mirror the simplest one's args
+(`contextFlag=0` = "no caster scaling, base-rank values"). Output goes
+into a 1024-byte caller-provided buffer that the helper null-terminates.
 
-Reference: `Util/C_Spell.lua:22-30`.
+The interesting find: I expected the description to need a CGUnit
+context for substitution, but the engine has a "no scaling" code path
+that produces `"14 to 22 Fire damage"` (Fireball Rank 1's actual base
+range) without any unit reference. That's the right semantic for
+"describe this spell" — modern WoW behaves the same when called outside
+a unit context.
+
+Side note: a global at `0x00BE0B80` is the formatter's parser cursor
+(it walks the description string char-by-char, advancing the cursor in
+place). It's set and managed entirely inside the helper — callers don't
+touch it. Lua C functions are single-threaded, so the global state is
+safe to share with whatever else might call the formatter (it's all on
+the same thread).
+
+See [src/spell/Description.cpp](src/spell/Description.cpp) and the
+`FUN_FORMAT_SPELL_DESCRIPTION` block in [src/Offsets.h](src/Offsets.h)
+for the full calling convention (8-arg `__fastcall`).
 
 ## ~~3. `C_Item.IsBound` / `isBound` from `GetContainerItemInfo`~~ — DONE
 
