@@ -74,6 +74,13 @@ enum Offsets {
     // shr eax, 3; test al, 1`.
     OFF_UNIT_FIELD_FLAGS = 0xA0,
     UNIT_FLAG_PLAYER_CONTROLLED = 0x08,
+    // Bit 19 of UNIT_FIELD_FLAGS — `Script_UnitAffectingCombat` at
+    // `0x00517E4A`-`0x517E5C` tests it via `mov eax, [fields+0xA0];
+    // shr eax, 19; test al, 1`. We use it for `InCombatLockdown`,
+    // which in 1.12 collapses to "is the local player in combat" — no
+    // secure-frame system here, so the modern lockdown semantics
+    // reduce to a plain combat flag check.
+    UNIT_FLAG_IN_COMBAT = 0x00080000,
 
     // PackBagSlot — __fastcall(L, void **outInvMgr, int *outLinearSlot, int *outUnused) → bool.
     // Reads bagID at Lua stack[1] and slot at stack[2], validates them, and

@@ -313,12 +313,21 @@ Both forms shipped:
 See [src/spell/Info.cpp](src/spell/Info.cpp) `Script_GetSpellLink` /
 `Script_C_GetSpellLink` and the `BuildSpellLink` helper.
 
-## 21. `InCombatLockdown()` — easy
+## ~~21. `InCombatLockdown()`~~ — DONE
 
-Boolean: are we currently in combat for purposes of Blizzard's secure
-UI restrictions. Modern addons gate action-bar/binding edits on this.
-Maps to the same combat-state flag the existing 1.12 `UnitAffectingCombat("player")`
-reads — likely just one global to expose, or one PLAYER_FLAGS bit.
+Reads `UNIT_FLAG_IN_COMBAT` (bit 19, `0x00080000`) of the player's
+UNIT_FIELD_FLAGS — same bit `Script_UnitAffectingCombat` at
+`0x00517E4A`-`0x517E5C` tests via `mov eax, [fields+0xA0]; shr eax, 19;
+test al, 1`. Modern WoW's "lockdown" gates secure-frame UI changes;
+1.12 has no secure-frame system, so the function reduces to a plain
+"is the player in combat" check (equivalent to
+`UnitAffectingCombat("player")` but skips the unit-token resolution).
+
+Lives in [src/unit/Combat.cpp](src/unit/Combat.cpp) — first occupant of
+the new `src/unit/` directory. Future unit-flag accessors
+(`UnitIsAFK`, `UnitIsDND`, `UnitIsFeignDeath`, `UnitClassBase`, etc.)
+can land alongside without polluting the per-domain Lua-namespace
+directories.
 
 ## 22. `UnitClassBase(unit)` — easy
 

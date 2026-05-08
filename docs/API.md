@@ -32,6 +32,8 @@ build instructions.
   - [`C_Item.GetItemInfoInstant(item)`](#c_itemgetiteminfoinstantitem)
   - [`C_Item.IsItemDataCachedByID(item)` / `C_Item.IsItemDataCached(itemLocation)`](#c_itemisitemdatacachedbyiditem--c_itemisitemdatacacheditemlocation)
   - [`C_Item.RequestLoadItemDataByID(item)` / `C_Item.RequestLoadItemData(itemLocation)`](#c_itemrequestloaditemdatabyiditem--c_itemrequestloaditemdataitemlocation)
+- [Combat](#combat)
+  - [`InCombatLockdown()`](#incombatlockdown)
 - [Events](#events)
   - [`C_EventUtils.IsEventValid(eventName)`](#c_eventutilsiseventvalideventname)
 - [Globals](#globals)
@@ -639,6 +641,26 @@ f:SetScript("OnEvent", function()
 end)
 C_Item.RequestLoadItemDataByID(2589)
 ```
+
+## Combat
+
+### `InCombatLockdown()`
+
+Returns `true` if the local player is currently in combat, `false`
+otherwise. Modern WoW gates secure-frame UI manipulation on this; 1.12
+has no secure-frame system, so the function reduces to a plain
+"is the player in combat" check. Useful for addons backporting modern
+code that does e.g. `if not InCombatLockdown() then SetBindingClick(...) end`.
+
+```lua
+if not InCombatLockdown() then
+    -- safe to make UI changes
+end
+```
+
+Equivalent to `UnitAffectingCombat("player")` but faster — reads the
+`UNIT_FLAG_IN_COMBAT` bit directly off the player CGUnit's
+m_objectFields, no token-resolution roundtrip.
 
 ## Events
 
