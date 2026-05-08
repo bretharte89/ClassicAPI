@@ -275,15 +275,26 @@ Returns the path string (deviation from modern's `fileID:number` —
 1.12 has no fileID system; same call-out as
 `C_Spell.GetSpellTexture`'s docs).
 
-## 18. `UnitGUID(unit)` — easy
+## ~~18. `UnitGUID(unit)`~~ — DONE
 
-Returns the unit's 64-bit GUID as a string (`"0x%016X"` formatted). Used
-heavily by modern addon code that tracks units across events (combat
-log, threat tables, raid frames). 1.12 stores GUIDs the same way the
-3.3.5 engine does — `[unit + 0x08]` is a pointer to an 8-byte GUID
-struct (verified in `Script_GetInventoryItemLink`'s GUID-compare path
-at `0x004C8CB0`-`0x004C8CC7`). Worth the small format helper because
-addons backporting from 3.3.5+ assume this exists.
+Returns the unit's 64-bit GUID as `"0xHHHHHHHHLLLLLLLL"` (16 hex
+digits, hi dword first). Reads `*(unit + OFF_UNIT_GUID_PTR)` to get
+the 8-byte struct, formats with `snprintf`. Lives in
+[src/unit/Identity.cpp](src/unit/Identity.cpp).
+
+Two behavioral notes worth flagging in docs:
+
+- **Vanilla format, not modern's prefix shape.** 1.12 GUIDs are plain
+  64-bit integers (the `"Player-1234-..."` / `"Creature-0-..."`
+  formatted GUIDs were a 6.0 addition). Addons backporting modern
+  GUID parsers need to accept the `"0x..."` form.
+- **Errors on totally-unknown unit tokens.** `ResolveUnitToken` itself
+  raises `"Unknown unit name: <token>"` for strings outside the known
+  unit-ID list. We don't suppress it — matches how every other 1.12
+  unit-token function (`UnitName`, `UnitAffectingCombat`, etc.)
+  behaves. Tokens that resolve to "no current unit" (e.g. `"target"`
+  with nothing targeted) cleanly return nil via the GUID-is-zero
+  short-circuit.
 
 ## 19. `IsPassiveSpell(spellID)` — trivial
 

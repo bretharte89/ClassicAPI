@@ -32,6 +32,8 @@ build instructions.
   - [`C_Item.GetItemInfoInstant(item)`](#c_itemgetiteminfoinstantitem)
   - [`C_Item.IsItemDataCachedByID(item)` / `C_Item.IsItemDataCached(itemLocation)`](#c_itemisitemdatacachedbyiditem--c_itemisitemdatacacheditemlocation)
   - [`C_Item.RequestLoadItemDataByID(item)` / `C_Item.RequestLoadItemData(itemLocation)`](#c_itemrequestloaditemdatabyiditem--c_itemrequestloaditemdataitemlocation)
+- [Unit](#unit)
+  - [`UnitGUID(unit)`](#unitguidunit)
 - [Combat](#combat)
   - [`InCombatLockdown()`](#incombatlockdown)
 - [Events](#events)
@@ -641,6 +643,34 @@ f:SetScript("OnEvent", function()
 end)
 C_Item.RequestLoadItemDataByID(2589)
 ```
+
+## Unit
+
+### `UnitGUID(unit)`
+
+Returns the unit's 64-bit GUID formatted as a hex string
+`"0xHHHHHHHHLLLLLLLL"` (16 hex digits, hi dword first), or `nil` if the
+resolved unit's GUID is empty (NULL pointer or all zeroes).
+
+```lua
+local guid = UnitGUID("player")  -- "0x0000000000000777" (low IDs are local-realm characters)
+local guid = UnitGUID("target")  -- "0xF13000059A002553" (the F130... prefix tags creatures)
+```
+
+> **Vanilla format, not modern.** Vanilla GUIDs are plain 64-bit
+> integers — there's no `"Player-RealmID-CharacterID"` /
+> `"Creature-0-0-MapID-..."` prefix system that modern WoW uses
+> (introduced in 6.0). Addons backporting modern GUID-parsing code
+> will need to either accept the `"0x..."` form or extract the raw
+> hex.
+
+> **Errors on invalid unit tokens.** Same behavior as vanilla's other
+> unit-token functions (`UnitAffectingCombat`, `UnitName`, etc.) —
+> passing a string that doesn't match a known unit ID raises a Lua
+> error rather than returning nil. Modern WoW silently returns nil;
+> we match the engine's existing convention here. Unit tokens that
+> resolve to "no current unit" (like `"target"` with nothing
+> targeted) return nil cleanly via the GUID = 0 check.
 
 ## Combat
 

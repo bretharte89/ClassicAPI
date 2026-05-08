@@ -68,6 +68,14 @@ enum Offsets {
     // descriptor at +0x114 — these are sibling classes under CGObject
     // with class-specific descriptor offsets.
     OFF_UNIT_DESCRIPTOR = 0x110,
+    // Pointer to the CGUnit's 8-byte GUID at `*(CGUnit + 0x08)`. Verified
+    // in `Script_GetInventoryItemLink` at `0x004C8CB0`-`0x004C8CB5`:
+    // `mov eax, [esi+8]; mov edi, [eax]; mov ecx, [eax+4]` reads the
+    // GUID's lo+hi dwords through this indirection. CGItem uses the same
+    // offset for its instance block (also containing a GUID + itemID),
+    // so the layout is consistent across CGObject subclasses — but the
+    // contents differ per class.
+    OFF_UNIT_GUID_PTR = 0x08,
     // UNIT_FIELD_FLAGS within m_objectFields. Bit 3 (`0x08`) is
     // `UNIT_FLAG_PLAYER_CONTROLLED`, which `Script_UnitPlayerControlled`
     // (`0x00516410`) tests via `mov eax, [m_objectFields + 0xA0];
