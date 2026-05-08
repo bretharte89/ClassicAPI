@@ -13,28 +13,11 @@
 
 #include "Game.h"
 #include "Offsets.h"
+#include "spell/Lookup.h"
 
 #include <cstdint>
 
 namespace Spell::Description {
-
-// Mirrors `Spell::Info::LookupRecord` but kept private here to avoid a
-// header just for the one shared helper. The Spell.dbc class instance is
-// at standard layout: records-array at `[VAR_SPELL_RECORDS]`, count at
-// `[VAR_SPELL_RECORD_COUNT]`, indexed directly by spellID (1-based).
-static const uint8_t *LookupSpellRecord(int spellID) {
-    if (spellID <= 0)
-        return nullptr;
-    const int count = *reinterpret_cast<const int *>(
-        static_cast<uintptr_t>(Offsets::VAR_SPELL_RECORD_COUNT));
-    if (spellID > count)
-        return nullptr;
-    auto *const *records = *reinterpret_cast<const uint8_t *const *const *>(
-        static_cast<uintptr_t>(Offsets::VAR_SPELL_RECORDS));
-    if (records == nullptr)
-        return nullptr;
-    return records[spellID];
-}
 
 using FormatSpellDescription_t = void(__fastcall *)(const void *spellRecord, char *outBuf,
                                                     int bufLen, int contextFlag, int reserved3,
@@ -47,7 +30,7 @@ static int __fastcall Script_GetSpellDescription(void *L) {
         return 0;
     }
     const int spellID = static_cast<int>(Game::Lua::ToNumber(L, 1));
-    const uint8_t *record = LookupSpellRecord(spellID);
+    const uint8_t *record = Spell::Lookup::RecordForID(spellID);
     if (record == nullptr)
         return 0; // nil for invalid / out-of-range spell IDs
 

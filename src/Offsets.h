@@ -199,6 +199,20 @@ enum Offsets {
     VAR_QUEST_LOG_ENTRIES = 0x00BB71C0,
     VAR_QUEST_LOG_ENTRY_COUNT = 0x00BB7478,
 
+    // Player and pet spellbooks — flat int32 arrays indexed by 0-based slot.
+    // Each entry is a spellID (0 for unused slots). Engine bounds-checks
+    // each slot against an absolute max of `SPELLBOOK_MAX_SLOTS = 0x400`
+    // before indexing (see `Script_GetSpellName` at `0x004B3FE0` and the
+    // `cmp eax, 0x400; jb` guard at `0x004B4018`); the actual populated
+    // count is much smaller, but slots past the populated range simply
+    // hold 0, which we surface to Lua as nil.
+    //
+    // Used by `Spell::Lookup::SpellbookSlotToID` to support the
+    // `GetSpellInfo(slot, bookType)` overload.
+    VAR_PLAYER_SPELLBOOK = 0x00B700F0,
+    VAR_PET_SPELLBOOK = 0x00B6F098,
+    SPELLBOOK_MAX_SLOTS = 0x400,
+
     // Spell description format helper. Reads the locale-resolved description
     // string from `record[+0x228 + locale*4]` and walks it character-by-
     // character substituting `$s1`/`$d`/`$o`/etc. placeholders with values

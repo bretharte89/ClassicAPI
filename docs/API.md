@@ -7,7 +7,8 @@ build instructions.
 ## Contents
 
 - [Spell](#spell)
-  - [`GetSpellInfo(spellID)`](#getspellinfospellid)
+  - [`GetSpellInfo(spellID)` / `GetSpellInfo(slot, bookType)`](#getspellinfospellid--getspellinfoslot-booktype)
+  - [`C_Spell.GetSpellInfo(spellID)`](#c_spellgetspellinfospellid)
   - [`GameTooltip:SetSpellByID(spellID)`](#gametooltipsetspellbyidspellid)
   - [`C_Spell.GetSpellDescription(spellID)`](#c_spellgetspelldescriptionspellid)
 - [Quest](#quest)
@@ -30,26 +31,89 @@ build instructions.
 
 ## Spell
 
-### `GetSpellInfo(spellID)`
+### `GetSpellInfo(spellID)` / `GetSpellInfo(slot, bookType)`
 
-Returns the same nine values as 3.3.5's `GetSpellInfo`, for **any** spell ID
-— including spells the player has not learned. Stock 1.12 has no
-`GetSpellInfo` Lua function at all (only `GetSpellName`/`GetSpellTexture`,
-both of which take a spellbook *slot* rather than an ID), so addons that
-need spell metadata for arbitrary IDs (raid frames, debuff trackers, aura
-libraries) currently can't get it.
+Returns the same nine values as 3.3.5's `GetSpellInfo`, **plus a 10th
+value: `spellID`**, for **any** spell ID — including spells the player
+has not learned. Stock 1.12 has no `GetSpellInfo` Lua function at all
+(only `GetSpellName`/`GetSpellTexture`, both of which take a spellbook
+*slot* rather than an ID), so addons that need spell metadata for
+arbitrary IDs (raid frames, debuff trackers, aura libraries) currently
+can't get it.
 
-Returns `name, rank, icon, cost, isFunnel, powerType, castTime, minRange,
-maxRange`. All read directly from `Spell.dbc` (with `SpellIcon.dbc`,
-`SpellCastTimes.dbc`, and `SpellRange.dbc` for the indirected fields). Cast
-time is in milliseconds; ranges are floats in yards. `isFunnel` is a real
-boolean (`true`/`false`), matching 3.3.5's behavior. Returns `nil` if the
-spell ID is out of range.
+Returns `name, rank, icon, cost, isFunnel, powerType, castTime,
+minRange, maxRange, spellID`. All read directly from `Spell.dbc` (with
+`SpellIcon.dbc`, `SpellCastTimes.dbc`, and `SpellRange.dbc` for the
+indirected fields). Cast time is in milliseconds; ranges are floats in
+yards. `isFunnel` is a real boolean (`true`/`false`), matching 3.3.5's
+behavior. Returns `nil` if the spell ID is out of range.
+
+Two input forms are accepted:
+
+- **`GetSpellInfo(spellID)`** — direct DBC lookup by ID.
+- **`GetSpellInfo(slot, bookType)`** — same shape as 1.12's
+  `GetSpellName(slot, bookType)`. `slot` is 1-based, `bookType` is
+  `"spell"` (player) or `"pet"`. The slot is resolved to a spellID via
+  the engine's spellbook array, then the same DBC reads run. Returns
+  `nil` for empty / out-of-range slots.
 
 ```lua
-local name, rank, icon = GetSpellInfo(133)  -- Fireball Rank 1
--- name="Fireball", rank="Rank 1", icon="Spell\\Fire\\..."
+local name, rank, icon, _, _, _, _, _, _, spellID = GetSpellInfo(133)
+-- name="Fireball", rank="Rank 1", icon="Spell\\Fire\\...", spellID=133
+
+-- spellbook overload
+local _, _, _, _, _, _, _, _, _, id = GetSpellInfo(1, "spell")
+-- id is the spellID at player spellbook slot 1
 ```
+
+> **Note on the 10th return.** Modern WoW (5.0+) added the spellID as
+> the 14th return of its slimmer signature. We kept the existing 9
+> returns (so addons that worked against the previous signature still
+> work) and just appended `spellID` at position 10.
+
+### `C_Spell.GetSpellInfo(spellID)`
+
+Modern table-style accessor for the same data. Returns a Lua table of
+the spell's metadata, or `nil` if the spell ID is out of range.
+
+Table fields:
+
+| Field        | Type    | Notes |
+|--------------|---------|-------|
+| `name`       | string  | Localized name |
+| `iconID`     | string  | Icon **path** (e.g. `"Interface\\Icons\\Spell_Fire_FlameBolt"`). See note below. |
+| `castTime`   | number  | Base cast time in milliseconds, or 0 for instant |
+| `minRange`   | number  | Yards, or 0 if not applicable |
+| `maxRange`   | number  | Yards, or 0 if not applicable |
+| `spellID`    | number  | Echo of the input |
+| `rank`       | string  | Localized rank (e.g. `"Rank 1"`) — vanilla extra, not in modern's spec |
+| `cost`       | number  | Base ManaCost — vanilla extra |
+| `isFunnel`   | boolean | True for funnel-channeled spells — vanilla extra |
+| `powerType`  | number  | 0=mana, 1=rage, 2=focus, 3=energy, 4=happiness — vanilla extra |
+
+```lua
+local info = C_Spell.GetSpellInfo(133)
+-- info.name = "Fireball"
+-- info.iconID = "Interface\\Icons\\Spell_Fire_FlameBolt"
+-- info.castTime = 1500
+-- info.spellID = 133
+-- info.rank = "Rank 1"
+-- ... etc.
+```
+
+> **Deviation from modern.** Modern WoW returns `iconID` as a
+> `fileID:number`. Vanilla 1.12 has no fileID system — assets are
+> referenced by path strings. We surface the icon path here so it's
+> directly usable with `texture:SetTexture(info.iconID)`. If you're
+> backporting code that expects a number, this is the field to adjust.
+
+> **Vanilla extras.** The four fields beyond the modern spec
+> (`rank`/`cost`/`isFunnel`/`powerType`) are present because 1.12 has
+> them in `Spell.dbc` and the previous-generation `GetSpellInfo` exposed
+> them. Including them costs nothing and helps addons backporting from
+> 3.3.5 where the same data was returned positionally.
+
+Equivalent to the function of the same name introduced in 4.0.
 
 ### `GameTooltip:SetSpellByID(spellID)`
 
