@@ -14,8 +14,9 @@ build instructions.
   - [`FindSpellBookSlotByID(spellID)`](#findspellbookslotbyidspellid)
   - [`GetSpellLink(spellID)` / `GetSpellLink(slot, bookType)`](#getspelllinkspellid--getspelllinkslot-booktype)
   - [`C_Spell.GetSpellLink(spellID)`](#c_spellgetspelllinkspellid)
-  - [`GameTooltip:SetSpellByID(spellID)`](#gametooltipsetspellbyidspellid)
   - [`C_Spell.GetSpellDescription(spellID)`](#c_spellgetspelldescriptionspellid)
+- [GameTooltip](#gametooltip)
+  - [`GameTooltip:SetSpellByID(spellID)`](#gametooltipsetspellbyidspellid)
 - [Quest](#quest)
   - [`GetQuestIDFromLogIndex(index)`](#getquestidfromlogindexindex)
   - [`C_QuestLog.RequestLoadQuestByID(questID)`](#c_questlogrequestloadquestbyidquestid)
@@ -242,21 +243,6 @@ local link = C_Spell.GetSpellLink(133)  -- "|cff71d5ff|Hspell:133:0|h[Fireball]|
 
 Equivalent to the function of the same name introduced in 4.0.
 
-### `GameTooltip:SetSpellByID(spellID)`
-
-Renders a spell tooltip for any `spellID`, including spells the player has
-not learned. The stock 1.12 `GameTooltip:SetSpell(slot, bookType)` only works
-for entries in the player's spellbook (or pet book). `SetSpellByID` bypasses
-the spellbook indirection and calls WoW's internal tooltip builder directly.
-
-```lua
-GameTooltip:SetOwner(UIParent, "ANCHOR_CURSOR")
-GameTooltip:SetSpellByID(133)  -- Fireball
-GameTooltip:Show()
-```
-
-Equivalent to the function of the same name introduced in 3.0.
-
 ### `C_Spell.GetSpellDescription(spellID)`
 
 Returns the formatted spell description for any `spellID` — including
@@ -286,6 +272,23 @@ Equivalent to the function of the same name introduced in 4.0.
 > same way when called outside a unit context. If you need the
 > "currently displayed" tooltip text with caster scaling, use
 > `GameTooltip:SetSpellByID` and read line strings from there.
+
+## GameTooltip
+
+### `GameTooltip:SetSpellByID(spellID)`
+
+Renders a spell tooltip for any `spellID`, including spells the player has
+not learned. The stock 1.12 `GameTooltip:SetSpell(slot, bookType)` only works
+for entries in the player's spellbook (or pet book). `SetSpellByID` bypasses
+the spellbook indirection and calls WoW's internal tooltip builder directly.
+
+```lua
+GameTooltip:SetOwner(UIParent, "ANCHOR_CURSOR")
+GameTooltip:SetSpellByID(133)  -- Fireball
+GameTooltip:Show()
+```
+
+Equivalent to the function of the same name introduced in 3.0.
 
 ## Quest
 
