@@ -843,3 +843,73 @@ filter to frames actually at the cursor. Significant scope:
 Skip until either the DebugTools backport's slowness becomes a real
 pain point, or we end up doing frame-list disassembly for another
 reason (e.g. exposing a `GetMouseFocus()` polyfill).
+
+## 47. `IsPlayerSpell(spellID)` — trivial-or-easy, depends on #36
+
+Sibling to #30 `IsSpellKnown`. In modern WoW the two have slightly
+different semantics:
+
+- **`IsSpellKnown(spellID, isPet)`** — strict spellbook check;
+  optional `isPet` arg routes to the pet book.
+- **`IsPlayerSpell(spellID)`** — broader "is this spell available to
+  the player" check that also covers talent-granted passives,
+  racials, and gear-granted abilities. Player-only — no pet variant.
+
+### Open question: are passive talents in the spellbook arrays?
+
+The implementation hinges on whether vanilla 1.12's
+`VAR_PLAYER_SPELLBOOK` array (`0x00B700F0`) includes passive talent
+spellIDs as their own slots, or whether passives only exist in the
+talent tree state.
+
+**If passives ARE in the array** — `IsPlayerSpell` collapses to the
+same scan as `IsSpellKnown(spellID, false)`. Ship as a 3-line wrapper
+over `Spell::Lookup::FindSpellbookSlot`, filtering to `bookType == 0`
+(player only).
+
+**If passives are NOT in the array** — `IsPlayerSpell` needs to walk
+both the spellbook AND the talent tree. For each talent the player
+has ranks in, compare the talent's current-rank spellID to the input.
+This requires #36 `GetTalentSpellID` (or its underlying Talent.dbc
+read) to be done first.
+
+### How to test
+
+Use the shipped #25 `FindSpellBookSlotByID`. Pick a passive talent
+you have ranks in, get its spellID, and check if it's in the
+spellbook:
+
+```lua
+-- e.g. Mage with Arcane Concentration spec'd, rank-5 spellID is 11103
+local slot, book = FindSpellBookSlotByID(11103)
+if slot then
+    print("In spellbook at slot " .. slot .. " (" .. book .. ")")
+else
+    print("NOT in spellbook arrays")
+end
+```
+
+Once #36 `GetTalentSpellID` ships, the test gets easier — feed it
+straight into `FindSpellBookSlotByID` instead of looking up
+hardcoded passive-talent spellIDs:
+
+```lua
+local id = GetTalentSpellID(2, 4)            -- whatever passive you've spec'd
+print(FindSpellBookSlotByID(id))             -- nil = not in spellbook
+```
+
+If the result is `nil` for known-spec'd passives, my "passives are in
+the array" assumption was wrong and this TODO becomes the harder
+implementation path above.
+
+### Reference passive-talent spellIDs (rank 5) for testing
+
+| Class   | Talent                  | Spell ID |
+|---------|-------------------------|----------|
+| Mage    | Arcane Concentration    | `11103`  |
+| Mage    | Improved Fireball       | `11071`  |
+| Warrior | Cruelty                 | `12376`  |
+| Warrior | Improved Battle Shout   | `12861`  |
+| Priest  | Improved Renew          | `14910`  |
+| Druid   | Natural Shapeshifter    | `16834`  |
+| Hunter  | Lightning Reflexes      | `19376`  |
