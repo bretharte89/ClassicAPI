@@ -184,4 +184,28 @@ enum Offsets {
     // read it on demand in helpers that run outside a Lua callback (e.g.
     // RegisterTableFunction during LoadScriptFunctions).
     VAR_LUA_STATE = 0x00CEEF74,
+
+    // Static event-name table (`char *eventNames[]`) populated by the engine
+    // at boot via a long sequence of `mov [imm32], imm32` writes around
+    // 0x0051B030+. Each non-NULL slot is a pointer to a `.data` event-name
+    // string ("PLAYER_LOGIN", "UNIT_HEALTH", etc., plus Turtle's custom
+    // additions like "LOTTERY_ITEM_UPDATE", "MINIGAME_UPDATE"). Slots are
+    // sparse — the static analysis pass found 380 entries via the C7 05
+    // pattern across a 533-slot span, with gaps presumably populated by
+    // other init patterns or left NULL.
+    //
+    // Use the MAX_SLOTS bound for the walk and the IS_VALID_STRING_PTR
+    // range to defend against reading past the real end of the table into
+    // unrelated `.data` (where slot values would be arbitrary u32s, not
+    // pointers).
+    VAR_EVENT_NAME_TABLE = 0x00BE11D8,
+    EVENT_NAME_TABLE_MAX_SLOTS = 1024,
+    // Event name strings live in `.data` (mostly clustered around
+    // 0x00851000..0x00855000); event-name string pointers also reach into
+    // `.rdata` (starts at 0x007FF000) for some entries. Bound the dereference
+    // range conservatively to "static-data section" — addresses outside this
+    // window cannot be valid string pointers in this binary, so we treat
+    // them as NULL during the walk.
+    EVENT_TABLE_VALID_PTR_LO = 0x007FF000,
+    EVENT_TABLE_VALID_PTR_HI = 0x00C00000,
 };

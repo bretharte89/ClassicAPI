@@ -126,6 +126,27 @@ The actual class/subclass values reflect 1.12.1's data, which differs from
 modern WoW. For example, vanilla had no Cloth subclass under Trade Goods —
 Silk Cloth lives at `(7, 0)` in this client, not the modern `(7, 5)`.
 
+### `C_EventUtils.IsEventValid(eventName)`
+
+Returns `true` if the named event exists in the engine's event-name table
+and can be registered for, `false` otherwise. Equivalent to the modern
+function of the same name; useful for addons that gate code behind feature
+detection (e.g. registering for events that exist in some client builds
+but not others).
+
+```lua
+if C_EventUtils.IsEventValid("PLAYER_LOGIN") then ... end       -- true
+if C_EventUtils.IsEventValid("COMBAT_LOG_EVENT") then ... end   -- false (added in 3.x)
+```
+
+The check walks the engine's static event-name table at runtime, so it
+sees events added by **any** loaded DLL that injects names by overwriting
+`.rdata` strings in place — for example, on a Turtle WoW client running
+SuperWoWhook, `IsEventValid("UNIT_CASTEVENT")` returns `true` because
+SuperWoWhook patches the binary's event names with its own. This matches
+what `frame:RegisterEvent` will actually accept, which is what addon code
+needs to know.
+
 ### `GetSpellInfo(spellID)`
 
 Returns the same nine values as 3.3.5's `GetSpellInfo`, for **any** spell ID

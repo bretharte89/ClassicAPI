@@ -15,6 +15,7 @@
 #include "Game.h"
 #include "MinHook.h"
 #include "Offsets.h"
+#include "event/Util.h"
 #include "item/Bound.h"
 #include "item/ID.h"
 #include "item/Info.h"
@@ -45,6 +46,7 @@ static void __fastcall LoadScriptFunctions_h() {
     Item::Bound::RegisterLuaFunctions();
     Item::ID::RegisterLuaFunctions();
     Item::Info::RegisterLuaFunctions();
+    Event::Util::RegisterLuaFunctions();
 }
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved) {
