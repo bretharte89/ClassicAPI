@@ -107,4 +107,21 @@ void RegisterTableFunction(const char *tableName, const char *methodName,
 
 extern const FrameScript_Execute_t FrameScript_Execute;
 
+// Self-registration for API modules. Each module .cpp declares a file-scope
+// `static const Game::ModuleAutoRegister _r{&RegisterLuaFunctions};`, which
+// chains itself onto a global list at DLL-load time. `RunModuleRegistrations`
+// is called once from the LoadScriptFunctions post-hook to fire them all,
+// so DllMain.cpp doesn't need to know the modules exist.
+//
+// Order is unspecified (LIFO of static-init order across TUs). Modules must
+// not depend on each other's registration side effects.
+struct ModuleAutoRegister {
+    using Fn = void (*)();
+    explicit ModuleAutoRegister(Fn fn);
+    Fn fn;
+    ModuleAutoRegister *next;
+};
+
+void RunModuleRegistrations();
+
 } // namespace Game

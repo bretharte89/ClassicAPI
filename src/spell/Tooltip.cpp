@@ -11,8 +11,6 @@
 // You should have received a copy of the GNU Lesser General Public License along with
 // ClassicAPI. If not, see <https://www.gnu.org/licenses/>.
 
-#include "Tooltip.h"
-
 #include "Game.h"
 #include "Offsets.h"
 
@@ -84,11 +82,13 @@ static const Game::Lua::FrameMethodEntry g_methods[] = {
     {"SetSpellByID", &Script_GameTooltipSetSpellByID},
 };
 
-void RegisterLuaFunctions() {
+static void RegisterLuaFunctions() {
     Game::Lua::RegisterFrameMethods(
         reinterpret_cast<void *>(Offsets::VAR_GAMETOOLTIP_METHOD_REGISTRY),
         g_methods,
         static_cast<int>(sizeof(g_methods) / sizeof(g_methods[0])));
 }
+
+static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
 
 } // namespace Spell::Tooltip

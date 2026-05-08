@@ -11,8 +11,6 @@
 // You should have received a copy of the GNU Lesser General Public License along with
 // ClassicAPI. If not, see <https://www.gnu.org/licenses/>.
 
-#include "Util.h"
-
 #include "Game.h"
 #include "Offsets.h"
 
@@ -50,8 +48,10 @@ static int __fastcall Script_IsEventValid(void *L) {
     return 1;
 }
 
-void RegisterLuaFunctions() {
+static void RegisterLuaFunctions() {
     Game::Lua::RegisterTableFunction("C_EventUtils", "IsEventValid", &Script_IsEventValid);
 }
+
+static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
 
 } // namespace Event::Util

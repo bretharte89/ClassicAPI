@@ -11,8 +11,6 @@
 // You should have received a copy of the GNU Lesser General Public License along with
 // ClassicAPI. If not, see <https://www.gnu.org/licenses/>.
 
-#include "ID.h"
-
 #include "Game.h"
 #include "Offsets.h"
 #include "item/Location.h"
@@ -44,8 +42,10 @@ static int __fastcall Script_GetItemID(void *L) {
     return 1;
 }
 
-void RegisterLuaFunctions() {
+static void RegisterLuaFunctions() {
     Game::Lua::RegisterTableFunction("C_Item", "GetItemID", &Script_GetItemID);
 }
+
+static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
 
 } // namespace Item::ID

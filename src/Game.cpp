@@ -101,4 +101,17 @@ void RegisterTableFunction(const char *tableName, const char *methodName, CFunct
 const FrameScript_Execute_t FrameScript_Execute =
     reinterpret_cast<FrameScript_Execute_t>(Offsets::FUN_FRAME_SCRIPT_EXECUTE);
 
+namespace {
+ModuleAutoRegister *g_moduleHead = nullptr;
+} // namespace
+
+ModuleAutoRegister::ModuleAutoRegister(Fn f) : fn(f), next(g_moduleHead) {
+    g_moduleHead = this;
+}
+
+void RunModuleRegistrations() {
+    for (auto *node = g_moduleHead; node != nullptr; node = node->next)
+        node->fn();
+}
+
 } // namespace Game

@@ -11,8 +11,6 @@
 // You should have received a copy of the GNU Lesser General Public License along with
 // ClassicAPI. If not, see <https://www.gnu.org/licenses/>.
 
-#include "Log.h"
-
 #include "Game.h"
 #include "Offsets.h"
 
@@ -49,8 +47,10 @@ static int __fastcall Script_GetQuestIDFromLogIndex(void *L) {
     return 1;
 }
 
-void RegisterLuaFunctions() {
+static void RegisterLuaFunctions() {
     Game::Lua::RegisterGlobalFunction("GetQuestIDFromLogIndex", &Script_GetQuestIDFromLogIndex);
 }
+
+static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
 
 } // namespace Quest::Log

@@ -11,8 +11,6 @@
 // You should have received a copy of the GNU Lesser General Public License along with
 // ClassicAPI. If not, see <https://www.gnu.org/licenses/>.
 
-#include "Data.h"
-
 #include "Game.h"
 #include "Offsets.h"
 #include "item/Location.h"
@@ -133,7 +131,7 @@ static int __fastcall Script_RequestLoadItemData(void *L) {
     return 1;
 }
 
-void RegisterLuaFunctions() {
+static void RegisterLuaFunctions() {
     Game::Lua::RegisterTableFunction("C_Item", "IsItemDataCachedByID",
                                      &Script_IsItemDataCachedByID);
     Game::Lua::RegisterTableFunction("C_Item", "IsItemDataCached", &Script_IsItemDataCached);
@@ -141,5 +139,7 @@ void RegisterLuaFunctions() {
                                      &Script_RequestLoadItemDataByID);
     Game::Lua::RegisterTableFunction("C_Item", "RequestLoadItemData", &Script_RequestLoadItemData);
 }
+
+static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
 
 } // namespace Item::Data

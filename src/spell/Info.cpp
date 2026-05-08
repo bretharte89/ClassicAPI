@@ -11,8 +11,6 @@
 // You should have received a copy of the GNU Lesser General Public License along with
 // ClassicAPI. If not, see <https://www.gnu.org/licenses/>.
 
-#include "Info.h"
-
 #include "Game.h"
 #include "Offsets.h"
 
@@ -122,8 +120,10 @@ static int __fastcall Script_GetSpellInfo(void *L) {
     return 9;
 }
 
-void RegisterLuaFunctions() {
+static void RegisterLuaFunctions() {
     Game::Lua::RegisterGlobalFunction("GetSpellInfo", &Script_GetSpellInfo);
 }
+
+static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
 
 } // namespace Spell::Info
