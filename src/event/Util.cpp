@@ -19,16 +19,24 @@
 
 namespace Event::Util {
 
+// Walks the same `EventEntry` array that `Frame::RegisterEvent` strcmps
+// against (base at `[VAR_EVENT_TABLE_BASE_PTR]`, count at
+// `[VAR_EVENT_TABLE_COUNT]`, stride 0x10, name field at +0x00). This is
+// the source of truth for "events the engine will accept registration
+// for", so it picks up anything we've injected via `Event::Custom::Register`
+// in addition to all built-in events.
 static bool IsKnownEventName(const char *needle) {
-    const char *const *table =
-        reinterpret_cast<const char *const *>(Offsets::VAR_EVENT_NAME_TABLE);
-    for (int i = 0; i < Offsets::EVENT_NAME_TABLE_MAX_SLOTS; i++) {
-        const char *slot = table[i];
-        const auto addr = reinterpret_cast<uintptr_t>(slot);
-        if (addr < Offsets::EVENT_TABLE_VALID_PTR_LO ||
-            addr >= Offsets::EVENT_TABLE_VALID_PTR_HI)
+    auto *base = *reinterpret_cast<uint8_t **>(Offsets::VAR_EVENT_TABLE_BASE_PTR);
+    const int count = *reinterpret_cast<int *>(Offsets::VAR_EVENT_TABLE_COUNT);
+    if (base == nullptr || count <= 0)
+        return false;
+    for (int i = 0; i < count; i++) {
+        const uint8_t *entry = base + i * Offsets::EVENT_ENTRY_STRIDE;
+        const char *name = *reinterpret_cast<const char *const *>(
+            entry + Offsets::OFF_EVENT_ENTRY_NAME);
+        if (name == nullptr)
             continue;
-        if (std::strcmp(slot, needle) == 0)
+        if (std::strcmp(name, needle) == 0)
             return true;
     }
     return false;

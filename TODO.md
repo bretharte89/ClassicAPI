@@ -121,32 +121,29 @@ Wraps the engine's existing client-side item cache (`_GetRecord` at
 `0x55BA30`, `requestIfMissing` flag). Both `ByID` and ItemLocation
 variants ship. See [src/item/Data.cpp](src/item/Data.cpp).
 
-## 13. `ITEM_DATA_LOAD_RESULT` event — hard
+## ~~13. `ITEM_DATA_LOAD_RESULT` event~~ — DONE
 
-Modern API fires this event with `(itemID, success)` when a previously
-uncached item finishes loading after a `RequestLoadItemData*` call. We
-ship the cache-check + request functions in #12, but addons currently
-have to poll `IsItemDataCachedByID` to detect completion.
+Fires with `(itemID, success)` when an item finishes loading after a
+`RequestLoadItemData*` call (or synchronously when the data was already
+cached). See [src/event/Custom.cpp](src/event/Custom.cpp) for the
+custom-event plumbing and [src/item/Data.cpp](src/item/Data.cpp) for
+the wiring to the cache callback.
 
-To wire up the real event we need:
+The investigation needed three engine pieces nobody had documented:
 
-1. **Engine fire-event-by-id function.** Vanilla dispatches events by
-   integer ID, not by name — verified by greping the binary for pushes
-   of every well-known event name string and finding zero call sites
-   outside the static-init function. The dispatcher is well-buried; no
-   debug strings (`SignalEvent`/`FireEvent`/etc. all return zero hits).
-   Best path forward is probably tracing back from a specific packet
-   handler whose dispatch we already understand (e.g. find the
-   `SMSG_ADDON_INFO` handler and trail forward to see how it fires
-   `ADDON_LOADED`).
-2. **A way to advertise `ITEM_DATA_LOAD_RESULT` as a known event.** The
-   `_GetRecord` callback parameter (3rd arg) is probably how the engine
-   wires SMSG response → cache fill → notify observer. If we can pass
-   our own callback, we can hook the cache-fill notification directly
-   without touching the engine's event table.
-3. **A NULL slot in the event-name table** if firing requires the name
-   to be registered. Static analysis found ~221 gap slots in
-   `0x00BE11D8..0x00BE1C24` that no observed write targets — pick one
-   and patch in `"ITEM_DATA_LOAD_RESULT"`.
+- **Dispatcher** at `0x00703F50` — `__cdecl void(int eventID, const char *fmt, ...)`,
+  149 callers, indexes the table at `[0xCEEF68] + id*16`, walks the
+  subscriber chain. Format is printf-style (`%s`, `%d`, `%u`, `%f`); no
+  bool code, pass `%d` with 0/1.
+- **Registration table** at `[0xCEEF68]` (count at `[0xCEEF64]`),
+  16-byte entries, name at `+0x00`, subscriber chain head at `+0x0C`.
+  `Frame::RegisterEvent` at `0x00702140` strcmps event names against
+  this table.
+- **Teardown landmine.** `FrameScript_Initialize`'s reload path
+  (`0x00701A40`) calls `SMemFree(entry.name)` on every entry; our static
+  literals are not Storm-allocated and trip the safety check. There's a
+  NULL-name shortcut (`jz` at `0x00701A45`) so we null our entries
+  before the engine sees them.
 
-Notes are in [CLAUDE.md](CLAUDE.md) under "Events (verified)".
+Full notes in [CLAUDE.md](CLAUDE.md) under "Firing a custom event
+end-to-end".

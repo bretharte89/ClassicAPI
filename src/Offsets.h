@@ -185,21 +185,53 @@ enum Offsets {
     // RegisterTableFunction during LoadScriptFunctions).
     VAR_LUA_STATE = 0x00CEEF74,
 
-    // Static event-name table (`char *eventNames[]`) populated by the engine
-    // at boot via a long sequence of `mov [imm32], imm32` writes around
-    // 0x0051B030+. Each non-NULL slot is a pointer to a `.data` event-name
-    // string ("PLAYER_LOGIN", "UNIT_HEALTH", etc., plus Turtle's custom
-    // additions like "LOTTERY_ITEM_UPDATE", "MINIGAME_UPDATE"). Slots are
-    // sparse — the static analysis pass found 380 entries via the C7 05
-    // pattern across a 533-slot span, with gaps presumably populated by
-    // other init patterns or left NULL.
-    //
-    // Use the MAX_SLOTS bound for the walk and the IS_VALID_STRING_PTR
-    // range to defend against reading past the real end of the table into
-    // unrelated `.data` (where slot values would be arbitrary u32s, not
-    // pointers).
+    // Static event-name "table" at runtime VA `0x00BE11D8` — this is what
+    // `C_EventUtils.IsEventValid` walks. It is NOT the structure that
+    // `frame:RegisterEvent` and the dispatcher actually use; that lives at
+    // `[VAR_EVENT_TABLE_BASE_PTR]` (see below) with 16-byte entries. The
+    // table at 0x00BE11D8 is sufficient for an existence check, but firing
+    // or registering custom events requires the real structure.
     VAR_EVENT_NAME_TABLE = 0x00BE11D8,
     EVENT_NAME_TABLE_MAX_SLOTS = 1024,
+
+    // The REAL event registration data structure used by the engine. An
+    // `EventEntry` array, 16 bytes per entry:
+    //   +0x00 char *name             event name string ptr
+    //   +0x04 ?                      used by the chain allocator at 0x7052D0
+    //   +0x08 ?
+    //   +0x0C SubscriberNode *head   head of the subscribed-frames chain
+    // Allocated/populated at engine boot. `[VAR_EVENT_TABLE_BASE_PTR]`
+    // dereferences to the array base; `[VAR_EVENT_TABLE_COUNT]` is the
+    // entry count. `Frame::RegisterEvent` at 0x00702140 case-insensitively
+    // strcmps the input event name against each entry's `+0x00` and inserts
+    // the frame into the matching entry's chain.
+    VAR_EVENT_TABLE_BASE_PTR = 0x00CEEF68,
+    VAR_EVENT_TABLE_COUNT = 0x00CEEF64,
+    EVENT_ENTRY_STRIDE = 0x10,
+    OFF_EVENT_ENTRY_NAME = 0x00,
+    OFF_EVENT_ENTRY_HEAD = 0x0C,
+
+    // `Frame::RegisterEvent` — the C++ helper called by the Lua
+    // `frame:RegisterEvent(eventName)` method (`Script_RegisterEvent` at
+    // `0x00774A40`). `__thiscall` with `(this=frame, eventName)`. Walks
+    // the entry array at `[VAR_EVENT_TABLE_BASE_PTR]`, case-insensitively
+    // strcmps against each entry's name, and appends `frame` to the
+    // matching entry's chain. We hook this so any addon's RegisterEvent
+    // call gives `Event::Custom::RetryAll` a chance to fix up custom
+    // events that boot-time registration couldn't claim yet.
+    FUN_FRAME_REGISTER_EVENT = 0x00702140,
+
+    // `FireEvent` — the engine's event dispatcher. 149 callers in the
+    // binary. `__cdecl void(int eventID, const char *format, ...)`.
+    // Indexes into `[VAR_EVENT_TABLE_BASE_PTR] + eventID * 0x10` and walks
+    // the subscriber chain at `+0x0C`. Format codes match printf:
+    //   %s = const char *
+    //   %d = int
+    //   %u = unsigned int
+    //   %f = float (promoted to double on the stack)
+    // No `%b` for boolean — pass `%d` with 0/1; the engine has no native
+    // bool concept here. No bounds check on eventID; pass valid indices.
+    FUN_FIRE_EVENT = 0x00703F50,
     // Event name strings live in `.data` (mostly clustered around
     // 0x00851000..0x00855000); event-name string pointers also reach into
     // `.rdata` (starts at 0x007FF000) for some entries. Bound the dereference

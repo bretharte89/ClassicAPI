@@ -111,23 +111,27 @@ parseable to an itemID), `false` for malformed input. Fire-and-forget —
 the engine handles the round-trip; the data lands in the cache when the
 server responds.
 
-In modern WoW these would fire `ITEM_DATA_LOAD_RESULT` when complete.
-Vanilla 1.12 has no easily-locatable engine-side fire-event-by-name
-mechanism (events dispatch by integer ID, and the dispatcher isn't in
-the obvious places), so for now addons need to poll
-`IsItemDataCachedByID` after calling Request. Wiring up the event is
-tracked as a follow-up in [TODO.md](TODO.md).
+Fires `ITEM_DATA_LOAD_RESULT(itemID, success)` when the data lands in
+the cache, matching the modern API. Synchronously fired when the item
+was already cached (so polling code paths still work), asynchronously
+fired when the engine's SMSG response handler completes a network
+fetch.
+
+> **Vanilla quirk:** the engine has no native bool format code — `success`
+> arrives as `1`/`0` (number), not `true`/`false`. Idiomatic check is
+> `if success == 1 then ...`.
 
 ```lua
-local id = 2589  -- Linen Cloth, may not be cached for a fresh char
-if not C_Item.IsItemDataCachedByID(id) then
-    C_Item.RequestLoadItemDataByID(id)
-end
--- ...later...
-if C_Item.IsItemDataCachedByID(id) then
-    local _, type = C_Item.GetItemInfoInstant(id)
-    -- ...
-end
+local f = CreateFrame("Frame")
+f:RegisterEvent("ITEM_DATA_LOAD_RESULT")
+f:SetScript("OnEvent", function()
+    -- vanilla 1.12: event payload is in `arg1`, `arg2`, ... globals
+    if event == "ITEM_DATA_LOAD_RESULT" and arg2 == 1 then
+        local _, type = C_Item.GetItemInfoInstant(arg1)
+        -- ...
+    end
+end)
+C_Item.RequestLoadItemDataByID(2589)
 ```
 
 ### `C_Item.GetItemInfoInstant(item)`
