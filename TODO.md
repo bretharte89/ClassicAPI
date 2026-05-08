@@ -729,3 +729,117 @@ active spec. This is the closest 1.12 analog, useful for class
 addons that want to render different UI per spec ("am I tanking?
 healing? DPS?") without having to do the talent-counting dance
 themselves.
+
+## 42. `GetTalentIDByIndex(tabIndex, talentIndex)` — easy
+
+Exposes the `Talent.dbc` primary key — the talentID at `+0x00` of
+the record. 1.12's `GetTalentInfo(tab, idx)` returns
+`(name, icon, tier, column, currentRank, maxRank)` but NOT the
+talentID. Modern WoW exposes it as the 9th return of `GetTalentInfo`,
+and `GetTalentInfoByID(talentID)` / `GameTooltip:SetTalentByID`
+both consume it as the natural key.
+
+Why useful even though `(tab, idx)` works for most things:
+
+- **Stable across talent-tree restructuring** — vanilla itself
+  doesn't restructure trees mid-expansion, but addons backporting
+  from later expansions key on talentID and we'd let them work
+  unmodified.
+- **SavedVariables-friendly** — single int per talent vs.
+  `(class, tab, tier, column)` tuple.
+- **Enables #43 `SetTalentByID`** which has no other input shape.
+
+`Talent.dbc` instance at `0x00C0D6E0` (records ptr at `+0x08`, count
+at `+0x0C`, per `docs/DBCs.md`). Resolution path: the engine's
+`Script_GetTalentInfo` already walks Talent.dbc filtered by
+`TabID`, sorted by `(tier, column)`, to produce the visible order
+the Lua API uses. Mirror that walk and return `record[+0x00]`
+instead of the existing tuple. Should share the (tab, idx)
+resolution helper with #36 `GetTalentSpellID`.
+
+## 43. `GameTooltip:SetTalentByID(talentID)` — medium
+
+Modern method that renders a talent tooltip from just a talentID —
+the natural pair to #42 `GetTalentIDByIndex`. 1.12 has
+`GameTooltip:SetTalent(tabIndex, talentIndex)` already (at
+`0x00535170`, registry slot 34), but no by-ID variant.
+
+Implementation: look up the Talent.dbc record by talentID, extract
+the `(TabID, tier, column)`, reverse to a 1-based `(tab, idx)`
+pair (re-using the same walk #42 / #36 use), then dispatch to the
+existing `Script_GameTooltip_SetTalent` at `0x00535170`. The
+existing function does all the heavy lifting (player-object
+resolve, talent record read, tooltip line construction) — we're
+just adapting the input shape.
+
+The "reverse" mapping is the tricky part: Talent.dbc rows aren't
+natively keyed by `(tab, idx)`; the visible order is computed at
+display time. Same helper #42 uses, just inverted.
+
+If we ship #42 first, this becomes a thin wrapper — the talentID →
+`(tab, idx)` mapping is symmetric to #42's `(tab, idx)` → talentID.
+
+## 44. `GameTooltip:SetItemByID(itemID)` — trivial
+
+Modern method that renders an item tooltip from just an itemID. The
+1.12 workaround is to construct an item hyperlink and call
+`SetHyperlink` — `tooltip:SetHyperlink("item:" .. id .. ":0:0:0:0:0:0:0")`
+— which works but is ugly and forces every caller to know the
+hyperlink format.
+
+Implementation: format the hyperlink string in C (`snprintf`) and
+dispatch to the existing `Script_GameTooltip_SetHyperlink` at
+`0x00531FD0` (registry slot 12). Same registration pattern as
+[src/spell/Tooltip.cpp](src/spell/Tooltip.cpp) used for
+`SetSpellByID`.
+
+Used by basically every addon that wants to show item tooltips
+without first faking a hyperlink — bag manager UIs, loot trackers,
+auction tools.
+
+## 45. `GameTooltip:SetUnitAura(unit, index, filter)` — trivial
+
+Modern unified-aura method that 1.12 splits into `SetUnitBuff` (slot
+32, `0x00534AC0`) and `SetUnitDebuff` (slot 33, `0x00534E30`).
+Single method takes a filter string `"HELPFUL"` or `"HARMFUL"` and
+dispatches to the right underlying call.
+
+Implementation: pure dispatch wrapper. Register on the GameTooltip
+method registry (existing `Game::Lua::RegisterFrameMethods` flow)
+and in the body, branch on the filter string and tail-call the
+existing `SetUnitBuff` / `SetUnitDebuff` script function.
+
+Used by aura libraries that already use the modern call shape (which
+is most of them, since modern is what addons backport from). Lets
+them use the same code path on the 1.12 client without conditionally
+splitting on filter.
+
+## 46. `GameTooltip:SetFrameStack([showHidden])` — medium-large, deferred
+
+Renders a tooltip listing the chain of frames at the mouse cursor,
+sorted by strata + level. The 3.0+ debug-tooling primitive used by
+Blizzard's `Blizzard_DebugTools` and every layout-debugging addon.
+
+Our bundled `DebugTools/` backport already implements its own walk
+over `EnumerateFrames()` (see the comment in
+[DebugTools/DebugTools.lua](DebugTools/DebugTools.lua):
+"No GameTooltip:SetFrameStack -- a basic walk over global frames is
+used instead"). The Lua version works but is slow (thousands of
+frames each call) and misses anonymous frames the engine sees but
+doesn't expose to globals.
+
+A C implementation would walk the engine's internal frame list
+directly (faster, complete) and use the engine's hit-testing to
+filter to frames actually at the cursor. Significant scope:
+
+- Locate the engine's frame list (`CSimpleFrame::s_frameList` or
+  similar) — not yet identified.
+- Find the cursor hit-test path — engine has one for the click
+  dispatcher, but locating it needs disassembly time.
+- Strata/level sort.
+- Format and feed into `GameTooltip:AddLine` — we don't currently
+  call AddLine from our DLL, would need to add that path.
+
+Skip until either the DebugTools backport's slowness becomes a real
+pain point, or we end up doing frame-list disassembly for another
+reason (e.g. exposing a `GetMouseFocus()` polyfill).
