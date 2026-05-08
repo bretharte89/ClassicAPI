@@ -17,6 +17,7 @@ build instructions.
   - [`C_Spell.GetSpellDescription(spellID)`](#c_spellgetspelldescriptionspellid)
   - [`IsPassiveSpell(spellID)` / `IsPassiveSpell(slot, bookType)`](#ispassivespellspellid--ispassivespellslot-booktype)
   - [`C_Spell.IsSpellPassive(spellID)`](#c_spellisspellpassivespellid)
+  - [`IsPlayerSpell(spellID)`](#isplayerspellspellid)
 - [GameTooltip](#gametooltip)
   - [`GameTooltip:SetSpellByID(spellID)`](#gametooltipsetspellbyidspellid)
 - [Quest](#quest)
@@ -311,6 +312,43 @@ C_Spell.IsSpellPassive(6603)   -- true (Auto Attack)
 ```
 
 Equivalent to the function of the same name introduced in 10.0.
+
+### `IsPlayerSpell(spellID)`
+
+Returns `true` if the player currently knows the given spellID, `false`
+otherwise. Covers everything granted by `SMSG_LEARNED_SPELL`:
+
+- Trained class abilities (the obvious case)
+- Racial abilities
+- Talent passives the player has invested in
+- **Profession recipes** — including ones from vendors / discovered
+  via tradeskill — without needing to have the trade skill window open
+- Anything else the engine considers "known"
+
+```lua
+IsPlayerSpell(133)     -- true if you have Fireball
+IsPlayerSpell(2963)    -- true for a tailor who knows Bolt of Linen
+                       --   (works without opening the Tailoring window)
+```
+
+> **Only the current rank counts.** For ranked spells (passives,
+> trained ranks), only the spellID of the **player's current rank**
+> returns `true` — lower-rank IDs return `false` even though the player
+> conceptually "has" them. Matches the same semantic Classic Era 1.15.x
+> uses: a player with 5/5 Unbreakable Will sees `IsPlayerSpell(14791)`
+> (rank 5) as true but rank 4 / rank 3 / etc. as false.
+>
+> This is by design — the engine's spell-knowledge bitmap stores one
+> bit per spellID, and the highest-rank spellID is the one set when
+> you train up. To check "do I have at least rank N", use the
+> rank-N spellID specifically.
+
+Reads a single bit from the engine's spell-knowledge bitmap at
+`[0x00B710FC]` — `(bitmap[spellID >> 5] & (1 << (spellID & 31))) != 0`.
+The same lookup the engine itself does internally. No spellbook walk,
+no talent walk, no profession-window dependency.
+
+Equivalent to the function of the same name introduced in 5.0.
 
 ## GameTooltip
 

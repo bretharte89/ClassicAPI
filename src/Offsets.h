@@ -275,6 +275,24 @@ enum Offsets {
     VAR_PET_SPELLBOOK = 0x00B6F098,
     SPELLBOOK_MAX_SLOTS = 0x400,
 
+    // Player-spell-knowledge bitmap — `[VAR_PLAYER_SPELL_BITMAP]` is a
+    // pointer to a dword bitmap covering all spellIDs the player has
+    // learned, including talent passives, racials, profession recipes,
+    // and anything else granted via SMSG_LEARNED_SPELL / set in
+    // SMSG_INITIAL_SPELLS. One bit per spellID:
+    //
+    //   bit set ⟺ player knows this spellID
+    //   bitmap[spellID >> 5] & (1 << (spellID & 31))
+    //
+    // Verified by decoding the engine helper at `0x0060C740` (called
+    // from `Script_GetTalentInfo`'s currentRank-derivation loop). Matches
+    // the same bitmap pattern 5.4.8 uses for its `IsPlayerSpell`
+    // (instance moved to `[0x011C25D8]` in that build).
+    //
+    // Bitmap covers spellIDs 0..VAR_SPELL_RECORD_COUNT inclusive — the
+    // size matches Spell.dbc's row count. Pre-login the slot is NULL.
+    VAR_PLAYER_SPELL_BITMAP = 0x00B710FC,
+
     // Spell description format helper. Reads the locale-resolved description
     // string from `record[+0x228 + locale*4]` and walks it character-by-
     // character substituting `$s1`/`$d`/`$o`/etc. placeholders with values

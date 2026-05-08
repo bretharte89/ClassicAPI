@@ -384,12 +384,63 @@ static int __fastcall Script_C_IsSpellPassive(void *L) {
     return PushIsPassive(L, static_cast<int>(Game::Lua::ToNumber(L, 1)));
 }
 
+// `IsPlayerSpell(spellID)` — returns true if the player currently
+// "knows" the given spellID. Covers everything: trained class abilities,
+// racials, talent passives, profession recipes (including ones learned
+// from vendors / discovered tradeskill recipes), and anything else
+// granted by SMSG_LEARNED_SPELL.
+//
+// Implementation: single bitmap lookup at `[VAR_PLAYER_SPELL_BITMAP]`.
+// The engine maintains a dword bitmap of every spellID the player
+// knows (one bit per spellID, indexed by `spellID`); learning/unlearning
+// updates this bitmap. We just consult the same bit the engine itself
+// reads via the helper at `0x0060C740` — no walks, no profession
+// caching, no per-source data structure.
+//
+// Trade-offs vs. the older spellbook+talent walk implementation:
+//   - Faster (one memory access vs hundreds of comparisons).
+//   - Broader (covers profession recipes that are not in the spellbook
+//     arrays and not in the talent tree).
+//   - Same shape modern WoW (5.4.8+) uses for the same function — see
+//     `[0x011C25D8]` in 5.4.8's `Wow.exe`.
+static int __fastcall Script_IsPlayerSpell(void *L) {
+    if (!Game::Lua::IsNumber(L, 1)) {
+        Game::Lua::Error(L, "Usage: IsPlayerSpell(spellID)");
+        return 0;
+    }
+    const int spellID = static_cast<int>(Game::Lua::ToNumber(L, 1));
+    if (spellID < 1) {
+        Game::Lua::PushBoolean(L, 0);
+        return 1;
+    }
+
+    const int spellCount = *reinterpret_cast<const int *>(
+        static_cast<uintptr_t>(Offsets::VAR_SPELL_RECORD_COUNT));
+    if (spellID > spellCount) {
+        Game::Lua::PushBoolean(L, 0);
+        return 1;
+    }
+
+    auto *bitmap = *reinterpret_cast<const uint32_t *const *>(
+        static_cast<uintptr_t>(Offsets::VAR_PLAYER_SPELL_BITMAP));
+    if (bitmap == nullptr) {
+        Game::Lua::PushBoolean(L, 0);
+        return 1;
+    }
+
+    const uint32_t mask = 1u << (spellID & 31);
+    const bool isKnown = (bitmap[spellID >> 5] & mask) != 0;
+    Game::Lua::PushBoolean(L, isKnown ? 1 : 0);
+    return 1;
+}
+
 static void RegisterLuaFunctions() {
     Game::Lua::RegisterGlobalFunction("GetSpellInfo", &Script_GetSpellInfo);
     Game::Lua::RegisterGlobalFunction("GetSpellLink", &Script_GetSpellLink);
     Game::Lua::RegisterGlobalFunction("FindSpellBookSlotByID",
                                       &Script_FindSpellBookSlotByID);
     Game::Lua::RegisterGlobalFunction("IsPassiveSpell", &Script_IsPassiveSpell);
+    Game::Lua::RegisterGlobalFunction("IsPlayerSpell", &Script_IsPlayerSpell);
     Game::Lua::RegisterTableFunction("C_Spell", "GetSpellLink", &Script_C_GetSpellLink);
     Game::Lua::RegisterTableFunction("C_Spell", "GetSpellInfo", &Script_C_GetSpellInfo);
     Game::Lua::RegisterTableFunction("C_Spell", "GetSpellName", &Script_C_GetSpellName);

@@ -867,73 +867,63 @@ Skip until either the DebugTools backport's slowness becomes a real
 pain point, or we end up doing frame-list disassembly for another
 reason (e.g. exposing a `GetMouseFocus()` polyfill).
 
-## 47. `IsPlayerSpell(spellID)` — easy, depends on #36
+## ~~47. `IsPlayerSpell(spellID)`~~ — DONE
 
-Sibling to #30 `IsSpellKnown`. In modern WoW the two have slightly
-different semantics:
+Single bitmap lookup at `[VAR_PLAYER_SPELL_BITMAP] = [0x00B710FC]`.
+The engine maintains a dword bitmap with one bit per spellID — set
+when the player learns a spell (any source: training, talent
+investment, profession recipe, racial unlock, etc.) and cleared on
+unlearn. We just consult the same bit the engine itself reads via
+the helper at `0x0060C740`:
 
-- **`IsSpellKnown(spellID, isPet)`** — strict spellbook check;
-  optional `isPet` arg routes to the pet book.
-- **`IsPlayerSpell(spellID)`** — broader "is this spell available to
-  the player" check that also covers talent-granted passives,
-  racials, and gear-granted abilities. Player-only — no pet variant.
-
-### Verified (2026-05): passive talents are NOT in the spellbook arrays
-
-I initially assumed `VAR_PLAYER_SPELLBOOK` (`0x00B700F0`) included
-passive talents as their own slots, which would have collapsed
-`IsPlayerSpell` to the same scan as `IsSpellKnown`. Empirical test
-disproves that:
-
-```lua
--- Priest with Wand Specialization at rank 2 (spec'd, currentRank > 0):
-FindSpellBookSlotByID(GetTalentSpellID(1, 1))     -- nil
-FindSpellBookSlotByID(GetTalentSpellID(1, 1, 2))  -- nil
--- Both rank-1 (14524) and rank-2 (14525) spellIDs return nil from
--- the spellbook scan, even though the talent is fully spec'd.
+```cpp
+return (bitmap[spellID >> 5] & (1 << (spellID & 31))) != 0;
 ```
 
-So passives live only in the talent-tree state, not the spellbook
-arrays. `IsPlayerSpell` and `IsSpellKnown` genuinely have different
-implementations in 1.12 — they're not equivalent like I'd hoped.
+### How we found it
 
-### Implementation
+The naive walk-based implementation (originally drafted) failed for
+profession recipes — turns out vanilla 1.12's `VAR_PLAYER_SPELLBOOK`
+arrays DON'T contain profession recipe spellIDs (verified
+empirically: a tailor with Bolt of Linen Cloth fails
+`FindSpellBookSlotByID(2963)`). User flagged the bug.
+
+To confirm whether 1.12 had a unified spell-knowledge data structure,
+I dumped 5.4.8's `Script_IsPlayerSpell` (5.4 = the version where the
+function was first added) and saw a clean bitmap pattern:
 
 ```
-IsPlayerSpell(spellID):
-  // 1. Spellbook check (covers normal trained spells, active
-  //    talent-granted abilities, racials that ARE in the spellbook)
-  slot, book = FindSpellbookSlot(spellID)
-  if slot and book == 0:
-      return true
-
-  // 2. Talent walk (covers passive talents that don't appear in the
-  //    spellbook). For each talent the player has points in, check
-  //    whether the input spellID matches any of its allocated ranks.
-  for tab in 1..numTalentTabs:
-      for idx in 1..numTalentsInTab(tab):
-          currentRank = (5th return of GetTalentInfo(tab, idx))
-          for rank in 1..currentRank:
-              if GetTalentSpellID(tab, idx, rank) == spellID:
-                  return true
-
-  return false
+mov ecx, eax
+and ecx, 0x1F            ; bitPos = spellID & 31
+shl edx, cl              ; mask = 1 << bitPos
+mov ecx, [imm32]         ; bitmap base ptr
+shr eax, 5               ; idx = spellID / 32
+and eax, [ecx + eax*4]   ; bitmap[idx] & mask
 ```
 
-Note: rank-1's spellID matches "any rank ≥ 1" semantically — if the
-player has Wand Spec rank 2, both `IsPlayerSpell(14524)` and
-`IsPlayerSpell(14525)` should return `true` (they "have" rank 1 by
-virtue of having rank 2). The `for rank in 1..currentRank` loop
-handles this naturally: at rank=1 we check SpellRank[0]=14524 (match
-at rank 2 player), at rank=2 we check SpellRank[1]=14525.
+Searched 1.12 for the same pattern → matched at the helper
+`0x0060C740`, which `Script_GetTalentInfo` calls for currentRank
+derivation. Same shape, same purpose, just at a different bitmap
+address (`[0x00B710FC]`).
 
-Could be split into two helpers if useful: `IsPlayerSpell` (full walk)
-vs. a separate `IsTalentSpell(spellID)` (talent-only). Modern doesn't
-have the latter; bundling into `IsPlayerSpell` matches the API.
+### Modern-parity semantics
 
-### Performance
+Verified against 1.15.x: only the player's currentRank spellID has
+its bit set; lower-rank IDs return false. A 5/5 Unbreakable Will
+player sees `IsPlayerSpell(14791)` (rank 5) = true but rank 4 / 3 /
+2 / 1 = false — same in 1.12 with our implementation, same in 1.15.
 
-O(numTalents × maxCurrentRank). Per class: ~60 total talents, max
-5 ranks each = 300 checks worst case. Each check is a small struct
-read plus a comparison. Negligible — addons calling this in a tight
-loop are a non-issue. No caching needed.
+This means our implementation matches modern exactly, including the
+"only current rank counts" quirk. Addons backporting from later
+expansions that key on currentRank's spellID work unmodified.
+
+### Spillover wins for the rest of TODO
+
+The same bitmap makes #30 `IsSpellKnown(spellID, isPet)` trivial —
+ship it as a thin wrapper using the same lookup (or split: player
+scan via bitmap, pet via existing pet spellbook walk). The
+`Spell::Lookup::FindSpellbookSlot` walk is now only needed for the
+slot-and-bookType return shape, not for knowledge queries.
+
+See [src/spell/Info.cpp](src/spell/Info.cpp) and
+`VAR_PLAYER_SPELL_BITMAP` in [src/Offsets.h](src/Offsets.h).
