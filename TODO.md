@@ -5,14 +5,23 @@ Candidates for new DLL functions, prioritized. All are things the
 addon polyfills badly, hackily, or not at all, and where engine access is the
 right answer.
 
-## 1. `C_QuestLog.IsQuestFlaggedCompleted(questID)` — trivial
+## ~~1. `C_QuestLog.IsQuestFlaggedCompleted(questID)`~~ — NOT FEASIBLE in 1.12
 
-Lua addon hits the server (`QueryQuestsCompleted`) on every call and scans
-`GetQuestsCompleted()`. Slow and chatty. Engine maintains a completed-quests
-bitfield in client memory after the first query — read it directly, no
-server round-trip.
+The original TODO note ("engine maintains a completed-quests bitfield in
+client memory") was based on 3.3.5 / WotLK semantics. Vanilla 1.12 has no
+equivalent: neither `QueryQuestsCompleted` nor `GetQuestsCompleted`
+exists, the protocol has no `CMSG_QUERY_QUESTS_COMPLETED`, and the
+client doesn't track historical completions. The polyfill at
+`Util/C_QuestLog.lua:5-8` works on Frostmourne (3.3.5a) where those
+functions exist; on the 1.12 Octo client they're absent.
 
-Reference: `Util/C_QuestLog.lua:5-8`.
+Servers that want to expose this in 1.12 (notably Turtle WoW) do it
+via the `CHAT_MSG_ADDON` channel — the addon sends `.queststatus` over
+guild/whisper chat and the server replies with addon-channel messages
+the addon parses. Fundamentally async, server-specific, and requires
+SavedVariables-style persistence across sessions to amortize the
+round-trip — all of which belong on the Lua side, not in this DLL.
+There's nothing the DLL can usefully add here.
 
 ## 2. `C_Spell.GetSpellDescription(spellID)` — easy
 
