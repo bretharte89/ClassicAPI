@@ -16,6 +16,7 @@
 #include "Offsets.h"
 
 #include <cstdint>
+#include <cstring>
 
 namespace Event::Custom {
 
@@ -38,6 +39,29 @@ CacheEntry g_cache[MAX_CACHE];
 int g_cacheCount = 0;
 bool g_writesEnabled = false;
 
+// Storm-allocate a copy of `s`. The engine's event table treats every
+// `entry.name` as a Storm-owned pointer — its reload teardown loop calls
+// `SMemFree(entry.name)` and validates the block against Storm's registered
+// allocations (panics with `ERROR #124 SMem3: ...` if the pointer didn't
+// come from `SMemAlloc`). So when we inject a name, we must hand it a real
+// Storm allocation, not a static literal in our DLL.
+//
+// We never call `SMemFree` ourselves — the engine's teardown owns the
+// lifetime once we've written the pointer into a slot.
+char *AllocStormCopy(const char *s) {
+    if (s == nullptr)
+        return nullptr;
+    using SMemAlloc_t = void *(__stdcall *)(size_t size, const char *file,
+                                            int line, int flags);
+    auto fn = reinterpret_cast<SMemAlloc_t>(Offsets::FUN_STORM_SMEM_ALLOC);
+    const size_t len = std::strlen(s);
+    char *buf = static_cast<char *>(fn(len + 1, __FILE__, __LINE__, 0));
+    if (buf == nullptr)
+        return nullptr;
+    std::memcpy(buf, s, len + 1);
+    return buf;
+}
+
 int TryClaim(const char *eventName) {
     if (!g_writesEnabled)
         return -1;
@@ -53,7 +77,10 @@ int TryClaim(const char *eventName) {
         auto **namePtr = reinterpret_cast<const char **>(
             base + i * Offsets::EVENT_ENTRY_STRIDE + Offsets::OFF_EVENT_ENTRY_NAME);
         if (*namePtr == nullptr) {
-            *namePtr = eventName;
+            char *stormName = AllocStormCopy(eventName);
+            if (stormName == nullptr)
+                return -1;
+            *namePtr = stormName;
             return i;
         }
     }
@@ -90,25 +117,18 @@ void EnableWrites() { g_writesEnabled = true; }
 
 void PrepareForReload() {
     // The engine's teardown at 0x00701A40 walks every entry and calls
-    // `SMemFree(entry.name)` (line 77 of `FrameScript.cpp`, per the error
-    // message — the literal `0x4D` push at 0x00701A4C). It has a NULL
-    // check at 0x00701A45 / `jz 0x00701A59` that skips entries with no
-    // name. Our injected names are static literals in our DLL and not
-    // Storm allocations, so we MUST null them out before the engine
-    // walks the table — otherwise the SMem safety check trips. After
-    // nulling, drop write privileges and reset the cache slots so we
-    // re-claim in the rebuilt table after the next `LoadScriptFunctions`.
-    auto *base = *reinterpret_cast<uint8_t **>(Offsets::VAR_EVENT_TABLE_BASE_PTR);
-    if (base != nullptr) {
-        for (int i = 0; i < g_cacheCount; i++) {
-            if (g_cache[i].slot >= 0) {
-                auto **namePtr = reinterpret_cast<const char **>(
-                    base + g_cache[i].slot * Offsets::EVENT_ENTRY_STRIDE +
-                    Offsets::OFF_EVENT_ENTRY_NAME);
-                *namePtr = nullptr;
-            }
-        }
-    }
+    // `SMemFree(entry.name)`, which validates the block came from
+    // `SMemAlloc`. Our injected names are Storm allocations (see
+    // `AllocStormCopy`), so the engine's free path handles them
+    // correctly — we don't need to touch the engine's table here.
+    //
+    // We DO still need to invalidate our cache: the engine's teardown
+    // is followed by a full table rebuild at a fresh allocation, so
+    // every cached `slot` index points into the old layout and is no
+    // longer ours. Reset everything to `slot = -1` and drop the writes
+    // gate; `LoadScriptFunctions_h` will re-enable writes after the
+    // rebuild, and `RetryAll` (fired by every subsequent
+    // `RegisterEvent` from Lua) will re-claim and re-allocate.
     for (int i = 0; i < g_cacheCount; i++)
         g_cache[i].slot = -1;
     g_writesEnabled = false;

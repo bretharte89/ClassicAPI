@@ -46,12 +46,12 @@ void RetryAll();
 void EnableWrites();
 
 // Call this BEFORE the engine's `FrameScript_Initialize_o` runs (i.e.
-// before each `/reload`). Walks our claimed slots and NULLs out the name
-// pointers we wrote in. The engine's reload path iterates every entry
-// and `SMemFree`s its name; our names are static literals in our DLL,
-// not Storm-allocated, so they'd trip the SMem safety check and crash.
-// Also drops the write gate and resets cached slot indices so the new
-// table gets fresh claims.
+// before each `/reload`). The engine's reload path iterates every entry
+// and `SMemFree`s its name; we hand it Storm-allocated copies (see
+// `AllocStormCopy` in Custom.cpp), so the free is safe — we don't need
+// to touch the engine's table here. What we DO need: drop the writes
+// gate and reset cached slot indices, since the engine reallocates the
+// table at a fresh address and our previous slot indices are stale.
 void PrepareForReload();
 
 // Dispatches an event registered via `Register` with two int args

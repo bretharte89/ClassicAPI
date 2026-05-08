@@ -391,4 +391,27 @@ enum Offsets {
     // them as NULL during the walk.
     EVENT_TABLE_VALID_PTR_LO = 0x007FF000,
     EVENT_TABLE_VALID_PTR_HI = 0x00C00000,
+
+    // Storm allocator — Blizzard's internal C utility library. `SMemAlloc`
+    // wraps every block with bookkeeping (header magic + size + caller
+    // file:line, footer magic, plus a global registered-block list); the
+    // matching `SMemFree` validates against all of that and panics with
+    // `ERROR #124 SMem3: Pointer does not refer to a valid allocated block
+    // of memory` if the pointer didn't come from `SMemAlloc`.
+    //
+    // Both are `__stdcall`, 4 args, `ret 0x10`. Verified via disassembly
+    // at the function bodies (push order matches arg order; `ret 0x10`
+    // pops the 4 stack args). The Storm allocator instance both wrap is
+    // the singleton at `0x00C51C58`.
+    //
+    //   void *__stdcall SMemAlloc(size_t size, const char *file, int line,
+    //                             int flags); // flags: bit 3 (0x08) = zero-fill
+    //   int   __stdcall SMemFree (void *ptr,    const char *file, int line,
+    //                             int flags); // returns 1
+    //
+    // We use `SMemAlloc` for event-name storage in `Event::Custom` so the
+    // engine's reload teardown loop (which `SMemFree`s every event entry's
+    // name) doesn't trip its safety check on our injected pointers.
+    FUN_STORM_SMEM_ALLOC = 0x006462E0,
+    FUN_STORM_SMEM_FREE = 0x00646430,
 };

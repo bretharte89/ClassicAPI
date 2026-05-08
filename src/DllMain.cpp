@@ -33,13 +33,12 @@ static void __fastcall InvalidFunctionPtrCheck_h() {}
 
 static bool __fastcall FrameScript_Initialize_h() {
     // BEFORE the engine tears down the old event table (which it does at
-    // the start of FrameScript_Initialize), null out our injected event
-    // names. The engine's teardown at 0x00701A54 calls SMemFree on every
-    // entry's name; our names are static literals in our DLL and not
-    // Storm-allocated, so leaving them in place trips the SMem safety
-    // check on `/reload` and crashes. The check at 0x00701A45 skips the
-    // free for any entry with NULL name, so this is the supported escape
-    // hatch. On first boot the cache is empty and this is a no-op.
+    // the start of FrameScript_Initialize), invalidate our cache. Our
+    // injected names are Storm allocations, so the engine's
+    // `SMemFree(entry.name)` teardown loop handles cleanup correctly on
+    // its own — but the table is rebuilt at a fresh address afterwards,
+    // and our cached slot indices point into the old layout. Drop the
+    // writes gate and reset slots so post-rebuild `RetryAll` re-claims.
     Event::Custom::PrepareForReload();
 
     FrameScript_Initialize_o();
