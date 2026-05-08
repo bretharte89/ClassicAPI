@@ -36,6 +36,27 @@ DLL.
 3. Add `ClassicAPI.dll` to `dlls.txt`.
 4. Launch the game with `VanillaFixes.exe`.
 
+## Bundled addon: DebugTools
+
+A 1.12.1 / Lua 5.0 backport of Blizzard's `Blizzard_DebugTools` addon
+(originally shipped with the 3.0 client) lives in [`DebugTools/`](DebugTools/).
+It's an independent addon — it doesn't use anything ClassicAPI adds, and
+ClassicAPI works fine without it. It's bundled here because it's the
+natural companion for testing and debugging anything written against the
+1.12 Lua surface (with or without the ClassicAPI extensions).
+
+Slash commands provided:
+
+| Command | Purpose |
+|---------|---------|
+| `/dump <expr>` | Pretty-print any Lua value, including tables and multi-return tuples. The right tool for inspecting return values from `GetSpellInfo`, `C_Item.GetItemInfoInstant`, etc. |
+| `/etrace` | Event tracer window. `/etrace start`, `/etrace stop`, `/etrace add EVENT`, etc. |
+| `/framestack` (or `/fstack`) | Tooltip showing the frame hierarchy under the mouse cursor. |
+| `/luaerrors` (or `/scripterrors`) | Lua error display window. |
+
+To install: copy [`DebugTools/`](DebugTools/) into your
+`Interface/AddOns/` directory like any other addon.
+
 ## Building
 
 Requires CMake (3.10+) and an MSVC toolchain that can target 32-bit Windows.

@@ -1,0 +1,296 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/ ..\FrameXML\UI.xsd">
+
+    <!-- ================================================================ -->
+    <!-- EventTrace                                                       -->
+    <!-- ================================================================ -->
+
+    <Button name="EventTraceEventTemplate" virtual="true">
+        <Size x="280" y="16"/>
+        <Layers>
+            <Layer level="ARTWORK">
+                <FontString name="$parentTime" inherits="NumberFontNormalSmall" justifyH="RIGHT">
+                    <Anchors>
+                        <Anchor point="TOPLEFT"/>
+                        <Anchor point="TOPRIGHT" relativePoint="TOPLEFT">
+                            <Offset x="62" y="0"/>
+                        </Anchor>
+                        <Anchor point="BOTTOM"/>
+                    </Anchors>
+                </FontString>
+                <FontString name="$parentEvent" inherits="GameFontHighlightSmall" justifyH="LEFT">
+                    <Anchors>
+                        <Anchor point="TOPRIGHT"/>
+                        <Anchor point="TOPLEFT">
+                            <Offset x="70" y="0"/>
+                        </Anchor>
+                        <Anchor point="BOTTOM"/>
+                    </Anchors>
+                </FontString>
+            </Layer>
+        </Layers>
+        <Scripts>
+            <OnLoad>
+                this:GetHighlightTexture():SetAlpha(.15);
+            </OnLoad>
+            <OnEnter>EventTraceFrameEvent_OnEnter(this);</OnEnter>
+            <OnLeave>EventTraceFrameEvent_OnLeave(this);</OnLeave>
+            <OnClick>EventTraceFrameEvent_OnClick(this);</OnClick>
+        </Scripts>
+        <HighlightTexture file="Interface\Buttons\UI-Common-MouseHilight" setAllPoints="true" alphaMode="ADD">
+            <Color r=".8" g=".8" b="1" a="1"/>
+        </HighlightTexture>
+    </Button>
+
+    <Frame name="EventTraceFrame" parent="UIParent" movable="true" hidden="true" frameStrata="MEDIUM" toplevel="true">
+        <Size x="306" y="484"/>
+        <Anchors>
+            <Anchor point="LEFT">
+                <Offset x="64" y="0"/>
+            </Anchor>
+        </Anchors>
+        <Backdrop bgFile="Interface\DialogFrame\UI-DialogBox-Background" edgeFile="Interface\Tooltips\UI-Tooltip-Border" tile="true">
+            <BackgroundInsets>
+                <AbsInset left="5" right="5" top="5" bottom="5"/>
+            </BackgroundInsets>
+            <TileSize>
+                <AbsValue val="16"/>
+            </TileSize>
+            <EdgeSize>
+                <AbsValue val="16"/>
+            </EdgeSize>
+        </Backdrop>
+        <Layers>
+            <Layer level="BACKGROUND">
+                <Texture name="$parentTitleBG" file="Interface\QuestFrame\UI-QuestLogTitleHighlight">
+                    <Size x="280" y="20"/>
+                    <Anchors>
+                        <Anchor point="TOP">
+                            <Offset x="0" y="-6"/>
+                        </Anchor>
+                    </Anchors>
+                    <Color r=".6" g=".6" b=".6" a=".4"/>
+                </Texture>
+            </Layer>
+            <Layer level="OVERLAY">
+                <FontString name="$parentTitle" inherits="GameFontNormal" text="Events">
+                    <Anchors>
+                        <Anchor point="TOP">
+                            <Offset x="0" y="-8"/>
+                        </Anchor>
+                    </Anchors>
+                </FontString>
+            </Layer>
+        </Layers>
+        <Frames>
+            <Button name="$parentCloseButton" inherits="UIPanelCloseButton">
+                <Anchors>
+                    <Anchor point="TOPRIGHT">
+                        <Offset x="-2" y="-2"/>
+                    </Anchor>
+                </Anchors>
+            </Button>
+            <Frame name="$parentTitleButton">
+                <Size x="280" y="20"/>
+                <Anchors>
+                    <Anchor point="TOP">
+                        <Offset x="0" y="-6"/>
+                    </Anchor>
+                </Anchors>
+                <Scripts>
+                    <OnLoad>
+                        this:RegisterForDrag("LeftButton");
+                    </OnLoad>
+                    <OnDragStart>
+                        EventTraceFrame.moving = true;
+                        EventTraceFrame:StartMoving();
+                    </OnDragStart>
+                    <OnDragStop>
+                        EventTraceFrame.moving = nil;
+                        EventTraceFrame:StopMovingOrSizing();
+                    </OnDragStop>
+                </Scripts>
+            </Frame>
+            <Slider name="$parentScroll" orientation="VERTICAL">
+                <Size x="16" y="0"/>
+                <Anchors>
+                    <Anchor point="TOPRIGHT">
+                        <Offset x="-7" y="-28"/>
+                    </Anchor>
+                    <Anchor point="BOTTOMRIGHT">
+                        <Offset x="-7" y="10"/>
+                    </Anchor>
+                </Anchors>
+                <Layers>
+                    <Layer level="BACKGROUND">
+                        <Texture name="$parentBG" setAllPoints="true">
+                            <Color r=".8" g=".8" b="1" a="0.1"/>
+                        </Texture>
+                    </Layer>
+                </Layers>
+                <Scripts>
+                    <OnLoad>
+                        this:SetFrameLevel(this:GetFrameLevel() + 1);
+                        this:SetMinMaxValues(0, 1);
+                        this:SetValue(0);
+                        this:SetValueStep(1);
+                    </OnLoad>
+                    <OnValueChanged>
+                        EventTraceFrame_Update();
+                    </OnValueChanged>
+                </Scripts>
+                <ThumbTexture name="$parentThumb" file="Interface\Buttons\UI-ScrollBar-Knob">
+                    <Size x="16" y="16"/>
+                    <TexCoords left="0.25" right="0.75" top="0.25" bottom="0.75"/>
+                </ThumbTexture>
+            </Slider>
+        </Frames>
+        <Scripts>
+            <OnLoad>EventTraceFrame_OnLoad(this);</OnLoad>
+            <OnEvent>EventTraceFrame_OnEvent(this, event, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9);</OnEvent>
+            <OnUpdate>EventTraceFrame_OnUpdate(this, arg1);</OnUpdate>
+        </Scripts>
+    </Frame>
+
+    <!-- ================================================================ -->
+    <!-- ScriptErrorsFrame                                                -->
+    <!-- ================================================================ -->
+
+    <Frame name="ScriptErrorsFrame" parent="UIParent" movable="true" hidden="true" toplevel="true" frameStrata="DIALOG" enableMouse="true">
+        <Size x="384" y="260"/>
+        <Anchors>
+            <Anchor point="CENTER"/>
+        </Anchors>
+        <Backdrop bgFile="Interface\DialogFrame\UI-DialogBox-Background" edgeFile="Interface\DialogFrame\UI-DialogBox-Border" tile="true">
+            <BackgroundInsets>
+                <AbsInset left="11" right="12" top="12" bottom="11"/>
+            </BackgroundInsets>
+            <TileSize>
+                <AbsValue val="32"/>
+            </TileSize>
+            <EdgeSize>
+                <AbsValue val="32"/>
+            </EdgeSize>
+        </Backdrop>
+        <Layers>
+            <Layer level="BACKGROUND">
+                <Texture name="$parentTitleBG" file="Interface\DialogFrame\UI-DialogBox-Header">
+                    <Size x="256" y="64"/>
+                    <Anchors>
+                        <Anchor point="TOP">
+                            <Offset x="0" y="12"/>
+                        </Anchor>
+                    </Anchors>
+                </Texture>
+            </Layer>
+            <Layer level="ARTWORK">
+                <FontString name="$parentTitle" inherits="GameFontNormal" text="Lua Error">
+                    <Anchors>
+                        <Anchor point="TOP">
+                            <Offset x="0" y="-2"/>
+                        </Anchor>
+                    </Anchors>
+                </FontString>
+                <FontString name="$parentIndexLabel" inherits="GameFontNormal" justifyH="CENTER">
+                    <Size x="70" y="16"/>
+                    <Anchors>
+                        <Anchor point="BOTTOM">
+                            <Offset x="0" y="20"/>
+                        </Anchor>
+                    </Anchors>
+                </FontString>
+            </Layer>
+        </Layers>
+        <Frames>
+            <Frame name="$parentTitleButton">
+                <Size x="256" y="20"/>
+                <Anchors>
+                    <Anchor point="TOP">
+                        <Offset x="0" y="0"/>
+                    </Anchor>
+                </Anchors>
+                <Scripts>
+                    <OnLoad>
+                        this:RegisterForDrag("LeftButton");
+                    </OnLoad>
+                    <OnDragStart>ScriptErrorsFrame_TitleButton_OnDragStart();</OnDragStart>
+                    <OnDragStop>ScriptErrorsFrame_TitleButton_OnDragStop();</OnDragStop>
+                </Scripts>
+            </Frame>
+            <ScrollFrame name="$parentScrollFrame" inherits="UIPanelScrollFrameTemplate">
+                <Size x="343" y="170"/>
+                <Anchors>
+                    <Anchor point="TOPLEFT">
+                        <Offset x="16" y="-32"/>
+                    </Anchor>
+                </Anchors>
+                <ScrollChild>
+                    <EditBox name="$parentText" multiLine="true" letters="4000" autoFocus="false">
+                        <Size x="343" y="170"/>
+                        <Scripts>
+                            <OnEscapePressed>this:ClearFocus();</OnEscapePressed>
+                            <OnEditFocusGained>this:HighlightText(0);</OnEditFocusGained>
+                        </Scripts>
+                        <FontString inherits="GameFontHighlightSmall"/>
+                    </EditBox>
+                </ScrollChild>
+            </ScrollFrame>
+            <Button name="$parentPrevious" inherits="UIPanelButtonTemplate" text="Previous" id="2">
+                <Size x="96" y="24"/>
+                <Anchors>
+                    <Anchor point="BOTTOMLEFT">
+                        <Offset x="16" y="16"/>
+                    </Anchor>
+                </Anchors>
+                <Scripts>
+                    <OnClick>ScriptErrorsFrameButton_OnClick(this);</OnClick>
+                </Scripts>
+            </Button>
+            <Button name="$parentNext" inherits="UIPanelButtonTemplate" text="Next" id="1">
+                <Size x="96" y="24"/>
+                <Anchors>
+                    <Anchor point="BOTTOMLEFT">
+                        <Offset x="116" y="16"/>
+                    </Anchor>
+                </Anchors>
+                <Scripts>
+                    <OnClick>ScriptErrorsFrameButton_OnClick(this);</OnClick>
+                </Scripts>
+            </Button>
+            <Button name="$parentClose" inherits="UIPanelButtonTemplate" text="Close">
+                <Size x="96" y="24"/>
+                <Anchors>
+                    <Anchor point="BOTTOMRIGHT">
+                        <Offset x="-16" y="16"/>
+                    </Anchor>
+                </Anchors>
+                <Scripts>
+                    <OnClick>ScriptErrorsFrame:Hide();</OnClick>
+                </Scripts>
+            </Button>
+        </Frames>
+        <Scripts>
+            <OnLoad>ScriptErrorsFrame_OnLoad(this);</OnLoad>
+            <OnShow>ScriptErrorsFrame_OnShow(this);</OnShow>
+        </Scripts>
+    </Frame>
+
+    <!-- ================================================================ -->
+    <!-- Tooltips                                                         -->
+    <!-- ================================================================ -->
+
+    <GameTooltip name="FrameStackTooltip" frameStrata="TOOLTIP" hidden="true" parent="UIParent" inherits="GameTooltipTemplate">
+        <Scripts>
+            <OnLoad>DebugTooltip_OnLoad(this);</OnLoad>
+            <OnShow>FrameStackTooltip_OnShow(this);</OnShow>
+            <OnEnter>FrameStackTooltip_OnEnter(this);</OnEnter>
+            <OnUpdate>FrameStackTooltip_OnUpdate(this, arg1);</OnUpdate>
+        </Scripts>
+    </GameTooltip>
+
+    <GameTooltip name="EventTraceTooltip" frameStrata="TOOLTIP" hidden="true" parent="EventTraceFrame" inherits="GameTooltipTemplate">
+        <Scripts>
+            <OnLoad>DebugTooltip_OnLoad(this);</OnLoad>
+        </Scripts>
+    </GameTooltip>
+
+</Ui>
