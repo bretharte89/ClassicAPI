@@ -11,6 +11,7 @@ build instructions.
   - [`C_Spell.GetSpellInfo(spellID)`](#c_spellgetspellinfospellid)
   - [`C_Spell.GetSpellName(spellID)`](#c_spellgetspellnamespellid)
   - [`C_Spell.GetSpellTexture(spellID)`](#c_spellgetspelltexturespellid)
+  - [`FindSpellBookSlotByID(spellID)`](#findspellbookslotbyidspellid)
   - [`GameTooltip:SetSpellByID(spellID)`](#gametooltipsetspellbyidspellid)
   - [`C_Spell.GetSpellDescription(spellID)`](#c_spellgetspelldescriptionspellid)
 - [Quest](#quest)
@@ -149,6 +150,36 @@ local path = C_Spell.GetSpellTexture(133)
 ```
 
 Equivalent to the function of the same name introduced in 10.0.
+
+### `FindSpellBookSlotByID(spellID)`
+
+Inverse of 1.12's `GetSpellName(slot, bookType)`. Given a spellID,
+returns the 1-based slot it occupies in the player or pet spellbook,
+along with the matching bookType so the result feeds directly into
+slot-and-bookType APIs (`GetSpellName`, `GetSpellTexture`,
+`GameTooltip:SetSpell`, etc.).
+
+```
+slot, bookType = FindSpellBookSlotByID(spellID)
+```
+
+- Returns `(slot, "spell")` if the spell is in the player spellbook.
+- Returns `(slot, "pet")` if it's only in the pet spellbook.
+- Returns `nil` if the spellID isn't currently in either book.
+
+Player book is searched first, so if a spell somehow appeared in both
+(unusual but possible for special pet-shared abilities), the player
+slot wins.
+
+```lua
+local slot, book = FindSpellBookSlotByID(133)
+if slot then
+    GameTooltip:SetSpell(slot, book)  -- shows full caster-scaled tooltip
+end
+```
+
+Equivalent to the legacy function of the same name introduced in 3.0
+(later renamed to `FindSpellBookSlotBySpellID` in 5.x).
 
 ### `GameTooltip:SetSpellByID(spellID)`
 

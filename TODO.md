@@ -309,10 +309,16 @@ ITEM_FIELD_DURABILITY and ITEM_FIELD_MAXDURABILITY off the CGItem
 descriptor at `+0x114` — same descriptor we read FLAGS from in
 `C_Item.IsBound`. Just two more dword reads at known offsets.
 
-## 25. `FindSpellBookSlotByID(spellID)` — easy
+## ~~25. `FindSpellBookSlotByID(spellID)`~~ — DONE
 
-Inverse of `Spell::Lookup::SpellbookSlotToID` — given a spellID, walk
-the spellbook arrays at `0x00B700F0` (player) / `0x00B6F098` (pet)
-looking for a matching entry, return the 1-based slot. Used by addons
-that need to invoke `GameTooltip:SetSpell(slot, bookType)` or
-`GetSpellName(slot, bookType)` for spells they only know by ID.
+Walks the player spellbook at `0x00B700F0` first, then the pet
+spellbook at `0x00B6F098`, returning `(slot, bookType)` for the first
+match. Bounds at `SPELLBOOK_MAX_SLOTS = 0x400` (the engine's own cap
+in `Script_GetSpellName`); empty/zero entries past the populated count
+are skipped naturally since spellID 0 doesn't match any positive
+input. Result feeds directly into the slot-and-bookType API surface
+(`GetSpellName`, `GameTooltip:SetSpell`, etc.).
+
+Logic added to [src/spell/Lookup.cpp](src/spell/Lookup.cpp) as
+`Spell::Lookup::FindSpellbookSlot`; the Lua C function lives next to
+the other spell registrations in [src/spell/Info.cpp](src/spell/Info.cpp).

@@ -34,4 +34,12 @@ const uint8_t *RecordForID(int spellID);
 //   - "pet"                          → 1 (pet)
 int SpellbookSlotToID(int slot1Based, int bookType);
 
+// Inverse of `SpellbookSlotToID` — finds the 1-based slot where a
+// given `spellID` lives in the spellbook arrays. Searches the player
+// book first (`bookType=0`), then the pet book (`bookType=1`). On a
+// match, returns the 1-based slot and writes the matching `bookType`
+// to `*outBookType` if it's non-null. Returns 0 if the spellID isn't
+// in either book.
+int FindSpellbookSlot(int spellID, int *outBookType);
+
 } // namespace Spell::Lookup

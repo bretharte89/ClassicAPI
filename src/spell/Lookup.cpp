@@ -41,4 +41,32 @@ int SpellbookSlotToID(int slot1Based, int bookType) {
     return array[slot];
 }
 
+int FindSpellbookSlot(int spellID, int *outBookType) {
+    if (spellID <= 0)
+        return 0;
+    // Walk the full SPELLBOOK_MAX_SLOTS range rather than break-on-zero
+    // — the BSS arrays are zero-padded past the populated count, so any
+    // 0 entry is "empty slot" and won't match a positive spellID. Cost
+    // is 1024 dword reads per book = 8KB of cache-friendly memory.
+    auto *playerArray = reinterpret_cast<const int *>(
+        static_cast<uintptr_t>(Offsets::VAR_PLAYER_SPELLBOOK));
+    for (int i = 0; i < Offsets::SPELLBOOK_MAX_SLOTS; i++) {
+        if (playerArray[i] == spellID) {
+            if (outBookType != nullptr)
+                *outBookType = 0;
+            return i + 1;
+        }
+    }
+    auto *petArray = reinterpret_cast<const int *>(
+        static_cast<uintptr_t>(Offsets::VAR_PET_SPELLBOOK));
+    for (int i = 0; i < Offsets::SPELLBOOK_MAX_SLOTS; i++) {
+        if (petArray[i] == spellID) {
+            if (outBookType != nullptr)
+                *outBookType = 1;
+            return i + 1;
+        }
+    }
+    return 0;
+}
+
 } // namespace Spell::Lookup

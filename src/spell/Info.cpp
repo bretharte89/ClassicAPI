@@ -258,8 +258,34 @@ static int __fastcall Script_C_GetSpellTexture(void *L) {
     return 1;
 }
 
+// `FindSpellBookSlotByID(spellID)` — inverse of `GetSpellName(slot,
+// bookType)`. Searches the player spellbook first, then the pet
+// spellbook, for a slot whose spellID matches. Returns
+// `(slot, bookType)` so callers can feed both directly into the
+// existing slot-and-bookType API surface (`GetSpellName`,
+// `GetSpellTexture`, etc.). Returns nil if the spellID isn't currently
+// in either book.
+static int __fastcall Script_FindSpellBookSlotByID(void *L) {
+    if (!Game::Lua::IsNumber(L, 1)) {
+        Game::Lua::Error(L, "Usage: FindSpellBookSlotByID(spellID)");
+        return 0;
+    }
+    const int spellID = static_cast<int>(Game::Lua::ToNumber(L, 1));
+
+    int bookType = 0;
+    const int slot = Spell::Lookup::FindSpellbookSlot(spellID, &bookType);
+    if (slot == 0)
+        return 0;
+
+    Game::Lua::PushNumber(L, static_cast<double>(slot));
+    Game::Lua::PushString(L, bookType == 1 ? "pet" : "spell");
+    return 2;
+}
+
 static void RegisterLuaFunctions() {
     Game::Lua::RegisterGlobalFunction("GetSpellInfo", &Script_GetSpellInfo);
+    Game::Lua::RegisterGlobalFunction("FindSpellBookSlotByID",
+                                      &Script_FindSpellBookSlotByID);
     Game::Lua::RegisterTableFunction("C_Spell", "GetSpellInfo", &Script_C_GetSpellInfo);
     Game::Lua::RegisterTableFunction("C_Spell", "GetSpellName", &Script_C_GetSpellName);
     Game::Lua::RegisterTableFunction("C_Spell", "GetSpellTexture", &Script_C_GetSpellTexture);
