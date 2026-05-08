@@ -438,14 +438,30 @@ auto-route loot to specialty bags. Field offset isn't yet mapped in
 has the same offset for both 1.12 and 3.3.5 since the field
 predates Wrath).
 
-## 30. `IsSpellKnown(spellID)` — trivial
+## 30. `IsSpellKnown(spellID, [isPet])` — trivial
 
-Boolean: does the player have this spell? Reuse the existing
-`Spell::Lookup::FindSpellbookSlot` and check that the resulting
-bookType is `0` (player). Three-line wrapper.
+Boolean: does the player (or pet) have this spell? Modern signature
+`IsSpellKnown(spellID, isPet)` — `isPet` defaults to false.
 
-Modern WoW also supports an `isPet` second arg for pet-spell checks;
-we'd take the same shape and route to bookType `1`.
+After #47 `IsPlayerSpell` shipped, the player path is just the same
+bitmap lookup at `[VAR_PLAYER_SPELL_BITMAP]`. For the pet path, two
+candidate sibling bitmaps were found while scanning for the same
+`shr 5; AND [mem+reg*4]` pattern in 1.12:
+
+- `[0x00B711C4]` — read-and-set helper at `0x004B53A0` (looks like a
+  "learn spell" path, since it sets bits)
+- `[0x00B711F0]` — query helper at `0x004B54C0`
+
+One of these is almost certainly the pet bitmap. Quick disasm to
+confirm which (compare to the player helper at `0x0060C740`'s shape)
+and route `isPet=true` to it. Total ~5 lines of code on top of the
+existing `IsPlayerSpell` once the pet bitmap is identified.
+
+Note: in modern WoW, `IsSpellKnown` and `IsPlayerSpell` are
+*nominally* different (strict spellbook vs. broad-knowledge), but in
+practice both reduce to the same bitmap query in 1.12 since the bitmap
+is the engine's only authoritative knowledge store. Ship both for API
+parity; document that they have the same backing in 1.12.
 
 ## 31. Unit flag bundle: `UnitIsAFK` / `UnitIsDND` / `UnitIsFeignDeath` — trivial
 
@@ -927,3 +943,60 @@ slot-and-bookType return shape, not for knowledge queries.
 
 See [src/spell/Info.cpp](src/spell/Info.cpp) and
 `VAR_PLAYER_SPELL_BITMAP` in [src/Offsets.h](src/Offsets.h).
+
+## 48. `GetSpellCooldown(spellID)` overload — easy
+
+Modern signature accepts a spellID directly. 1.12 only has
+`GetSpellCooldown(slot, bookType)` which forces callers to first
+resolve a spellID into a spellbook slot (and fails for spellIDs not
+in the spellbook — talent passives, recipes, etc.).
+
+The engine clearly tracks cooldowns by spellID internally (the
+existing slot-based version reads spellbook[slot] and feeds the
+spellID to a downstream cooldown manager). Cross-binary technique
+applies cleanly:
+
+1. Find `Script_GetSpellCooldown` in 5.4.8 — the modern overload
+   that takes spellID directly.
+2. Decode it to identify the cooldown manager's data structure
+   (likely a hashmap/array indexed by spellID with `(start, duration,
+   enable)` triple per entry).
+3. Search 1.12 for the same access pattern.
+4. Wrap as a global `GetSpellCooldown(spellIDOrSlot, [bookType])` that
+   detects the arg shape and routes accordingly.
+
+Useful for any cooldown-tracking addon that wants to query talent
+abilities or off-spellbook spells.
+
+## 49. `IsUsableSpell(spellID)` overload — easy
+
+Same pattern as #48. Modern takes spellID; 1.12 takes (slot, bookType).
+The engine has a usability-check helper that takes a spellID after the
+slot resolution — find it via 5.4.8's modern overload and use it
+directly.
+
+Returns `(usable, noMana)` like the existing function — usable=false
+means the spell can't be cast right now (silenced, wrong shapeshift
+form, etc.); noMana=true is the specific "you don't have enough mana"
+sub-case.
+
+## 50. Cross-binary technique applications worth picking up — meta
+
+The `IsPlayerSpell` discovery proved out the cross-binary disassembly
+technique (documented in [CLAUDE.md](CLAUDE.md#cross-binary-reference--finding-112-implementations-via-newer-clients)).
+Other pending TODOs that look like good fits for the same approach:
+
+- **#7 `UnitAuraBySlot` / `UnitAuraSlots`** — modern slot-based aura
+  iteration. Aura state is in CGUnit's UpdateField data; modern
+  `UnitAura` reads slot offsets we can decode from 5.4.8 and use in
+  1.12.
+- **#32 `IsCurrentSpell(spellID)`** — runtime cast-state global. The
+  engine has a "currently casting spellID" global (the cast-bar UI
+  reads it). Modern's `IsCurrentSpell` reads the same value.
+- **#42 `GetTalentIDByIndex`** — already easy with the talent struct
+  we now know (talentID at TalentEntry+0x00); cross-binary not needed
+  here but could verify against 5.4.8's `GetTalentInfoByID` for
+  semantics.
+
+Tag here so we remember the technique exists when picking up these
+items.
