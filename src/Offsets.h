@@ -208,6 +208,25 @@ enum Offsets {
     VAR_FACTION_DISPLAY_COUNT = 0x00B73764,
     VAR_FACTION_VISIBLE_MAX_INDEX = 0x00B73760,
 
+    // Faction.dbc — standard 5-DWORD class shape, records pointer at +0x08
+    // and count at +0x0C of the class instance at 0x00C0DD48. Records is an
+    // array of `FactionRec *` indexed directly by factionID (1-based;
+    // records[0] is unused). We read it on the slow path of
+    // `GetFactionInfoByID` for factions the player has never encountered
+    // (i.e. not in the displayed reputation list), where the engine's
+    // `Script_GetFactionInfo` can't help us.
+    //
+    // Record name/description offsets verified by disassembling
+    // `Script_GetFactionInfo` at 0x004D6562 / 0x004D6573:
+    //   mov edx, [edi+ecx*4+0x4C] ; Name[locale]
+    //   mov edx, [edi+edx*4+0x70] ; Description[locale]
+    // Each is a 9-entry array of locale string pointers, indexed by
+    // `[VAR_LOCALE_INDEX]` (0..8).
+    VAR_FACTION_DBC_RECORDS = 0x00C0DD50,
+    VAR_FACTION_DBC_COUNT = 0x00C0DD54,
+    OFF_FACTION_NAMES = 0x4C,
+    OFF_FACTION_DESCRIPTIONS = 0x70,
+
     // Quest static-info cache (the client-side cache of QUEST_QUERY_RESPONSE
     // payloads — descriptions, objectives, reward text). Same five-arg
     // `_GetRecord` shape as the item cache, keyed by questID. Verified by

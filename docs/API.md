@@ -407,22 +407,31 @@ end
 
 ### `GetFactionInfoByID(factionID)`
 
-Returns the same nine-to-eleven values as `GetFactionInfo(factionIndex)`,
-keyed by factionID instead of displayed index:
+Returns the same eleven values as `GetFactionInfo(factionIndex)`, keyed by
+factionID instead of displayed index:
 
 ```
 name, description, standingID, barMin, barMax, barValue,
 atWarWith, canToggleAtWar, isHeader, isCollapsed, hasRep
 ```
 
-Returns `nil` for factionIDs the player has no reputation with (not in the
-displayed list). This matches modern WoW's behavior — `GetFactionInfoByID`
-is fundamentally a "look up rep info I already have, by ID" call, not a
-DBC reader for arbitrary factions.
+Works for any factionID present in `Faction.dbc`, not just factions the
+player has rep with:
+
+- **In the player's reputation list** — full data, identical to
+  `GetFactionInfo(displayedIndex)`.
+- **Not in the reputation list** — name and description from `Faction.dbc`,
+  Neutral defaults for the rep fields: `standingID = 4`, `barMin = 0`,
+  `barMax = 3000`, `barValue = 0`, all flags `nil`. Matches what 3.3.5's
+  `GetFactionInfoByID` returns for unencountered factions.
+- **Invalid factionID** (out of range or empty DBC slot) — `nil`.
 
 ```lua
 local name, _, standing = GetFactionInfoByID(69)  -- Darnassus
--- name = "Darnassus", standing = 5 (Friendly), etc.
+-- name = "Darnassus", standing = 5 (Friendly), etc. (encountered)
+
+local name = GetFactionInfoByID(574)  -- Caer Darrow (faction that can't be encountered in standard Vanilla)
+-- name = "Caer Darrow" — works even if you never had rep with it
 ```
 
 Equivalent to the function of the same name introduced in 3.0.

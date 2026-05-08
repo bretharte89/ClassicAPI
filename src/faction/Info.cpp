@@ -49,6 +49,43 @@ int FindDisplayedIndex(int factionID) {
     return -1;
 }
 
+// Returns the Faction.dbc record pointer for `factionID`, or nullptr if
+// the ID is out of range or the slot is empty. Records are 1-based
+// (records[0] is unused).
+const uint8_t *FactionRecord(int factionID) {
+    if (factionID <= 0)
+        return nullptr;
+    const int count = *reinterpret_cast<const int *>(
+        static_cast<uintptr_t>(Offsets::VAR_FACTION_DBC_COUNT));
+    if (factionID > count)
+        return nullptr;
+    auto *records = *reinterpret_cast<const uint8_t *const *const *>(
+        static_cast<uintptr_t>(Offsets::VAR_FACTION_DBC_RECORDS));
+    if (records == nullptr)
+        return nullptr;
+    return records[factionID];
+}
+
+// Reads `record[offset + locale*4]` as a localized C string pointer.
+const char *LocalizedString(const uint8_t *record, int offset) {
+    const int locale = *reinterpret_cast<const int *>(
+        static_cast<uintptr_t>(Offsets::VAR_LOCALE_INDEX));
+    auto *strings = reinterpret_cast<const char *const *>(record + offset);
+    return strings[locale];
+}
+
+// Pushes a 1.12-style Lua "boolean": number 1.0 for true, nil for false.
+// Mirrors what Script_GetFactionInfo does for atWar/canToggleAtWar/etc.
+// (engine pushes lua_pushnumber(1.0) or lua_pushnil at 0x004D65F2 /
+// 0x004D6600 etc.) — we match so encountered and unencountered factions
+// have identical return shapes.
+void PushFlag(void *L, bool value) {
+    if (value)
+        Game::Lua::PushNumber(L, 1.0);
+    else
+        Game::Lua::PushNil(L);
+}
+
 } // namespace
 
 static int __fastcall Script_GetFactionIDByIndex(void *L) {
@@ -90,19 +127,48 @@ static int __fastcall Script_GetFactionInfoByID(void *L) {
     if (factionID <= 0)
         return 0;
 
+    // Fast path: if the faction is in the player's displayed reputation
+    // list, the engine's Script_GetFactionInfo has all the rep state we
+    // need (current standing, bar value, atWar flags, etc). Replace our
+    // argument with the displayed-list index (1-based) and tail-call it —
+    // it reads only stack[1] and pushes 11 returns; we forward the count
+    // back to the Lua caller.
     const int displayedIdx = FindDisplayedIndex(factionID);
-    if (displayedIdx < 0)
-        return 0; // not in the player's reputation list
+    if (displayedIdx >= 0) {
+        Game::Lua::SetTop(L, 0);
+        Game::Lua::PushNumber(L, static_cast<double>(displayedIdx + 1));
+        using GetFactionInfo_t = int(__fastcall *)(void *L);
+        auto fn = reinterpret_cast<GetFactionInfo_t>(Offsets::FUN_SCRIPT_GET_FACTION_INFO);
+        return fn(L);
+    }
 
-    // Replace our argument with the displayed-list index (1-based) and
-    // tail-call the engine's Script_GetFactionInfo. It reads only stack[1]
-    // and pushes 11 returns; we forward the count back to the Lua caller.
+    // Slow path: faction not in the displayed list (unencountered, or
+    // simply doesn't store rep state — e.g. Steamwheedle Cartel in some
+    // states). Read name + description from Faction.dbc directly and
+    // synthesize Neutral defaults for the rep fields. Matches what
+    // 3.3.5's GetFactionInfoByID returns for unencountered factions
+    // (verified against retail dump: standingID=4, barMin=0, barMax=3000).
+    const uint8_t *record = FactionRecord(factionID);
+    if (record == nullptr)
+        return 0;
+    const char *name = LocalizedString(record, Offsets::OFF_FACTION_NAMES);
+    if (name == nullptr || *name == '\0')
+        return 0;
+    const char *description = LocalizedString(record, Offsets::OFF_FACTION_DESCRIPTIONS);
+
     Game::Lua::SetTop(L, 0);
-    Game::Lua::PushNumber(L, static_cast<double>(displayedIdx + 1));
-
-    using GetFactionInfo_t = int(__fastcall *)(void *L);
-    auto fn = reinterpret_cast<GetFactionInfo_t>(Offsets::FUN_SCRIPT_GET_FACTION_INFO);
-    return fn(L);
+    Game::Lua::PushString(L, name);                            // 1: name
+    Game::Lua::PushString(L, description ? description : "");  // 2: description
+    Game::Lua::PushNumber(L, 4.0);                             // 3: standingID = Neutral
+    Game::Lua::PushNumber(L, 0.0);                             // 4: barMin
+    Game::Lua::PushNumber(L, 3000.0);                          // 5: barMax
+    Game::Lua::PushNumber(L, 0.0);                             // 6: barValue
+    PushFlag(L, false);                                         // 7: atWarWith
+    PushFlag(L, false);                                         // 8: canToggleAtWar
+    PushFlag(L, false);                                         // 9: isHeader
+    PushFlag(L, false);                                         // 10: isCollapsed
+    PushFlag(L, false);                                         // 11: hasRep
+    return 11;
 }
 
 static void RegisterLuaFunctions() {
