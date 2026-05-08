@@ -140,6 +140,31 @@ enum Offsets {
     VAR_INVTYPE_STRING_TABLE = 0x0083DDB0,
     INVTYPE_TABLE_MAX_INDEX = 28,
 
+    // Faction "displayed list" — the engine maintains a sorted/visible list
+    // of factions the player has rep with. `Script_GetNumFactions` (at
+    // 0x004D64C0) returns `[VAR_FACTION_DISPLAY_COUNT]` (the primary list
+    // count). `Script_GetFactionInfo` (at 0x004D64F0) maps its 1-based
+    // index by calling the resolver below, which accepts a slightly wider
+    // 0-based range bounded by `[VAR_FACTION_VISIBLE_MAX_INDEX]`. The two
+    // ranges differ because the displayed list also exposes the "Inactive"
+    // / collapsed-category rows past the primary count.
+    //
+    // The resolver `FUN_RESOLVE_FACTION_INDEX` is __fastcall(ecx = 0-based
+    // index) → factionID (Faction.dbc record ID), or 0 for headers and
+    // empty entries. The internal bounds-check is `cmp ecx, [maxIdx]; jbe`
+    // — i.e., 0..maxIdx inclusive is valid. Out of range returns 0 too,
+    // so we must bound-check ourselves to distinguish "header" (0 in
+    // range) from "no such index" (out of range → nil).
+    //
+    // We re-use the resolver for `GetFactionIDByIndex` directly, and for
+    // `GetFactionInfoByID` we walk it to find the displayed-index of a
+    // given factionID, then replace Lua arg 1 and tail-call
+    // `Script_GetFactionInfo` to produce all 11 returns.
+    FUN_RESOLVE_FACTION_INDEX = 0x004D5FA0,
+    FUN_SCRIPT_GET_FACTION_INFO = 0x004D64F0,
+    VAR_FACTION_DISPLAY_COUNT = 0x00B73764,
+    VAR_FACTION_VISIBLE_MAX_INDEX = 0x00B73760,
+
     // Quest log: 16-byte-stride entry array and active count.
     // Field +0 of each entry is the questID for real quests (a category index
     // for headers); field +8 is the header indicator: non-NULL = header,

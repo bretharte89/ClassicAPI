@@ -45,6 +45,57 @@ for i = 1, GetNumQuestLogEntries() do
 end
 ```
 
+### `GetFactionIDByIndex(factionIndex)`
+
+Returns the factionID (Faction.dbc row ID) for the entry at the given 1-based
+displayed-faction index. Modern WoW (5.0+, including Classic Era 1.15.x)
+returns this as the 14th value of `GetFactionInfo`; older clients (1.12
+through 3.3.5) don't expose it from Lua at all, even though the engine
+uses it internally to look up `Faction.dbc`.
+
+- Returns the factionID for real factions.
+- Returns `0` for header / category rows (`"Other"`, `"Inactive"`, etc.) —
+  matching the modern Classic Era client, which puts `0` in
+  `GetFactionInfo`'s `factionID` slot for those rows.
+- Returns `nil` if the index is out of range.
+
+The "headers normalize to `0`" rule deliberately matches modern WoW
+(5.0+) behavior. The 1.12 engine actually returns `0` for some header
+types (`"Other"`) and `-1` for others (`"Inactive"`-style pseudo-rows);
+we collapse both to `0` so the user-facing convention is consistent.
+
+```lua
+for i = 1, GetNumFactions() do
+    local name, _, _, _, _, _, _, _, isHeader = GetFactionInfo(i)
+    if not isHeader then
+        local factionID = GetFactionIDByIndex(i)
+        -- ...
+    end
+end
+```
+
+### `GetFactionInfoByID(factionID)`
+
+Returns the same nine-to-eleven values as `GetFactionInfo(factionIndex)`,
+keyed by factionID instead of displayed index:
+
+```
+name, description, standingID, barMin, barMax, barValue,
+atWarWith, canToggleAtWar, isHeader, isCollapsed, hasRep
+```
+
+Returns `nil` for factionIDs the player has no reputation with (not in the
+displayed list). This matches modern WoW's behavior — `GetFactionInfoByID`
+is fundamentally a "look up rep info I already have, by ID" call, not a
+DBC reader for arbitrary factions.
+
+```lua
+local name, _, standing = GetFactionInfoByID(69)  -- Darnassus
+-- name = "Darnassus", standing = 5 (Friendly), etc.
+```
+
+Equivalent to the function of the same name introduced in 3.0.
+
 ### `C_Item.IsBound(itemLocation)`
 
 Returns `true` if the item at the given location is soulbound, `false` otherwise

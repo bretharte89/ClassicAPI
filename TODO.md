@@ -147,3 +147,21 @@ The investigation needed three engine pieces nobody had documented:
 
 Full notes in [CLAUDE.md](CLAUDE.md) under "Firing a custom event
 end-to-end".
+
+## ~~14. `GetFactionInfoByID` / `GetFactionIDByIndex`~~ — DONE (not in original list)
+
+`GetFactionInfoByID(factionID)` returns the same 11 values as
+`GetFactionInfo(factionIndex)` keyed by factionID — implemented as a thin
+wrapper that walks the engine's index→ID resolver at `0x004D5FA0` to find
+the displayed-list index for the requested ID, then replaces Lua arg 1 and
+tail-calls `Script_GetFactionInfo` (`0x004D64F0`). Only works for factions
+the player has rep with, matching modern WoW's semantics.
+
+`GetFactionIDByIndex(factionIndex)` exposes the same resolver directly —
+returns the factionID for real entries, `0` for headers (normalizing the
+engine's mix of `0` for "Other" and `-1` for "Inactive"), `nil` for OOB.
+Modern WoW (5.0+, including Classic Era 1.15.x) returns this as the 14th
+value of `GetFactionInfo`, but 1.12-3.3.5 don't expose it at all.
+
+See [src/faction/Info.cpp](src/faction/Info.cpp) and "Faction lookups" in
+[CLAUDE.md](CLAUDE.md) for the resolver/dual-count details.
