@@ -34,4 +34,10 @@ namespace Item::Location {
 // Only safe to call from inside a Lua callback.
 const uint8_t *Resolve(void *L, int locIdx);
 
+// Resolves a `(bagID, slotIndex)` pair directly to a `CGItem *`. Used by
+// the positional-arg C_Container.* APIs that don't go through the
+// ItemLocation table shape. Stomps the Lua stack — same caveat as
+// `Resolve()` above.
+const uint8_t *ResolveBag(void *L, int bagID, int slotIndex);
+
 } // namespace Item::Location

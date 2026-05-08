@@ -83,6 +83,10 @@ const uint8_t *ResolveBagSlot(void *L, int bagID, int slotIndex) {
 
 } // namespace
 
+const uint8_t *ResolveBag(void *L, int bagID, int slotIndex) {
+    return ResolveBagSlot(L, bagID, slotIndex);
+}
+
 const uint8_t *Resolve(void *L, int locIdx) {
     if (Game::Lua::Type(L, locIdx) != Game::Lua::TYPE_TABLE)
         return nullptr;

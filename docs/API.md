@@ -27,6 +27,7 @@ build instructions.
   - [`C_Item.IsBound(itemLocation)`](#c_itemisbounditemlocation)
   - [`C_Item.GetItemID(itemLocation)`](#c_itemgetitemiditemlocation)
   - [`GetInventoryItemID(unit, slot)`](#getinventoryitemidunit-slot)
+  - [`C_Container.GetContainerItemID(bagIndex, slotIndex)`](#c_containergetcontaineritemidbagindex-slotindex)
   - [`C_Item.GetItemInfoInstant(item)`](#c_itemgetiteminfoinstantitem)
   - [`C_Item.IsItemDataCachedByID(item)` / `C_Item.IsItemDataCached(itemLocation)`](#c_itemisitemdatacachedbyiditem--c_itemisitemdatacacheditemlocation)
   - [`C_Item.RequestLoadItemDataByID(item)` / `C_Item.RequestLoadItemData(itemLocation)`](#c_itemrequestloaditemdatabyiditem--c_itemrequestloaditemdataitemlocation)
@@ -492,6 +493,28 @@ end
 
 -- Inspect a party member without parsing a hyperlink:
 local headID = GetInventoryItemID("party1", INVSLOT_HEAD)
+```
+
+### `C_Container.GetContainerItemID(bagIndex, slotIndex)`
+
+Returns the itemID at the given bag/slot, or `nil` if the slot is empty
+or the indices are out of range. Modern positional-arg form of the same
+lookup `C_Item.GetItemID({bagID=B, slotIndex=S})` performs.
+
+- `bagIndex = 0` — the player's main backpack.
+- `bagIndex = 1..4` — the player's equipped bag slots.
+- `slotIndex` — 1-based, capped at the bag's actual slot count (the
+  engine's `PackBagSlot` rejects out-of-range slots and returns nil
+  cleanly).
+
+```lua
+for slot = 1, 16 do
+    local id = C_Container.GetContainerItemID(0, slot)
+    if id then
+        local _, type, subtype = C_Item.GetItemInfoInstant(id)
+        -- ...
+    end
+end
 ```
 
 ### `C_Item.GetItemInfoInstant(item)`

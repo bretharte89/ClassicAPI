@@ -240,12 +240,21 @@ value of `GetFactionInfo`, but 1.12-3.3.5 don't expose it at all.
 See [src/faction/Info.cpp](src/faction/Info.cpp) and "Faction lookups" in
 [CLAUDE.md](CLAUDE.md) for the resolver/dual-count details.
 
-## 16. `GetContainerItemID(bagID, slotIndex)` — trivial
+## ~~16. `C_Container.GetContainerItemID(bagIndex, slotIndex)`~~ — DONE
 
-Modern positional accessor for the same data `C_Item.GetItemID({bagID=B,
-slotIndex=S})` returns. We already have the full bag→CGItem→itemID chain
-in [src/item/Location.cpp](src/item/Location.cpp); this is just a
-two-positional-arg wrapper over it.
+Shipped under the modern `C_Container.*` namespace (matching post-MoP
+WoW). Wraps the existing bag→CGItem path: a new public
+`Item::Location::ResolveBag(L, bagID, slotIndex)` exposes the bag
+resolver that was previously private inside the table-shape
+`Resolve()`, and a small `ItemIDFromCGItem` helper in
+[src/item/ID.cpp](src/item/ID.cpp) factors out the CGItem → instance
+block → itemID step now used by both `C_Item.GetItemID` and
+`C_Container.GetContainerItemID`.
+
+Note: ships under `C_Container` rather than as the historical legacy
+global `GetContainerItemID` since the modern namespace is the canonical
+home for bag/container APIs (the global was deprecated in 10.0). If
+addons need the legacy global it's a one-line addition.
 
 ## 17. `GetItemIcon(item)` — trivial
 
