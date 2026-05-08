@@ -36,6 +36,8 @@ build instructions.
   - [`UnitGUID(unit)`](#unitguidunit)
 - [Combat](#combat)
   - [`InCombatLockdown()`](#incombatlockdown)
+- [Time](#time)
+  - [`GetServerTime()`](#getservertime)
 - [Events](#events)
   - [`C_EventUtils.IsEventValid(eventName)`](#c_eventutilsiseventvalideventname)
 - [Globals](#globals)
@@ -700,6 +702,42 @@ end
 Equivalent to `UnitAffectingCombat("player")` but faster — reads the
 `UNIT_FLAG_IN_COMBAT` bit directly off the player CGUnit's
 m_objectFields, no token-resolution roundtrip.
+
+## Time
+
+### `GetServerTime()`
+
+Returns the current server clock as a Unix epoch timestamp (seconds since
+1970-01-01 UTC), or `nil` before login (while the engine's game-time
+struct is still BSS-zero).
+
+```lua
+local now = GetServerTime()
+-- now = 1778260148 (Fri 2026-05-08 17:09:08 UTC)
+```
+
+Reads year/month/day/hour/minute from the engine's game-time struct at
+`0x00CE8538` (populated from `SMSG_LOGIN_VERIFY_WORLD` /
+`SMSG_LOGIN_SETTIMESPEED` and advanced by the internal tick handler) and
+converts via `_mkgmtime`. Stock `GetTime()` returns frame-relative
+seconds-since-login and is useless for wall-clock alignment; this is the
+right call for calendar / log-timestamp / cooldown-sync use cases.
+
+> **Sub-minute accuracy.** The 1.12 wire protocol carries time at
+> minute granularity — the packed gametime field has no seconds — so
+> the engine's clock only steps every minute. We interpolate within the
+> minute using `GetTickCount`: whenever we observe the engine's minute
+> change, we anchor to the current tick and add `(now - anchor) / 1000`
+> seconds for subsequent calls in that minute.
+>
+> The very first call after login lands at second `:00` of the current
+> minute (we have no way to know how far in we are when we first see
+> it), so the cold-start value can be off by 0..59 seconds. After the
+> first minute rollover we observe, the anchor lands at the rollover
+> boundary and the timestamp is accurate to within a second of the
+> engine's clock for as long as the session continues.
+
+Equivalent to the function of the same name introduced in 3.0.
 
 ## Events
 

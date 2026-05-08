@@ -414,4 +414,31 @@ enum Offsets {
     // name) doesn't trip its safety check on our injected pointers.
     FUN_STORM_SMEM_ALLOC = 0x006462E0,
     FUN_STORM_SMEM_FREE = 0x00646430,
+
+    // Game-time struct populated by SMSG_LOGIN_VERIFY_WORLD /
+    // SMSG_LOGIN_SETTIMESPEED. The engine maintains it as the current
+    // server clock, advanced by an internal tick handler. `Script_GetGameTime`
+    // (`0x00515EE0`) reads `[+0x04]` and `[+0x00]` directly via `fild`,
+    // and the engine's "to days-since-epoch" helper at `0x00642320`
+    // builds a `struct tm` from `[+0x0C..+0x14]` and calls `_mkgmtime`,
+    // confirming the field layout.
+    //
+    //   +0x00  int  minute     0..59
+    //   +0x04  int  hour       0..23
+    //   +0x08  ?               (uncertain — possibly seconds, treated as
+    //                            0 by the engine's known consumers)
+    //   +0x0C  int  day        0-based; engine `inc`s before storing as
+    //                            tm_mday (which is 1-based)
+    //   +0x10  int  month      0-based (0=Jan, matches tm_mon directly)
+    //   +0x14  int  year       full year (e.g. 2026), engine normalizes
+    //                            via `(year % 100) + 100` for tm_year
+    //
+    // Pre-login the struct is BSS-zero; year=0 is the "uninitialized"
+    // sentinel we check for.
+    VAR_GAMETIME_STRUCT = 0x00CE8538,
+    OFF_GAMETIME_MINUTE = 0x00,
+    OFF_GAMETIME_HOUR = 0x04,
+    OFF_GAMETIME_DAY = 0x0C,
+    OFF_GAMETIME_MONTH = 0x10,
+    OFF_GAMETIME_YEAR = 0x14,
 };

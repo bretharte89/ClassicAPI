@@ -67,14 +67,35 @@ Implemented as the global `GetSpellInfo(spellID)`. Returns the full 9-tuple
 matching 3.3.5 semantics, including `true`/`false` for `isFunnel` (verified
 against the 3.3.5 client). See [src/SpellInfo.cpp](src/SpellInfo.cpp).
 
-## 5. `GetServerTime()` — trivial
+## ~~5. `GetServerTime()`~~ — DONE
 
-Lua addon returns `GetTime()` (frame-relative seconds-since-login). Useless
-for anything that needs wall-clock seconds (calendar, cooldown sync, log
-timestamps). The client receives time-sync packets and tracks a real server
-epoch internally — find that global and expose it.
+Reads year/month/day/hour/minute from the engine's game-time struct at
+`0x00CE8538` (populated by `SMSG_LOGIN_VERIFY_WORLD` /
+`SMSG_LOGIN_SETTIMESPEED` and advanced by the internal tick handler)
+and converts via `_mkgmtime` to a Unix epoch timestamp.
 
-Reference: `Util/API.lua:144-146`.
+The interesting find: the engine has its own "to seconds since epoch"
+helper at `0x00642320` that I almost reused — but decoding the magic
+constant `0xC22E4507` after the `_mkgmtime` call revealed the helper
+divides the result by `86400` (seconds in a day), so it returns
+**days-since-epoch**, not seconds. Rolled our own `_mkgmtime` call
+instead.
+
+The 1.12 wire protocol carries time at minute granularity — there are
+no seconds in `SMSG_LOGIN_SETTIMESPEED`'s packed gametime field — so
+the engine's stored hour/minute steps once per minute. To make the
+returned timestamp tick every second (which is what `GetServerTime`
+callers actually need), we interpolate within the minute using
+`GetTickCount`: whenever the engine's minute changes, we anchor to the
+current tick and add `(now - anchor) / 1000` for subsequent calls. The
+cold-start value is off by 0..59 seconds since we have no way to know
+how far into a minute the engine is the first time we observe it, but
+after the first minute rollover the anchor lands at the boundary and
+the timestamp is accurate for the rest of the session.
+
+See [src/time/Server.cpp](src/time/Server.cpp) and
+`VAR_GAMETIME_STRUCT` / `OFF_GAMETIME_*` in
+[src/Offsets.h](src/Offsets.h).
 
 ## ~~6. `C_QuestLog.GetTitleForQuestID(questID)`~~ — DONE
 
