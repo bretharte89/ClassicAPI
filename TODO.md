@@ -227,3 +227,80 @@ value of `GetFactionInfo`, but 1.12-3.3.5 don't expose it at all.
 
 See [src/faction/Info.cpp](src/faction/Info.cpp) and "Faction lookups" in
 [CLAUDE.md](CLAUDE.md) for the resolver/dual-count details.
+
+## 16. `GetContainerItemID(bagID, slotIndex)` — trivial
+
+Modern positional accessor for the same data `C_Item.GetItemID({bagID=B,
+slotIndex=S})` returns. We already have the full bag→CGItem→itemID chain
+in [src/item/Location.cpp](src/item/Location.cpp); this is just a
+two-positional-arg wrapper over it.
+
+## 17. `GetItemIcon(item)` — trivial
+
+itemID → icon path (or fileID in modern). Same value `GetItemInfoInstant`
+returns at position 5; this is the single-field accessor. Reads
+`ItemDisplayInfo.dbc` at +0x14 — exact same code path
+[src/item/Info.cpp](src/item/Info.cpp) already runs.
+
+## 18. `UnitGUID(unit)` — easy
+
+Returns the unit's 64-bit GUID as a string (`"0x%016X"` formatted). Used
+heavily by modern addon code that tracks units across events (combat
+log, threat tables, raid frames). 1.12 stores GUIDs the same way the
+3.3.5 engine does — `[unit + 0x08]` is a pointer to an 8-byte GUID
+struct (verified in `Script_GetInventoryItemLink`'s GUID-compare path
+at `0x004C8CB0`-`0x004C8CC7`). Worth the small format helper because
+addons backporting from 3.3.5+ assume this exists.
+
+## 19. `IsPassiveSpell(spellID)` — trivial
+
+Spell.dbc Attributes bit. Same one-byte read pattern
+[src/spell/Info.cpp](src/spell/Info.cpp) already does for `isFunnel`
+(AttributesEx bit 6) — just a different bit on a different field. The
+public Spell.dbc schema has `Attributes` at `+0x18` with bit 6 (`0x40`)
+= passive in vanilla. Used by aura libraries and talent code.
+
+## 20. `GetSpellLink(spellID)` — trivial
+
+Build `"|cff71d5ff|Hspell:NN|h[Name]|h|r"`. Name we already pull from
+`Spell.dbc`; the rest is `snprintf`. No DBC reads beyond what
+`GetSpellInfo` already does.
+
+## 21. `InCombatLockdown()` — easy
+
+Boolean: are we currently in combat for purposes of Blizzard's secure
+UI restrictions. Modern addons gate action-bar/binding edits on this.
+Maps to the same combat-state flag the existing 1.12 `UnitAffectingCombat("player")`
+reads — likely just one global to expose, or one PLAYER_FLAGS bit.
+
+## 22. `UnitClassBase(unit)` — easy
+
+Locale-independent class file string (`"WARRIOR"`, `"MAGE"`, etc.).
+Modern addons use this for class detection because `UnitClass` returns
+a localized name. Read from `UNIT_FIELD_BYTES_0` (the byte field that
+holds class/race/gender/power-type), then map to one of the 9 vanilla
+class strings. We already know the unit descriptor lives at
+`[unit + 0x110]` (see `UnitPlayerControlled` discovery for
+`GetInventoryItemID`).
+
+## 23. `GetItemSpell(item)` — easy
+
+Returns the on-use spell name + spellID for items that have one
+(potions, trinkets, scrolls). Reads ItemStats fields that we haven't
+mapped yet — the `m_spellId[5]` array on the cached item record.
+Combine the spellID with `GetSpellInfo` for the name.
+
+## 24. `GetInventoryItemDurability(unit, slot)` — easy
+
+Returns `(current, max)` durability for an equipped item. Reads
+ITEM_FIELD_DURABILITY and ITEM_FIELD_MAXDURABILITY off the CGItem
+descriptor at `+0x114` — same descriptor we read FLAGS from in
+`C_Item.IsBound`. Just two more dword reads at known offsets.
+
+## 25. `FindSpellBookSlotByID(spellID)` — easy
+
+Inverse of `Spell::Lookup::SpellbookSlotToID` — given a spellID, walk
+the spellbook arrays at `0x00B700F0` (player) / `0x00B6F098` (pet)
+looking for a matching entry, return the 1-based slot. Used by addons
+that need to invoke `GameTooltip:SetSpell(slot, bookType)` or
+`GetSpellName(slot, bookType)` for spells they only know by ID.
