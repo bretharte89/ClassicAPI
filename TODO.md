@@ -377,3 +377,71 @@ input. Result feeds directly into the slot-and-bookType API surface
 Logic added to [src/spell/Lookup.cpp](src/spell/Lookup.cpp) as
 `Spell::Lookup::FindSpellbookSlot`; the Lua C function lives next to
 the other spell registrations in [src/spell/Info.cpp](src/spell/Info.cpp).
+
+## 26. `IsEquippableItem(item)` — trivial
+
+Boolean: can the item be equipped at all? One-line check: fetch the
+ItemStats record (we already have `Item::Info::FetchItemRecord`) and
+test `m_inventoryType > 0`. The INVTYPE field is at
+`OFF_ITEMSTATS_INVENTORY_TYPE = 0x2C`, already wired up.
+
+## 27. `IsEquippedItem(item)` — easy
+
+Boolean: is the item currently equipped on the player? Walk equipment
+slots 1..19 via the same `Item::Location::ResolveEquipmentSlot` chain
+the existing accessors use, then `Item::ID::FromCGItem` for each one
+and compare to the input itemID. Returns true on first match.
+
+## 28. `GetItemCount(item, [includeBank], [includeCharges])` — easy
+
+Total count of an item across the player's bags. Walks all bag slots
+(backpack 0 + bags 1..4) using `Item::Location::ResolveBag` and counts
+matching itemIDs, accumulating `ITEM_FIELD_STACK_COUNT` from each
+CGItem's descriptor. The `includeBank` flag adds bank bag slots
+(20..23 plus 28..63 for the main bank slots); `includeCharges` is
+charges-aware for items with multiple uses (rare in 1.12 — e.g.,
+mana stones).
+
+## 29. `GetItemFamily(item)` — trivial
+
+Bag-family bitmask (e.g. soul shards = `0x100`, herbs = `0x800`). One
+field read on the cached ItemStats record. Used by addons that
+auto-route loot to specialty bags. Field offset isn't yet mapped in
+`Offsets.h` — small tracing job inside `Script_GetItemFamily` (which
+has the same offset for both 1.12 and 3.3.5 since the field
+predates Wrath).
+
+## 30. `IsSpellKnown(spellID)` — trivial
+
+Boolean: does the player have this spell? Reuse the existing
+`Spell::Lookup::FindSpellbookSlot` and check that the resulting
+bookType is `0` (player). Three-line wrapper.
+
+Modern WoW also supports an `isPet` second arg for pet-spell checks;
+we'd take the same shape and route to bookType `1`.
+
+## 31. Unit flag bundle: `UnitIsAFK` / `UnitIsDND` / `UnitIsFeignDeath` — trivial
+
+Three single-bit checks on UNIT_FIELD_FLAGS / PLAYER_FLAGS, mechanically
+identical to `InCombatLockdown` (item #21):
+
+- `UnitIsAFK(unit)` — PLAYER_FLAGS bit (`0x02` per the protocol).
+  PLAYER_FLAGS lives at a different field offset than UNIT_FLAGS
+  (likely `+0xE8` of m_objectFields, but needs verification).
+- `UnitIsDND(unit)` — PLAYER_FLAGS bit `0x04`.
+- `UnitIsFeignDeath(unit)` — UNIT_FIELD_FLAGS bit `0x10000000` (bit 28),
+  same field as the combat flag.
+
+Could ship as one file `src/unit/Flags.cpp` with all three (they
+share the field-resolve path). The PLAYER_FLAGS offset is the only
+new data to derive — UNIT_FIELD_FLAGS is already known from
+`Item::InventoryID`'s `UnitPlayerControlled` work.
+
+## 32. `IsCurrentSpell(spellID)` — easy
+
+Boolean: is the player currently casting / channeling this spell?
+Needs a runtime "current cast spellID" global the engine maintains
+for the spell-button UI. Likely lives near the cast bar state — a
+short trace through `Script_GetCurrentCastingInfo`-style functions
+(if any exist) or the cast-bar timer logic. Worth doing because
+modern action-bar addons gate "highlight the active button" on this.
