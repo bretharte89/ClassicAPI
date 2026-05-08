@@ -218,9 +218,51 @@ static int __fastcall Script_C_GetSpellInfo(void *L) {
     return 1;
 }
 
+static int __fastcall Script_C_GetSpellName(void *L) {
+    if (!Game::Lua::IsNumber(L, 1)) {
+        Game::Lua::Error(L, "Usage: C_Spell.GetSpellName(spellID)");
+        return 0;
+    }
+    const int spellID = static_cast<int>(Game::Lua::ToNumber(L, 1));
+    const uint8_t *record = Spell::Lookup::RecordForID(spellID);
+    if (record == nullptr)
+        return 0; // nil for unknown spellID
+
+    const int locale = ReadGlobal<int>(Offsets::VAR_LOCALE_INDEX);
+    const char *name = *reinterpret_cast<const char *const *>(record + OFF_NAME + locale * 4);
+    if (name == nullptr || *name == '\0')
+        return 0; // empty / no name in current locale → nil
+    Game::Lua::PushString(L, name);
+    return 1;
+}
+
+static int __fastcall Script_C_GetSpellTexture(void *L) {
+    if (!Game::Lua::IsNumber(L, 1)) {
+        Game::Lua::Error(L, "Usage: C_Spell.GetSpellTexture(spellID)");
+        return 0;
+    }
+    const int spellID = static_cast<int>(Game::Lua::ToNumber(L, 1));
+    const uint8_t *record = Spell::Lookup::RecordForID(spellID);
+    if (record == nullptr)
+        return 0;
+
+    const int iconID = *reinterpret_cast<const int *>(record + OFF_ICON_ID);
+    auto *iconRec = LookupSubRecord(Offsets::VAR_SPELL_ICON_RECORDS,
+                                    Offsets::VAR_SPELL_ICON_COUNT, iconID);
+    if (iconRec == nullptr)
+        return 0;
+    const char *path = *reinterpret_cast<const char *const *>(iconRec + 4);
+    if (path == nullptr || *path == '\0')
+        return 0;
+    Game::Lua::PushString(L, path);
+    return 1;
+}
+
 static void RegisterLuaFunctions() {
     Game::Lua::RegisterGlobalFunction("GetSpellInfo", &Script_GetSpellInfo);
     Game::Lua::RegisterTableFunction("C_Spell", "GetSpellInfo", &Script_C_GetSpellInfo);
+    Game::Lua::RegisterTableFunction("C_Spell", "GetSpellName", &Script_C_GetSpellName);
+    Game::Lua::RegisterTableFunction("C_Spell", "GetSpellTexture", &Script_C_GetSpellTexture);
 }
 
 static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};

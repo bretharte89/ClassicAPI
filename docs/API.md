@@ -9,6 +9,8 @@ build instructions.
 - [Spell](#spell)
   - [`GetSpellInfo(spellID)` / `GetSpellInfo(slot, bookType)`](#getspellinfospellid--getspellinfoslot-booktype)
   - [`C_Spell.GetSpellInfo(spellID)`](#c_spellgetspellinfospellid)
+  - [`C_Spell.GetSpellName(spellID)`](#c_spellgetspellnamespellid)
+  - [`C_Spell.GetSpellTexture(spellID)`](#c_spellgetspelltexturespellid)
   - [`GameTooltip:SetSpellByID(spellID)`](#gametooltipsetspellbyidspellid)
   - [`C_Spell.GetSpellDescription(spellID)`](#c_spellgetspelldescriptionspellid)
 - [Quest](#quest)
@@ -114,6 +116,38 @@ local info = C_Spell.GetSpellInfo(133)
 > 3.3.5 where the same data was returned positionally.
 
 Equivalent to the function of the same name introduced in 4.0.
+
+### `C_Spell.GetSpellName(spellID)`
+
+Returns the localized name of `spellID`, or `nil` if the spell ID is out
+of range or has no name in the current locale. Convenience accessor for
+the `name` field of [`C_Spell.GetSpellInfo`](#c_spellgetspellinfospellid)
+when that's all you need — single field read, no DBC indirection beyond
+the locale lookup.
+
+```lua
+local name = C_Spell.GetSpellName(133)  -- "Fireball"
+```
+
+Equivalent to the function of the same name introduced in 10.0.
+
+### `C_Spell.GetSpellTexture(spellID)`
+
+Returns the icon path string for `spellID` (read from `SpellIcon.dbc`
+via the spell's `SpellIconID` field), or `nil` if the spell ID is out
+of range or the icon record is empty.
+
+> **Path string, not fileID.** Modern WoW returns this as a
+> `fileID:number`. Vanilla 1.12 has no fileID system — see the same
+> note on [`C_Spell.GetSpellInfo`](#c_spellgetspellinfospellid)'s
+> `iconID` field. Pass directly to `texture:SetTexture(...)`.
+
+```lua
+local path = C_Spell.GetSpellTexture(133)
+-- path = "Interface\\Icons\\Spell_Fire_FlameBolt"
+```
+
+Equivalent to the function of the same name introduced in 10.0.
 
 ### `GameTooltip:SetSpellByID(spellID)`
 
