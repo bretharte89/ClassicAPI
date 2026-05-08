@@ -256,12 +256,24 @@ global `GetContainerItemID` since the modern namespace is the canonical
 home for bag/container APIs (the global was deprecated in 10.0). If
 addons need the legacy global it's a one-line addition.
 
-## 17. `GetItemIcon(item)` — trivial
+## ~~17. `GetItemIcon(itemID)` / `C_Item.GetItemIcon(itemLocation)` / `C_Item.GetItemIconByID(item)`~~ — DONE
 
-itemID → icon path (or fileID in modern). Same value `GetItemInfoInstant`
-returns at position 5; this is the single-field accessor. Reads
-`ItemDisplayInfo.dbc` at +0x14 — exact same code path
-[src/item/Info.cpp](src/item/Info.cpp) already runs.
+Three Lua entry points that all share a `PushIconForItemID(L, itemID)`
+helper in [src/item/Info.cpp](src/item/Info.cpp). The helper routes
+through the existing `FetchItemRecord` (item cache) and `BuildIconPath`
+(`ItemDisplayInfo.dbc` lookup at `+0x14`) — same code path
+`GetItemInfoInstant` already runs, just stripped to the icon-only return.
+
+The refactor that fell out: extracted `Item::ID::FromCGItem` (the
+CGItem → instance-block → itemID step) into [src/item/ID.h](src/item/ID.h)
+so both `Item::ID` (for `C_Item.GetItemID` and
+`C_Container.GetContainerItemID`) and `Item::Info` (for
+`C_Item.GetItemIcon`'s ItemLocation form) can share it. Was static-dup
+across two files before this; now it's one definition.
+
+Returns the path string (deviation from modern's `fileID:number` —
+1.12 has no fileID system; same call-out as
+`C_Spell.GetSpellTexture`'s docs).
 
 ## 18. `UnitGUID(unit)` — easy
 

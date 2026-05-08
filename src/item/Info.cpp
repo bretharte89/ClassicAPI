@@ -13,6 +13,8 @@
 
 #include "Game.h"
 #include "Offsets.h"
+#include "item/ID.h"
+#include "item/Location.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -157,8 +159,61 @@ static int __fastcall Script_GetItemInfoInstant(void *L) {
     return 7;
 }
 
+// Pushes the icon path for `itemID` and returns 1, or returns 0 (= nil
+// to Lua) if the item isn't cached, the displayInfoID is missing, or
+// the icon record's path slot is empty. Shared by all three
+// icon-accessor entry points.
+static int PushIconForItemID(void *L, int itemID) {
+    if (itemID <= 0)
+        return 0;
+    const uint8_t *record = FetchItemRecord(static_cast<uint32_t>(itemID));
+    if (record == nullptr)
+        return 0;
+    const uint32_t displayInfoID = *reinterpret_cast<const uint32_t *>(
+        record + Offsets::OFF_ITEMSTATS_DISPLAY_INFO_ID);
+    char iconPath[260];
+    if (!BuildIconPath(displayInfoID, iconPath, sizeof(iconPath)))
+        return 0;
+    Game::Lua::PushString(L, iconPath);
+    return 1;
+}
+
+// `GetItemIcon(itemID)` — global, takes a numeric itemID only. Modern
+// WoW returns a fileID:number; we surface the icon path string since
+// 1.12 has no fileID system. Direct passthrough to
+// `texture:SetTexture(...)`.
+static int __fastcall Script_GetItemIcon(void *L) {
+    if (!Game::Lua::IsNumber(L, 1)) {
+        Game::Lua::Error(L, "Usage: GetItemIcon(itemID)");
+        return 0;
+    }
+    return PushIconForItemID(L, static_cast<int>(Game::Lua::ToNumber(L, 1)));
+}
+
+// `C_Item.GetItemIcon(itemLocation)` — table-shape ItemLocation form.
+// Routes through `Item::Location::Resolve` → CGItem → itemID, then the
+// same cache lookup as the other variants.
+static int __fastcall Script_C_Item_GetItemIcon(void *L) {
+    if (Game::Lua::Type(L, 1) != Game::Lua::TYPE_TABLE) {
+        Game::Lua::Error(L, "Usage: C_Item.GetItemIcon(itemLocation)");
+        return 0;
+    }
+    const int itemID = Item::ID::FromCGItem(Item::Location::Resolve(L, 1));
+    return PushIconForItemID(L, itemID);
+}
+
+// `C_Item.GetItemIconByID(itemInfo)` — accepts numeric itemID or
+// `"item:NN"` string (full chat links work too via the same parser
+// `GetItemInfoInstant` uses).
+static int __fastcall Script_C_Item_GetItemIconByID(void *L) {
+    return PushIconForItemID(L, ResolveItemID(L));
+}
+
 static void RegisterLuaFunctions() {
     Game::Lua::RegisterTableFunction("C_Item", "GetItemInfoInstant", &Script_GetItemInfoInstant);
+    Game::Lua::RegisterGlobalFunction("GetItemIcon", &Script_GetItemIcon);
+    Game::Lua::RegisterTableFunction("C_Item", "GetItemIcon", &Script_C_Item_GetItemIcon);
+    Game::Lua::RegisterTableFunction("C_Item", "GetItemIconByID", &Script_C_Item_GetItemIconByID);
 }
 
 static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};

@@ -13,16 +13,14 @@
 
 #include "Game.h"
 #include "Offsets.h"
+#include "item/ID.h"
 #include "item/Location.h"
 
 #include <cstdint>
 
 namespace Item::ID {
 
-// Reads the itemID off a resolved `CGItem *` via the instance block at
-// +0x08. Returns 0 for null/unpopulated items so callers can short-
-// circuit to a nil push.
-static int ItemIDFromCGItem(const uint8_t *item) {
+int FromCGItem(const uint8_t *item) {
     if (item == nullptr)
         return 0;
     auto *instance = *reinterpret_cast<const uint8_t *const *>(
@@ -39,7 +37,7 @@ static int __fastcall Script_GetItemID(void *L) {
         return 0;
     }
 
-    const int itemID = ItemIDFromCGItem(Item::Location::Resolve(L, 1));
+    const int itemID = FromCGItem(Item::Location::Resolve(L, 1));
     if (itemID == 0) {
         Game::Lua::PushNil(L);
         return 1;
@@ -61,7 +59,7 @@ static int __fastcall Script_C_Container_GetContainerItemID(void *L) {
     const int bagID = static_cast<int>(Game::Lua::ToNumber(L, 1));
     const int slotIndex = static_cast<int>(Game::Lua::ToNumber(L, 2));
 
-    const int itemID = ItemIDFromCGItem(Item::Location::ResolveBag(L, bagID, slotIndex));
+    const int itemID = FromCGItem(Item::Location::ResolveBag(L, bagID, slotIndex));
     if (itemID == 0)
         return 0;
     Game::Lua::PushNumber(L, static_cast<double>(itemID));

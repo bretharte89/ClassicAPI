@@ -28,6 +28,7 @@ build instructions.
   - [`C_Item.GetItemID(itemLocation)`](#c_itemgetitemiditemlocation)
   - [`GetInventoryItemID(unit, slot)`](#getinventoryitemidunit-slot)
   - [`C_Container.GetContainerItemID(bagIndex, slotIndex)`](#c_containergetcontaineritemidbagindex-slotindex)
+  - [`GetItemIcon(itemID)` / `C_Item.GetItemIcon(itemLocation)` / `C_Item.GetItemIconByID(item)`](#getitemiconitemid--c_itemgetitemiconitemlocation--c_itemgetitemiconbyiditem)
   - [`C_Item.GetItemInfoInstant(item)`](#c_itemgetiteminfoinstantitem)
   - [`C_Item.IsItemDataCachedByID(item)` / `C_Item.IsItemDataCached(itemLocation)`](#c_itemisitemdatacachedbyiditem--c_itemisitemdatacacheditemlocation)
   - [`C_Item.RequestLoadItemDataByID(item)` / `C_Item.RequestLoadItemData(itemLocation)`](#c_itemrequestloaditemdatabyiditem--c_itemrequestloaditemdataitemlocation)
@@ -516,6 +517,38 @@ for slot = 1, 16 do
     end
 end
 ```
+
+### `GetItemIcon(itemID)` / `C_Item.GetItemIcon(itemLocation)` / `C_Item.GetItemIconByID(item)`
+
+Three accessors that all return the icon path for an item, differing only in
+how you address the item:
+
+| Function                             | Input                     |
+|--------------------------------------|---------------------------|
+| `GetItemIcon(itemID)`                | numeric itemID (global)   |
+| `C_Item.GetItemIcon(itemLocation)`   | `{equipmentSlotIndex=N}` or `{bagID=B, slotIndex=S}` |
+| `C_Item.GetItemIconByID(item)`       | numeric itemID OR `"item:NNN"` string (full chat links work) |
+
+All three return the icon path string (e.g. `"Interface\\Icons\\INV_Misc_Rune_01"`),
+or `nil` if the item isn't in the client-side cache, the slot is empty, or
+the display info record is missing. The path is suitable for direct use
+with `texture:SetTexture(...)`.
+
+```lua
+local path = GetItemIcon(6948)                                -- "Interface\\Icons\\INV_Misc_Rune_01"
+local path = C_Item.GetItemIcon({equipmentSlotIndex = INVSLOT_HEAD})
+local path = C_Item.GetItemIconByID("|cff...|Hitem:6948:0:0:0|h[Hearthstone]|h|r")
+```
+
+> **`iconID`-vs-path deviation.** Modern WoW returns these as a
+> `fileID:number` (specifically `iconFileID` in Classic Era 1.15.x). 1.12
+> has no fileID system — same situation as
+> [`C_Spell.GetSpellTexture`](#c_spellgetspelltexturespellid) and
+> [`C_Spell.GetSpellInfo`](#c_spellgetspellinfospellid)'s `iconID` field.
+> We surface the path string everywhere for consistency.
+
+Equivalent to the legacy global `GetItemIcon` (since 1.x) and the
+`C_Item.GetItemIcon` / `GetItemIconByID` family added in 10.x.
 
 ### `C_Item.GetItemInfoInstant(item)`
 
