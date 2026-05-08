@@ -50,15 +50,29 @@ epoch internally — find that global and expose it.
 
 Reference: `Util/API.lua:144-146`.
 
-## 6. `C_QuestLog.GetTitleForQuestID(questID)` — easy
+## ~~6. `C_QuestLog.GetTitleForQuestID(questID)`~~ — DONE
 
-Lua addon linear-scans the quest log, then if the questID isn't currently
-in-log it falls back to an async `SetHyperlink("quest:..")` against a hidden
-tooltip with a 180-second timeout (whole `QuestEventListener` subsystem in
-`QuestUtil.lua`). Engine has the title in `Quest.dbc` indexed by questID —
-one lookup replaces the entire async dance.
+Reads the title out of the quest static-info cache at offset `+0x9C`
+(inline null-terminated C string within the data block returned by the
+cache's `_GetRecord`). Title-offset derivation: traced from the engine's
+own quest-log title path at `0x004DF180`, which calls `_GetRecord` and
+then does `add eax, 0x9C; ret` — the result is fed directly to
+`lua_pushstring`, so `+0x9C` is the C string itself, not a pointer.
 
-References: `Util/C_QuestLog.lua:51-65`, `Util/QuestUtil.lua`.
+The original TODO note "engine has the title in `Quest.dbc`" turned out
+to be wrong — there is no `Quest.dbc` in 1.12 (only `QuestInfo.dbc` for
+reward types and `QuestSort.dbc` for category headers). All quest static
+data is server-authoritative, fetched via `SMSG_QUEST_QUERY_RESPONSE` and
+held in the runtime cache at `0x00C0E1B0`. The "async dance" the polyfill
+does is the unavoidable cost of that — though now it's just one call to
+`C_QuestLog.RequestLoadQuestByID` plus an `OnEvent` listener instead of
+a hidden tooltip and a 180-second timeout.
+
+See [src/quest/Title.cpp](src/quest/Title.cpp) and the shared cache
+helper at [src/quest/Cache.h](src/quest/Cache.h). The data-block field
+offsets (currently just `+0x9C` for title) live in `Cache.h` alongside
+the `Lookup`/`Peek` wrappers, so additional cached fields like
+description and objectives can be added there as we trace them.
 
 ## 7. `UnitAuraBySlot` / `UnitAuraSlots` — medium
 

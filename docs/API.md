@@ -12,6 +12,7 @@ build instructions.
 - [Quest](#quest)
   - [`GetQuestIDFromLogIndex(index)`](#getquestidfromlogindexindex)
   - [`C_QuestLog.RequestLoadQuestByID(questID)`](#c_questlogrequestloadquestbyidquestid)
+  - [`C_QuestLog.GetTitleForQuestID(questID)`](#c_questloggettitleforquestidquestid)
 - [Faction](#faction)
   - [`GetFactionIDByIndex(factionIndex)`](#getfactionidbyindexfactionindex)
   - [`GetFactionInfoByID(factionID)`](#getfactioninfobyidfactionid)
@@ -123,6 +124,35 @@ f:SetScript("OnEvent", function()
 end)
 C_QuestLog.RequestLoadQuestByID(2)
 ```
+
+### `C_QuestLog.GetTitleForQuestID(questID)`
+
+Returns the title (string) for `questID` from the engine's quest static-info
+cache, or `nil` if the data isn't loaded. Doesn't require the quest to be
+in the player's quest log — works for any questID once its data has been
+fetched. Header rows are excluded (their titles live in `QuestSort.dbc`,
+not in this cache); for those you'd use the existing `GetQuestLogTitle`.
+
+The cache is populated lazily — by the engine's own quest-log path when
+the player has the quest, or explicitly by
+`C_QuestLog.RequestLoadQuestByID`. If the title isn't there yet, queue a
+load and read on the event:
+
+```lua
+local f = CreateFrame("Frame")
+f:RegisterEvent("QUEST_DATA_LOAD_RESULT")
+f:SetScript("OnEvent", function()
+    if event == "QUEST_DATA_LOAD_RESULT" and arg2 == 1 then
+        local title = C_QuestLog.GetTitleForQuestID(arg1)
+        if title then
+            -- title is now available
+        end
+    end
+end)
+C_QuestLog.RequestLoadQuestByID(215)
+```
+
+Equivalent to the function of the same name introduced in 5.0.
 
 ## Faction
 
