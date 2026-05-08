@@ -317,13 +317,19 @@ Two behavioral notes worth flagging in docs:
   with nothing targeted) cleanly return nil via the GUID-is-zero
   short-circuit.
 
-## 19. `IsPassiveSpell(spellID)` — trivial
+## ~~19. `IsPassiveSpell` / `C_Spell.IsSpellPassive`~~ — DONE
 
-Spell.dbc Attributes bit. Same one-byte read pattern
-[src/spell/Info.cpp](src/spell/Info.cpp) already does for `isFunnel`
-(AttributesEx bit 6) — just a different bit on a different field. The
-public Spell.dbc schema has `Attributes` at `+0x18` with bit 6 (`0x40`)
-= passive in vanilla. Used by aura libraries and talent code.
+Reads `Attributes` (+0x18) bit 6 (`SPELL_ATTR_PASSIVE = 0x40`) off the
+`Spell.dbc` record — same pattern [src/spell/Info.cpp](src/spell/Info.cpp)
+already used for `isFunnel` (AttributesEx bit 6, on a different field).
+
+Shipped both forms with shared `PushIsPassive` back-end:
+
+- `IsPassiveSpell(spellID)` / `IsPassiveSpell(slot, bookType)` — the
+  3.0-era global, supports both arg shapes via `ResolveLuaArgsToSpellID`
+  (mirrors `GetSpellInfo` / `GetSpellLink`).
+- `C_Spell.IsSpellPassive(spellID)` — the modern 10.0 form (word order
+  flipped during the `C_Spell` namespace migration). spellID-only.
 
 ## ~~20. `GetSpellLink(spellID)` / `C_Spell.GetSpellLink(spellID)`~~ — DONE
 

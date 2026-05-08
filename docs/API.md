@@ -15,6 +15,8 @@ build instructions.
   - [`GetSpellLink(spellID)` / `GetSpellLink(slot, bookType)`](#getspelllinkspellid--getspelllinkslot-booktype)
   - [`C_Spell.GetSpellLink(spellID)`](#c_spellgetspelllinkspellid)
   - [`C_Spell.GetSpellDescription(spellID)`](#c_spellgetspelldescriptionspellid)
+  - [`IsPassiveSpell(spellID)` / `IsPassiveSpell(slot, bookType)`](#ispassivespellspellid--ispassivespellslot-booktype)
+  - [`C_Spell.IsSpellPassive(spellID)`](#c_spellisspellpassivespellid)
 - [GameTooltip](#gametooltip)
   - [`GameTooltip:SetSpellByID(spellID)`](#gametooltipsetspellbyidspellid)
 - [Quest](#quest)
@@ -272,6 +274,41 @@ Equivalent to the function of the same name introduced in 4.0.
 > same way when called outside a unit context. If you need the
 > "currently displayed" tooltip text with caster scaling, use
 > `GameTooltip:SetSpellByID` and read line strings from there.
+
+### `IsPassiveSpell(spellID)` / `IsPassiveSpell(slot, bookType)`
+
+Returns `true` if the spell is passive (no cast bar — applies its effect
+as soon as it's learned/equipped), `false` otherwise. Returns `nil` for
+invalid spell IDs / out-of-range slots.
+
+Reads `Attributes` bit 6 (`SPELL_ATTR_PASSIVE = 0x40`) directly off the
+`Spell.dbc` record. Used by aura libraries and talent code to decide
+whether a spell needs cast-bar tracking.
+
+```lua
+IsPassiveSpell(6603)   -- true  (Auto Attack)
+IsPassiveSpell(133)    -- false (Fireball)
+
+-- spellbook overload mirrors GetSpellInfo's
+IsPassiveSpell(1, "spell")   -- true/false depending on slot 1
+```
+
+Equivalent to the function of the same name introduced in 3.0. Modern
+WoW renamed it to [`C_Spell.IsSpellPassive(spellID)`](#c_spellisspellpassivespellid)
+(word order flipped) when it moved into the `C_Spell` namespace; we
+ship both forms.
+
+### `C_Spell.IsSpellPassive(spellID)`
+
+Modern table-namespace form of [`IsPassiveSpell`](#ispassivespellspellid--ispassivespellslot-booktype).
+Same return semantics, but takes a spellID only — `C_Spell.*` calls
+don't accept the older spellbook slot + bookType shape.
+
+```lua
+C_Spell.IsSpellPassive(6603)   -- true (Auto Attack)
+```
+
+Equivalent to the function of the same name introduced in 10.0.
 
 ## GameTooltip
 

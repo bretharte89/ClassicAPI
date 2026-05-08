@@ -30,7 +30,13 @@ static constexpr int OFF_ICON_ID = 0x1D4;
 static constexpr int OFF_NAME = 0x1E0;
 static constexpr int OFF_RANK = 0x204;
 
-// AttributesEx bit 6 — funnel flag per the public Spell.dbc schema.
+// Spell.dbc Attributes (+0x18) and AttributesEx (+0x1C) flag bits we read.
+// Both bits are 0x40, but on different fields:
+//   Attributes  bit 6 = SPELL_ATTR_PASSIVE  — passive spell (no cast bar,
+//                       applies its effect as soon as learned/equipped)
+//   AttributesEx bit 6 = SPELL_ATTR_EX_FUNNEL_PERCENT — funnel channel
+static constexpr int OFF_ATTRIBUTES = 0x18;
+static constexpr uint32_t SPELL_ATTR_PASSIVE = 0x40;
 static constexpr uint32_t SPELL_ATTR_EX_FUNNEL = 0x40;
 
 template <typename T>
@@ -344,15 +350,51 @@ static int __fastcall Script_FindSpellBookSlotByID(void *L) {
     return 2;
 }
 
+// Shared back-end for both passive-spell query forms. Reads `Attributes`
+// (+0x18) bit 6 (`SPELL_ATTR_PASSIVE`) off the Spell.dbc record and
+// pushes the boolean. Returns 1 with a boolean on the Lua stack for a
+// valid spellID, 0 (= nil to Lua) for an invalid one.
+static int PushIsPassive(void *L, int spellID) {
+    if (spellID <= 0)
+        return 0;
+    const uint8_t *record = Spell::Lookup::RecordForID(spellID);
+    if (record == nullptr)
+        return 0;
+    const uint32_t attr = *reinterpret_cast<const uint32_t *>(record + OFF_ATTRIBUTES);
+    Game::Lua::PushBoolean(L, (attr & SPELL_ATTR_PASSIVE) != 0 ? 1 : 0);
+    return 1;
+}
+
+// `IsPassiveSpell(spellID)` / `IsPassiveSpell(slot, bookType)` — same
+// arg shape as `GetSpellInfo`. The 3.0-era global form; takes either a
+// spellID directly or a spellbook slot + bookType (`"spell"` / `"pet"`).
+static int __fastcall Script_IsPassiveSpell(void *L) {
+    return PushIsPassive(L, ResolveLuaArgsToSpellID(L));
+}
+
+// `C_Spell.IsSpellPassive(spellID)` — modern table-namespace form
+// (10.0+; word order flipped from the older `IsPassiveSpell`).
+// Takes a spellID only — `C_Spell.*` calls don't accept the spellbook
+// slot+bookType shape.
+static int __fastcall Script_C_IsSpellPassive(void *L) {
+    if (!Game::Lua::IsNumber(L, 1)) {
+        Game::Lua::Error(L, "Usage: C_Spell.IsSpellPassive(spellID)");
+        return 0;
+    }
+    return PushIsPassive(L, static_cast<int>(Game::Lua::ToNumber(L, 1)));
+}
+
 static void RegisterLuaFunctions() {
     Game::Lua::RegisterGlobalFunction("GetSpellInfo", &Script_GetSpellInfo);
     Game::Lua::RegisterGlobalFunction("GetSpellLink", &Script_GetSpellLink);
     Game::Lua::RegisterGlobalFunction("FindSpellBookSlotByID",
                                       &Script_FindSpellBookSlotByID);
+    Game::Lua::RegisterGlobalFunction("IsPassiveSpell", &Script_IsPassiveSpell);
     Game::Lua::RegisterTableFunction("C_Spell", "GetSpellLink", &Script_C_GetSpellLink);
     Game::Lua::RegisterTableFunction("C_Spell", "GetSpellInfo", &Script_C_GetSpellInfo);
     Game::Lua::RegisterTableFunction("C_Spell", "GetSpellName", &Script_C_GetSpellName);
     Game::Lua::RegisterTableFunction("C_Spell", "GetSpellTexture", &Script_C_GetSpellTexture);
+    Game::Lua::RegisterTableFunction("C_Spell", "IsSpellPassive", &Script_C_IsSpellPassive);
 }
 
 static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
