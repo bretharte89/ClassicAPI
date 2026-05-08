@@ -434,6 +434,46 @@ static int __fastcall Script_IsPlayerSpell(void *L) {
     return 1;
 }
 
+// `IsSpellKnown(spellID, [isPet])` — strict spellbook check, scoped to
+// the player or pet spellbook depending on `isPet` (default false).
+//
+// Critically NOT the same as `IsPlayerSpell`: this is the narrower
+// modern-semantics function. Returns true only for spells the player
+// has as a usable spellbook entry (trained class abilities, active
+// talent grants, racials that appear in the spellbook). Returns false
+// for talent passives, profession recipes, and anything else that's
+// "known" but not displayable as a spellbook button.
+//
+// Verified against 3.3.5's `Script_IsSpellKnown` at `0x0053C3A0`,
+// whose inner function at `0x0053B4E0` walks the spellbook arrays
+// (`[0x00BE6D88]` player / `[0x00BE7D98]` pet) with their respective
+// counts — strict array scan, not a bitmap. Same shape applies in
+// 1.12: the spellbook arrays at `VAR_PLAYER_SPELLBOOK` /
+// `VAR_PET_SPELLBOOK` are the authoritative spellbook display data,
+// so we walk those via the existing `Spell::Lookup::FindSpellbookSlot`
+// and filter by the book type the caller asked for.
+//
+// Use `IsPlayerSpell(spellID)` for the broader "any kind of known"
+// check (covers recipes, passives, etc.).
+static int __fastcall Script_IsSpellKnown(void *L) {
+    if (!Game::Lua::IsNumber(L, 1)) {
+        Game::Lua::Error(L, "Usage: IsSpellKnown(spellID, [isPet])");
+        return 0;
+    }
+    const int spellID = static_cast<int>(Game::Lua::ToNumber(L, 1));
+    if (spellID < 1) {
+        Game::Lua::PushBoolean(L, 0);
+        return 1;
+    }
+    const int wantBookType = (Game::Lua::ToBoolean(L, 2) != 0) ? 1 : 0;
+
+    int bookType = -1;
+    const int slot = Spell::Lookup::FindSpellbookSlot(spellID, &bookType);
+    const bool found = (slot > 0 && bookType == wantBookType);
+    Game::Lua::PushBoolean(L, found ? 1 : 0);
+    return 1;
+}
+
 static void RegisterLuaFunctions() {
     Game::Lua::RegisterGlobalFunction("GetSpellInfo", &Script_GetSpellInfo);
     Game::Lua::RegisterGlobalFunction("GetSpellLink", &Script_GetSpellLink);
@@ -441,6 +481,7 @@ static void RegisterLuaFunctions() {
                                       &Script_FindSpellBookSlotByID);
     Game::Lua::RegisterGlobalFunction("IsPassiveSpell", &Script_IsPassiveSpell);
     Game::Lua::RegisterGlobalFunction("IsPlayerSpell", &Script_IsPlayerSpell);
+    Game::Lua::RegisterGlobalFunction("IsSpellKnown", &Script_IsSpellKnown);
     Game::Lua::RegisterTableFunction("C_Spell", "GetSpellLink", &Script_C_GetSpellLink);
     Game::Lua::RegisterTableFunction("C_Spell", "GetSpellInfo", &Script_C_GetSpellInfo);
     Game::Lua::RegisterTableFunction("C_Spell", "GetSpellName", &Script_C_GetSpellName);

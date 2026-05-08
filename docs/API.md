@@ -18,6 +18,7 @@ build instructions.
   - [`IsPassiveSpell(spellID)` / `IsPassiveSpell(slot, bookType)`](#ispassivespellspellid--ispassivespellslot-booktype)
   - [`C_Spell.IsSpellPassive(spellID)`](#c_spellisspellpassivespellid)
   - [`IsPlayerSpell(spellID)`](#isplayerspellspellid)
+  - [`IsSpellKnown(spellID, [isPet])`](#isspellknownspellid-ispet)
 - [GameTooltip](#gametooltip)
   - [`GameTooltip:SetSpellByID(spellID)`](#gametooltipsetspellbyidspellid)
 - [Quest](#quest)
@@ -349,6 +350,44 @@ The same lookup the engine itself does internally. No spellbook walk,
 no talent walk, no profession-window dependency.
 
 Equivalent to the function of the same name introduced in 5.0.
+
+### `IsSpellKnown(spellID, [isPet])`
+
+Returns `true` if the given spellID is currently in the player's (or
+pet's) spellbook arrays — the same source the in-game spellbook UI
+displays. **Strict semantics**: only counts spells that have a
+spellbook button. `isPet` defaults to `false`.
+
+```lua
+IsSpellKnown(2050)         -- true if Lesser Heal is trained
+IsSpellKnown(2649, true)   -- true if your hunter pet has Growl
+IsSpellKnown(133)          -- false on a Priest (Fireball is a Mage spell)
+```
+
+> **Not the same as `IsPlayerSpell`.** Modern WoW deliberately splits
+> these two: `IsSpellKnown` is the strict "in the spellbook UI" check,
+> `IsPlayerSpell` is the broad "any kind of known" query. The split
+> matters because:
+>
+> | Spell type | `IsPlayerSpell` | `IsSpellKnown` |
+> |---|---|---|
+> | Trained class ability (Fireball) | `true` | `true` |
+> | Active talent grant (Mortal Strike) | `true` | `true` |
+> | Passive talent (Wand Spec, Imp Fireball) | `true` | **`false`** |
+> | Profession recipe (Bolt of Linen) | `true` | **`false`** |
+>
+> Use `IsPlayerSpell` for "do I have access to this effect at all";
+> use `IsSpellKnown` for "is this in my spellbook so I can put it on
+> an action bar".
+
+Implementation walks `VAR_PLAYER_SPELLBOOK` (`0x00B700F0`) when
+`isPet=false` or `VAR_PET_SPELLBOOK` (`0x00B6F098`) when `isPet=true`.
+Verified to match 3.3.5's `Script_IsSpellKnown` semantics — that
+function does the same spellbook walk in its inner helper at
+`0x0053B4E0` (player array `[0x00BE6D88]`, pet array `[0x00BE7D98]`,
+same shape just different addresses).
+
+Equivalent to the function of the same name introduced in 3.0.
 
 ## GameTooltip
 

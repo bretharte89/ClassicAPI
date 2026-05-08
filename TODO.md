@@ -438,30 +438,44 @@ auto-route loot to specialty bags. Field offset isn't yet mapped in
 has the same offset for both 1.12 and 3.3.5 since the field
 predates Wrath).
 
-## 30. `IsSpellKnown(spellID, [isPet])` — trivial
+## ~~30. `IsSpellKnown(spellID, [isPet])`~~ — DONE
 
-Boolean: does the player (or pet) have this spell? Modern signature
-`IsSpellKnown(spellID, isPet)` — `isPet` defaults to false.
+Strict spellbook walk via `Spell::Lookup::FindSpellbookSlot`, filtered
+by the requested book type. Returns true only when the spell is in
+the player's (or pet's) spellbook UI arrays — does NOT cover talent
+passives, profession recipes, or anything else that's "known" but not
+displayable as a spellbook button.
 
-After #47 `IsPlayerSpell` shipped, the player path is just the same
-bitmap lookup at `[VAR_PLAYER_SPELL_BITMAP]`. For the pet path, two
-candidate sibling bitmaps were found while scanning for the same
-`shr 5; AND [mem+reg*4]` pattern in 1.12:
+### How we caught the bug pre-ship
 
-- `[0x00B711C4]` — read-and-set helper at `0x004B53A0` (looks like a
-  "learn spell" path, since it sets bits)
-- `[0x00B711F0]` — query helper at `0x004B54C0`
+I initially implemented `IsSpellKnown` using the same bitmap as
+`IsPlayerSpell`, on the (wrong) assumption that the two functions
+were equivalent in 1.12 since the bitmap was the engine's
+authoritative knowledge store. The user pushed back: "I feel like
+[`IsSpellKnown`] is not as powerful as `IsPlayerSpell`."
 
-One of these is almost certainly the pet bitmap. Quick disasm to
-confirm which (compare to the player helper at `0x0060C740`'s shape)
-and route `isPet=true` to it. Total ~5 lines of code on top of the
-existing `IsPlayerSpell` once the pet bitmap is identified.
+Cross-binary lookup confirmed: 3.3.5's `Script_IsSpellKnown` at
+`0x0053C3A0` calls an inner helper at `0x0053B4E0` that does a strict
+**spellbook array walk** (`[0x00BE6D88]` for player, `[0x00BE7D98]`
+for pet) — not a bitmap. Modern WoW deliberately splits the two
+functions: `IsSpellKnown` is the strict "spellbook button" check,
+`IsPlayerSpell` (added in 5.0) is the broad "any kind of known"
+query. We need both with their respective semantics.
 
-Note: in modern WoW, `IsSpellKnown` and `IsPlayerSpell` are
-*nominally* different (strict spellbook vs. broad-knowledge), but in
-practice both reduce to the same bitmap query in 1.12 since the bitmap
-is the engine's only authoritative knowledge store. Ship both for API
-parity; document that they have the same backing in 1.12.
+### Behavior table (verified in-game)
+
+| Spell type             | `IsPlayerSpell` | `IsSpellKnown` |
+|------------------------|-----------------|----------------|
+| Trained class ability  | true            | true           |
+| Active talent grant    | true            | true           |
+| Passive talent         | true            | **false**      |
+| Profession recipe      | true            | **false**      |
+
+Same split as modern WoW. The cross-binary technique paid off again
+— caught the wrong implementation before it shipped.
+
+See [src/spell/Info.cpp](src/spell/Info.cpp) and the worked example
+in [CLAUDE.md](CLAUDE.md#cross-binary-reference--finding-112-implementations-via-newer-clients).
 
 ## 31. Unit flag bundle: `UnitIsAFK` / `UnitIsDND` / `UnitIsFeignDeath` — trivial
 
