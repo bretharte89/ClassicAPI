@@ -415,6 +415,56 @@ enum Offsets {
     FUN_STORM_SMEM_ALLOC = 0x006462E0,
     FUN_STORM_SMEM_FREE = 0x00646430,
 
+    // Talent system — per-player talent state populated at login from
+    // (class, race) + Talent.dbc / TalentTab.dbc. The engine maintains
+    // one `TabInfo *` per talent tab in the array at
+    // `[VAR_TALENT_TAB_INFO_ARRAY]`, with the count at
+    // `[VAR_TALENT_TAB_COUNT]` (= 3 for all vanilla classes).
+    // Verified by `Script_GetTalentTabInfo` (`0x004F3040`),
+    // `Script_GetNumTalents` (`0x004F3160`), and `Script_GetTalentInfo`
+    // (`0x004F3200`) — all three read the same pair of globals.
+    //
+    // TabInfo struct:
+    //   +0x00  int           TalentTab.dbc rowID
+    //   +0x04  int           pointsSpent
+    //   +0x08  int           numTalents (in this tab)
+    //   +0x0C  TalentEntry * talents (array, 0-indexed)
+    //
+    // TalentEntry, stride 0x54:
+    //   +0x00         uint32 talentID (Talent.dbc primary key)
+    //   +0x04..+0x0F  other fields (tier, column, ...)
+    //   +0x10..+0x33  uint32 SpellRank[9] (rank-N spellID at index N-1)
+    //   +0x34..+0x53  prereqs / flags / other
+    //
+    // Vanilla 1.12 talents have at most 5 ranks, so SpellRank[5..8] are
+    // always zero; engine reserves 9 slots, we expose the same range.
+    //
+    // SpellRank offset verified by tracing the engine's currentRank-
+    // derivation loop in `Script_GetTalentInfo`: it `lea edx, [ebx+0x30]`
+    // (cur = highest slot) then walks **downward** with `sub ecx, 4`
+    // (visible at 0x004F3305) for 9 iterations, ending at +0x10. So
+    // SpellRank[0] (rank 1's spellID) is at +0x10, SpellRank[8] (rank 9
+    // sentinel) at +0x30. Confirmed empirically: a debug build reading
+    // `[entry+0x30]` returned 0 for Inner Focus (rank 1, 14751); the
+    // value is at `[entry+0x10]`.
+    VAR_TALENT_TAB_COUNT = 0x00BDCD24,
+    VAR_TALENT_TAB_INFO_ARRAY = 0x00BDCD28,
+    OFF_TABINFO_NUM_TALENTS = 0x08,
+    OFF_TABINFO_TALENT_ARRAY = 0x0C,
+    OFF_TALENT_SPELL_RANK = 0x10,
+    TALENT_ENTRY_STRIDE = 0x54,
+    TALENT_MAX_RANKS = 9,
+
+    // Engine's `Script_GetTalentInfo` Lua C function. We call it from
+    // `GetTalentSpellID` to derive the player's currentRank without
+    // re-implementing the spell-knowledge checks at `0x0060C740` /
+    // `0x0060C8D0`. Signature: `int __fastcall(void *L)` — reads tab and
+    // talent index from Lua stack[1] and stack[2], pushes 6 returns
+    // (name, icon, tier, column, currentRank, maxRank). Errors (calls
+    // lua_error) on invalid input or pre-login state, so callers must
+    // pre-validate.
+    FUN_SCRIPT_GET_TALENT_INFO = 0x004F3200,
+
     // Game-time struct populated by SMSG_LOGIN_VERIFY_WORLD /
     // SMSG_LOGIN_SETTIMESPEED. The engine maintains it as the current
     // server clock, advanced by an internal tick handler. `Script_GetGameTime`

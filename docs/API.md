@@ -39,6 +39,8 @@ build instructions.
   - [`UnitGUID(unit)`](#unitguidunit)
 - [Combat](#combat)
   - [`InCombatLockdown()`](#incombatlockdown)
+- [Talent](#talent)
+  - [`GetTalentSpellID(tabIndex, talentIndex, [rank])`](#gettalentspellidtabindex-talentindex-rank)
 - [Time](#time)
   - [`GetServerTime()`](#getservertime)
 - [Events](#events)
@@ -742,6 +744,58 @@ end
 Equivalent to `UnitAffectingCombat("player")` but faster — reads the
 `UNIT_FLAG_IN_COMBAT` bit directly off the player CGUnit's
 m_objectFields, no token-resolution roundtrip.
+
+## Talent
+
+### `GetTalentSpellID(tabIndex, talentIndex, [rank])`
+
+Returns the spellID for the talent at the given `(tabIndex, talentIndex)`
+and rank, or `nil` if the talent index is out of range or the rank slot
+is empty. 1.12's `GetTalentInfo` returns `(name, icon, tier, column,
+currentRank, maxRank, ...)` with no spellID; this fills the gap so
+addons can chain into the spell APIs without maintaining their own
+`(class, tab, idx) → spellID` lookup tables.
+
+```lua
+GetTalentSpellID(1, 9)           -- 14751  (Inner Focus, single rank)
+GetTalentSpellID(1, 1)           -- 14525  (Wand Specialization, current rank)
+GetTalentSpellID(1, 1, 1)        -- 14524  (Wand Specialization rank 1)
+GetTalentSpellID(1, 1, 2)        -- 14525  (Wand Specialization rank 2)
+
+-- chains into the spell APIs cleanly
+GameTooltip:SetSpellByID(GetTalentSpellID(1, 9))
+print(C_Spell.GetSpellName(GetTalentSpellID(1, 9)))  -- "Inner Focus"
+```
+
+`rank` is optional. When omitted, defaults to the player's currentRank
+by delegating to the engine's existing `GetTalentInfo` (5th return) —
+that's the same player-state derivation the engine uses for talent UI
+rendering, including the spell-knowledge checks that account for
+talent-granted abilities. If currentRank is 0 (no points spent), falls
+back to rank 1 so the function still produces the talent's canonical
+spellID for unallocated talents.
+
+When provided explicitly, returns the spellID at that rank regardless
+of how many points the player has invested. Useful for tooltip-on-hover
+scenarios where you want to preview "what rank 5 would do" without
+respec'ing.
+
+Returns `nil` for:
+
+- non-numeric or non-positive `tabIndex` / `talentIndex`
+- `tabIndex` or `talentIndex` out of range for the player's class
+- explicit `rank` exceeding the talent's allocated max — e.g. asking
+  for rank 5 on a 1-rank talent like Inner Focus
+
+Reads the engine's per-tab talent arrays at `[0x00BDCD28]` (populated
+at login from `Talent.dbc` filtered by class). The `SpellRank[]` array
+lives at offset `+0x10` of each `TalentEntry` (stride `0x54`), with
+one spellID per rank — vanilla populates indices 0..4 (ranks 1..5),
+the higher slots stay zero.
+
+Equivalent to one of `GetTalentInfo`'s extended returns in modern WoW
+(varies by version; the talent's spellID has been part of the tuple
+since 5.0+).
 
 ## Time
 

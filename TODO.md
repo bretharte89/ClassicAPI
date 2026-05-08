@@ -615,30 +615,53 @@ concrete addon need surfaces or we end up doing the network-layer
 disassembly for another reason (e.g. a packet-driven feature like
 `C_FriendList` or `BNGetFriendInfo` polyfilling).
 
-## 36. `GetTalentSpellID(tabIndex, talentIndex[, rank])` — easy
+## ~~36. `GetTalentSpellID(tabIndex, talentIndex[, rank])`~~ — DONE
 
-The highest-value talent helper because it bridges the talent system
-to the spell system: once you have the spellID, every spell API
-chains naturally (`GetSpellInfo`, `C_Spell.GetSpellDescription`,
-`GameTooltip:SetSpellByID`, `IsPassiveSpell`, `C_Spell.GetSpellLink`,
-…). 1.12's `GetTalentInfo` returns `(name, icon, tier, column,
-currentRank, maxRank)` — no spellID — and addons currently have to
-maintain their own `(class, tab, idx) → spellID` lookup tables.
+Bridges the talent system to the spell system: once you have the
+spellID, every spell API chains naturally (`GetSpellInfo`,
+`C_Spell.GetSpellDescription`, `GameTooltip:SetSpellByID`,
+`IsPassiveSpell`, `C_Spell.GetSpellLink`, …). 1.12's `GetTalentInfo`
+returns `(name, icon, tier, column, currentRank, maxRank, ...)` — no
+spellID — so addons used to have to maintain their own
+`(class, tab, idx) → spellID` lookup tables.
 
-`Talent.dbc` instance at `0x00C0D6E0` (records ptr at `+0x08`, count
-at `+0x0C`, per the standard 5-DWORD shape — see `docs/DBCs.md`). The
-record has a `SpellRank[5]` array (5 spellIDs, one per rank). Modern
-WoW exposes the current-rank spellID as part of `GetTalentInfo`'s
-tuple; we'd just expose it directly.
+Reads from the engine's per-tab talent arrays at `[0x00BDCD28]`
+(populated at login from `Talent.dbc` filtered by the player's class),
+not Talent.dbc directly. Each `TabInfo *` exposes:
 
-Defaults to `rank = currentRank` if omitted. With explicit `rank`,
-returns the spellID at that rank (1..5) regardless of how many points
-the player has put in — useful for tooltip-on-hover-without-respec
-scenarios.
+- `+0x00` TalentTab.dbc rowID
+- `+0x04` pointsSpent
+- `+0x08` numTalents
+- `+0x0C` `TalentEntry *` array (stride `0x54`)
 
-Field offsets within the Talent.dbc record need to be derived. The
-engine's `Script_GetTalentInfo` (find via `raw_globals.txt`) does this
-exact read; mirror its offsets.
+Each `TalentEntry`:
+
+- `+0x00` talentID (Talent.dbc primary key)
+- `+0x10..+0x33` `SpellRank[9]` (rank-N spellID at index N-1; vanilla
+  uses 0..4, higher slots stay zero)
+
+When `rank` is omitted, default = player's currentRank, derived by
+delegating to `Script_GetTalentInfo` and reading its 5th return —
+piggybacking on the engine's spell-knowledge logic. If currentRank is
+0, falls back to rank 1.
+
+### Two gotchas worth noting
+
+1. **The engine's currentRank loop walks SpellRank backwards** — `lea
+   edx, [ebx+0x30]` then `sub ecx, 4` per iteration, ending at +0x10.
+   I initially read +0x30 as the start of `SpellRank[]`; it's actually
+   the END (slot 9, always zero in vanilla). Confirmed empirically by
+   a debug build returning 0 from +0x30 vs the right spellID from
+   +0x10.
+
+2. **Stock 1.12.1's `GetTalentInfo` returns 8 values, not the 6 I
+   expected** based on naive disassembly. Reading the 5th return uses
+   `stack[-(n - 4)]` (dynamic from the actual return count) instead of
+   a hardcoded `stack[-2]`.
+
+See [src/talent/Info.cpp](src/talent/Info.cpp) and the talent block
+(`VAR_TALENT_TAB_*` / `OFF_TABINFO_*` / `OFF_TALENT_SPELL_RANK`) in
+[src/Offsets.h](src/Offsets.h).
 
 ## 37. `GetSpellSchool(spellID)` — easy
 
