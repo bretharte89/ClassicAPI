@@ -867,7 +867,7 @@ Skip until either the DebugTools backport's slowness becomes a real
 pain point, or we end up doing frame-list disassembly for another
 reason (e.g. exposing a `GetMouseFocus()` polyfill).
 
-## 47. `IsPlayerSpell(spellID)` — trivial-or-easy, depends on #36
+## 47. `IsPlayerSpell(spellID)` — easy, depends on #36
 
 Sibling to #30 `IsSpellKnown`. In modern WoW the two have slightly
 different semantics:
@@ -878,61 +878,62 @@ different semantics:
   the player" check that also covers talent-granted passives,
   racials, and gear-granted abilities. Player-only — no pet variant.
 
-### Open question: are passive talents in the spellbook arrays?
+### Verified (2026-05): passive talents are NOT in the spellbook arrays
 
-The implementation hinges on whether vanilla 1.12's
-`VAR_PLAYER_SPELLBOOK` array (`0x00B700F0`) includes passive talent
-spellIDs as their own slots, or whether passives only exist in the
-talent tree state.
-
-**If passives ARE in the array** — `IsPlayerSpell` collapses to the
-same scan as `IsSpellKnown(spellID, false)`. Ship as a 3-line wrapper
-over `Spell::Lookup::FindSpellbookSlot`, filtering to `bookType == 0`
-(player only).
-
-**If passives are NOT in the array** — `IsPlayerSpell` needs to walk
-both the spellbook AND the talent tree. For each talent the player
-has ranks in, compare the talent's current-rank spellID to the input.
-This requires #36 `GetTalentSpellID` (or its underlying Talent.dbc
-read) to be done first.
-
-### How to test
-
-Use the shipped #25 `FindSpellBookSlotByID`. Pick a passive talent
-you have ranks in, get its spellID, and check if it's in the
-spellbook:
+I initially assumed `VAR_PLAYER_SPELLBOOK` (`0x00B700F0`) included
+passive talents as their own slots, which would have collapsed
+`IsPlayerSpell` to the same scan as `IsSpellKnown`. Empirical test
+disproves that:
 
 ```lua
--- e.g. Mage with Arcane Concentration spec'd, rank-5 spellID is 11103
-local slot, book = FindSpellBookSlotByID(11103)
-if slot then
-    print("In spellbook at slot " .. slot .. " (" .. book .. ")")
-else
-    print("NOT in spellbook arrays")
-end
+-- Priest with Wand Specialization at rank 2 (spec'd, currentRank > 0):
+FindSpellBookSlotByID(GetTalentSpellID(1, 1))     -- nil
+FindSpellBookSlotByID(GetTalentSpellID(1, 1, 2))  -- nil
+-- Both rank-1 (14524) and rank-2 (14525) spellIDs return nil from
+-- the spellbook scan, even though the talent is fully spec'd.
 ```
 
-Once #36 `GetTalentSpellID` ships, the test gets easier — feed it
-straight into `FindSpellBookSlotByID` instead of looking up
-hardcoded passive-talent spellIDs:
+So passives live only in the talent-tree state, not the spellbook
+arrays. `IsPlayerSpell` and `IsSpellKnown` genuinely have different
+implementations in 1.12 — they're not equivalent like I'd hoped.
 
-```lua
-local id = GetTalentSpellID(2, 4)            -- whatever passive you've spec'd
-print(FindSpellBookSlotByID(id))             -- nil = not in spellbook
+### Implementation
+
+```
+IsPlayerSpell(spellID):
+  // 1. Spellbook check (covers normal trained spells, active
+  //    talent-granted abilities, racials that ARE in the spellbook)
+  slot, book = FindSpellbookSlot(spellID)
+  if slot and book == 0:
+      return true
+
+  // 2. Talent walk (covers passive talents that don't appear in the
+  //    spellbook). For each talent the player has points in, check
+  //    whether the input spellID matches any of its allocated ranks.
+  for tab in 1..numTalentTabs:
+      for idx in 1..numTalentsInTab(tab):
+          currentRank = (5th return of GetTalentInfo(tab, idx))
+          for rank in 1..currentRank:
+              if GetTalentSpellID(tab, idx, rank) == spellID:
+                  return true
+
+  return false
 ```
 
-If the result is `nil` for known-spec'd passives, my "passives are in
-the array" assumption was wrong and this TODO becomes the harder
-implementation path above.
+Note: rank-1's spellID matches "any rank ≥ 1" semantically — if the
+player has Wand Spec rank 2, both `IsPlayerSpell(14524)` and
+`IsPlayerSpell(14525)` should return `true` (they "have" rank 1 by
+virtue of having rank 2). The `for rank in 1..currentRank` loop
+handles this naturally: at rank=1 we check SpellRank[0]=14524 (match
+at rank 2 player), at rank=2 we check SpellRank[1]=14525.
 
-### Reference passive-talent spellIDs (rank 5) for testing
+Could be split into two helpers if useful: `IsPlayerSpell` (full walk)
+vs. a separate `IsTalentSpell(spellID)` (talent-only). Modern doesn't
+have the latter; bundling into `IsPlayerSpell` matches the API.
 
-| Class   | Talent                  | Spell ID |
-|---------|-------------------------|----------|
-| Mage    | Arcane Concentration    | `11103`  |
-| Mage    | Improved Fireball       | `11071`  |
-| Warrior | Cruelty                 | `12376`  |
-| Warrior | Improved Battle Shout   | `12861`  |
-| Priest  | Improved Renew          | `14910`  |
-| Druid   | Natural Shapeshifter    | `16834`  |
-| Hunter  | Lightning Reflexes      | `19376`  |
+### Performance
+
+O(numTalents × maxCurrentRank). Per class: ~60 total talents, max
+5 ranks each = 300 checks worst case. Each check is a small struct
+read plus a comparison. Negligible — addons calling this in a tight
+loop are a non-issue. No caching needed.
