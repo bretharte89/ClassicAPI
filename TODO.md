@@ -148,7 +148,29 @@ The investigation needed three engine pieces nobody had documented:
 Full notes in [CLAUDE.md](CLAUDE.md) under "Firing a custom event
 end-to-end".
 
-## ~~14. `GetFactionInfoByID` / `GetFactionIDByIndex`~~ — DONE (not in original list)
+## ~~14. `C_QuestLog.RequestLoadQuestByID` + `QUEST_DATA_LOAD_RESULT`~~ — DONE (not in original list)
+
+Fires `QUEST_DATA_LOAD_RESULT(questID, success)` when quest static info
+(description, objectives, reward text) finishes loading. Synchronously
+fired when the questID was already in the client cache; asynchronously
+fired after `SMSG_QUEST_QUERY_RESPONSE` when the engine has to round-trip.
+
+Implemented as a near-direct mirror of `Item::Data`: the quest cache
+`_GetRecord` at `0x00562A40` has the same five-arg shape and the same
+`callback != NULL` gate as the item cache `_GetRecord`. The interesting
+investigation was confirming that `[0x00BB7480]` (passed as the cache
+key in `Script_GetQuestLogQuestText`) is a *questID*, not a struct
+pointer — verified by tracing the load site at `0x004DEF5D` back through
+`mov eax, [esi + 0x00BB71C0]`, which reads field +0 of a quest log
+entry (= questID per the quest log struct). The cache is then keyed by
+questID just like the item cache is keyed by itemID.
+
+See [src/quest/Data.cpp](src/quest/Data.cpp) and "Quest static-info
+cache" in [CLAUDE.md](CLAUDE.md). The custom-event plumbing
+([src/event/Custom.cpp](src/event/Custom.cpp)) is shared with
+`ITEM_DATA_LOAD_RESULT` — no new infrastructure needed.
+
+## ~~15. `GetFactionInfoByID` / `GetFactionIDByIndex`~~ — DONE (not in original list)
 
 `GetFactionInfoByID(factionID)` returns the same 11 values as
 `GetFactionInfo(factionIndex)` keyed by factionID — implemented as a thin

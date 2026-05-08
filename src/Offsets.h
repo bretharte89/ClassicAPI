@@ -165,6 +165,32 @@ enum Offsets {
     VAR_FACTION_DISPLAY_COUNT = 0x00B73764,
     VAR_FACTION_VISIBLE_MAX_INDEX = 0x00B73760,
 
+    // Quest static-info cache (the client-side cache of QUEST_QUERY_RESPONSE
+    // payloads — descriptions, objectives, reward text). Same five-arg
+    // `_GetRecord` shape as the item cache, keyed by questID. Verified by
+    // tracing `Script_GetQuestLogQuestText` (`0x004DFF20`):
+    //   1. `[VAR_QUEST_LOG_SELECTED_QUEST_ID]` is the *questID* of the
+    //      selected entry (not a pointer) — populated from
+    //      `mov eax, [esi + 0x00BB71C0]` which reads field +0 of a
+    //      `VAR_QUEST_LOG_ENTRIES` row, i.e. the questID itself.
+    //   2. That value is passed as the `key` arg to `_GetRecord`, then
+    //      hashed via `key & cache.mask` and matched with `cmp [bucket], key`.
+    //
+    // Cache-hit-already-loaded shortcut: if `[entry+0x18F8]` is set, the
+    // function returns `entry+0x18` immediately and does NOT invoke the
+    // queued callback. Modules that want a notification regardless of
+    // cache state must fire it themselves (see `Item::Data` for the same
+    // pattern).
+    //
+    // Callback shape verified at the dispatch sites near 0x00562EEB et al.:
+    //   `mov ecx, [entry+0x18]; push 1; push ecx; call [entry+8]`
+    //   → `__stdcall(void *userData, int success)` where `userData` is
+    //   `arg4` we passed to `_GetRecord` (engine stores it at
+    //   `entry+0x18` and replays it without dereferencing).
+    VAR_QUEST_CACHE = 0x00C0E1B0,
+    FUN_DBCACHE_QUEST_GET_RECORD = 0x00562A40,
+    VAR_QUEST_LOG_SELECTED_QUEST_ID = 0x00BB7480,
+
     // Quest log: 16-byte-stride entry array and active count.
     // Field +0 of each entry is the questID for real quests (a category index
     // for headers); field +8 is the header indicator: non-NULL = header,
