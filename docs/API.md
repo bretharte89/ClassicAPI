@@ -12,6 +12,8 @@ build instructions.
   - [`C_Spell.GetSpellName(spellID)`](#c_spellgetspellnamespellid)
   - [`C_Spell.GetSpellTexture(spellID)`](#c_spellgetspelltexturespellid)
   - [`FindSpellBookSlotByID(spellID)`](#findspellbookslotbyidspellid)
+  - [`GetSpellLink(spellID)` / `GetSpellLink(slot, bookType)`](#getspelllinkspellid--getspelllinkslot-booktype)
+  - [`C_Spell.GetSpellLink(spellID)`](#c_spellgetspelllinkspellid)
   - [`GameTooltip:SetSpellByID(spellID)`](#gametooltipsetspellbyidspellid)
   - [`C_Spell.GetSpellDescription(spellID)`](#c_spellgetspelldescriptionspellid)
 - [Quest](#quest)
@@ -180,6 +182,57 @@ end
 
 Equivalent to the legacy function of the same name introduced in 3.0
 (later renamed to `FindSpellBookSlotBySpellID` in 5.x).
+
+### `GetSpellLink(spellID)` / `GetSpellLink(slot, bookType)`
+
+Returns the chat-style spell hyperlink and the spellID:
+
+```
+link, spellID = GetSpellLink(spellID)
+              = GetSpellLink(slot, bookType)
+```
+
+Format is `|cff71d5ff|Hspell:ID:0|h[Name]|h|r` — the standard 1.12
+spell-link wrapper. The trailing `:0` after the spellID matches modern
+WoW's hyperlink shape (where the field is a sub-data slot for
+pet-spellbook flags etc.); 1.12 ignores it during link parsing, but
+addons grepping with `|Hspell:(%d+):` patterns will pick it up
+correctly.
+
+Two input forms, mirroring [`GetSpellInfo`](#getspellinfospellid--getspellinfoslot-booktype):
+
+- `GetSpellLink(spellID)` — direct DBC lookup.
+- `GetSpellLink(slot, bookType)` — resolves the spellbook slot to a
+  spellID first. Useful when iterating the player's known spells:
+  caller gets back both the link AND the underlying ID without a
+  separate lookup.
+
+Returns `nil` if the spellID/slot doesn't resolve to a real spell.
+
+```lua
+local link = GetSpellLink(133)
+DEFAULT_CHAT_FRAME:AddMessage("Cast " .. link .. "!")
+
+-- Walking the spellbook to print every learned spell:
+for slot = 1, GetNumSpellTabs() and 100 or 100 do
+    local link, id = GetSpellLink(slot, "spell")
+    if not link then break end
+    -- ...
+end
+```
+
+### `C_Spell.GetSpellLink(spellID)`
+
+Modern table-namespace variant. Same link string as
+[`GetSpellLink(spellID)`](#getspelllinkspellid--getspelllinkslot-booktype),
+but returns only the link — no spellID echo since the caller already
+had it on hand to make the call.
+
+```lua
+local link = C_Spell.GetSpellLink(133)  -- "|cff71d5ff|Hspell:133:0|h[Fireball]|h|r"
+```
+
+Equivalent to the function of the same name introduced in 4.0.
 
 ### `GameTooltip:SetSpellByID(spellID)`
 

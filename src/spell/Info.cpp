@@ -16,6 +16,7 @@
 #include "spell/Lookup.h"
 
 #include <cstdint>
+#include <cstdio>
 
 namespace Spell::Info {
 
@@ -258,6 +259,67 @@ static int __fastcall Script_C_GetSpellTexture(void *L) {
     return 1;
 }
 
+// Builds the spell hyperlink string `|cff71d5ff|Hspell:ID:0|h[Name]|h|r`
+// into `out`. The trailing `:0` after the spellID matches modern's
+// hyperlink format (the field's a sub-data slot used for pet-spellbook
+// flags etc. in later expansions); 1.12 ignores it during link parsing
+// but addons grepping with `|Hspell:(%d+):` patterns will pick it up.
+//
+// Returns false if the spellID is invalid, the locale-resolved name is
+// missing, or the output buffer is too small (the caller's 256-byte
+// stack buffer is comfortable for any vanilla spell name).
+static bool BuildSpellLink(int spellID, char *out, size_t outLen) {
+    const uint8_t *record = Spell::Lookup::RecordForID(spellID);
+    if (record == nullptr)
+        return false;
+    const int locale = ReadGlobal<int>(Offsets::VAR_LOCALE_INDEX);
+    const char *name = *reinterpret_cast<const char *const *>(record + OFF_NAME + locale * 4);
+    if (name == nullptr || *name == '\0')
+        return false;
+    const int n = std::snprintf(out, outLen, "|cff71d5ff|Hspell:%d:0|h[%s]|h|r",
+                                spellID, name);
+    return n > 0 && static_cast<size_t>(n) < outLen;
+}
+
+// `GetSpellLink(spellID)` / `GetSpellLink(slot, bookType)` — same arg
+// shape as `GetSpellInfo`. Returns `(linkString, spellID)`. The second
+// return is what makes the spellbook overload useful: callers can pass
+// in `(slot, "spell")` and get back both the link AND the resolved
+// spellID without a separate lookup.
+static int __fastcall Script_GetSpellLink(void *L) {
+    const int spellID = ResolveLuaArgsToSpellID(L);
+    if (spellID <= 0)
+        return 0;
+
+    char buf[256];
+    if (!BuildSpellLink(spellID, buf, sizeof(buf)))
+        return 0;
+
+    Game::Lua::PushString(L, buf);
+    Game::Lua::PushNumber(L, static_cast<double>(spellID));
+    return 2;
+}
+
+// `C_Spell.GetSpellLink(spellID)` — table-namespace version. Returns
+// only the link string (modern omits the spellID echo since the caller
+// already had it on hand to call this).
+static int __fastcall Script_C_GetSpellLink(void *L) {
+    if (!Game::Lua::IsNumber(L, 1)) {
+        Game::Lua::Error(L, "Usage: C_Spell.GetSpellLink(spellID)");
+        return 0;
+    }
+    const int spellID = static_cast<int>(Game::Lua::ToNumber(L, 1));
+    if (spellID <= 0)
+        return 0;
+
+    char buf[256];
+    if (!BuildSpellLink(spellID, buf, sizeof(buf)))
+        return 0;
+
+    Game::Lua::PushString(L, buf);
+    return 1;
+}
+
 // `FindSpellBookSlotByID(spellID)` — inverse of `GetSpellName(slot,
 // bookType)`. Searches the player spellbook first, then the pet
 // spellbook, for a slot whose spellID matches. Returns
@@ -284,8 +346,10 @@ static int __fastcall Script_FindSpellBookSlotByID(void *L) {
 
 static void RegisterLuaFunctions() {
     Game::Lua::RegisterGlobalFunction("GetSpellInfo", &Script_GetSpellInfo);
+    Game::Lua::RegisterGlobalFunction("GetSpellLink", &Script_GetSpellLink);
     Game::Lua::RegisterGlobalFunction("FindSpellBookSlotByID",
                                       &Script_FindSpellBookSlotByID);
+    Game::Lua::RegisterTableFunction("C_Spell", "GetSpellLink", &Script_C_GetSpellLink);
     Game::Lua::RegisterTableFunction("C_Spell", "GetSpellInfo", &Script_C_GetSpellInfo);
     Game::Lua::RegisterTableFunction("C_Spell", "GetSpellName", &Script_C_GetSpellName);
     Game::Lua::RegisterTableFunction("C_Spell", "GetSpellTexture", &Script_C_GetSpellTexture);

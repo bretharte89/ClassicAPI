@@ -272,11 +272,25 @@ Spell.dbc Attributes bit. Same one-byte read pattern
 public Spell.dbc schema has `Attributes` at `+0x18` with bit 6 (`0x40`)
 = passive in vanilla. Used by aura libraries and talent code.
 
-## 20. `GetSpellLink(spellID)` — trivial
+## ~~20. `GetSpellLink(spellID)` / `C_Spell.GetSpellLink(spellID)`~~ — DONE
 
-Build `"|cff71d5ff|Hspell:NN|h[Name]|h|r"`. Name we already pull from
-`Spell.dbc`; the rest is `snprintf`. No DBC reads beyond what
-`GetSpellInfo` already does.
+Builds `|cff71d5ff|Hspell:ID:0|h[Name]|h|r` via `snprintf` after a
+single `Spell.dbc` name read. The trailing `:0` after the spellID
+matches modern's hyperlink shape so addons backporting from later
+expansions can `gsub` with the standard `|Hspell:(%d+):` pattern; 1.12
+ignores it during link parsing.
+
+Both forms shipped:
+
+- `GetSpellLink(spellID)` and `GetSpellLink(slot, bookType)` (global)
+  return `(link, spellID)`. The slot-and-bookType overload reuses the
+  same `Spell::Lookup::ResolveLuaArgsToSpellID` helper as
+  `GetSpellInfo`.
+- `C_Spell.GetSpellLink(spellID)` (table) returns just the link string
+  — the caller already had the spellID on hand.
+
+See [src/spell/Info.cpp](src/spell/Info.cpp) `Script_GetSpellLink` /
+`Script_C_GetSpellLink` and the `BuildSpellLink` helper.
 
 ## 21. `InCombatLockdown()` — easy
 
