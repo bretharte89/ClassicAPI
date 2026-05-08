@@ -17,6 +17,7 @@
 #include "Offsets.h"
 #include "event/Util.h"
 #include "item/Bound.h"
+#include "item/Data.h"
 #include "item/ID.h"
 #include "item/Info.h"
 #include "quest/Log.h"
@@ -44,6 +45,7 @@ static void __fastcall LoadScriptFunctions_h() {
     Spell::Info::RegisterLuaFunctions();
     Quest::Log::RegisterLuaFunctions();
     Item::Bound::RegisterLuaFunctions();
+    Item::Data::RegisterLuaFunctions();
     Item::ID::RegisterLuaFunctions();
     Item::Info::RegisterLuaFunctions();
     Event::Util::RegisterLuaFunctions();

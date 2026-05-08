@@ -85,6 +85,51 @@ if id then
 end
 ```
 
+### `C_Item.IsItemDataCachedByID(item)` / `C_Item.IsItemDataCached(itemLocation)`
+
+Returns `true` if the item's static data is currently in the client-side
+item cache, `false` otherwise. The "ByID" variant takes an itemID or
+"item:NNN"-style string; the location variant takes the modern
+`{equipmentSlotIndex=}` / `{bagID=, slotIndex=}` table.
+
+These read the cache without firing a server query — pair with
+`RequestLoadItemData(ByID)` if you need to ensure the data is loaded
+before checking.
+
+```lua
+if not C_Item.IsItemDataCachedByID(itemID) then
+    C_Item.RequestLoadItemDataByID(itemID)
+    -- (poll IsItemDataCachedByID on a timer until true)
+end
+```
+
+### `C_Item.RequestLoadItemDataByID(item)` / `C_Item.RequestLoadItemData(itemLocation)`
+
+Asks the engine to fetch the item's data from the server if not already
+cached. Returns `true` if the request was initiated (or the input was
+parseable to an itemID), `false` for malformed input. Fire-and-forget —
+the engine handles the round-trip; the data lands in the cache when the
+server responds.
+
+In modern WoW these would fire `ITEM_DATA_LOAD_RESULT` when complete.
+Vanilla 1.12 has no easily-locatable engine-side fire-event-by-name
+mechanism (events dispatch by integer ID, and the dispatcher isn't in
+the obvious places), so for now addons need to poll
+`IsItemDataCachedByID` after calling Request. Wiring up the event is
+tracked as a follow-up in [TODO.md](TODO.md).
+
+```lua
+local id = 2589  -- Linen Cloth, may not be cached for a fresh char
+if not C_Item.IsItemDataCachedByID(id) then
+    C_Item.RequestLoadItemDataByID(id)
+end
+-- ...later...
+if C_Item.IsItemDataCachedByID(id) then
+    local _, type = C_Item.GetItemInfoInstant(id)
+    -- ...
+end
+```
+
 ### `C_Item.GetItemInfoInstant(item)`
 
 Modern-style accessor for the always-available subset of item info — the
