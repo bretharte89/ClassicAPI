@@ -23,6 +23,7 @@ build instructions.
 - [Item](#item)
   - [`C_Item.IsBound(itemLocation)`](#c_itemisbounditemlocation)
   - [`C_Item.GetItemID(itemLocation)`](#c_itemgetitemiditemlocation)
+  - [`GetInventoryItemID(unit, slot)`](#getinventoryitemidunit-slot)
   - [`C_Item.GetItemInfoInstant(item)`](#c_itemgetiteminfoinstantitem)
   - [`C_Item.IsItemDataCachedByID(item)` / `C_Item.IsItemDataCached(itemLocation)`](#c_itemisitemdatacachedbyiditem--c_itemisitemdatacacheditemlocation)
   - [`C_Item.RequestLoadItemDataByID(item)` / `C_Item.RequestLoadItemData(itemLocation)`](#c_itemrequestloaditemdatabyiditem--c_itemrequestloaditemdataitemlocation)
@@ -376,6 +377,37 @@ if id then
     local _, type, subtype = C_Item.GetItemInfoInstant(id)
     -- ...
 end
+```
+
+### `GetInventoryItemID(unit, slot)`
+
+Returns the itemID of the item equipped at `slot` (1-based) on `unit`,
+or `nil` if the slot is empty / the unit isn't valid / the unit doesn't
+expose its equipment to the local client. Same arg shape as 1.12's
+`GetInventoryItemLink(unit, slot)` — drop-in for code that just needs
+the ID and would otherwise have to parse the link string.
+
+- For `"player"` (and any token resolving to the local player, e.g.
+  `"target"` when self-targeted): walks the private inventory manager.
+  Supports the full slot range (equipment 1..19, bag slots 20..23,
+  bank slots, etc.) — same range `GetItemBySlot` accepts internally.
+- For other player-controlled units (`"target"`, `"party1"..party4"`,
+  inspect targets): reads the unit's broadcast visible-items array.
+  Equipment slots 1..19 only.
+- For NPCs / creatures: returns `nil`. The visible-items array isn't
+  populated for non-player-controlled units in 1.12, so we gate this
+  on `UnitPlayerControlled` to avoid the engine crash that
+  `GetInventoryItemLink` itself would trigger on the same input.
+
+```lua
+local id = GetInventoryItemID("player", INVSLOT_HEAD)
+if id then
+    local _, type, subtype = C_Item.GetItemInfoInstant(id)
+    -- ...
+end
+
+-- Inspect a party member without parsing a hyperlink:
+local headID = GetInventoryItemID("party1", INVSLOT_HEAD)
 ```
 
 ### `C_Item.GetItemInfoInstant(item)`

@@ -47,6 +47,34 @@ enum Offsets {
     // ItemMgr::GetItemBySlot — __thiscall(this, slot) → CGItem* (NULL if empty).
     // Slot is the engine's linearized slot index, not bagID/slot tuple.
     FUN_ITEMMGR_GET_ITEM_BY_SLOT = 0x006228A0,
+    // CGUnit visible-items helper used by `Script_GetInventoryItemLink` for
+    // non-player units (target/party/inspect targets). __thiscall(this=unit,
+    // int 0-based slot) → visible-item entry*, or NULL if slot is out of
+    // [0, 18]. Reads `[unit + 0xE68]` (visible-items array base for the
+    // unit) and indexes `base + 0x118 + slot * 0x30`. Each 0x30-byte entry
+    // holds the itemID at `+0x08`; the engine reads it back exactly that
+    // way before feeding it to `_GetRecord` for hyperlink construction
+    // (verified in `Script_GetInventoryItemLink` at `0x004C8D05`-`0x4C8D34`).
+    //
+    // **Crash hazard**: `[unit + 0xE68]` is uninitialized for NPCs
+    // (CGCreature_C objects). The helper has no NULL check — it computes
+    // `garbage + 0x118 + slot*0x30` and returns that as a valid pointer.
+    // The engine relies on callers to gate this with `UnitPlayerControlled`
+    // first; we do the same in `Item::InventoryID`.
+    FUN_UNIT_GET_VISIBLE_ITEM = 0x005F0D60,
+    OFF_VISIBLE_ITEM_ITEM_ID = 0x08,
+
+    // CGUnit m_objectFields pointer offset. Different from CGItem's
+    // descriptor at +0x114 — these are sibling classes under CGObject
+    // with class-specific descriptor offsets.
+    OFF_UNIT_DESCRIPTOR = 0x110,
+    // UNIT_FIELD_FLAGS within m_objectFields. Bit 3 (`0x08`) is
+    // `UNIT_FLAG_PLAYER_CONTROLLED`, which `Script_UnitPlayerControlled`
+    // (`0x00516410`) tests via `mov eax, [m_objectFields + 0xA0];
+    // shr eax, 3; test al, 1`.
+    OFF_UNIT_FIELD_FLAGS = 0xA0,
+    UNIT_FLAG_PLAYER_CONTROLLED = 0x08,
+
     // PackBagSlot — __fastcall(L, void **outInvMgr, int *outLinearSlot, int *outUnused) → bool.
     // Reads bagID at Lua stack[1] and slot at stack[2], validates them, and
     // returns the inventory manager + linear slot ready to feed into GetItemBySlot.

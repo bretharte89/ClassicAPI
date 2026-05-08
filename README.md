@@ -20,7 +20,7 @@ Quick index:
 | Spell     | `GetSpellInfo` (with `(slot, bookType)` overload), `C_Spell.GetSpellInfo`, `C_Spell.GetSpellName`, `C_Spell.GetSpellTexture`, `GameTooltip:SetSpellByID`, `C_Spell.GetSpellDescription` |
 | Quest     | `GetQuestIDFromLogIndex`, `C_QuestLog.RequestLoadQuestByID` (+ `QUEST_DATA_LOAD_RESULT` event), `C_QuestLog.GetTitleForQuestID` |
 | Faction   | `GetFactionIDByIndex`, `GetFactionInfoByID` |
-| Item      | `C_Item.IsBound`, `C_Item.GetItemID`, `C_Item.GetItemInfoInstant`, `C_Item.IsItemDataCached(ByID)`, `C_Item.RequestLoadItemData(ByID)` (+ `ITEM_DATA_LOAD_RESULT` event) |
+| Item      | `C_Item.IsBound`, `C_Item.GetItemID`, `GetInventoryItemID`, `C_Item.GetItemInfoInstant`, `C_Item.IsItemDataCached(ByID)`, `C_Item.RequestLoadItemData(ByID)` (+ `ITEM_DATA_LOAD_RESULT` event) |
 | Events    | `C_EventUtils.IsEventValid` |
 | Global    | `CLASSIC_API_VERSION` |
 
