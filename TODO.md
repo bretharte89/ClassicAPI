@@ -110,18 +110,30 @@ modern addon code assumes these exist.
 
 References: `Util/Aura.lua:311-321` (commented out), `Util/AuraUtil.lua:42-67`.
 
-## 8. `GetItemInfo` for uncached items — medium
+## ~~8. `GetItemInfo` for uncached items~~ — DONE (via #12 + #13)
 
-Lua addon polls `GetItemInfo` after firing `SetHyperlink("item:..")` with a
-180s timeout (`ItemEventListener` in `ItemUtil.lua`). Engine has an
-item-cache request function with callback hooks, and `Item.dbc` has the
-static fields directly — replaces the entire polling frame.
+The "cache-fill path with a proper async callback so addons stop polling
+on a frame timer" goal landed as the request/event pair below:
 
-The instant-only subset is already covered by `C_Item.GetItemInfoInstant`
-(see below); what's left for this task is the cache-fill path with a
-proper async callback so addons stop polling on a frame timer.
+- **#12** ships `C_Item.IsItemDataCachedByID(item)` /
+  `C_Item.RequestLoadItemDataByID(item)` (and the ItemLocation
+  variants), wrapping the engine's existing
+  `DBCache_ItemStats_C_GetRecord` at `0x55BA30` with a non-NULL callback
+  to trigger the SMSG_ITEM_QUERY_SINGLE network fetch.
+- **#13** ships `ITEM_DATA_LOAD_RESULT(itemID, success)`, fired from our
+  `__stdcall` callback when the engine drops the response into the
+  cache (or synchronously if it was already loaded).
 
-Reference: `Util/ItemUtil.lua:254-372`.
+Together those replace the polyfill's 180-second polling frame
+(`ItemEventListener` in `Util/ItemUtil.lua:254-372`) — addons can now
+fire `RequestLoadItemDataByID(id)` and listen for
+`ITEM_DATA_LOAD_RESULT` instead.
+
+A single `GetItemInfo(item)` that "returns nil and triggers a load" in
+one call (matching modern WoW's `GetItemInfo` semantics for uncached
+items) would be a thin convenience wrapper on top, but the modern
+preferred pattern is exactly the request/event pair we have, so it's
+not pursued separately.
 
 ## ~~9. `C_Item.GetItemInfoInstant(item)`~~ — DONE (not in original list)
 
