@@ -445,3 +445,53 @@ for the spell-button UI. Likely lives near the cast bar state — a
 short trace through `Script_GetCurrentCastingInfo`-style functions
 (if any exist) or the cast-bar timer logic. Worth doing because
 modern action-bar addons gate "highlight the active button" on this.
+
+## 33. `C_Reputation.*` cluster — easy
+
+Modern table-shape and ID-based variants of the existing reputation
+API. Most are thin wrappers around what we already have — useful for
+addons backporting modern Lua-side code that prefers the C_Reputation
+namespace.
+
+- **`C_Reputation.SetWatchedFactionByID(factionID)`** — walks the
+  faction-index resolver to find the index for `factionID`, then calls
+  the engine's `Script_SetWatchedFactionIndex`. Same approach as our
+  `GetFactionInfoByID`. Highest-value of the cluster — RepBuddy
+  explicitly takes the fast path here when available
+  (`Util/RepBuddy.lua:286`).
+- **`C_Reputation.SetWatchedFactionByIndex(index)`** — modern alias
+  for `SetWatchedFactionIndex`. One-line registration that points to
+  the engine function via our existing wrapper.
+- **`C_Reputation.GetFactionDataByIndex(index)`** /
+  **`GetFactionDataByID(factionID)`** — table-returning variants of
+  `GetFactionInfo` / `GetFactionInfoByID`. Pack the existing 11-tuple
+  into named fields (`name`, `description`, `reaction`, `barMin`,
+  `barMax`, `currentStanding`, `atWarWith`, `canToggleAtWar`,
+  `isHeader`, `isCollapsed`, `hasRep`, `factionID`).
+- **`C_Reputation.GetWatchedFactionData()`** — table form of
+  `GetWatchedFactionInfo` (which 1.12 has natively).
+
+All five share the same faction-index resolver
+(`FUN_RESOLVE_FACTION_INDEX`) and walk pattern we already use in
+`src/faction/Info.cpp`. Could land as a single `src/faction/CInfo.cpp`
+adding the C_Reputation registrations.
+
+## 34. `C_DateAndTime.GetSecondsUntilDailyReset()` — easy
+
+Modern API returns seconds until the next "daily reset" — vanilla 1.12
+has no daily reset concept (no daily quests, no LFG cooldown, etc.)
+but the closest sensible analog is **seconds until midnight server
+time**, which is what addons like RepBuddy actually use this for
+(`Util/RepBuddy.lua:185` — refreshes the day's earned-rep snapshot).
+
+Implementation: read server hour/minute from whatever global vanilla's
+`Script_GetGameTime` (`0x...` — find via `raw_globals.txt`) reads,
+then compute `(24-hour)*3600 - minute*60`. Returns an int. If the
+server hour can't be resolved (e.g. before first time-sync packet),
+fall back to `86400` (a full day) — better than 0, which would make
+addons think a reset just happened and wipe daily snapshots.
+
+Could share infrastructure with #5 `GetServerTime` if we wire that up
+first — if we have the server epoch, "seconds until next UTC midnight"
+is `86400 - (epoch % 86400)`. Otherwise the GetGameTime path stands
+alone.
