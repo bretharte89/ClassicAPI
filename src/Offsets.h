@@ -95,6 +95,32 @@ enum Offsets {
     // `UNIT_FLAG_PLAYER_CONTROLLED`, which `Script_UnitPlayerControlled`
     // (`0x00516410`) tests via `mov eax, [m_objectFields + 0xA0];
     // shr eax, 3; test al, 1`.
+    // CGUnit m_objectFields current/max stat offsets, **verified
+    // empirically** on Turtle WoW (1.12.1) by `_classicapi_DescDump`
+    // searching for the live `UnitMana` value at descriptor offsets:
+    //
+    //   +0x40  HEALTH       (current)
+    //   +0x44  POWER1       (current mana — verified at multiple values)
+    //   +0x48  POWER2       (current rage)
+    //   +0x4C  POWER3       (current focus)
+    //   +0x50  POWER4       (current energy)
+    //   +0x54  POWER5       (current happiness)
+    //   +0x58  MAXHEALTH    (= 807 at full HP in test data)
+    //   +0x5C  MAXPOWER1    (max mana — stays at 1435 even when current = 443)
+    //   +0x60..+0x6C  MAXPOWER2..5
+    //   +0x70  LEVEL        (= 26 in test data)
+    //   +0xA0  FLAGS        (verified separately via `Script_UnitPlayerControlled`)
+    //
+    // **The 1.12.1 layout is offset 0x18 (= 6 fields) earlier than the
+    // CMaNGOS-documented vanilla layout** (which puts HEALTH at field
+    // 0x16 = +0x58). My initial implementation read MAXHEALTH/MAXMANA
+    // when I wanted current values — caused `IsUsableSpell` to falsely
+    // return usable even when mana was below cost. Trust the binary
+    // (and `_classicapi_DescDump` if you ever need to re-verify), not
+    // external emulator field tables.
+    OFF_UNIT_FIELD_HEALTH = 0x40,
+    OFF_UNIT_FIELD_POWER1 = 0x44,
+    OFF_UNIT_FIELD_LEVEL = 0x70,
     OFF_UNIT_FIELD_FLAGS = 0xA0,
     UNIT_FLAG_PLAYER_CONTROLLED = 0x08,
     // Bit 19 of UNIT_FIELD_FLAGS — `Script_UnitAffectingCombat` at
@@ -476,6 +502,44 @@ enum Offsets {
     // Bitmap covers spellIDs 0..VAR_SPELL_RECORD_COUNT inclusive — the
     // size matches Spell.dbc's row count. Pre-login the slot is NULL.
     VAR_PLAYER_SPELL_BITMAP = 0x00B710FC,
+
+    // Per-spell cooldown query. `__fastcall(int spellID, int bookType,
+    // int *outStart, int *outDuration, int *outEnable)`. Same path
+    // `Script_GetSpellCooldown` (`0x004B40A0`) uses internally after
+    // resolving the (slot, bookType) Lua args to a spellID — we
+    // bypass the slot resolution and pass spellID directly with
+    // `bookType=0` (player) since that's the standard
+    // `IsUsableSpell(spellID)` use case. `outDuration > 0` means the
+    // spell is currently on cooldown.
+    FUN_SPELL_QUERY_COOLDOWN = 0x006E2EA0,
+
+    // Spell.dbc reagent fields. Per CMaNGOS vanilla `SpellEntry` —
+    // Reagent[8] at +0x110 (itemIDs), ReagentCount[8] at +0x130
+    // (counts). Used by `IsUsableSpell` to check that the player has
+    // each non-zero reagent in their bags. Unlike the unit-field
+    // offsets, spell-record offsets DO match the CMaNGOS-documented
+    // layout in 1.12.1 (verified previously: PowerType=+0x7C and
+    // ManaCost=+0x80 both match).
+    OFF_SPELL_REAGENT_ID = 0x110,
+    OFF_SPELL_REAGENT_COUNT = 0x130,
+    SPELL_MAX_REAGENTS = 8,
+
+    // Per-spell *runtime* state cache, indexed by spellID via a hash
+    // table (mask at `[VAR_SPELL_STATE_HASH_MASK]`, base at
+    // `[VAR_SPELL_STATE_HASH_BASE]`). The engine maintains the cache as
+    // player state changes — cooldown, silence, GCD, mana balance, etc.
+    // each update flips the relevant byte. The action-bar usability
+    // path at `0x004E5BA0` reads `+0x564` (usable) and `+0x568`
+    // (noMana) directly off this cache; we do the same to back
+    // `IsUsableSpell` / `C_Spell.IsSpellUsable`.
+    //
+    // `FUN_SPELL_LOOKUP_STATE` is `__fastcall(int spellID) → void *`
+    // — the hash-walking helper. Returns null for spells the player
+    // doesn't know (cache only holds known spellIDs) or pre-login
+    // (when `[VAR_SPELL_STATE_HASH_MASK]` is `-1`).
+    FUN_SPELL_LOOKUP_STATE = 0x004F0F40,
+    OFF_SPELL_STATE_USABLE = 0x564,
+    OFF_SPELL_STATE_NO_MANA = 0x568,
 
     // Spell description format helper. Reads the locale-resolved description
     // string from `record[+0x228 + locale*4]` and walks it character-by-

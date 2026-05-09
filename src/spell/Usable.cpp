@@ -1,0 +1,269 @@
+// This file is part of ClassicAPI.
+//
+// ClassicAPI is free software: you can redistribute it and/or modify it under the terms
+// of the GNU Lesser General Public License as published by the Free Software Foundation, either
+// version 3 of the License, or (at your option) any later version.
+//
+// ClassicAPI is distributed in the hope that it will be useful, but WITHOUT ANY
+// WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+// PURPOSE. See the GNU Lesser General Public License for more details.
+//
+// You should have received a copy of the GNU Lesser General Public License along with
+// ClassicAPI. If not, see <https://www.gnu.org/licenses/>.
+
+#include "Game.h"
+#include "Offsets.h"
+#include "item/ID.h"
+#include "item/Location.h"
+#include "spell/Lookup.h"
+
+#include <cstdint>
+
+namespace Spell::Usable {
+
+namespace {
+
+using ResolveUnitToken_t = void *(__fastcall *)(const char *token);
+
+// Spell.dbc record field offsets we read for usability. Fully documented
+// in CLAUDE.md.
+constexpr int OFF_SPELL_POWER_TYPE = 0x7C; // int8: 0=mana, 1=rage, 2=focus, 3=energy, 4=happiness
+constexpr int OFF_SPELL_MANA_COST = 0x80;  // u32 base cost
+
+// Returns true if the player knows `spellID` per the engine's spell-
+// knowledge bitmap at `[VAR_PLAYER_SPELL_BITMAP]`. Same check
+// `IsPlayerSpell` (`src/spell/Info.cpp`) uses — covers trained
+// abilities, talents, racials, profession recipes, etc. *Importantly*,
+// covers spells that are **not** currently on an action bar — racials
+// kept off the bar still register here.
+bool PlayerKnowsSpell(int spellID) {
+    if (spellID <= 0)
+        return false;
+    auto *bitmap = *reinterpret_cast<const uint32_t *const *>(
+        static_cast<uintptr_t>(Offsets::VAR_PLAYER_SPELL_BITMAP));
+    if (bitmap == nullptr)
+        return false;
+    const int spellCount = *reinterpret_cast<const int *>(
+        static_cast<uintptr_t>(Offsets::VAR_SPELL_RECORD_COUNT));
+    if (spellID > spellCount)
+        return false;
+    return (bitmap[spellID >> 5] & (1u << (spellID & 31))) != 0;
+}
+
+const uint8_t *PlayerDescriptor() {
+    auto resolve = reinterpret_cast<ResolveUnitToken_t>(Offsets::FUN_RESOLVE_UNIT_TOKEN);
+    auto *player = static_cast<const uint8_t *>(resolve("player"));
+    if (player == nullptr)
+        return nullptr;
+    return *reinterpret_cast<const uint8_t *const *>(
+        player + Offsets::OFF_UNIT_DESCRIPTOR);
+}
+
+// Calls the engine's cooldown helper at `FUN_SPELL_QUERY_COOLDOWN`
+// for the player spellbook (bookType=0). Returns true if the spell
+// has an active cooldown.
+//
+// `__fastcall(spellID, bookType, *start, *duration, *enable)` —
+// duration is the engine's raw value (milliseconds; the Lua-side
+// `Script_GetSpellCooldown` multiplies by 0.001 before pushing).
+// We don't care about the unit, just `> 0` vs `== 0`.
+using QueryCooldown_t = void(__fastcall *)(int spellID, int bookType,
+                                            int *outStart,
+                                            int *outDuration,
+                                            int *outEnable);
+
+bool IsOnCooldown(int spellID) {
+    auto fn = reinterpret_cast<QueryCooldown_t>(Offsets::FUN_SPELL_QUERY_COOLDOWN);
+    int start = 0, duration = 0, enable = 0;
+    fn(spellID, 0 /* bookType=player */, &start, &duration, &enable);
+    return duration > 0;
+}
+
+// Walks player bags 0..4 counting items matching `targetItemID`.
+// Returns the summed stack count. Same logic
+// `Item::Count::CountInBag` uses; inlined here to avoid promoting
+// it across modules just for one extra caller.
+//
+// Stomps the Lua stack — caller must own it. Stack contents on
+// return are unspecified (caller should `SetTop` if needed).
+int CountItemInBags(void *L, int targetItemID) {
+    using GetSlots_t = int(__fastcall *)(void *L);
+    auto getSlots = reinterpret_cast<GetSlots_t>(
+        Offsets::FUN_SCRIPT_GET_CONTAINER_NUM_SLOTS);
+    int total = 0;
+    for (int bag = 0; bag <= 4; bag++) {
+        Game::Lua::SetTop(L, 0);
+        Game::Lua::PushNumber(L, static_cast<double>(bag));
+        getSlots(L);
+        if (!Game::Lua::IsNumber(L, -1))
+            continue;
+        const int slots = static_cast<int>(Game::Lua::ToNumber(L, -1));
+        for (int slot = 1; slot <= slots; slot++) {
+            const uint8_t *item = Item::Location::ResolveBag(L, bag, slot);
+            if (item == nullptr)
+                continue;
+            if (Item::ID::FromCGItem(item) != targetItemID)
+                continue;
+            auto *itemDesc = *reinterpret_cast<const uint8_t *const *>(
+                item + Offsets::OFF_ITEM_DESCRIPTOR);
+            if (itemDesc == nullptr)
+                continue;
+            total += static_cast<int>(*reinterpret_cast<const uint32_t *>(
+                itemDesc + Offsets::OFF_DESCRIPTOR_STACK_COUNT));
+        }
+    }
+    return total;
+}
+
+// Returns true iff the player has enough of every reagent the spell
+// requires (Reagent[i] > 0 with corresponding ReagentCount[i] > 0).
+// Spells with zero reagents trivially pass.
+bool HasReagents(void *L, const uint8_t *record) {
+    for (int i = 0; i < Offsets::SPELL_MAX_REAGENTS; i++) {
+        const int reagentItemID = static_cast<int>(*reinterpret_cast<const int32_t *>(
+            record + Offsets::OFF_SPELL_REAGENT_ID + i * 4));
+        const int reagentCount = static_cast<int>(*reinterpret_cast<const int32_t *>(
+            record + Offsets::OFF_SPELL_REAGENT_COUNT + i * 4));
+        if (reagentItemID <= 0 || reagentCount <= 0)
+            continue;
+        if (CountItemInBags(L, reagentItemID) < reagentCount)
+            return false;
+    }
+    return true;
+}
+
+// Computes (usable, noMana) for the local player.
+//
+// Checks performed (in order, short-circuiting on first failure):
+//   1. Spell is known (engine bitmap — covers all sources: trained,
+//      talents, racials, profession recipes).
+//   2. Spell record exists in Spell.dbc.
+//   3. Player descriptor is reachable (post-login).
+//   4. Player is alive (HEALTH > 0).
+//   5. Spell is not on cooldown (engine cooldown helper).
+//   6. Player has enough power for `ManaCost` of the spell's
+//      `PowerType`. Only this failure flips `noMana=true`.
+//   7. Player has all required reagents in bags (Reagent[8] /
+//      ReagentCount[8] from the spell record).
+//
+// Not checked (deliberately — different concerns or post-vanilla
+// concepts that don't apply): silence, GCD, stance/form, range,
+// target type/validity, line-of-sight, casting state.
+struct Usability {
+    bool usable;
+    bool noMana;
+};
+
+Usability ComputeUsability(void *L, int spellID) {
+    Usability r{false, false};
+
+    if (!PlayerKnowsSpell(spellID))
+        return r;
+
+    auto *record = Spell::Lookup::RecordForID(spellID);
+    if (record == nullptr)
+        return r;
+
+    auto *desc = PlayerDescriptor();
+    if (desc == nullptr)
+        return r;
+
+    const int health = *reinterpret_cast<const int *>(
+        desc + Offsets::OFF_UNIT_FIELD_HEALTH);
+    if (health <= 0)
+        return r;
+
+    if (IsOnCooldown(spellID))
+        return r;
+
+    // Mana check is the only one that flips noMana.
+    const int powerType = static_cast<int>(*reinterpret_cast<const int8_t *>(
+        record + OFF_SPELL_POWER_TYPE));
+    if (powerType >= 0 && powerType <= 4) {
+        const int manaCost = static_cast<int>(*reinterpret_cast<const uint32_t *>(
+            record + OFF_SPELL_MANA_COST));
+        if (manaCost > 0) {
+            const int currentPower = *reinterpret_cast<const int *>(
+                desc + Offsets::OFF_UNIT_FIELD_POWER1 + powerType * 4);
+            if (currentPower < manaCost) {
+                r.noMana = true;
+                return r;
+            }
+        }
+    }
+
+    if (!HasReagents(L, record))
+        return r;
+
+    r.usable = true;
+    return r;
+}
+
+// Same arg-shape resolver `Spell::Info::ResolveLuaArgsToSpellID` uses —
+// duplicated here because it's file-static there. Accepts spellID
+// (number) or (slot, bookType) for spellbook lookups.
+int ResolveSpellArg(void *L) {
+    if (!Game::Lua::IsNumber(L, 1))
+        return 0;
+    const int arg1 = static_cast<int>(Game::Lua::ToNumber(L, 1));
+    if (Game::Lua::Type(L, 2) == Game::Lua::TYPE_STRING) {
+        const char *book = Game::Lua::ToString(L, 2);
+        const int bookType = (book != nullptr &&
+                              (book[0] == 'p' || book[0] == 'P') &&
+                              (book[1] == 'e' || book[1] == 'E') &&
+                              (book[2] == 't' || book[2] == 'T') &&
+                              book[3] == 0) ? 1 : 0;
+        return Spell::Lookup::SpellbookSlotToID(arg1, bookType);
+    }
+    return arg1;
+}
+
+// `IsUsableSpell(spell)` / `IsUsableSpell(slot, bookType)` — vanilla-
+// shaped legacy global. Returns `(usable, noMana)` as 1/nil pairs to
+// match `Script_IsUsableAction`'s convention in stock 1.12.
+int __fastcall Script_IsUsableSpell(void *L) {
+    if (!Game::Lua::IsNumber(L, 1)) {
+        Game::Lua::Error(L, "Usage: IsUsableSpell(spellID) or IsUsableSpell(slot, bookType)");
+        return 0;
+    }
+    const int spellID = ResolveSpellArg(L);
+    Usability r = ComputeUsability(L, spellID);
+    if (r.usable) {
+        Game::Lua::PushNumber(L, 1.0);
+        Game::Lua::PushNil(L);
+    } else if (r.noMana) {
+        Game::Lua::PushNil(L);
+        Game::Lua::PushNumber(L, 1.0);
+    } else {
+        Game::Lua::PushNil(L);
+        Game::Lua::PushNil(L);
+    }
+    return 2;
+}
+
+// `C_Spell.IsSpellUsable(spellID)` — modern table-namespace form.
+// Returns proper booleans (`isUsable`, `insufficientPower`) per the
+// `C_Spell.*` convention, not 1/nil pairs.
+int __fastcall Script_C_Spell_IsSpellUsable(void *L) {
+    if (!Game::Lua::IsNumber(L, 1)) {
+        Game::Lua::Error(L, "Usage: C_Spell.IsSpellUsable(spellID)");
+        return 0;
+    }
+    const int spellID = static_cast<int>(Game::Lua::ToNumber(L, 1));
+    Usability r = ComputeUsability(L, spellID);
+    Game::Lua::PushBoolean(L, r.usable ? 1 : 0);
+    Game::Lua::PushBoolean(L, r.noMana ? 1 : 0);
+    return 2;
+}
+
+} // namespace
+
+static void RegisterLuaFunctions() {
+    Game::Lua::RegisterGlobalFunction("IsUsableSpell", &Script_IsUsableSpell);
+    Game::Lua::RegisterTableFunction("C_Spell", "IsSpellUsable",
+                                     &Script_C_Spell_IsSpellUsable);
+}
+
+static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
+
+} // namespace Spell::Usable

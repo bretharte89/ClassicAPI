@@ -1059,17 +1059,83 @@ applies cleanly:
 Useful for any cooldown-tracking addon that wants to query talent
 abilities or off-spellbook spells.
 
-## 49. `IsUsableSpell(spellID)` overload — easy
+## ~~49. `IsUsableSpell(spell)` / `C_Spell.IsSpellUsable(spellID)`~~ — DONE
 
-Same pattern as #48. Modern takes spellID; 1.12 takes (slot, bookType).
-The engine has a usability-check helper that takes a spellID after the
-slot resolution — find it via 5.4.8's modern overload and use it
-directly.
+Both shipped. `IsUsableSpell` accepts spellID or `(slot, bookType)`
+via the same `Spell::Lookup::SpellbookSlotToID` resolver other
+spell-API functions use. Returns `(1, nil)` / `(nil, 1)` /
+`(nil, nil)` per legacy convention. `C_Spell.IsSpellUsable` is the
+modern shape — same logic, returns proper booleans.
 
-Returns `(usable, noMana)` like the existing function — usable=false
-means the spell can't be cast right now (silenced, wrong shapeshift
-form, etc.); noMana=true is the specific "you don't have enough mana"
-sub-case.
+**Two engine-cache approaches investigated and discarded:**
+
+1. **Per-spell cache at `0x004F0F40` returning fields at +0x564
+   / +0x568** — initially looked promising (the action-bar
+   dispatcher at `0x004E5BA0` reads these), but the writers
+   (`0x004EFF17` cluster) showed they're parsed config integers,
+   not real-time usability bools. False trail.
+2. **Action-bar per-slot caches at `0x00BC67A0` (noMana) and
+   `0x00BC6B60` (usable)** — these ARE real-time, but only updated
+   for the 120 action-bar slots. Spells off the bar stay
+   uninitialized. Action-bar-only is the wrong abstraction since
+   modern `IsUsableSpell(spellID)` is action-bar-agnostic.
+
+Settled on a **manual five-check approach**:
+1. Player knows the spell (`VAR_PLAYER_SPELL_BITMAP` lookup —
+   covers profession recipes, talents, racials, etc.).
+2. Player is alive (`HEALTH > 0`).
+3. Spell is not on cooldown (`FUN_SPELL_QUERY_COOLDOWN` —
+   the engine helper `Script_GetSpellCooldown` calls internally
+   after slot resolution, queried with `bookType=0` for player).
+4. Player has ≥ `ManaCost` of the spell's `PowerType` —
+   only this failure flips `noMana=true`.
+5. Player has all required reagents in bags
+   (`Spell.dbc` Reagent[8] / ReagentCount[8] at `+0x110` /
+   `+0x130`, walked via `Item::Location::ResolveBag`).
+
+**Not checked** (deliberate, different concerns): silence, GCD,
+stance/form, range, target type, line-of-sight, casting state.
+
+**Verified on Turtle WoW:**
+- Mana check: Renew rank 3 (cost 105) reports usable at 144 mana
+  and unusable at 39 mana, transitioning exactly at the cost
+  boundary.
+- Reagent check: SHIPPED BUT UNVERIFIED — the Reagent[8] /
+  ReagentCount[8] offsets at `+0x110` / `+0x130` are the
+  CMaNGOS-documented vanilla layout, and we know spell records
+  match CMaNGOS docs (PowerType=+0x7C and ManaCost=+0x80 both
+  match), so high confidence — but no in-game verification yet.
+  Should test with a reagent spell (e.g., Mage Teleport spell 3565
+  needs Rune of Teleportation 17031). Failure mode if offsets are
+  wrong: reagent check becomes a no-op (always passes).
+- Cooldown check: SHIPPED BUT UNVERIFIED in this implementation —
+  the helper signature was traced via `Script_GetSpellCooldown` at
+  `0x004B40A0` but not exercised in-game. Should test with a
+  cooldown'd spell.
+
+**Important offset correction along the way.** Initial implementation
+read POWER1 at descriptor `+0x5C` based on the CMaNGOS-documented
+field index `0x17`. That was *max* mana — current was at `+0x44`
+(field index `0x11`, six fields earlier than the standard layout).
+The whole UNIT_FIELD layout in 1.12.1 is shifted 0x18 / 6 fields
+earlier than CMaNGOS documents:
+
+| Field         | CMaNGOS docs | 1.12.1 actual |
+|---------------|-------------:|--------------:|
+| HEALTH        | +0x58        | +0x40         |
+| POWER1 (mana) | +0x5C        | +0x44         |
+| POWER2..5     | +0x60..+0x6C | +0x48..+0x54  |
+| MAXHEALTH     | +0x70        | +0x58         |
+| MAXPOWER1..5  | +0x74..+0x80 | +0x5C..+0x6C  |
+| LEVEL         | +0x88        | +0x70         |
+| FLAGS         | +0xA0        | +0xA0 ✓       |
+
+FLAGS still lands at +0xA0 (verified separately by
+`Script_UnitPlayerControlled` and `Script_UnitAffectingCombat`).
+Trust the binary, verify with `_classicapi_DescDump` if you need
+to derive new ones.
+
+See [src/spell/Usable.cpp](src/spell/Usable.cpp).
 
 ## 50. Cross-binary technique applications worth picking up — meta
 

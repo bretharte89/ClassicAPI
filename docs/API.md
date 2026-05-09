@@ -19,6 +19,8 @@ build instructions.
   - [`C_Spell.IsSpellPassive(spellID)`](#c_spellisspellpassivespellid)
   - [`IsPlayerSpell(spellID)`](#isplayerspellspellid)
   - [`IsSpellKnown(spellID, [isPet])`](#isspellknownspellid-ispet)
+  - [`IsUsableSpell(spell)` / `IsUsableSpell(slot, bookType)`](#isusablespellspell--isusablespellslot-booktype)
+  - [`C_Spell.IsSpellUsable(spellID)`](#c_spellisspellusablespellid)
 - [GameTooltip](#gametooltip)
   - [`GameTooltip:SetSpellByID(spellID)`](#gametooltipsetspellbyidspellid)
 - [Quest](#quest)
@@ -402,6 +404,70 @@ function does the same spellbook walk in its inner helper at
 same shape just different addresses).
 
 Equivalent to the function of the same name introduced in 3.0.
+
+### `IsUsableSpell(spell)` / `IsUsableSpell(slot, bookType)`
+
+Returns `(usable, noMana)` for a spell, matching the modern
+3.0+ signature. Returns `(1, nil)` when the spell is castable,
+`(nil, 1)` when only mana is preventing it, `(nil, nil)` for any
+other reason (unknown spell, dead, etc.). Matches the 1.12-style
+`1`/`nil` return convention used by the existing
+`Script_IsUsableAction`.
+
+Two arg shapes accepted:
+
+- **`IsUsableSpell(spellID)`** — direct spellID lookup.
+- **`IsUsableSpell(slot, bookType)`** — `bookType` is `"spell"`
+  (player) or `"pet"`. Resolves to a spellID via the same engine
+  spellbook arrays `GetSpellInfo`/`GetSpellLink` walk.
+
+```lua
+IsUsableSpell(133)           -- Fireball: 1, nil if you have mana, nil, 1 if not
+IsUsableSpell(1, "spell")    -- player spellbook slot 1
+```
+
+> **What this function checks:**
+>
+> 1. Player knows the spell (engine's spell-knowledge bitmap —
+>    covers trained class abilities, talent passives, racials,
+>    profession recipes).
+> 2. Player is alive (HEALTH > 0).
+> 3. Spell is not on cooldown (engine's per-spell cooldown helper).
+> 4. Player has enough of the spell's power type for the base cost
+>    (mana / rage / focus / energy / happiness) — *only* this
+>    failure sets `noMana=true`.
+> 5. Player has all required reagents in bags (Spell.dbc
+>    Reagent[8] / ReagentCount[8]).
+>
+> **What this function doesn't check** (different concerns or
+> post-vanilla concepts): silence, GCD, stance/form, range, target
+> type, line-of-sight, casting state.
+>
+> Verified empirically on Turtle WoW for the mana branch: Renew rank
+> 3 (cost 105) is reported usable at 144 mana and unusable at 39
+> mana, transitioning at exactly the cost boundary. Cooldown and
+> reagent checks ship in the same implementation but haven't been
+> exercised in-game; if you find an inconsistency, the reagent
+> offsets (+0x110 / +0x130) and cooldown helper (`0x006E2EA0`) are
+> the components to verify.
+
+Equivalent to the function of the same name introduced in 3.0.
+
+### `C_Spell.IsSpellUsable(spellID)`
+
+Modern table-namespace form. Same logic as
+[`IsUsableSpell(spellID)`](#isusablespellspell--isusablespellslot-booktype)
+but returns proper booleans (`isUsable`, `insufficientPower`) per
+the `C_Spell.*` convention rather than `1`/`nil` pairs.
+
+```lua
+local usable, noMana = C_Spell.IsSpellUsable(133)
+-- usable=true, noMana=false  → cast it
+-- usable=false, noMana=true  → drink up
+-- usable=false, noMana=false → unknown spell, dead, or other block
+```
+
+Equivalent to the function of the same name introduced in 10.x.
 
 ## GameTooltip
 
