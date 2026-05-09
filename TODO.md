@@ -442,15 +442,48 @@ slots 1..19 via the same `Item::Location::ResolveEquipmentSlot` chain
 the existing accessors use, then `Item::ID::FromCGItem` for each one
 and compare to the input itemID. Returns true on first match.
 
-## 28. `GetItemCount(item, [includeBank], [includeCharges])` — easy
+## ~~28. `C_Item.GetItemCount(itemInfo, [includeBank], [includeUses])`~~ — DONE (partial — `includeUses` deferred)
 
-Total count of an item across the player's bags. Walks all bag slots
-(backpack 0 + bags 1..4) using `Item::Location::ResolveBag` and counts
-matching itemIDs, accumulating `ITEM_FIELD_STACK_COUNT` from each
-CGItem's descriptor. The `includeBank` flag adds bank bag slots
-(20..23 plus 28..63 for the main bank slots); `includeCharges` is
-charges-aware for items with multiple uses (rare in 1.12 — e.g.,
-mana stones).
+Total count of an item across the player's bags (and optionally bank).
+Walks bags 0..4 always (live walk via `Item::Location::ResolveBag`).
+Stack count read directly from `ITEM_FIELD_STACK_COUNT` at descriptor
++0x20 — verified by decoding `Script_GetContainerItemInfo`
+(`0x004F9670`), which does `mov eax, [esi+0x114]; fild [eax+0x20]` for
+the count return.
+
+**Bank works cold** — no banker visit required. The 1.12 server sends
+bank inventory at login (verified empirically on Turtle WoW: fresh
+WoW.exe launch + cleared WDB folder shows GUIDs already populated in
+main bank slots 39..62 with the gate at `VAR_BANK_GATE_GUID = 0`).
+The engine's `GetItemBySlot` (`0x006228A0`) gates bank slots 39..68
+on a non-zero banker-GUID at `0x00BDD038` — set when bank window
+opens, cleared when it closes — but the underlying GUID data in
+`invMgr+0x04` is always present from session start.
+
+Bank-walk path bypasses the gate by reading GUIDs directly out of
+the player invMgr's slot array and resolving each via
+`FUN_OBJECT_RESOLVE_BY_GUID = 0x00468460` (same function the engine
+itself calls inside `GetItemBySlot`, just without the gate wrapper).
+Bank bags (slots 63..68) are followed via the bag's vtable +0x10 to
+get its own invMgr, then walked by the same direct-read path. Cold
+count of a bank-only item now works from login without ever
+approaching a banker — confirmed in-game.
+
+The 1.12 STACK_COUNT field index (0x8) puts it *before* the contained/
+creator GUIDs, **opposite** the more commonly documented vanilla
+layout (which has STACK_COUNT at index 0xE = +0x38). Trust the
+binary: 0x20 is what the engine itself reads, and our test (cross-
+checked against a manual `GetContainerItemInfo` walk) confirms it.
+
+`includeUses` (charges-multiplier mode) is **accepted but currently
+ignored** — both `true` and `false` produce the same value. Modern
+semantics multiply each match by the item's spell-charges count (a
+stack of 5 wands × 50 charges → 250). To finish: verify
+`ITEM_FIELD_SPELL_CHARGES` offset (suspected +0x40 = field index
+0x10 in 1.12's layout) by reading from a charged item's descriptor
+and confirming against the cast counter.
+
+See [src/item/Count.cpp](src/item/Count.cpp).
 
 ## ~~29. `C_Item.GetItemFamily(item)`~~ — DONE
 

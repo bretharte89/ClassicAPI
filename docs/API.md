@@ -35,6 +35,7 @@ build instructions.
   - [`GetInventoryItemID(unit, slot)`](#getinventoryitemidunit-slot)
   - [`GetInventoryItemDurability(invSlot)`](#getinventoryitemdurabilityinvslot)
   - [`C_Item.GetItemFamily(item)`](#c_itemgetitemfamilyitem)
+  - [`C_Item.GetItemCount(itemInfo, [includeBank], [includeUses])`](#c_itemgetitemcountiteminfo-includebank-includeuses)
   - [`GetItemIcon(itemID)` / `C_Item.GetItemIcon(itemLocation)` / `C_Item.GetItemIconByID(item)`](#getitemiconitemid--c_itemgetitemiconitemlocation--c_itemgetitemiconbyiditem)
   - [`C_Item.GetItemInfoInstant(item)`](#c_itemgetiteminfoinstantitem)
   - [`C_Item.IsItemDataCachedByID(item)` / `C_Item.IsItemDataCached(itemLocation)`](#c_itemisitemdatacachedbyiditem--c_itemisitemdatacacheditemlocation)
@@ -835,6 +836,63 @@ Bitmask values match modern WoW's encoding (`1 << (familyID - 1)`):
 
 Equivalent to the legacy global `GetItemFamily` (since 3.0) and the
 modern `C_Item.GetItemFamily` introduced in 10.x.
+
+### `C_Item.GetItemCount(itemInfo, [includeBank], [includeUses])`
+
+Returns the player's total count of `itemInfo` across bags (and
+optionally bank slots).
+
+```
+count = C_Item.GetItemCount(itemInfo [, includeBank [, includeUses]])
+```
+
+- `itemInfo` — numeric `itemID` or string containing `"item:NNN"`
+  (full chat links work). Item names are NOT accepted (vanilla has
+  no name → ID resolver).
+- `includeBank` *(optional, default false)* — also walk bank slots
+  (bag `-1` for the main bank, bags `5..10` for bank-bag slots).
+- `includeUses` *(optional, default false)* — **accepted but
+  currently ignored.** Returns the same value as `false` regardless.
+  See note below.
+
+```lua
+local n = C_Item.GetItemCount(2589)               -- Linen Cloth in bags
+local n = C_Item.GetItemCount(2589, true)         -- bags + bank
+local n = C_Item.GetItemCount("item:2589")        -- string form works too
+```
+
+> **`includeUses` not yet supported.** Modern semantics: when `true`,
+> multiplies each match by the item's spell-charges count (a stack
+> of 5 wands × 50 charges each → 250). Implementing this needs the
+> `ITEM_FIELD_SPELL_CHARGES` descriptor offset, which hasn't been
+> verified empirically yet. The arg is accepted for API parity so
+> backported code doesn't break, but currently both `true` and
+> `false` produce the same number (sum of stack counts). Track
+> [TODO #28] for charges support.
+
+> **Equipped items don't count.** Matches modern API. A wand in your
+> ranged slot won't be counted; only items in bags and (optionally)
+> bank.
+
+> **Bank works cold — no banker visit required.** The 1.12 server
+> sends bank inventory at login alongside the rest of the player's
+> data; only the engine's own `GetItemBySlot` gates bank slots until
+> the window opens. We bypass that gate by reading the GUID array
+> directly out of the player invMgr and resolving each entry via the
+> engine's object resolver — same path `GetItemBySlot` would take
+> internally if the gate let us through. Counts are correct from
+> session start.
+
+Walks via the same `Item::Location::ResolveBag` chain
+[`C_Container.GetContainerItemID`](#c_containergetcontaineritemidbagindex-slotindex)
+uses. Slot counts come from the engine's `Script_GetContainerNumSlots`
+so custom server bag sizes work transparently. Stack counts read
+directly off the CGItem's m_objectFields descriptor at +0x20
+(`ITEM_FIELD_STACK_COUNT`, verified by decoding
+`Script_GetContainerItemInfo` at `0x004F9670`).
+
+Equivalent to the legacy global `GetItemCount` (since 3.0) and the
+modern `C_Item.GetItemCount` introduced in 10.x.
 
 ### `GetItemIcon(itemID)` / `C_Item.GetItemIcon(itemLocation)` / `C_Item.GetItemIconByID(item)`
 

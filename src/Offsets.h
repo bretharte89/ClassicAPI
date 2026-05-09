@@ -102,6 +102,58 @@ enum Offsets {
     // Reads bagID at Lua stack[1] and slot at stack[2], validates them, and
     // returns the inventory manager + linear slot ready to feed into GetItemBySlot.
     FUN_PACK_BAG_SLOT = 0x004F9820,
+    // Player inventory manager layout — used for direct GUID-array reads
+    // that bypass `GetItemBySlot`'s bank gate at `0x006228C1`.
+    //   +0x00  uint32  max slot count
+    //   +0x04  uint64* pointer to a flat GUID array, indexed by linear slot
+    //                   (8 bytes per slot — low dword + high dword)
+    //   +0x10  uint8   "bank-aware mode" flag (engine-internal; gates the
+    //                   slot-range checks in `GetItemBySlot`'s validation
+    //                   path)
+    // Slot ranges, matching `PackBagSlot`'s linearization:
+    //   0..22   equipment / paperdoll
+    //   23..38  backpack (16 slots)
+    //   39..62  main bank (24 slots)
+    //   63..68  bank bag SLOTS (the bag items themselves; the bag CONTENTS
+    //           live in each equipped bag's own invMgr, reachable via the
+    //           bag's vtable +0x10)
+    //   81+     keyring
+    //
+    // **Bank slots are populated from server data at login** (verified
+    // empirically on Turtle WoW: fresh login + cleared WDB folder shows
+    // bank GUIDs already populated in slots 39..62, with the gate at
+    // `VAR_BANK_GATE_GUID` = 0). The gate doesn't hide data missing —
+    // it hides data that's present from boot. Reading the GUID array
+    // directly recovers it without ever opening the bank window.
+    OFF_INVMGR_GUID_ARRAY = 0x04,
+    INVMGR_BANK_MAIN_FIRST_SLOT = 39,
+    INVMGR_BANK_MAIN_LAST_SLOT = 62,
+    INVMGR_BANK_BAG_FIRST_SLOT = 63,
+    INVMGR_BANK_BAG_LAST_SLOT = 68,
+    // Engine's `ObjectMgr::Get`-style resolver — given a type and GUID,
+    // returns the resolved CGObject pointer (or null). Same function the
+    // engine itself uses inside `GetItemBySlot` (called at `0x00622904`)
+    // and `PackBagSlot` (called at `0x004F98E2`). We invoke it directly
+    // for bank slots so we sidestep the banker-GUID gate that
+    // `GetItemBySlot` applies for slots 39..68 — the GUIDs in
+    // `invMgr+0x04` are populated at login, only the gate gets toggled
+    // by bank-window state.
+    //
+    //   __fastcall(int type, const char *debugName, u32 guidLo,
+    //              u32 guidHi, int priority) → void *
+    //
+    // Type values: 2 = item (returns CGItem*), 4 = container/bag
+    // (returns CGContainer*). Engine passes `"ItemMgr"` as debugName
+    // and `0x172` as priority for both call sites we've decoded.
+    FUN_OBJECT_RESOLVE_BY_GUID = 0x00468460,
+    OBJ_TYPE_ITEM = 2,
+    OBJ_TYPE_CONTAINER = 4,
+    // Bank gate. The engine writes the active banker NPC's GUID here
+    // when the bank window opens (8-byte qword) and zeroes it on close.
+    // `GetItemBySlot` returns null for slots 39..68 if this GUID is zero,
+    // even though the slot data in `invMgr+0x04` remains populated.
+    // Bypassed in the direct-read bank path; informational only otherwise.
+    VAR_BANK_GATE_GUID = 0x00BDD038,
     // `Script_GetContainerNumSlots` Lua C function — `__fastcall(void *L)`.
     // Reads bagID from Lua stack[1] and pushes the bag's slot count back.
     // We invoke this from C-side bag walks instead of hardcoding a max
@@ -130,6 +182,14 @@ enum Offsets {
     // descriptor bytes for a worn-and-bound item.
     OFF_DESCRIPTOR_FLAGS = 0x3C,
     ITEM_FLAG_SOULBOUND = 0x01,
+    // ITEM_FIELD_STACK_COUNT — single dword. Verified by decoding
+    // `Script_GetContainerItemInfo` (`0x004F9670`): after resolving the
+    // descriptor, `mov eax, [esi+0x114]; fild [eax+0x20]` is the count
+    // return. Field index 0x8 in 1.12's item-field layout, which puts
+    // STACK_COUNT *before* the contained/creator GUIDs (0x9..0xE) —
+    // different from the more common documented layout that places
+    // STACK_COUNT after them. Trust the binary, not external docs.
+    OFF_DESCRIPTOR_STACK_COUNT = 0x20,
     // ITEM_FIELD_DURABILITY (current) and ITEM_FIELD_MAXDURABILITY (max) live
     // adjacent to each other in the descriptor as plain dwords. Verified in
     // `Script_GetInventoryItemBroken` (`0x004C8590`): after resolving the
