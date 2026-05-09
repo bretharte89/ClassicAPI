@@ -111,6 +111,14 @@ enum Offsets {
     // descriptor bytes for a worn-and-bound item.
     OFF_DESCRIPTOR_FLAGS = 0x3C,
     ITEM_FLAG_SOULBOUND = 0x01,
+    // ITEM_FIELD_DURABILITY (current) and ITEM_FIELD_MAXDURABILITY (max) live
+    // adjacent to each other in the descriptor as plain dwords. Verified in
+    // `Script_GetInventoryItemBroken` (`0x004C8590`): after resolving the
+    // descriptor, it reads `[ecx+0xA4]` for max and `[eax+0xA0]` for cur,
+    // and treats the item as broken when `max > 0 && cur == 0`. Items with
+    // no durability concept (consumables, materials) have both fields 0.
+    OFF_DESCRIPTOR_DURABILITY = 0xA0,
+    OFF_DESCRIPTOR_MAX_DURABILITY = 0xA4,
 
     // CGItem has TWO descriptor-like pointers and they hold different things:
     //   +0x114 = m_objectFields (the UpdateField array we read FLAGS from at
