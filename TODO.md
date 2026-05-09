@@ -1237,3 +1237,92 @@ Set via the same Lua C API path `CLASSIC_API_VERSION` uses (no
 which fires after the engine's `LoadScriptFunctions` boot phase.
 
 See [src/expansion/Constants.cpp](src/expansion/Constants.cpp).
+
+## 54. `C_AddOns.*` namespace wrapping — easy (bulk) + medium (a few)
+
+Modern WoW (10.x) moved most addon API into the `C_AddOns` namespace.
+Addons backported from retail / Classic Era 1.15.x call
+`C_AddOns.IsAddOnLoaded("foo")` directly and break on 1.12 since
+the namespace doesn't exist. We can fix this in three tiers.
+
+### Tier 1 — bulk wrapping (~30 min, no real engine work)
+
+1.12's existing addon functions are already at the right ABI
+(`int __fastcall(void *L)`) and behave identically to the modern
+`C_AddOns.*` versions. Just register each by address under the
+`C_AddOns` table — no new C code, just `RegisterTableFunction`
+calls pointing at the existing offsets.
+
+| Lua name (modern)           | 1.12 offset    | Notes |
+|-----------------------------|---------------:|-------|
+| `GetNumAddOns`              | `0x0048E350`   | |
+| `GetAddOnInfo`              | `0x0048E390`   | |
+| `GetAddOnMetadata`          | `0x0048E530`   | reads `## X-*:` tags from .toc — same as modern |
+| `GetAddOnDependencies`      | `0x0048E5E0`   | covers 1.12 `## Dependencies:` — modern's `OptionalDeps` may have been added later, may need its own offset |
+| `EnableAddOn`               | `0x0048E690`   | |
+| `EnableAllAddOns`           | `0x0048E720`   | |
+| `DisableAddOn`              | `0x0048E760`   | |
+| `DisableAllAddOns`          | `0x0048E7F0`   | |
+| `ResetDisabledAddOns`       | `0x0048E830`   | |
+| `IsAddOnLoadOnDemand`       | `0x0048E840`   | |
+| `IsAddOnLoaded`             | `0x0048E8E0`   | |
+| `LoadAddOn`                 | `0x0048E980`   | |
+| `GetAddOnEnableState`       | `0x0046D6F0`   | |
+| `SaveAddOns`                | `0x0046D990`   | |
+| `ResetAddOns`               | `0x0046D9A0`   | |
+| `IsAddonVersionCheckEnabled`| `0x0046D9B0`   | |
+| `SetAddonVersionCheck`      | `0x0046D9E0`   | |
+
+Pattern (in a new `src/addons/Wrap.cpp`):
+```cpp
+Game::Lua::RegisterTableFunction("C_AddOns", "IsAddOnLoaded",
+    reinterpret_cast<Game::Lua::CFunction>(0x0048E8E0));
+```
+
+### Tier 2 — convenience wrappers around `GetAddOnInfo` (small)
+
+Modern split out single-field getters that are derivable from
+the existing `GetAddOnInfo` 7-tuple `(name, title, notes, enabled,
+loadable, reason, security)`. Each is a thin Lua C function that
+calls the engine's `Script_GetAddOnInfo` internally, then pushes
+just the requested return:
+
+- `C_AddOns.GetAddOnName(index)` → `name`
+- `C_AddOns.GetAddOnTitle(index)` → `title`
+- `C_AddOns.GetAddOnNotes(index)` → `notes`
+- `C_AddOns.IsAddOnLoadable(index)` → `loadable` (boolean)
+- `C_AddOns.GetAddOnSecurity(index)` → `security` (`"s"` / `"i"`)
+- `C_AddOns.DoesAddOnExist(nameOrIndex)` → boolean (returns
+  `false` if `GetAddOnInfo` returns nil, `true` otherwise)
+
+Implementation strategy: do the engine call via the Lua C API
+(`SetTop` + `PushNumber`/`PushString` for the arg, call
+`Script_GetAddOnInfo` directly via its offset, then read the
+requested return from the stack). Same dispatch trick
+`Item::Hearthstone` uses for `Script_UseContainerItem`.
+
+### Tier 3 — research / new work
+
+- **`GetAddOnInterfaceVersion(index)`** — reads `## Interface:` from
+  the .toc. The engine parses this at addon-load time; we'd need
+  to find where it stores the per-addon value.
+- **`GetAddOnLocalTable(index)`** — returns the addon's private
+  namespace (the table passed as second arg to addon files via
+  the `... = name, addonTable` shape). Engine maintains it; we'd
+  need to find the storage.
+- **`DoesAddOnHaveLoadError(index)`** — load-error tracking. May
+  not exist in 1.12 in a queryable form.
+- **`IsAddOnDefaultEnabled(index)`** — initial-enabled state from
+  the .toc `## DefaultState:` tag (not in 1.12 .toc syntax).
+
+### Skip
+
+- `GetScriptsDisallowedForBeta` — beta-specific; no 1.12 analogue.
+
+### Why this is worth doing
+
+Almost every modern addon released in the last few years uses
+`C_AddOns.IsAddOnLoaded` instead of the global. Backporting an
+arbitrary modern addon to 1.12 currently means find/replace
+across the codebase. Tier 1 alone (one afternoon) makes that
+unnecessary for the most common 17 entry points.
