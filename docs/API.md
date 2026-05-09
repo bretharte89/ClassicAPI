@@ -33,15 +33,16 @@ build instructions.
   - [`C_Item.IsBound(itemLocation)`](#c_itemisbounditemlocation)
   - [`C_Item.GetItemID(itemLocation)`](#c_itemgetitemiditemlocation)
   - [`GetInventoryItemID(unit, slot)`](#getinventoryitemidunit-slot)
-  - [`C_Container.GetContainerItemID(bagIndex, slotIndex)`](#c_containergetcontaineritemidbagindex-slotindex)
   - [`GetInventoryItemDurability(invSlot)`](#getinventoryitemdurabilityinvslot)
-  - [`C_Container.GetContainerItemDurability(containerIndex, slotIndex)`](#c_containergetcontaineritemdurabilitycontainerindex-slotindex)
-  - [`C_Container.GetContainerNumFreeSlots(bagID)`](#c_containergetcontainernumfreeslotsbagid)
   - [`C_Item.GetItemFamily(item)`](#c_itemgetitemfamilyitem)
   - [`GetItemIcon(itemID)` / `C_Item.GetItemIcon(itemLocation)` / `C_Item.GetItemIconByID(item)`](#getitemiconitemid--c_itemgetitemiconitemlocation--c_itemgetitemiconbyiditem)
   - [`C_Item.GetItemInfoInstant(item)`](#c_itemgetiteminfoinstantitem)
   - [`C_Item.IsItemDataCachedByID(item)` / `C_Item.IsItemDataCached(itemLocation)`](#c_itemisitemdatacachedbyiditem--c_itemisitemdatacacheditemlocation)
   - [`C_Item.RequestLoadItemDataByID(item)` / `C_Item.RequestLoadItemData(itemLocation)`](#c_itemrequestloaditemdatabyiditem--c_itemrequestloaditemdataitemlocation)
+- [Container](#container)
+  - [`C_Container.GetContainerItemID(bagIndex, slotIndex)`](#c_containergetcontaineritemidbagindex-slotindex)
+  - [`C_Container.GetContainerItemDurability(containerIndex, slotIndex)`](#c_containergetcontaineritemdurabilitycontainerindex-slotindex)
+  - [`C_Container.GetContainerNumFreeSlots(bagID)`](#c_containergetcontainernumfreeslotsbagid)
 - [Unit](#unit)
   - [`UnitGUID(unit)`](#unitguidunit)
 - [Combat](#combat)
@@ -723,28 +724,6 @@ end
 local headID = GetInventoryItemID("party1", INVSLOT_HEAD)
 ```
 
-### `C_Container.GetContainerItemID(bagIndex, slotIndex)`
-
-Returns the itemID at the given bag/slot, or `nil` if the slot is empty
-or the indices are out of range. Modern positional-arg form of the same
-lookup `C_Item.GetItemID({bagID=B, slotIndex=S})` performs.
-
-- `bagIndex = 0` — the player's main backpack.
-- `bagIndex = 1..4` — the player's equipped bag slots.
-- `slotIndex` — 1-based, capped at the bag's actual slot count (the
-  engine's `PackBagSlot` rejects out-of-range slots and returns nil
-  cleanly).
-
-```lua
-for slot = 1, 16 do
-    local id = C_Container.GetContainerItemID(0, slot)
-    if id then
-        local _, type, subtype = C_Item.GetItemInfoInstant(id)
-        -- ...
-    end
-end
-```
-
 ### `GetInventoryItemDurability(invSlot)`
 
 Returns `(current, maximum)` durability for the player's equipped item
@@ -782,93 +761,6 @@ Reads ITEM_FIELD_DURABILITY (+0xA0) and ITEM_FIELD_MAXDURABILITY
 (+0xA4) directly off the CGItem's m_objectFields descriptor at `+0x114`
 — same descriptor [`C_Item.IsBound`](#c_itemisbounditemlocation) reads
 FLAGS from. No DBC indirection.
-
-Equivalent to the function of the same name introduced in 3.0.
-
-### `C_Container.GetContainerItemDurability(containerIndex, slotIndex)`
-
-Bag/bank variant of [`GetInventoryItemDurability`](#getinventoryitemdurabilityinvslot).
-Same `(current, maximum)` return shape and the same "nothing for items
-without durability" rule.
-
-```
-current, maximum = C_Container.GetContainerItemDurability(containerIndex, slotIndex)
-```
-
-- `containerIndex = 0` — the player's main backpack.
-- `containerIndex = 1..4` — the player's equipped bag slots.
-- `containerIndex = -1, 5..11` — bank-frame slots, only addressable
-  while the bank window is open.
-- `slotIndex` — 1-based, capped at the bag's actual slot count.
-
-```lua
-for slot = 1, GetContainerNumSlots(0) do
-    local cur, max = C_Container.GetContainerItemDurability(0, slot)
-    if cur then
-        -- item at backpack slot has durability
-    end
-end
-```
-
-Goes through the same bag-resolve chain
-[`C_Container.GetContainerItemID`](#c_containergetcontaineritemidbagindex-slotindex)
-uses (engine's `PackBagSlot` → `GetItemBySlot`), then reads the same
-durability fields off the descriptor.
-
-Equivalent to the function of the same name introduced in 10.0.
-
-### `C_Container.GetContainerNumFreeSlots(bagID)`
-
-Returns the number of empty slots in the given bag, plus the bag's
-`BagFamily` bitfield (the type of items the bag is restricted to).
-
-```
-numberOfFreeSlots, bagType = C_Container.GetContainerNumFreeSlots(bagID)
-```
-
-- `bagID = 0` — the player's main backpack. Always reports
-  `(freeCount, 0)` — the backpack is unfamilied (general-purpose).
-- `bagID = 1..4` — the player's equipped bag slots. Slot count and
-  bagType come from the bag item's cached `ItemStats_C` record —
-  `m_containerSlots` and `m_bagFamily` respectively. If no bag is
-  equipped (or the item somehow isn't cached): `(0, 0)`.
-- Other `bagID` values (bank, keyring, out-of-range): `(0, 0)`. Always
-  returns two values, never nil.
-
-```lua
-local free, bagType = C_Container.GetContainerNumFreeSlots(0)
--- free = number of empty slots in backpack, bagType = 0
-
-for bag = 0, 4 do
-    local free = C_Container.GetContainerNumFreeSlots(bag)
-    -- ...
-end
-```
-
-> **Vanilla `bagType` is sparse.** On Turtle WoW (1.12.1), only Light
-> Quiver actually carries a populated BagFamily field among the bags
-> we tested. Soul Pouch, Enchanting Bag, Herb Pouch, etc. all return
-> 0 here even though their classification clearly implies a family —
-> the vanilla server data simply doesn't fill the field for those.
-> For bag-category discrimination, prefer reading `(class, subClass)`
-> from [`C_Item.GetItemInfoInstant`](#c_itemgetiteminfoinstantitem).
-> The same field on **individual loot items** (arrows, bullets,
-> shards, herbs) IS populated reliably — use
-> [`C_Item.GetItemFamily`](#c_itemgetitemfamilyitem) for routing
-> decisions.
-
-> **The bitmask encoding matches modern.** `bagType` is the bit
-> position (`1 << (familyID - 1)`), not the raw 1.12-stored familyID,
-> so callers can bitwise-AND with itemFamily values from
-> [`C_Item.GetItemFamily`](#c_itemgetitemfamilyitem) directly. We
-> convert internally — see that function's notes for the
-> encoding-shift story.
-
-Implementation walks the bag using
-[`Item::Location::ResolveBag`](#c_containergetcontaineritemidbagindex-slotindex)
-internally and counts slots that resolve to a null `CGItem *` (i.e.,
-empty). Cross-checked in-game against a manual
-`C_Container.GetContainerItemID` walk; counts match.
 
 Equivalent to the function of the same name introduced in 3.0.
 
@@ -1063,6 +955,117 @@ f:SetScript("OnEvent", function()
 end)
 C_Item.RequestLoadItemDataByID(2589)
 ```
+
+## Container
+
+### `C_Container.GetContainerItemID(bagIndex, slotIndex)`
+
+Returns the itemID at the given bag/slot, or `nil` if the slot is empty
+or the indices are out of range. Modern positional-arg form of the same
+lookup `C_Item.GetItemID({bagID=B, slotIndex=S})` performs.
+
+- `bagIndex = 0` — the player's main backpack.
+- `bagIndex = 1..4` — the player's equipped bag slots.
+- `slotIndex` — 1-based, capped at the bag's actual slot count (the
+  engine's `PackBagSlot` rejects out-of-range slots and returns nil
+  cleanly).
+
+```lua
+for slot = 1, 16 do
+    local id = C_Container.GetContainerItemID(0, slot)
+    if id then
+        local _, type, subtype = C_Item.GetItemInfoInstant(id)
+        -- ...
+    end
+end
+```
+
+### `C_Container.GetContainerItemDurability(containerIndex, slotIndex)`
+
+Bag/bank variant of [`GetInventoryItemDurability`](#getinventoryitemdurabilityinvslot).
+Same `(current, maximum)` return shape and the same "nothing for items
+without durability" rule.
+
+```
+current, maximum = C_Container.GetContainerItemDurability(containerIndex, slotIndex)
+```
+
+- `containerIndex = 0` — the player's main backpack.
+- `containerIndex = 1..4` — the player's equipped bag slots.
+- `containerIndex = -1, 5..11` — bank-frame slots, only addressable
+  while the bank window is open.
+- `slotIndex` — 1-based, capped at the bag's actual slot count.
+
+```lua
+for slot = 1, GetContainerNumSlots(0) do
+    local cur, max = C_Container.GetContainerItemDurability(0, slot)
+    if cur then
+        -- item at backpack slot has durability
+    end
+end
+```
+
+Goes through the same bag-resolve chain
+[`C_Container.GetContainerItemID`](#c_containergetcontaineritemidbagindex-slotindex)
+uses (engine's `PackBagSlot` → `GetItemBySlot`), then reads the same
+durability fields off the descriptor.
+
+Equivalent to the function of the same name introduced in 10.0.
+
+### `C_Container.GetContainerNumFreeSlots(bagID)`
+
+Returns the number of empty slots in the given bag, plus the bag's
+`BagFamily` bitfield (the type of items the bag is restricted to).
+
+```
+numberOfFreeSlots, bagType = C_Container.GetContainerNumFreeSlots(bagID)
+```
+
+- `bagID = 0` — the player's main backpack. Always reports
+  `(freeCount, 0)` — the backpack is unfamilied (general-purpose).
+- `bagID = 1..4` — the player's equipped bag slots. Slot count and
+  bagType come from the bag item's cached `ItemStats_C` record —
+  `m_containerSlots` and `m_bagFamily` respectively. If no bag is
+  equipped (or the item somehow isn't cached): `(0, 0)`.
+- Other `bagID` values (bank, keyring, out-of-range): `(0, 0)`. Always
+  returns two values, never nil.
+
+```lua
+local free, bagType = C_Container.GetContainerNumFreeSlots(0)
+-- free = number of empty slots in backpack, bagType = 0
+
+for bag = 0, 4 do
+    local free = C_Container.GetContainerNumFreeSlots(bag)
+    -- ...
+end
+```
+
+> **Vanilla `bagType` is sparse.** On Turtle WoW (1.12.1), only Light
+> Quiver actually carries a populated BagFamily field among the bags
+> we tested. Soul Pouch, Enchanting Bag, Herb Pouch, etc. all return
+> 0 here even though their classification clearly implies a family —
+> the vanilla server data simply doesn't fill the field for those.
+> For bag-category discrimination, prefer reading `(class, subClass)`
+> from [`C_Item.GetItemInfoInstant`](#c_itemgetiteminfoinstantitem).
+> The same field on **individual loot items** (arrows, bullets,
+> shards, herbs) IS populated reliably — use
+> [`C_Item.GetItemFamily`](#c_itemgetitemfamilyitem) for routing
+> decisions.
+
+> **The bitmask encoding matches modern.** `bagType` is the bit
+> position (`1 << (familyID - 1)`), not the raw 1.12-stored familyID,
+> so callers can bitwise-AND with itemFamily values from
+> [`C_Item.GetItemFamily`](#c_itemgetitemfamilyitem) directly. We
+> convert internally — see that function's notes for the
+> encoding-shift story.
+
+Implementation walks the bag using
+[`Item::Location::ResolveBag`](#c_containergetcontaineritemidbagindex-slotindex)
+internally and counts slots that resolve to a null `CGItem *` (i.e.,
+empty). Cross-checked in-game against a manual
+`C_Container.GetContainerItemID` walk; counts match.
+
+Equivalent to the function of the same name introduced in 3.0.
 
 ## Unit
 
