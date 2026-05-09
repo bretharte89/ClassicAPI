@@ -384,12 +384,26 @@ Returns the on-use spell name + spellID for items that have one
 mapped yet — the `m_spellId[5]` array on the cached item record.
 Combine the spellID with `GetSpellInfo` for the name.
 
-## 24. `GetInventoryItemDurability(unit, slot)` — easy
+## ~~24. `GetInventoryItemDurability(invSlot)`~~ — DONE
 
-Returns `(current, max)` durability for an equipped item. Reads
-ITEM_FIELD_DURABILITY and ITEM_FIELD_MAXDURABILITY off the CGItem
-descriptor at `+0x114` — same descriptor we read FLAGS from in
-`C_Item.IsBound`. Just two more dword reads at known offsets.
+Returns `(current, max)` durability for the player's equipped item at
+`invSlot` (1-based), or nothing if the slot is empty or the item has
+no durability concept (consumables, materials, rings, trinkets,
+shirts, tabards). Player-only — matches modern API; the original
+TODO line had `(unit, slot)` but modern `GetInventoryItemDurability`
+takes only the slot.
+
+Reads ITEM_FIELD_DURABILITY (+0xA0) and ITEM_FIELD_MAXDURABILITY
+(+0xA4) off the CGItem descriptor at `+0x114` — the same descriptor
+[src/item/Bound.cpp](src/item/Bound.cpp) reads FLAGS from. Field
+offsets verified by decoding `Script_GetInventoryItemBroken` at
+`0x004C8590`, which tests `[descriptor+0x3C] & 0x08` for the broken
+flag bit AND `[descriptor+0xA4] > 0 && [descriptor+0xA0] == 0` as a
+fallback. Modern semantics confirmed against 3.3.5's
+`Script_GetInventoryItemDurability` at `0x005EA170`: returns nothing
+(0 values) when max is 0.
+
+See [src/item/Durability.cpp](src/item/Durability.cpp).
 
 ## ~~25. `FindSpellBookSlotByID(spellID)`~~ — DONE
 
