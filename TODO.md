@@ -1238,46 +1238,20 @@ which fires after the engine's `LoadScriptFunctions` boot phase.
 
 See [src/expansion/Constants.cpp](src/expansion/Constants.cpp).
 
-## 54. `C_AddOns.*` namespace wrapping — easy (bulk) + medium (a few)
+## 54. `C_AddOns.*` namespace — convenience wrappers + research
 
 Modern WoW (10.x) moved most addon API into the `C_AddOns` namespace.
-Addons backported from retail / Classic Era 1.15.x call
-`C_AddOns.IsAddOnLoaded("foo")` directly and break on 1.12 since
-the namespace doesn't exist. We can fix this in three tiers.
+1.12 already exposes most of the underlying functions as globals;
+we deliberately do *not* duplicate them under `C_AddOns` (Tier 1 in
+the prior version of this entry — pure namespace mirror, low value).
+What's worth adding is the post-vanilla *new* functionality.
 
-### Tier 1 — bulk wrapping (~30 min, no real engine work)
+### Tier 1 — DROPPED
 
-1.12's existing addon functions are already at the right ABI
-(`int __fastcall(void *L)`) and behave identically to the modern
-`C_AddOns.*` versions. Just register each by address under the
-`C_AddOns` table — no new C code, just `RegisterTableFunction`
-calls pointing at the existing offsets.
-
-| Lua name (modern)           | 1.12 offset    | Notes |
-|-----------------------------|---------------:|-------|
-| `GetNumAddOns`              | `0x0048E350`   | |
-| `GetAddOnInfo`              | `0x0048E390`   | |
-| `GetAddOnMetadata`          | `0x0048E530`   | reads `## X-*:` tags from .toc — same as modern |
-| `GetAddOnDependencies`      | `0x0048E5E0`   | covers 1.12 `## Dependencies:` — modern's `OptionalDeps` may have been added later, may need its own offset |
-| `EnableAddOn`               | `0x0048E690`   | |
-| `EnableAllAddOns`           | `0x0048E720`   | |
-| `DisableAddOn`              | `0x0048E760`   | |
-| `DisableAllAddOns`          | `0x0048E7F0`   | |
-| `ResetDisabledAddOns`       | `0x0048E830`   | |
-| `IsAddOnLoadOnDemand`       | `0x0048E840`   | |
-| `IsAddOnLoaded`             | `0x0048E8E0`   | |
-| `LoadAddOn`                 | `0x0048E980`   | |
-| `GetAddOnEnableState`       | `0x0046D6F0`   | |
-| `SaveAddOns`                | `0x0046D990`   | |
-| `ResetAddOns`               | `0x0046D9A0`   | |
-| `IsAddonVersionCheckEnabled`| `0x0046D9B0`   | |
-| `SetAddonVersionCheck`      | `0x0046D9E0`   | |
-
-Pattern (in a new `src/addons/Wrap.cpp`):
-```cpp
-Game::Lua::RegisterTableFunction("C_AddOns", "IsAddOnLoaded",
-    reinterpret_cast<Game::Lua::CFunction>(0x0048E8E0));
-```
+Bulk wrapping of 17 existing 1.12 globals (`IsAddOnLoaded`,
+`LoadAddOn`, etc.) under `C_AddOns.*`. Skipped — addons that need
+the namespace can `C_AddOns = C_AddOns or {} ; C_AddOns.IsAddOnLoaded
+= IsAddOnLoaded` themselves in two lines.
 
 ### Tier 2 — convenience wrappers around `GetAddOnInfo` (small)
 
