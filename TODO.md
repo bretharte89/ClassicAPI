@@ -1300,3 +1300,75 @@ Almost every modern addon released in the last few years uses
 arbitrary modern addon to 1.12 currently means find/replace
 across the codebase. Tier 1 alone (one afternoon) makes that
 unnecessary for the most common 17 entry points.
+
+### Investigation findings — direct AddOnInfo struct reads (deferred)
+
+**Goal:** make Tier 2 convenience wrappers (GetAddOnName/Title/
+Notes/Loadable/Security/DoesAddOnExist) read directly from the
+engine's per-addon struct instead of dispatching to
+`Script_GetAddOnInfo` and discarding 6 of 7 returns. **Status:
+deferred** — struct layout is more complex than a clean inline-
+string packing, and time-to-derive exceeds the perf upside for
+the typical caller.
+
+**What we learned:**
+
+- Addon **array** lives at `[0x00BE1B94]` (pointer to array of
+  4-byte pointers) and **count** at `[0x00BE1B90]`. Confirmed
+  via `Script_GetAddOnInfo` disassembly: lookup is
+  `if (idx >= [0x00BE1B90]) return null; return ((void**)
+  [0x00BE1B94])[idx];`.
+- Each entry points to a per-addon struct (heap-allocated, sized
+  per-addon).
+- **Struct fields we identified (relative to struct base):**
+
+| Offset      | Content                                            |
+|-------------|---------------------------------------------------|
+| `+0x00..+0x0B` | Name buffer — inline, 12 bytes, null-terminated. Both 8-char "Atlas-TW" and 9-char "aux-addon" fit. |
+| `+0x0C`     | Heap pointer (Storm allocator addr like `0x29B4D908`) **OR** null. Non-null for Atlas-TW; null for aux-addon. Derefs to non-printable bytes — likely a struct/array, not a direct string. |
+| `+0x10..+0x17` | Often zeros across multiple addons. |
+| `+0x18`     | Constant `0x909` across all addons probed. Format/version marker? |
+| `+0x1C`     | Constant `5` across all addons probed. Schema version? |
+| `+0x20+`    | Variable — for shorter addons this is unrelated adjacent heap memory (saw "ItemSync" appear once and "Notes" appear in another session for aux-addon, both clearly not part of aux-addon's data). |
+
+- **Title and Notes are NOT inline-packed** at the start of the
+  struct as I initially hypothesized. Atlas-TW's actual title is
+  `"Atlas-TW"` (matches name) and notes is the long
+  `"Atlas-TW: instance Map Browser..."` string. Neither appears
+  in the first 0x60 bytes of the struct except where the inline
+  *name* field happens to look like the title.
+
+- **The pointer at `+0x0C`** is the most likely indirection to
+  the title/notes data, but it points to a binary blob (non-
+  ASCII first bytes), suggesting another layer of indirection
+  (struct of pointers, or a tagged section list). Would require
+  a second-level scan to chase.
+
+- **Engine helper functions** for field extraction live around
+  `0x0051DF00`–`0x0051E0xx` (LookupByIndex, GetTitle, GetNotes,
+  etc.), reachable via call-target arithmetic from
+  `Script_GetAddOnInfo`. Initial decoding was confused by
+  off-by-one arithmetic on my part — the targets land on what
+  appear to be mid-instruction addresses, suggesting the
+  helpers may use non-standard prologues or are tail-call
+  thunks. Worth tracing more carefully.
+
+- **Diagnostic that worked:** `_classicapi_AddonStructDump(idx)`
+  with SEH-wrapped pointer deref (the bare pointer-deref
+  approach crashes with `0xC0000005` when interpreting inline
+  string bytes as pointers — `"s-TW"` happened to fall in
+  `0x10000000..0xF0000000` range and AVed). The
+  `SafeReadAsciiString` helper using `__try`/`__except` is the
+  pattern to keep if we resume this work.
+
+**Recommended next step** if revisiting: extend the diagnostic
+to recursively chase the `+0x0C` pointer (read 32 bytes there,
+check if any look like further string pointers), and trace
+1.12's `Script_GetAddOnMetadata` (`0x0048E530`) which is more
+self-contained than `GetAddOnInfo` and might reveal a cleaner
+field-access pattern.
+
+Until then, Tier 2 wrappers remain `Script_GetAddOnInfo`
+dispatch — correct behavior, modest extra overhead. Switching
+to direct reads is purely a perf optimization with no
+functional improvement.
