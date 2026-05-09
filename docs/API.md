@@ -62,6 +62,7 @@ build instructions.
   - [`C_EventUtils.IsEventValid(eventName)`](#c_eventutilsiseventvalideventname)
 - [Globals](#globals)
   - [`CLASSIC_API_VERSION`](#classic_api_version)
+  - [`LE_EXPANSION_*`](#le_expansion_)
 
 ## Spell
 
@@ -1444,5 +1445,41 @@ time via `-DCLASSICAPI_TAG=vX.Y.Z`. Unset versions resolve to `0`.
 ```lua
 if CLASSIC_API_VERSION and CLASSIC_API_VERSION >= 10200 then
     -- ClassicAPI v1.2.0 or newer is loaded
+end
+```
+
+### `LE_EXPANSION_*`
+
+The retail / Classic Era expansion-level enum, exposed as Lua globals
+so addons backporting from later expansions don't have to gate on
+`if LE_EXPANSION_CLASSIC then` (the constant being defined is itself
+the version probe). Values match the modern `Enum.ExpansionLevel`
+table.
+
+| Constant                              | Value |
+|---------------------------------------|------:|
+| `LE_EXPANSION_LEVEL_CURRENT`          | `0` *(this is Classic)* |
+| `LE_EXPANSION_CLASSIC`                | `0` |
+| `LE_EXPANSION_BURNING_CRUSADE`        | `1` |
+| `LE_EXPANSION_WRATH_OF_THE_LICH_KING` | `2` |
+| `LE_EXPANSION_CATACLYSM`              | `3` |
+| `LE_EXPANSION_MISTS_OF_PANDARIA`      | `4` |
+| `LE_EXPANSION_WARLORDS_OF_DRAENOR`    | `5` |
+| `LE_EXPANSION_LEGION`                 | `6` |
+| `LE_EXPANSION_BATTLE_FOR_AZEROTH`     | `7` |
+| `LE_EXPANSION_SHADOWLANDS`            | `8` |
+| `LE_EXPANSION_DRAGONFLIGHT`           | `9` |
+| `LE_EXPANSION_WAR_WITHIN`             | `10` |
+| `LE_EXPANSION_MIDNIGHT`               | `11` |
+
+```lua
+-- Classic version check using modern idiom
+if LE_EXPANSION_LEVEL_CURRENT < LE_EXPANSION_BURNING_CRUSADE then
+    -- pure-1.x (vanilla / Classic Era) code path
+end
+
+-- Probe for ClassicAPI presence
+if LE_EXPANSION_LEVEL_CURRENT then
+    -- the constants are defined → ClassicAPI is loaded
 end
 ```

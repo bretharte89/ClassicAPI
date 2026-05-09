@@ -28,7 +28,7 @@ Quick index:
 | Talent    | `GetTalentSpellID`, `GetTalentIDByIndex` |
 | Time      | `GetServerTime` |
 | Events    | `C_EventUtils.IsEventValid` |
-| Global    | `CLASSIC_API_VERSION` |
+| Globals   | `CLASSIC_API_VERSION`, `LE_EXPANSION_LEVEL_CURRENT`, `LE_EXPANSION_CLASSIC` … `LE_EXPANSION_MIDNIGHT` |
 
 ## Installation
 

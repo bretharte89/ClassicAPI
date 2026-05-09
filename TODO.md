@@ -1153,3 +1153,21 @@ hardcoded vanilla cap, so custom servers with larger-than-24-slot
 bags work without code changes.
 
 See [src/item/Hearthstone.cpp](src/item/Hearthstone.cpp).
+
+## ~~53. `LE_EXPANSION_*` constants~~ — DONE
+
+Twelve expansion-level enum globals (`LE_EXPANSION_CLASSIC` through
+`LE_EXPANSION_MIDNIGHT`) plus `LE_EXPANSION_LEVEL_CURRENT`, all
+matching the canonical retail `Enum.ExpansionLevel` table values.
+On 1.12, `LE_EXPANSION_LEVEL_CURRENT` resolves to
+`LE_EXPANSION_CLASSIC` (= 0). Lets addons backported from later
+expansions use the modern `if LE_EXPANSION_LEVEL_CURRENT < ...`
+gating idiom without conditionally defining the constants
+themselves.
+
+Set via the same Lua C API path `CLASSIC_API_VERSION` uses (no
+`FrameScript_Execute` source). One per entry, written to
+`_G[name] = value` from the module's `RegisterLuaFunctions` hook
+which fires after the engine's `LoadScriptFunctions` boot phase.
+
+See [src/expansion/Constants.cpp](src/expansion/Constants.cpp).
