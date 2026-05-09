@@ -15,6 +15,13 @@
 
 enum Offsets {
     FUN_FRAME_SCRIPT_INITIALIZE = 0x7039E0,
+    // `__fastcall(const char *script, const char *scriptName) → bool`.
+    // Engine wrapper around `luaL_loadbuffer` + `lua_pcall` that runs a
+    // Lua source string with error reporting. Currently unused — we set
+    // globals via the Lua C API directly (see `FrameScript_Initialize_h`)
+    // — but kept for reference: any future need to execute Lua source
+    // from C++ should go through this rather than rolling its own
+    // load/pcall sequence.
     FUN_FRAME_SCRIPT_EXECUTE = 0x704CD0,
     FUN_INVALID_FUNCTION_PTR_CHECK = 0x42A320,
     FUN_LOAD_SCRIPT_FUNCTIONS = 0x490250,

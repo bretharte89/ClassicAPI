@@ -18,8 +18,6 @@
 #include "event/Custom.h"
 #include "item/Data.h"
 
-#include <string>
-
 static Game::FrameScript_Initialize_t FrameScript_Initialize_o = nullptr;
 static Game::LoadScriptFunctions_t LoadScriptFunctions_o = nullptr;
 
@@ -43,9 +41,16 @@ static bool __fastcall FrameScript_Initialize_h() {
     Event::Custom::PrepareForReload();
 
     FrameScript_Initialize_o();
-    const std::string luaScript =
-        "CLASSIC_API_VERSION=" + std::to_string(CLASSICAPI_VERSION_VALUE);
-    Game::FrameScript_Execute(luaScript.c_str(), "ClassicAPI.lua");
+    // Set the `CLASSIC_API_VERSION` global directly via the Lua C API
+    // rather than building a `"foo=N"` source string and routing it
+    // through `FrameScript_Execute`. Faster (no parse), type-true (the
+    // value is pushed as a number, not parsed as a numeric literal),
+    // and avoids the need for any Lua source in our DLL.
+    if (void *L = Game::Lua::State()) {
+        Game::Lua::PushString(L, "CLASSIC_API_VERSION");
+        Game::Lua::PushNumber(L, static_cast<double>(CLASSICAPI_VERSION_VALUE));
+        Game::Lua::SetTable(L, Game::Lua::GLOBALS_INDEX);
+    }
     return true;
 }
 

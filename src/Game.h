@@ -18,7 +18,6 @@
 namespace Game {
 
 using FrameScript_Initialize_t = bool(__fastcall *)();
-using FrameScript_Execute_t = bool(__fastcall *)(const char *script, const char *scriptName);
 using LoadScriptFunctions_t = void(__fastcall *)();
 
 namespace Lua {
@@ -106,8 +105,6 @@ void RegisterFrameMethods(void *context, const FrameMethodEntry *table, int coun
 void RegisterTableFunction(const char *tableName, const char *methodName,
                            CFunction func);
 } // namespace Lua
-
-extern const FrameScript_Execute_t FrameScript_Execute;
 
 // Self-registration for API modules. Each module .cpp declares a file-scope
 // `static const Game::ModuleAutoRegister _r{&RegisterLuaFunctions};`, which
