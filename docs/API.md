@@ -28,6 +28,7 @@ build instructions.
 - [Faction](#faction)
   - [`GetFactionIDByIndex(factionIndex)`](#getfactionidbyindexfactionindex)
   - [`GetFactionInfoByID(factionID)`](#getfactioninfobyidfactionid)
+  - [`GetFactionParentID(factionID)`](#getfactionparentidfactionid)
 - [Item](#item)
   - [`C_Item.IsBound(itemLocation)`](#c_itemisbounditemlocation)
   - [`C_Item.GetItemID(itemLocation)`](#c_itemgetitemiditemlocation)
@@ -43,6 +44,7 @@ build instructions.
   - [`InCombatLockdown()`](#incombatlockdown)
 - [Talent](#talent)
   - [`GetTalentSpellID(tabIndex, talentIndex, [rank])`](#gettalentspellidtabindex-talentindex-rank)
+  - [`GetTalentIDByIndex(tabIndex, talentIndex)`](#gettalentidbyindextabindex-talentindex)
 - [Time](#time)
   - [`GetServerTime()`](#getservertime)
 - [Events](#events)
@@ -557,6 +559,30 @@ local name = GetFactionInfoByID(574)  -- Caer Darrow (faction that can't be enco
 
 Equivalent to the function of the same name introduced in 3.0.
 
+### `GetFactionParentID(factionID)`
+
+Returns the parent factionID for a faction in a hierarchy (e.g.
+Stormwind's parent is Alliance Forces; The Defilers's parent is
+Horde Forces). Returns `0` for top-level factions with no parent,
+or `nil` for invalid factionIDs.
+
+```lua
+GetFactionParentID(72)     -- 469 (Stormwind → Alliance)
+GetFactionParentID(469)    -- 0   (Alliance is top-level)
+GetFactionParentID(99999)  -- nil
+```
+
+Modern WoW returns this as the 13th value of `GetFactionInfoByID`;
+we expose it as its own getter since 1.12's `GetFactionInfo` doesn't
+have the slot.
+
+Reads `Faction.dbc` `ParentFactionID` at record `+0x48` directly —
+no displayed-list dependency, works for any faction in the DBC
+regardless of whether the player has rep with it.
+
+Equivalent to the function of the same name introduced in 3.0 (as
+the 13th return of `GetFactionInfoByID`).
+
 ## Item
 
 ### `C_Item.IsBound(itemLocation)`
@@ -873,6 +899,31 @@ the higher slots stay zero.
 Equivalent to one of `GetTalentInfo`'s extended returns in modern WoW
 (varies by version; the talent's spellID has been part of the tuple
 since 5.0+).
+
+### `GetTalentIDByIndex(tabIndex, talentIndex)`
+
+Returns the engine's hidden talentID — the primary key of the
+`Talent.dbc` row — for the talent at the given (tab, idx). Returns
+`nil` for out-of-range indices.
+
+```lua
+GetTalentIDByIndex(1, 9)   -- 174  (Inner Focus, Discipline tier 3)
+GetTalentIDByIndex(1, 1)   -- 166  (first Discipline talent)
+```
+
+1.12's `GetTalentInfo(tab, idx)` returns
+`(name, icon, tier, column, currentRank, maxRank, ...)` but NOT the
+talentID. Modern WoW exposes it (and uses talentIDs as the natural
+key for `GetTalentInfoByID`, talent build sharing strings, etc.); we
+add this getter so addons that key on talentIDs from later expansions
+work unmodified.
+
+Reads `TalentEntry+0x00` from the per-tab talent arrays at
+`[0x00BDCD28]`. Same struct walk as `GetTalentSpellID`, just reads
+a different field.
+
+Equivalent to the talentID return slot of `GetTalentInfo` in modern
+WoW (5.0+; not exposed at all in 1.12).
 
 ## Time
 

@@ -18,13 +18,13 @@ Quick index:
 | Namespace | Calls |
 |-----------|-------|
 | Spell     | `GetSpellInfo` (with `(slot, bookType)` overload), `C_Spell.GetSpellInfo`, `C_Spell.GetSpellName`, `C_Spell.GetSpellTexture`, `GetSpellLink` (with `(slot, bookType)` overload), `C_Spell.GetSpellLink`, `FindSpellBookSlotByID`, `C_Spell.GetSpellDescription`, `IsPassiveSpell` (with `(slot, bookType)` overload), `C_Spell.IsSpellPassive`, `IsPlayerSpell`, `IsSpellKnown` |
-| GameTooltip | `GameTooltip:SetSpellByID` |
+| GameTooltip | `GameTooltip:SetSpellByID`, `GameTooltip:SetItemByID`, `GameTooltip:SetUnitAura` |
 | Quest     | `GetQuestIDFromLogIndex`, `C_QuestLog.RequestLoadQuestByID` (+ `QUEST_DATA_LOAD_RESULT` event), `C_QuestLog.GetTitleForQuestID` |
-| Faction   | `GetFactionIDByIndex`, `GetFactionInfoByID` |
+| Faction   | `GetFactionIDByIndex`, `GetFactionInfoByID`, `GetFactionParentID` |
 | Item      | `C_Item.IsBound`, `C_Item.GetItemID`, `GetInventoryItemID`, `C_Container.GetContainerItemID`, `C_Item.GetItemInfoInstant`, `GetItemIcon` / `C_Item.GetItemIcon` / `C_Item.GetItemIconByID`, `C_Item.IsItemDataCached(ByID)`, `C_Item.RequestLoadItemData(ByID)` (+ `ITEM_DATA_LOAD_RESULT` event) |
 | Unit      | `UnitGUID` |
 | Combat    | `InCombatLockdown` |
-| Talent    | `GetTalentSpellID` |
+| Talent    | `GetTalentSpellID`, `GetTalentIDByIndex` |
 | Time      | `GetServerTime` |
 | Events    | `C_EventUtils.IsEventValid` |
 | Global    | `CLASSIC_API_VERSION` |

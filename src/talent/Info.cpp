@@ -109,8 +109,66 @@ static int __fastcall Script_GetTalentSpellID(void *L) {
     return 1;
 }
 
+// `GetTalentIDByIndex(tabIndex, talentIndex)` — returns the Talent.dbc
+// primary key (the row's ID at `TalentEntry+0x00`) for the talent at
+// the given (tab, idx). 1.12's `GetTalentInfo` returns
+// `(name, icon, tier, column, currentRank, maxRank, ...)` but NOT the
+// talentID, so addons that want a stable identifier (for SavedVariables
+// keys, talent-build sharing, modern-API parity) currently have to
+// encode `(class, tab, tier, column)` and hope the talent tree doesn't
+// shift.
+//
+// Reads from the same per-tab talent arrays at `[VAR_TALENT_TAB_INFO_ARRAY]`
+// that #36 `GetTalentSpellID` walks. talentID at `+0x00` of the
+// `TalentEntry` was verified empirically during the GetTalentSpellID
+// debug pass: `entryFirstDword=174` matched Inner Focus's Talent.dbc
+// row ID (and `166` for the first Discipline talent).
+static int __fastcall Script_GetTalentIDByIndex(void *L) {
+    if (!Game::Lua::IsNumber(L, 1) || !Game::Lua::IsNumber(L, 2)) {
+        Game::Lua::Error(L, "Usage: GetTalentIDByIndex(tabIndex, talentIndex)");
+        return 0;
+    }
+    const int tabIndex = static_cast<int>(Game::Lua::ToNumber(L, 1));
+    const int talentIndex = static_cast<int>(Game::Lua::ToNumber(L, 2));
+    if (tabIndex < 1 || talentIndex < 1)
+        return 0;
+
+    const int tabCount = *reinterpret_cast<const int *>(
+        static_cast<uintptr_t>(Offsets::VAR_TALENT_TAB_COUNT));
+    if (tabIndex > tabCount)
+        return 0;
+
+    auto *tabs = *reinterpret_cast<const uint8_t *const *const *>(
+        static_cast<uintptr_t>(Offsets::VAR_TALENT_TAB_INFO_ARRAY));
+    if (tabs == nullptr)
+        return 0;
+    const uint8_t *tabInfo = tabs[tabIndex - 1];
+    if (tabInfo == nullptr)
+        return 0;
+
+    const int numTalents = *reinterpret_cast<const int *>(
+        tabInfo + Offsets::OFF_TABINFO_NUM_TALENTS);
+    if (talentIndex > numTalents)
+        return 0;
+
+    auto *talents = *reinterpret_cast<const uint8_t *const *>(
+        tabInfo + Offsets::OFF_TABINFO_TALENT_ARRAY);
+    if (talents == nullptr)
+        return 0;
+
+    const uint8_t *entry = talents +
+        (talentIndex - 1) * Offsets::TALENT_ENTRY_STRIDE;
+    const uint32_t talentID = *reinterpret_cast<const uint32_t *>(entry);
+    if (talentID == 0)
+        return 0;
+
+    Game::Lua::PushNumber(L, static_cast<double>(talentID));
+    return 1;
+}
+
 static void RegisterLuaFunctions() {
     Game::Lua::RegisterGlobalFunction("GetTalentSpellID", &Script_GetTalentSpellID);
+    Game::Lua::RegisterGlobalFunction("GetTalentIDByIndex", &Script_GetTalentIDByIndex);
 }
 
 static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};

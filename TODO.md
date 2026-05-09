@@ -730,22 +730,17 @@ library that wants to render an indicator radius. Modern WoW exposes
 this via `GetSpellRadius` (deprecated) or returns from
 `C_Spell.GetSpellInfo`.
 
-## 39. `GetFactionParentID(factionID)` — trivial
+## ~~39. `GetFactionParentID(factionID)`~~ — DONE
 
-Returns the parent factionID for a faction in a hierarchy (e.g.
-`Stormwind`'s parent is `Alliance`; `The Defilers`'s parent is
-`Horde Forces`). Modern WoW returns this as the 13th value of
-`GetFactionInfoByID`. We'd just add it as its own getter.
+Reads `Faction.dbc` `ParentFactionID` at record `+0x48` via the
+existing `Faction::Info::FactionRecord` helper. Returns `0` for
+top-level factions, `nil` for invalid IDs. Verified in-game:
+`GetFactionParentID(72)` → 469 (Stormwind → Alliance Forces),
+`GetFactionParentID(469)` → 0 (Alliance is top-level),
+`GetFactionParentID(99999)` → nil.
 
-`Faction.dbc` `ParentFactionID` is at `+0x48` of the record (already
-documented in [`src/Offsets.h`](src/Offsets.h)'s Faction section as
-"`ParentFactionID +0x48`"; the existing `Faction::Info::FactionRecord`
-helper returns the record pointer ready to read). This is a 5-line
-addition.
-
-Used by reputation addons that group factions hierarchically
-(`Stormwind` rolls up under `Alliance`, etc.), and by character-
-sheet-style displays.
+See [src/faction/Info.cpp](src/faction/Info.cpp) and
+`OFF_FACTION_PARENT_ID` in [src/Offsets.h](src/Offsets.h).
 
 ## 40. `UnitRaceBase(unit)` — easy
 
@@ -783,32 +778,20 @@ addons that want to render different UI per spec ("am I tanking?
 healing? DPS?") without having to do the talent-counting dance
 themselves.
 
-## 42. `GetTalentIDByIndex(tabIndex, talentIndex)` — easy
+## ~~42. `GetTalentIDByIndex(tabIndex, talentIndex)`~~ — DONE
 
-Exposes the `Talent.dbc` primary key — the talentID at `+0x00` of
-the record. 1.12's `GetTalentInfo(tab, idx)` returns
-`(name, icon, tier, column, currentRank, maxRank)` but NOT the
-talentID. Modern WoW exposes it as the 9th return of `GetTalentInfo`,
-and `GetTalentInfoByID(talentID)` / `GameTooltip:SetTalentByID`
-both consume it as the natural key.
+Reads `TalentEntry+0x00` from the per-tab talent arrays. The
+talentID-at-+0x00 offset was already confirmed empirically during
+the GetTalentSpellID debug pass (`entryFirstDword=174` matched
+Inner Focus's row ID), so this was a 5-line addition piggybacking
+on the existing struct walk. Verified in-game:
+`GetTalentIDByIndex(1, 9)` → 174,
+`GetTalentIDByIndex(1, 1)` → 166.
 
-Why useful even though `(tab, idx)` works for most things:
+Unblocks #43 `GameTooltip:SetTalentByID` whenever someone wants the
+modern by-ID tooltip dispatcher.
 
-- **Stable across talent-tree restructuring** — vanilla itself
-  doesn't restructure trees mid-expansion, but addons backporting
-  from later expansions key on talentID and we'd let them work
-  unmodified.
-- **SavedVariables-friendly** — single int per talent vs.
-  `(class, tab, tier, column)` tuple.
-- **Enables #43 `SetTalentByID`** which has no other input shape.
-
-`Talent.dbc` instance at `0x00C0D6E0` (records ptr at `+0x08`, count
-at `+0x0C`, per `docs/DBCs.md`). Resolution path: the engine's
-`Script_GetTalentInfo` already walks Talent.dbc filtered by
-`TabID`, sorted by `(tier, column)`, to produce the visible order
-the Lua API uses. Mirror that walk and return `record[+0x00]`
-instead of the existing tuple. Should share the (tab, idx)
-resolution helper with #36 `GetTalentSpellID`.
+See [src/talent/Info.cpp](src/talent/Info.cpp).
 
 ## 43. `GameTooltip:SetTalentByID(talentID)` — medium
 
@@ -832,40 +815,40 @@ display time. Same helper #42 uses, just inverted.
 If we ship #42 first, this becomes a thin wrapper — the talentID →
 `(tab, idx)` mapping is symmetric to #42's `(tab, idx)` → talentID.
 
-## 44. `GameTooltip:SetItemByID(itemID)` — trivial
+## ~~44. `GameTooltip:SetItemByID(itemID)`~~ — DONE
 
-Modern method that renders an item tooltip from just an itemID. The
-1.12 workaround is to construct an item hyperlink and call
-`SetHyperlink` — `tooltip:SetHyperlink("item:" .. id .. ":0:0:0:0:0:0:0")`
-— which works but is ugly and forces every caller to know the
-hyperlink format.
-
-Implementation: format the hyperlink string in C (`snprintf`) and
-dispatch to the existing `Script_GameTooltip_SetHyperlink` at
-`0x00531FD0` (registry slot 12). Same registration pattern as
-[src/spell/Tooltip.cpp](src/spell/Tooltip.cpp) used for
+snprintf the hyperlink string and dispatch to the existing
+`Script_GameTooltip_SetHyperlink`. Same registration pattern as
 `SetSpellByID`.
 
-Used by basically every addon that wants to show item tooltips
-without first faking a hyperlink — bag manager UIs, loot trackers,
-auction tools.
+### Caching gotcha caught in testing
 
-## 45. `GameTooltip:SetUnitAura(unit, index, filter)` — trivial
+Initial test showed only the item *name*, not the full tooltip, for
+arbitrary itemIDs. Cause: 1.12 lazy-loads item data into the
+client-side cache (the same cache `C_Item.GetItemInfoInstant` reads).
+Items the player has never encountered show only what's in the link
+itself (the name) until the cache is populated via
+`SMSG_ITEM_QUERY_SINGLE_RESPONSE`. This isn't a bug in our
+implementation — it's the same behavior as modern's `SetItemByID`,
+which also requires `C_Item.RequestLoadItemDataByID` first for
+arbitrary IDs.
 
-Modern unified-aura method that 1.12 splits into `SetUnitBuff` (slot
-32, `0x00534AC0`) and `SetUnitDebuff` (slot 33, `0x00534E30`).
-Single method takes a filter string `"HELPFUL"` or `"HARMFUL"` and
-dispatches to the right underlying call.
+Documented the caveat in [docs/API.md](docs/API.md) with the
+recommended `IsItemDataCachedByID` / `RequestLoadItemDataByID` /
+`ITEM_DATA_LOAD_RESULT` pattern callers should follow.
 
-Implementation: pure dispatch wrapper. Register on the GameTooltip
-method registry (existing `Game::Lua::RegisterFrameMethods` flow)
-and in the body, branch on the filter string and tail-call the
-existing `SetUnitBuff` / `SetUnitDebuff` script function.
+See [src/item/Tooltip.cpp](src/item/Tooltip.cpp).
 
-Used by aura libraries that already use the modern call shape (which
-is most of them, since modern is what addons backport from). Lets
-them use the same code path on the 1.12 client without conditionally
-splitting on filter.
+## ~~45. `GameTooltip:SetUnitAura(unit, index, [filter])`~~ — DONE
+
+Pure dispatch wrapper. Branches on filter string (`"HARMFUL"` →
+`SetUnitDebuff`, anything else → `SetUnitBuff`) and forwards via
+the existing script function. `filter` defaults to helpful when
+omitted, matching modern.
+
+See [src/unit/Tooltip.cpp](src/unit/Tooltip.cpp) and the
+`FUN_SCRIPT_GAMETOOLTIP_SET_UNIT_*` block in
+[src/Offsets.h](src/Offsets.h).
 
 ## 46. `GameTooltip:SetFrameStack([showHidden])` — medium-large, deferred
 

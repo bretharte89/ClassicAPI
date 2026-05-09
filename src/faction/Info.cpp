@@ -171,9 +171,33 @@ static int __fastcall Script_GetFactionInfoByID(void *L) {
     return 11;
 }
 
+// `GetFactionParentID(factionID)` — returns the parent factionID for a
+// faction in a hierarchy (e.g. Stormwind's parent is Alliance Forces;
+// The Defilers's parent is Horde Forces). Returns `0` if the faction
+// is top-level (no parent), or `nil` if the factionID is invalid.
+//
+// Reads `Faction.dbc` `ParentFactionID` at `+0x48`. Modern WoW returns
+// this as the 13th value of `GetFactionInfoByID`; we expose it as its
+// own getter since 1.12's `GetFactionInfo` doesn't have the slot.
+static int __fastcall Script_GetFactionParentID(void *L) {
+    if (!Game::Lua::IsNumber(L, 1)) {
+        Game::Lua::Error(L, "Usage: GetFactionParentID(factionID)");
+        return 0;
+    }
+    const int factionID = static_cast<int>(Game::Lua::ToNumber(L, 1));
+    const uint8_t *record = FactionRecord(factionID);
+    if (record == nullptr)
+        return 0;
+    const int parent = *reinterpret_cast<const int *>(
+        record + Offsets::OFF_FACTION_PARENT_ID);
+    Game::Lua::PushNumber(L, static_cast<double>(parent));
+    return 1;
+}
+
 static void RegisterLuaFunctions() {
     Game::Lua::RegisterGlobalFunction("GetFactionIDByIndex", &Script_GetFactionIDByIndex);
     Game::Lua::RegisterGlobalFunction("GetFactionInfoByID", &Script_GetFactionInfoByID);
+    Game::Lua::RegisterGlobalFunction("GetFactionParentID", &Script_GetFactionParentID);
 }
 
 static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
