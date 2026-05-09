@@ -48,6 +48,9 @@ build instructions.
   - [`C_Container.UseHearthstone()`](#c_containerusehearthstone)
 - [Unit](#unit)
   - [`UnitGUID(unit)`](#unitguidunit)
+  - [`UnitIsAFK(unit)`](#unitisafkunit)
+  - [`UnitIsDND(unit)`](#unitisdndunit)
+  - [`UnitIsFeignDeath(unit)`](#unitisfeigndeathunit)
 - [Combat](#combat)
   - [`InCombatLockdown()`](#incombatlockdown)
 - [Talent](#talent)
@@ -1217,6 +1220,61 @@ local guid = UnitGUID("target")  -- "0xF13000059A002553" (the F130... prefix tag
 > we match the engine's existing convention here. Unit tokens that
 > resolve to "no current unit" (like `"target"` with nothing
 > targeted) return nil cleanly via the GUID = 0 check.
+
+### `UnitIsAFK(unit)`
+
+Returns `true` if the unit is currently AFK (toggled via `/afk` or
+auto-set after idle timeout). Works for any player-controlled unit
+— local self, target, party*, raid*, inspect targets. NPCs always
+return `false`.
+
+```lua
+UnitIsAFK("player")   -- true if you've /afk'd
+UnitIsAFK("target")   -- true if the targeted player is AFK
+UnitIsAFK("party1")   -- true if party member 1 is AFK
+UnitIsAFK("npc")      -- always false
+```
+
+> **How it works under the hood.** Vanilla 1.12 doesn't broadcast
+> PLAYER_FLAGS as a UpdateField (modern WoW does — that field was
+> added 3.0+), but every nearby player's CGPlayer-side info struct
+> at `[unit + 0xE68]` carries it at byte +0x08. Same struct the
+> engine reads when rendering the `<AFK>` prefix above a player's
+> head. Verified against the in-game nameplate behavior.
+
+Equivalent to the function of the same name introduced in 3.0.
+
+### `UnitIsDND(unit)`
+
+Returns `true` if the unit is currently in DND mode ("Do Not Disturb",
+toggled via `/dnd`). Same unit-coverage as `UnitIsAFK` — any
+player-controlled unit, false for NPCs.
+
+```lua
+UnitIsDND("player")
+UnitIsDND("target")
+```
+
+Equivalent to the function of the same name introduced in 3.0.
+
+### `UnitIsFeignDeath(unit)`
+
+Returns `true` if the unit is feigning death (Hunter's `Feign Death`).
+Reads `UNIT_FIELD_FLAGS` bit 29 (`0x20000000`) from the broadcast
+descriptor — works for any unit since UNIT_FIELD_FLAGS is broadcast
+in object updates.
+
+```lua
+UnitIsFeignDeath("target")   -- true if a feigning hunter
+```
+
+> **Untested.** The flag-bit value is the standard vanilla emulator
+> constant; the function compiles and won't crash, but we haven't
+> confirmed the bit position against live data (no Hunter on hand).
+> If a Hunter happens to be nearby and using FD,
+> `/dump UnitIsFeignDeath("target")` is the diagnostic.
+
+Equivalent to the function of the same name introduced in 3.0.
 
 ## Combat
 

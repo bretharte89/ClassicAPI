@@ -104,6 +104,50 @@ enum Offsets {
     // secure-frame system here, so the modern lockdown semantics
     // reduce to a plain combat flag check.
     UNIT_FLAG_IN_COMBAT = 0x00080000,
+    // Bit 29 of UNIT_FIELD_FLAGS — set by the engine when the player is
+    // feigning death (Hunter's `Feign Death`). Standard vanilla
+    // `UNIT_FLAG_FEIGN_DEATH = 0x20000000` per emulator source. Tested
+    // by `UnitIsFeignDeath(unit)` — works on any unit since
+    // UNIT_FIELD_FLAGS is broadcast in object updates.
+    UNIT_FLAG_FEIGN_DEATH = 0x20000000,
+
+    // CGPlayer-side sub-struct, allocated for any player-controlled
+    // unit (local self, target, party, raid, inspect targets — all of
+    // them). Holds player-specific data that's *not* in the broadcast
+    // UpdateField descriptor:
+    //
+    //   +0x08             uint32  PLAYER_FLAGS  (AFK = bit 1, DND = bit 2,
+    //                                            RESTING = bit 5)
+    //   +0x118 + slot*0x30        visible-items table (slots 0..18,
+    //                                            walked by FUN_UNIT_GET_VISIBLE_ITEM)
+    //
+    // Same offset works for any player; the visible-items helper and
+    // `UnitIsAFK`-style flag readers share the same `[unit + 0xE68]`
+    // pointer. NPCs / CGCreature_C objects have this slot
+    // *uninitialized* — reading without a `UNIT_FLAG_PLAYER_CONTROLLED`
+    // gate is a known crash path (helper does `garbage + 0x118 +
+    // slot*0x30` then derefs).
+    //
+    // Flag bits verified by:
+    //   - `Script_IsResting` (`0x00516EA0`): `[CGPlayer + 0xE68] +
+    //     0x08`, `shr 5; test 1` → bit 5 = RESTING (0x20).
+    //   - Nameplate AFK renderer (`0x005EC9E0`): `[unit + 0xE68] +
+    //     0x08`, `test [+8], 2` → bit 1 = AFK (0x02). Works for ANY
+    //     unit, not just local player — confirmed by user testing
+    //     `<AFK>` rendering above other players' heads on stock 1.12.
+    //   - DND bit by symmetry with chat-flag protocol; confirmed in-game.
+    //
+    // PLAYER_FLAGS being out-of-band (in this sub-struct rather than a
+    // broadcast UpdateField) is a vanilla-only quirk — modern WoW
+    // (3.0+) added PLAYER_FLAGS as a UpdateField at descriptor +0x228,
+    // making it queryable through the standard UnitData broadcast
+    // path. In 1.12 the +0x228 slot holds something else entirely
+    // (multiple read sites in `.text`, but they test for non-zero
+    // rather than specific bits — likely duel state).
+    OFF_CGPLAYER_INFO = 0xE68,
+    OFF_PLAYER_INFO_FLAGS = 0x08,
+    PLAYER_FLAG_AFK = 0x02,
+    PLAYER_FLAG_DND = 0x04,
 
     // PackBagSlot — __fastcall(L, void **outInvMgr, int *outLinearSlot, int *outUnused) → bool.
     // Reads bagID at Lua stack[1] and slot at stack[2], validates them, and

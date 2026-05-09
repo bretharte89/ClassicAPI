@@ -555,22 +555,38 @@ Same split as modern WoW. The cross-binary technique paid off again
 See [src/spell/Info.cpp](src/spell/Info.cpp) and the worked example
 in [CLAUDE.md](CLAUDE.md#cross-binary-reference--finding-112-implementations-via-newer-clients).
 
-## 31. Unit flag bundle: `UnitIsAFK` / `UnitIsDND` / `UnitIsFeignDeath` — trivial
+## ~~31. Unit flag bundle: `UnitIsAFK` / `UnitIsDND` / `UnitIsFeignDeath`~~ — DONE (FeignDeath ships untested)
 
-Three single-bit checks on UNIT_FIELD_FLAGS / PLAYER_FLAGS, mechanically
-identical to `InCombatLockdown` (item #21):
+All three shipped in [src/unit/Flags.cpp](src/unit/Flags.cpp):
 
-- `UnitIsAFK(unit)` — PLAYER_FLAGS bit (`0x02` per the protocol).
-  PLAYER_FLAGS lives at a different field offset than UNIT_FLAGS
-  (likely `+0xE8` of m_objectFields, but needs verification).
-- `UnitIsDND(unit)` — PLAYER_FLAGS bit `0x04`.
-- `UnitIsFeignDeath(unit)` — UNIT_FIELD_FLAGS bit `0x10000000` (bit 28),
-  same field as the combat flag.
+- **`UnitIsAFK(unit)`** / **`UnitIsDND(unit)`** — read PLAYER_FLAGS at
+  `[unit + 0xE68] + 0x08`, bits 1 (AFK = `0x02`) and 2 (DND = `0x04`).
+  Works for any player-controlled unit (local self, target, party,
+  raid, inspect targets). Gated on `UNIT_FLAG_PLAYER_CONTROLLED` first
+  to avoid the crash hazard on creatures (where `+0xE68` is uninitialized
+  garbage).
+- **`UnitIsFeignDeath(unit)`** — reads `UNIT_FIELD_FLAGS` bit 29
+  (`0x20000000`) at `[m_objectFields + 0xA0]`. Untested — no Hunter
+  available — but the value is the standard vanilla emulator constant.
 
-Could ship as one file `src/unit/Flags.cpp` with all three (they
-share the field-resolve path). The PLAYER_FLAGS offset is the only
-new data to derive — UNIT_FIELD_FLAGS is already known from
-`Item::InventoryID`'s `UnitPlayerControlled` work.
+**Where PLAYER_FLAGS lives — and the misleading first guess.** The
+field index `0x8A` (= byte offset `0x228` in m_objectFields) is the
+"natural" place to look (matches modern WoW's broadcast UpdateField),
+but vanilla 1.12 *doesn't* broadcast PLAYER_FLAGS as a UpdateField —
+reading `[descriptor + 0x228]` returns a different field entirely.
+The actual storage is in a CGPlayer-side sub-struct at `[unit + 0xE68]`,
+shared with the visible-items table at `+0x118`. Verified by
+disassembling 1.12's nameplate AFK-prefix renderer at `0x005EC9E0`,
+which is the *only* C-level code in stock 1.12 that decorates
+nameplates with `<AFK>` — and which works for any unit, contrary to
+the initial reading where I thought the JNE went the other way.
+
+**Vanilla nameplate display.** Stock 1.12 shows `<AFK>` over **any**
+nearby player's head, not just yourself — the function at `0x005EC9E0`
+checks `[unit + 0xE68] + 0x08` bit 1 universally and only special-cases
+the local player when a global at `[0x00B6E5CC]` is set (probably a
+"hide my own AFK indicator" preference toggle). User confirmed in-game
+on a non-Turtle stock 1.12.1 server.
 
 ## 32. `IsCurrentSpell(spellID)` — easy
 
