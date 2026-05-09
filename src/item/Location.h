@@ -40,4 +40,12 @@ const uint8_t *Resolve(void *L, int locIdx);
 // `Resolve()` above.
 const uint8_t *ResolveBag(void *L, int bagID, int slotIndex);
 
+// Resolves a 1-based character-pane equipment slot directly to a
+// `CGItem *`. Used by the positional-arg `GetInventoryItemDurability`
+// (and any future per-slot getter) that doesn't take an ItemLocation
+// table. Player-only — walks the local player's private inventory
+// manager, same path the `{equipmentSlotIndex=N}` table form uses.
+// Returns nullptr for out-of-range slots or empty equipment.
+const uint8_t *ResolveEquipmentSlot(int slot1Based);
+
 } // namespace Item::Location

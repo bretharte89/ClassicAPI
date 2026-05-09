@@ -34,6 +34,8 @@ build instructions.
   - [`C_Item.GetItemID(itemLocation)`](#c_itemgetitemiditemlocation)
   - [`GetInventoryItemID(unit, slot)`](#getinventoryitemidunit-slot)
   - [`C_Container.GetContainerItemID(bagIndex, slotIndex)`](#c_containergetcontaineritemidbagindex-slotindex)
+  - [`GetInventoryItemDurability(invSlot)`](#getinventoryitemdurabilityinvslot)
+  - [`C_Container.GetContainerItemDurability(containerIndex, slotIndex)`](#c_containergetcontaineritemdurabilitycontainerindex-slotindex)
   - [`GetItemIcon(itemID)` / `C_Item.GetItemIcon(itemLocation)` / `C_Item.GetItemIconByID(item)`](#getitemiconitemid--c_itemgetitemiconitemlocation--c_itemgetitemiconbyiditem)
   - [`C_Item.GetItemInfoInstant(item)`](#c_itemgetiteminfoinstantitem)
   - [`C_Item.IsItemDataCachedByID(item)` / `C_Item.IsItemDataCached(itemLocation)`](#c_itemisitemdatacachedbyiditem--c_itemisitemdatacacheditemlocation)
@@ -740,6 +742,78 @@ for slot = 1, 16 do
     end
 end
 ```
+
+### `GetInventoryItemDurability(invSlot)`
+
+Returns `(current, maximum)` durability for the player's equipped item
+at `invSlot` (1-based, character-pane slots 1..19), or nothing if the
+slot is empty or the item has no durability concept (rings, trinkets,
+necks, backs, shirts, tabards, etc.).
+
+```
+current, maximum = GetInventoryItemDurability(invSlot)
+```
+
+```lua
+local cur, max = GetInventoryItemDurability(INVSLOT_CHEST)
+if cur then
+    -- cur, max are positive integers (e.g. 65, 65 for full chest)
+end
+
+-- Items without durability return nothing — both locals are nil:
+local cur, max = GetInventoryItemDurability(INVSLOT_FINGER1)
+-- cur == nil, max == nil
+```
+
+> **Player-only.** Matches modern API: 3.3.5+ `GetInventoryItemDurability`
+> takes only the slot, no unit token. Inspect targets / party members'
+> equipment durability isn't broadcast in 1.12, so we couldn't expose it
+> for other units even if we wanted to.
+
+> **`(0, max)` vs nothing.** Items that have a durability concept but
+> are currently broken (`current == 0`, `max > 0`) still return
+> `(0, max)`. The "nothing" return is reserved for items that have no
+> durability fields populated at all — `max` is the discriminator,
+> matching the engine's own `GetInventoryItemBroken` logic.
+
+Reads ITEM_FIELD_DURABILITY (+0xA0) and ITEM_FIELD_MAXDURABILITY
+(+0xA4) directly off the CGItem's m_objectFields descriptor at `+0x114`
+— same descriptor [`C_Item.IsBound`](#c_itemisbounditemlocation) reads
+FLAGS from. No DBC indirection.
+
+Equivalent to the function of the same name introduced in 3.0.
+
+### `C_Container.GetContainerItemDurability(containerIndex, slotIndex)`
+
+Bag/bank variant of [`GetInventoryItemDurability`](#getinventoryitemdurabilityinvslot).
+Same `(current, maximum)` return shape and the same "nothing for items
+without durability" rule.
+
+```
+current, maximum = C_Container.GetContainerItemDurability(containerIndex, slotIndex)
+```
+
+- `containerIndex = 0` — the player's main backpack.
+- `containerIndex = 1..4` — the player's equipped bag slots.
+- `containerIndex = -1, 5..11` — bank-frame slots, only addressable
+  while the bank window is open.
+- `slotIndex` — 1-based, capped at the bag's actual slot count.
+
+```lua
+for slot = 1, GetContainerNumSlots(0) do
+    local cur, max = C_Container.GetContainerItemDurability(0, slot)
+    if cur then
+        -- item at backpack slot has durability
+    end
+end
+```
+
+Goes through the same bag-resolve chain
+[`C_Container.GetContainerItemID`](#c_containergetcontaineritemidbagindex-slotindex)
+uses (engine's `PackBagSlot` → `GetItemBySlot`), then reads the same
+durability fields off the descriptor.
+
+Equivalent to the function of the same name introduced in 10.0.
 
 ### `GetItemIcon(itemID)` / `C_Item.GetItemIcon(itemLocation)` / `C_Item.GetItemIconByID(item)`
 

@@ -13,6 +13,7 @@
 
 #include "Game.h"
 #include "Offsets.h"
+#include "item/Location.h"
 
 #include <cstdint>
 
@@ -20,22 +21,36 @@ namespace Item::Durability {
 
 namespace {
 
-using GetItemBySlot_t = void *(__thiscall *)(void *invMgr, int slot);
-using ResolveUnitToken_t = void *(__fastcall *)(const char *token);
+// Reads ITEM_FIELD_DURABILITY (+0xA0) and ITEM_FIELD_MAXDURABILITY (+0xA4)
+// off the CGItem's m_objectFields descriptor at `+0x114`. Same path
+// `Script_GetInventoryItemBroken` (`0x004C8590`) uses; field offsets
+// verified there. Returns false (no values pushed) when the item is
+// missing, the descriptor is null, or max is 0 (item has no durability
+// concept — consumables, materials, rings, trinkets, etc.). Modern
+// semantics: nothing rather than (0, 0).
+static int PushDurabilityForItem(void *L, const uint8_t *item) {
+    if (item == nullptr)
+        return 0;
+    auto *descriptor = *reinterpret_cast<const uint8_t *const *>(
+        item + Offsets::OFF_ITEM_DESCRIPTOR);
+    if (descriptor == nullptr)
+        return 0;
+    const uint32_t cur = *reinterpret_cast<const uint32_t *>(
+        descriptor + Offsets::OFF_DESCRIPTOR_DURABILITY);
+    const uint32_t max = *reinterpret_cast<const uint32_t *>(
+        descriptor + Offsets::OFF_DESCRIPTOR_MAX_DURABILITY);
+    if (max == 0)
+        return 0;
+    Game::Lua::PushNumber(L, static_cast<double>(cur));
+    Game::Lua::PushNumber(L, static_cast<double>(max));
+    return 2;
+}
 
-// `GetInventoryItemDurability(invSlot)` — returns `current, maximum` for the
-// player's equipped item at `invSlot` (1-based), or nothing if the slot is
-// empty or the item has no durability (consumables, materials, etc.).
-//
-// Same field-access path `Script_GetInventoryItemBroken` uses (`0x004C8590`):
-// resolve player → invMgr at `+0x1D38` → `GetItemBySlot(slot - 1)` → CGItem's
-// m_objectFields descriptor at `+0x114` → read DURABILITY at `+0xA0` and
-// MAX_DURABILITY at `+0xA4` as plain dwords.
-//
-// Player-only by design (matches modern API). Modern semantics: returns
-// nothing — not (0, 0) — when `max == 0`. The 3.3.5 implementation at
-// `0x005EA170` does the same: tests max via the GetMaxDurability getter and
-// returns 0 values if zero.
+// `GetInventoryItemDurability(invSlot)` — returns `current, maximum` for
+// the player's equipped item at `invSlot` (1-based), or nothing if the
+// slot is empty or the item has no durability. Player-only by design,
+// matching modern API; 3.3.5's implementation at `0x005EA170` does the
+// same (uses `ResolveActivePlayer`, no unit arg).
 static int __fastcall Script_GetInventoryItemDurability(void *L) {
     if (!Game::Lua::IsNumber(L, 1)) {
         Game::Lua::Error(L, "Usage: GetInventoryItemDurability(invSlot)");
@@ -44,35 +59,24 @@ static int __fastcall Script_GetInventoryItemDurability(void *L) {
     const int slot1Based = static_cast<int>(Game::Lua::ToNumber(L, 1));
     if (slot1Based < 1)
         return 0;
+    return PushDurabilityForItem(L, Item::Location::ResolveEquipmentSlot(slot1Based));
+}
 
-    auto ResolveUnitToken =
-        reinterpret_cast<ResolveUnitToken_t>(Offsets::FUN_RESOLVE_UNIT_TOKEN);
-    auto *player = static_cast<uint8_t *>(ResolveUnitToken("player"));
-    if (player == nullptr)
+// `C_Container.GetContainerItemDurability(containerIndex, slotIndex)` —
+// modern positional-arg accessor. Same `(current, max)` shape as
+// `GetInventoryItemDurability`, but for bag/bank slots instead of the
+// character pane. Goes through `Item::Location::ResolveBag` →
+// engine's `PackBagSlot` → `GetItemBySlot` (same chain
+// `C_Container.GetContainerItemID` uses).
+static int __fastcall Script_C_Container_GetContainerItemDurability(void *L) {
+    if (!Game::Lua::IsNumber(L, 1) || !Game::Lua::IsNumber(L, 2)) {
+        Game::Lua::Error(L,
+            "Usage: C_Container.GetContainerItemDurability(containerIndex, slotIndex)");
         return 0;
-
-    auto *invMgr = player + Offsets::OFF_PLAYER_INVENTORY_MANAGER;
-    auto GetItemBySlot = reinterpret_cast<GetItemBySlot_t>(
-        Offsets::FUN_ITEMMGR_GET_ITEM_BY_SLOT);
-    auto *item = static_cast<const uint8_t *>(GetItemBySlot(invMgr, slot1Based - 1));
-    if (item == nullptr)
-        return 0;
-
-    auto *descriptor = *reinterpret_cast<const uint8_t *const *>(
-        item + Offsets::OFF_ITEM_DESCRIPTOR);
-    if (descriptor == nullptr)
-        return 0;
-
-    const uint32_t cur = *reinterpret_cast<const uint32_t *>(
-        descriptor + Offsets::OFF_DESCRIPTOR_DURABILITY);
-    const uint32_t max = *reinterpret_cast<const uint32_t *>(
-        descriptor + Offsets::OFF_DESCRIPTOR_MAX_DURABILITY);
-    if (max == 0)
-        return 0;
-
-    Game::Lua::PushNumber(L, static_cast<double>(cur));
-    Game::Lua::PushNumber(L, static_cast<double>(max));
-    return 2;
+    }
+    const int bagID = static_cast<int>(Game::Lua::ToNumber(L, 1));
+    const int slotIndex = static_cast<int>(Game::Lua::ToNumber(L, 2));
+    return PushDurabilityForItem(L, Item::Location::ResolveBag(L, bagID, slotIndex));
 }
 
 } // namespace
@@ -80,6 +84,8 @@ static int __fastcall Script_GetInventoryItemDurability(void *L) {
 static void RegisterLuaFunctions() {
     Game::Lua::RegisterGlobalFunction("GetInventoryItemDurability",
                                       &Script_GetInventoryItemDurability);
+    Game::Lua::RegisterTableFunction("C_Container", "GetContainerItemDurability",
+                                     &Script_C_Container_GetContainerItemDurability);
 }
 
 static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};

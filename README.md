@@ -21,7 +21,7 @@ Quick index:
 | GameTooltip | `GameTooltip:SetSpellByID`, `GameTooltip:SetItemByID`, `GameTooltip:SetUnitAura` |
 | Quest     | `GetQuestIDFromLogIndex`, `C_QuestLog.RequestLoadQuestByID` (+ `QUEST_DATA_LOAD_RESULT` event), `C_QuestLog.GetTitleForQuestID` |
 | Faction   | `GetFactionIDByIndex`, `GetFactionInfoByID`, `GetFactionParentID` |
-| Item      | `C_Item.IsBound`, `C_Item.GetItemID`, `GetInventoryItemID`, `C_Container.GetContainerItemID`, `C_Item.GetItemInfoInstant`, `GetItemIcon` / `C_Item.GetItemIcon` / `C_Item.GetItemIconByID`, `C_Item.IsItemDataCached(ByID)`, `C_Item.RequestLoadItemData(ByID)` (+ `ITEM_DATA_LOAD_RESULT` event) |
+| Item      | `C_Item.IsBound`, `C_Item.GetItemID`, `GetInventoryItemID`, `C_Container.GetContainerItemID`, `GetInventoryItemDurability`, `C_Container.GetContainerItemDurability`, `C_Item.GetItemInfoInstant`, `GetItemIcon` / `C_Item.GetItemIcon` / `C_Item.GetItemIconByID`, `C_Item.IsItemDataCached(ByID)`, `C_Item.RequestLoadItemData(ByID)` (+ `ITEM_DATA_LOAD_RESULT` event) |
 | Unit      | `UnitGUID` |
 | Combat    | `InCombatLockdown` |
 | Talent    | `GetTalentSpellID`, `GetTalentIDByIndex` |

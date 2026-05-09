@@ -384,22 +384,31 @@ Returns the on-use spell name + spellID for items that have one
 mapped yet — the `m_spellId[5]` array on the cached item record.
 Combine the spellID with `GetSpellInfo` for the name.
 
-## ~~24. `GetInventoryItemDurability(invSlot)`~~ — DONE
+## ~~24. `GetInventoryItemDurability(invSlot)` / `C_Container.GetContainerItemDurability(containerIndex, slotIndex)`~~ — DONE
 
-Returns `(current, max)` durability for the player's equipped item at
-`invSlot` (1-based), or nothing if the slot is empty or the item has
-no durability concept (consumables, materials, rings, trinkets,
-shirts, tabards). Player-only — matches modern API; the original
-TODO line had `(unit, slot)` but modern `GetInventoryItemDurability`
-takes only the slot.
+Returns `(current, max)` durability for the player's equipped item or
+bag/bank slot, or nothing if the slot is empty or the item has no
+durability concept (consumables, materials, rings, trinkets, shirts,
+tabards). Both forms shipped:
 
-Reads ITEM_FIELD_DURABILITY (+0xA0) and ITEM_FIELD_MAXDURABILITY
-(+0xA4) off the CGItem descriptor at `+0x114` — the same descriptor
-[src/item/Bound.cpp](src/item/Bound.cpp) reads FLAGS from. Field
-offsets verified by decoding `Script_GetInventoryItemBroken` at
-`0x004C8590`, which tests `[descriptor+0x3C] & 0x08` for the broken
-flag bit AND `[descriptor+0xA4] > 0 && [descriptor+0xA0] == 0` as a
-fallback. Modern semantics confirmed against 3.3.5's
+- `GetInventoryItemDurability(invSlot)` — character-pane equipment slot
+  (1-based, 1..19). Player-only by design, matches modern API; the
+  original TODO line had `(unit, slot)` but modern
+  `GetInventoryItemDurability` takes only the slot.
+- `C_Container.GetContainerItemDurability(containerIndex, slotIndex)` —
+  bag/bank slot. Goes through `Item::Location::ResolveBag` →
+  `PackBagSlot` → `GetItemBySlot`, same chain
+  `C_Container.GetContainerItemID` already used.
+
+Both share the inner `PushDurabilityForItem` helper — only the
+CGItem-resolution path differs. Reads ITEM_FIELD_DURABILITY (+0xA0) and
+ITEM_FIELD_MAXDURABILITY (+0xA4) off the CGItem descriptor at `+0x114`
+— the same descriptor [src/item/Bound.cpp](src/item/Bound.cpp) reads
+FLAGS from. Field offsets verified by decoding
+`Script_GetInventoryItemBroken` at `0x004C8590`, which tests
+`[descriptor+0x3C] & 0x08` for the broken flag bit AND
+`[descriptor+0xA4] > 0 && [descriptor+0xA0] == 0` as a fallback.
+Modern semantics confirmed against 3.3.5's
 `Script_GetInventoryItemDurability` at `0x005EA170`: returns nothing
 (0 values) when max is 0.
 

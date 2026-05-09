@@ -47,19 +47,6 @@ bool TryReadIntField(void *L, int locIdx, const char *fieldName, int *out) {
     return ok;
 }
 
-const uint8_t *ResolveEquipmentSlot(int luaSlot) {
-    void *invMgr = ResolveActivePlayerInvMgr();
-    if (invMgr == nullptr)
-        return nullptr;
-    // GetItemBySlot expects 0-based linearized slot indices. The built-in
-    // Lua functions all do `dec eax` on the slot argument before calling —
-    // see helper at 0x004C8520.
-    const int slot = luaSlot - 1;
-    auto GetItemBySlot = reinterpret_cast<GetItemBySlot_t>(
-        Offsets::FUN_ITEMMGR_GET_ITEM_BY_SLOT);
-    return static_cast<const uint8_t *>(GetItemBySlot(invMgr, slot));
-}
-
 const uint8_t *ResolveBagSlot(void *L, int bagID, int slotIndex) {
     // PackBagSlot reads bagID/slotIndex from Lua stack[1] and stack[2] (it's
     // designed to be called from a Lua-callback context like
@@ -82,6 +69,18 @@ const uint8_t *ResolveBagSlot(void *L, int bagID, int slotIndex) {
 }
 
 } // namespace
+
+const uint8_t *ResolveEquipmentSlot(int slot1Based) {
+    void *invMgr = ResolveActivePlayerInvMgr();
+    if (invMgr == nullptr)
+        return nullptr;
+    // GetItemBySlot expects 0-based linearized slot indices. The built-in
+    // Lua functions all do `dec eax` on the slot argument before calling —
+    // see helper at 0x004C8520.
+    auto GetItemBySlot = reinterpret_cast<GetItemBySlot_t>(
+        Offsets::FUN_ITEMMGR_GET_ITEM_BY_SLOT);
+    return static_cast<const uint8_t *>(GetItemBySlot(invMgr, slot1Based - 1));
+}
 
 const uint8_t *ResolveBag(void *L, int bagID, int slotIndex) {
     return ResolveBagSlot(L, bagID, slotIndex);
