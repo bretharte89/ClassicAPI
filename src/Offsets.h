@@ -163,6 +163,35 @@ enum Offsets {
     OFF_ITEMSTATS_SUBCLASS = 0x04,
     OFF_ITEMSTATS_DISPLAY_INFO_ID = 0x18,
     OFF_ITEMSTATS_INVENTORY_TYPE = 0x2C,
+    // Bag-only fields. `m_containerSlots` (slot count) and `m_bagFamily`
+    // (the BagFamily bitfield — quiver=1, ammo pouch=2, soul bag=4 in
+    // vanilla) live deep in the record. Offsets derived from
+    // VanillaHelpers's `struct ItemStats_C` (full layout, sizeof =
+    // ~0x1D4); cross-check by counting fields up through `m_stackable`
+    // at +0x60 (which we already use) — `m_containerSlots` is the next
+    // u32 at +0x64. `m_bagFamily` is the last u32, at +0x1D0.
+    OFF_ITEMSTATS_CONTAINER_SLOTS = 0x64,
+    // `m_bagFamily` is a **raw 1-based ID** in 1.12, not the modern
+    // bitmask. Vanilla data: arrow=1, bullet=2, soul shard=3, herb=6,
+    // etc. Wrath flipped the encoding to `1 << (ID-1)` (so soul shard
+    // became 4, herb became 32, …) and addons from Wrath onward expect
+    // the bitmask form. Reader functions must convert via
+    // `bitmask = id ? (1 << (id - 1)) : 0` to maintain modern API
+    // parity. Verified empirically on Turtle WoW: Soul Shard (6265)
+    // returns raw 3 here, which is `1 << 2 = 0x4` in modern encoding.
+    //
+    // Field offset verified by decoding the engine's own
+    // `GetItemBagFamily(itemID)` helper at `0x005DA050` — calls
+    // `_GetRecord` (`0x0055BA30`) on the item cache (`0x00C0E2A0`),
+    // tests the result for null, then `mov eax, [eax+0x1D0]; ret`.
+    // (Found via xref scan for `mov reg, [reg+0x1D0]` in `.text`.)
+    OFF_ITEMSTATS_BAG_FAMILY = 0x1D0,
+
+    // First character-pane bag-slot index. INVSLOT_BAG1 = 20, BAG2 = 21,
+    // BAG3 = 22, BAG4 = 23. Used to map a Lua bagID (1..4) onto the
+    // equipment slot the bag occupies: `equipSlot = INVSLOT_BAG1 + bagID - 1`.
+    INVSLOT_BAG1 = 20,
+    BACKPACK_NUM_SLOTS = 16,
 
     // ItemClass.dbc — standard 5-DWORD class shape. Records is an array of
     // record pointers indexed directly by classID. Each record has a 9-slot

@@ -13,6 +13,7 @@
 
 #include "Game.h"
 #include "Offsets.h"
+#include "item/Data.h"
 #include "item/ID.h"
 #include "item/Location.h"
 
@@ -209,11 +210,66 @@ static int __fastcall Script_C_Item_GetItemIconByID(void *L) {
     return PushIconForItemID(L, ResolveItemID(L));
 }
 
+// Convert 1.12's raw `BagFamily` ID to the modern bitmask encoding.
+// Vanilla stores `arrow=1, bullet=2, soul shard=3, herb=6, ...`; Wrath
+// flipped to `1 << (ID-1)` (`arrow=0x1, bullet=0x2, soul shard=0x4,
+// herb=0x20, ...`) and addons backported from Wrath+ expect the
+// bitmask. We always surface the modern shape so callers don't have to
+// branch on client version. See `Offsets::OFF_ITEMSTATS_BAG_FAMILY`
+// for the empirical verification.
+uint32_t BagFamilyIdToBitmask(uint32_t rawId) {
+    return (rawId == 0) ? 0 : (1u << (rawId - 1));
+}
+
+// `C_Item.GetItemFamily(item)` — returns the BagFamily bitmask for an
+// item (modern encoding: `1 << (ID-1)`), or `nil` if the item isn't
+// in the cache. Used by auto-routing addons that decide which
+// specialty bag a looted item should land in.
+//
+// Accepts a numeric `itemID` or a string containing `"item:NNN"` (full
+// chat links work) — same parser as `GetItemInfoInstant`.
+//
+// **Auto-warmup on cache miss.** Returns nil for uncached items but
+// kicks off the cache fill in the background, so a follow-up call
+// after `GET_ITEM_INFO_RECEIVED` lands the value. Mirrors the
+// observed 1.15 behavior (nil first, value after retry) — the engine
+// itself triggers the load. We diverge from 1.15 in one detail: we
+// fire `GET_ITEM_INFO_RECEIVED` when the data arrives (matching our
+// other implicit-warmup paths like `GetItemInfo` and `SetItemByID`),
+// whereas 1.15's `GetItemFamily` is a silent fill. Consistency
+// within our DLL's event surface > faithful 1.15 mimicry — addons
+// that already listen for the event get notified for free.
+//
+// Modern WoW returns 0 for items the cache lookup fails on; we return
+// nil so callers can distinguish "item not cached" from "item exists
+// but has family 0 (general-purpose)". Both are safe to treat as "no
+// preference" but keeping them distinct helps debugging.
+//
+// 1.12 vanilla server data sparsely populates the field for **bags**
+// themselves (only quivers seem to carry it on Turtle WoW). Individual
+// loot items do carry the field reliably (arrows, bullets, shards,
+// herbs all return their proper raw IDs).
+static int __fastcall Script_C_Item_GetItemFamily(void *L) {
+    const int itemID = ResolveItemID(L);
+    if (itemID <= 0)
+        return 0;
+    const uint8_t *record = FetchItemRecord(static_cast<uint32_t>(itemID));
+    if (record == nullptr) {
+        Item::Data::WarmCache(static_cast<uint32_t>(itemID));
+        return 0;
+    }
+    const uint32_t rawId = *reinterpret_cast<const uint32_t *>(
+        record + Offsets::OFF_ITEMSTATS_BAG_FAMILY);
+    Game::Lua::PushNumber(L, static_cast<double>(BagFamilyIdToBitmask(rawId)));
+    return 1;
+}
+
 static void RegisterLuaFunctions() {
     Game::Lua::RegisterTableFunction("C_Item", "GetItemInfoInstant", &Script_GetItemInfoInstant);
     Game::Lua::RegisterGlobalFunction("GetItemIcon", &Script_GetItemIcon);
     Game::Lua::RegisterTableFunction("C_Item", "GetItemIcon", &Script_C_Item_GetItemIcon);
     Game::Lua::RegisterTableFunction("C_Item", "GetItemIconByID", &Script_C_Item_GetItemIconByID);
+    Game::Lua::RegisterTableFunction("C_Item", "GetItemFamily", &Script_C_Item_GetItemFamily);
 }
 
 static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};

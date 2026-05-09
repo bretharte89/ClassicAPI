@@ -36,6 +36,8 @@ build instructions.
   - [`C_Container.GetContainerItemID(bagIndex, slotIndex)`](#c_containergetcontaineritemidbagindex-slotindex)
   - [`GetInventoryItemDurability(invSlot)`](#getinventoryitemdurabilityinvslot)
   - [`C_Container.GetContainerItemDurability(containerIndex, slotIndex)`](#c_containergetcontaineritemdurabilitycontainerindex-slotindex)
+  - [`C_Container.GetContainerNumFreeSlots(bagID)`](#c_containergetcontainernumfreeslotsbagid)
+  - [`C_Item.GetItemFamily(item)`](#c_itemgetitemfamilyitem)
   - [`GetItemIcon(itemID)` / `C_Item.GetItemIcon(itemLocation)` / `C_Item.GetItemIconByID(item)`](#getitemiconitemid--c_itemgetitemiconitemlocation--c_itemgetitemiconbyiditem)
   - [`C_Item.GetItemInfoInstant(item)`](#c_itemgetiteminfoinstantitem)
   - [`C_Item.IsItemDataCachedByID(item)` / `C_Item.IsItemDataCached(itemLocation)`](#c_itemisitemdatacachedbyiditem--c_itemisitemdatacacheditemlocation)
@@ -814,6 +816,131 @@ uses (engine's `PackBagSlot` → `GetItemBySlot`), then reads the same
 durability fields off the descriptor.
 
 Equivalent to the function of the same name introduced in 10.0.
+
+### `C_Container.GetContainerNumFreeSlots(bagID)`
+
+Returns the number of empty slots in the given bag, plus the bag's
+`BagFamily` bitfield (the type of items the bag is restricted to).
+
+```
+numberOfFreeSlots, bagType = C_Container.GetContainerNumFreeSlots(bagID)
+```
+
+- `bagID = 0` — the player's main backpack. Always reports
+  `(freeCount, 0)` — the backpack is unfamilied (general-purpose).
+- `bagID = 1..4` — the player's equipped bag slots. Slot count and
+  bagType come from the bag item's cached `ItemStats_C` record —
+  `m_containerSlots` and `m_bagFamily` respectively. If no bag is
+  equipped (or the item somehow isn't cached): `(0, 0)`.
+- Other `bagID` values (bank, keyring, out-of-range): `(0, 0)`. Always
+  returns two values, never nil.
+
+```lua
+local free, bagType = C_Container.GetContainerNumFreeSlots(0)
+-- free = number of empty slots in backpack, bagType = 0
+
+for bag = 0, 4 do
+    local free = C_Container.GetContainerNumFreeSlots(bag)
+    -- ...
+end
+```
+
+> **Vanilla `bagType` is sparse.** On Turtle WoW (1.12.1), only Light
+> Quiver actually carries a populated BagFamily field among the bags
+> we tested. Soul Pouch, Enchanting Bag, Herb Pouch, etc. all return
+> 0 here even though their classification clearly implies a family —
+> the vanilla server data simply doesn't fill the field for those.
+> For bag-category discrimination, prefer reading `(class, subClass)`
+> from [`C_Item.GetItemInfoInstant`](#c_itemgetiteminfoinstantitem).
+> The same field on **individual loot items** (arrows, bullets,
+> shards, herbs) IS populated reliably — use
+> [`C_Item.GetItemFamily`](#c_itemgetitemfamilyitem) for routing
+> decisions.
+
+> **The bitmask encoding matches modern.** `bagType` is the bit
+> position (`1 << (familyID - 1)`), not the raw 1.12-stored familyID,
+> so callers can bitwise-AND with itemFamily values from
+> [`C_Item.GetItemFamily`](#c_itemgetitemfamilyitem) directly. We
+> convert internally — see that function's notes for the
+> encoding-shift story.
+
+Implementation walks the bag using
+[`Item::Location::ResolveBag`](#c_containergetcontaineritemidbagindex-slotindex)
+internally and counts slots that resolve to a null `CGItem *` (i.e.,
+empty). Cross-checked in-game against a manual
+`C_Container.GetContainerItemID` walk; counts match.
+
+Equivalent to the function of the same name introduced in 3.0.
+
+### `C_Item.GetItemFamily(item)`
+
+Returns the BagFamily bitmask for an item — i.e., what kind of
+specialty bag it belongs in. `0` means "general-purpose" (no specialty
+bag preference). Returns `nil` if the item isn't in the cache.
+
+```
+familyBitmask = C_Item.GetItemFamily(item)
+```
+
+`item` accepts a numeric `itemID` or a string containing `"item:NNN"`
+(the bare shorthand and full chat links both parse correctly), same as
+[`C_Item.GetItemInfoInstant`](#c_itemgetiteminfoinstantitem).
+
+```lua
+C_Item.GetItemFamily(2512)   -- 1   (Wooden Arrow → quiver-family)
+C_Item.GetItemFamily(2516)   -- 2   (Light Shot → ammo pouch-family)
+C_Item.GetItemFamily(6265)   -- 4   (Soul Shard → soul bag-family)
+C_Item.GetItemFamily(2447)   -- 32  (Peacebloom → herb bag-family)
+C_Item.GetItemFamily(6948)   -- 0   (Hearthstone → general-purpose)
+```
+
+Bitmask values match modern WoW's encoding (`1 << (familyID - 1)`):
+
+| Bit | Value | Family |
+|-----|-------|--------|
+| 0   | 1     | Quiver (arrows) |
+| 1   | 2     | Ammo Pouch (bullets) |
+| 2   | 4     | Soul Shard Bag |
+| 5   | 32    | Herb Bag |
+| 6   | 64    | Enchanting Bag (modern) |
+
+> **Encoding deviation under the hood.** 1.12 actually stores the raw
+> 1-based BagFamily ID (`arrow=1, bullet=2, soul shard=3, herb=6, …`).
+> Modern WoW (Wrath+) flipped to the bitmask form for the same field.
+> We convert on the way out via `bitmask = 1 << (rawID - 1)`, so
+> callers backporting from modern see the encoding they expect — addons
+> can `band(family, FAMILY_BAG_HERB_BAG)` directly.
+
+> **Item-level data is reliable; bag-level is sparse.** Individual
+> loot items (arrows, bullets, shards, herbs) carry the field
+> reliably, so `C_Item.GetItemFamily` works for the auto-routing use
+> case. **Bag containers** themselves (Soul Pouch, Enchanting Bag,
+> Herb Pouch, etc.) leave the field at 0 in vanilla server data — at
+> least on Turtle WoW. If you need to know "is this bag specialty",
+> read the bag's `subClass` via
+> [`C_Item.GetItemInfoInstant`](#c_itemgetiteminfoinstantitem)
+> instead. The Quiver class is fully populated; everything else needs
+> the subClass fallback.
+
+> **`nil` vs `0`.** Modern WoW returns `0` for items the cache lookup
+> fails on; we return `nil` so callers can distinguish "item not
+> cached, retry after the event lands" from "item exists but has no
+> family preference." Both are safe to treat as `0` for routing-logic
+> purposes; the distinction helps debugging.
+
+> **Auto-warmup on cache miss.** First call for an uncached item
+> returns `nil` AND triggers the engine's cache fill in the
+> background. Listen for `GET_ITEM_INFO_RECEIVED(itemID, success)` and
+> retry once the matching `itemID` arrives. This matches Classic Era
+> 1.15's observed behavior of "nil first call, value second call." We
+> diverge from 1.15 in one detail: 1.15's `GetItemFamily` doesn't fire
+> any event when the cache lands (silent fill), whereas we fire
+> `GET_ITEM_INFO_RECEIVED` to stay consistent with our other implicit-
+> warmup paths (`GetItemInfo`, `SetItemByID`). Addons that already
+> listen for that event get the notification for free.
+
+Equivalent to the legacy global `GetItemFamily` (since 3.0) and the
+modern `C_Item.GetItemFamily` introduced in 10.x.
 
 ### `GetItemIcon(itemID)` / `C_Item.GetItemIcon(itemLocation)` / `C_Item.GetItemIconByID(item)`
 

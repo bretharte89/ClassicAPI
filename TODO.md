@@ -452,14 +452,36 @@ CGItem's descriptor. The `includeBank` flag adds bank bag slots
 charges-aware for items with multiple uses (rare in 1.12 — e.g.,
 mana stones).
 
-## 29. `GetItemFamily(item)` — trivial
+## ~~29. `C_Item.GetItemFamily(item)`~~ — DONE
 
-Bag-family bitmask (e.g. soul shards = `0x100`, herbs = `0x800`). One
-field read on the cached ItemStats record. Used by addons that
-auto-route loot to specialty bags. Field offset isn't yet mapped in
-`Offsets.h` — small tracing job inside `Script_GetItemFamily` (which
-has the same offset for both 1.12 and 3.3.5 since the field
-predates Wrath).
+Returns the BagFamily bitmask for the item, or `nil` if it isn't in
+the cache. Reads `m_bagFamily` at +0x1D0 on the cached `ItemStats_C`
+record (offset verified by decoding the engine's own
+`GetItemBagFamily(itemID)` helper at `0x005DA050`, which calls
+`_GetRecord` then `mov eax, [eax+0x1D0]; ret`).
+
+**Encoding-shift gotcha.** 1.12 stores the raw 1-based BagFamily ID
+(`arrow=1, bullet=2, soul shard=3, herb=6, …`); modern WoW (Wrath+)
+flipped to the bitmask form `1 << (ID-1)` (`arrow=0x1, bullet=0x2,
+soul shard=0x4, herb=0x20, …`). Addons backporting from later
+expansions expect the bitmask, so we convert on the way out via
+`bitmask = id ? (1 << (id - 1)) : 0`. Verified empirically on Turtle
+WoW: Soul Shard (item 6265) reads raw 3 from the cache, returns 4
+(`1 << 2`) to Lua callers — matches modern.
+
+**Vanilla data sparsity.** 1.12 server data (at least on Turtle WoW)
+populates `m_bagFamily` reliably on **individual loot items** but
+leaves it 0 on most **bag containers** themselves. Soul Pouch,
+Enchanting Bag, Herb Pouch all return 0 even though their
+classification clearly implies a family. Only Light Quiver is
+populated among the bags we tested. This means
+`GetContainerNumFreeSlots`'s second return is reliable only for
+quivers; for general bag categorization, addons should fall back to
+checking `(class, subClass)` from `GetItemInfoInstant`. The
+`GetItemFamily` *item* path is solid for routing loot to the right
+specialty bag.
+
+See [src/item/Info.cpp](src/item/Info.cpp).
 
 ## ~~30. `IsSpellKnown(spellID, [isPet])`~~ — DONE
 
@@ -1020,3 +1042,41 @@ Other pending TODOs that look like good fits for the same approach:
 
 Tag here so we remember the technique exists when picking up these
 items.
+
+## ~~51. `C_Container.GetContainerNumFreeSlots(bagID)`~~ — DONE
+
+Returns `(numberOfFreeSlots, bagType)` for the player's backpack
+(`bagID = 0`) or one of the four equipped bag slots (`bagID = 1..4`).
+`bagType` is the BagFamily bitfield — vanilla 1.12 has only three
+non-zero families (quiver=1, ammo pouch=2, soul shard bag=4); modern
+expansions added 20+ more, but reading the bitfield gives addons a
+forward-compatible shape regardless. Always returns two values, falling
+back to `(0, 0)` for unsupported bag IDs (bank/keyring/out-of-range) —
+matches 3.3.5's behavior.
+
+Implementation walks the bag and counts empties via
+`Item::Location::ResolveBag`. Bag metadata (slot count + BagFamily) for
+real bags 1..4 comes from the equipped bag's `ItemStats_C` cache
+record: `m_containerSlots` at +0x64, `m_bagFamily` at +0x1D0. Backpack
+short-circuits to `(16, 0)` since vanilla's main backpack is fixed-size
+and unfamilied. Field offsets derived from VanillaHelpers's
+`struct ItemStats_C` layout, cross-checked against the existing
+`m_stackable` at +0x60 (already in `Offsets.h`).
+
+The slot-walk uses ResolveBag, which clobbers Lua stack[1]/[2] each
+call (a requirement of the engine's `PackBagSlot`). That's safe here —
+we own the stack inside the callback and the user's bagID arg is
+copied to a local before the loop. Cross-checked in-game against a
+manual `GetContainerItemID` walk; counts match for all five bags.
+
+**bagType return is sparse on vanilla data.** Empirically, only Light
+Quiver carries a non-zero `m_bagFamily` field among the bags we tested
+on Turtle WoW; Soul Pouch, Enchanting Bag, Herb Pouch all return 0.
+The same field on individual items (arrows, shards, herbs) is
+reliable — see TODO #29's notes. Addons that need bag-category
+discrimination should look at `(class, subClass)` from
+`GetItemInfoInstant` rather than `bagType`. The conversion from
+1.12's raw-ID encoding to the modern bitmask
+(`1 << (ID-1)`) still applies for the rare populated cases.
+
+See [src/item/Bag.cpp](src/item/Bag.cpp).
