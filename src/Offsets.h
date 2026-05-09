@@ -102,6 +102,25 @@ enum Offsets {
     // Reads bagID at Lua stack[1] and slot at stack[2], validates them, and
     // returns the inventory manager + linear slot ready to feed into GetItemBySlot.
     FUN_PACK_BAG_SLOT = 0x004F9820,
+    // `Script_GetContainerNumSlots` Lua C function — `__fastcall(void *L)`.
+    // Reads bagID from Lua stack[1] and pushes the bag's slot count back.
+    // We invoke this from C-side bag walks instead of hardcoding a max
+    // (vanilla bags top out at 24, but custom servers can ship larger
+    // bags). Returns 16 for the backpack, the actual bag size for slots
+    // 1..4, or 0 if no bag is equipped at the slot — engine handles the
+    // edge cases for us. Errors on out-of-range bagIDs.
+    FUN_SCRIPT_GET_CONTAINER_NUM_SLOTS = 0x004F9560,
+    // `Script_UseContainerItem` Lua C function — `__fastcall(void *L)`.
+    // Reads bagID at Lua stack[1] and slot at stack[2], dispatches to the
+    // engine's item-use machinery (same path the secure
+    // `tooltip:Click()` /  `UseContainerItem(...)` flow takes from
+    // Lua). We invoke this from `C_Container.UseHearthstone` after
+    // locating the hearthstone in bags.
+    FUN_SCRIPT_USE_CONTAINER_ITEM = 0x004FA0E0,
+    // Vanilla 1.12 hearthstone is always itemID 6948. Modern WoW recognizes
+    // many hearthstone-equivalent toys (Garrison, Dalaran, etc.) but those
+    // items don't exist in 1.12, so a single-itemID match is exhaustive.
+    HEARTHSTONE_ITEM_ID = 6948,
     // Per-item descriptor block (object/item-field array) lives at this offset
     // on the CGItem instance.
     OFF_ITEM_DESCRIPTOR = 0x114,

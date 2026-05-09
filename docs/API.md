@@ -43,6 +43,8 @@ build instructions.
   - [`C_Container.GetContainerItemID(bagIndex, slotIndex)`](#c_containergetcontaineritemidbagindex-slotindex)
   - [`C_Container.GetContainerItemDurability(containerIndex, slotIndex)`](#c_containergetcontaineritemdurabilitycontainerindex-slotindex)
   - [`C_Container.GetContainerNumFreeSlots(bagID)`](#c_containergetcontainernumfreeslotsbagid)
+  - [`C_Container.PlayerHasHearthstone()`](#c_containerplayerhashearthstone)
+  - [`C_Container.UseHearthstone()`](#c_containerusehearthstone)
 - [Unit](#unit)
   - [`UnitGUID(unit)`](#unitguidunit)
 - [Combat](#combat)
@@ -1066,6 +1068,69 @@ empty). Cross-checked in-game against a manual
 `C_Container.GetContainerItemID` walk; counts match.
 
 Equivalent to the function of the same name introduced in 3.0.
+
+### `C_Container.PlayerHasHearthstone()`
+
+Returns the itemID of the hearthstone if one is in the player's bags,
+or `nil` otherwise. Vanilla 1.12 only has a single hearthstone item
+(itemID `6948`), so the return is always either `6948` or `nil`.
+
+```
+itemID = C_Container.PlayerHasHearthstone()
+```
+
+```lua
+if C_Container.PlayerHasHearthstone() then
+    -- player can hearth
+end
+```
+
+> **Modern WoW returns the actual itemID found.** Modern clients
+> recognize a list of hearthstone-equivalent toys (Garrison
+> Hearthstone, Dalaran Hearthstone, etc.); whichever is found in bags
+> is returned. None of those items exist in 1.12, so the original
+> Hearthstone (`6948`) is the only possible result here. Code
+> backporting from modern that does
+> `local id = C_Container.PlayerHasHearthstone()` works without
+> modification — `id` is just always `6948` when truthy.
+
+Walks bags 0..4 via the same chain
+[`C_Container.GetContainerItemID`](#c_containergetcontaineritemidbagindex-slotindex)
+uses internally. Stops on first match.
+
+Equivalent to the function of the same name introduced in 9.0.
+
+### `C_Container.UseHearthstone()`
+
+Locates the hearthstone in bags and uses it. Returns `true` if the
+hearthstone was found and the use call dispatched, `false` if no
+hearthstone is in bags.
+
+```
+used = C_Container.UseHearthstone()
+```
+
+```lua
+if not C_Container.UseHearthstone() then
+    print("No hearthstone in bags!")
+end
+```
+
+> **`true` doesn't guarantee the cast started.** The return reflects
+> "we had a hearthstone to try with and called the engine's
+> `UseContainerItem` on it." Whether the cast actually starts depends
+> on cooldown, combat, movement, etc. — same downstream rules as
+> calling `UseContainerItem(bag, slot)` manually. If you need to
+> know whether the hearth completed, listen for the appropriate cast
+> events (`SPELLCAST_START` / `SPELLCAST_STOP`).
+
+Internally locates the hearthstone with the same walk
+`PlayerHasHearthstone` uses, then dispatches to the engine's existing
+`Script_UseContainerItem` Lua C function with `(bagID, slot)` set up
+on the stack. No new use-item logic is introduced — this is a
+convenience wrapper.
+
+Equivalent to the function of the same name introduced in 9.0.
 
 ## Unit
 

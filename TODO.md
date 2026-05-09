@@ -1080,3 +1080,27 @@ discrimination should look at `(class, subClass)` from
 (`1 << (ID-1)`) still applies for the rare populated cases.
 
 See [src/item/Bag.cpp](src/item/Bag.cpp).
+
+## ~~52. `C_Container.PlayerHasHearthstone()` / `C_Container.UseHearthstone()`~~ — DONE
+
+Modern convenience pair for the most-used bag walk in addons. Walks
+bags 0..4 looking for the hearthstone (vanilla itemID 6948 — the only
+one in 1.12; modern WoW recognizes many hearthstone-toy itemIDs but
+none exist in this client). Stops on first match.
+
+`PlayerHasHearthstone()` returns the itemID (always 6948 or nil).
+`UseHearthstone()` invokes the engine's `Script_UseContainerItem`
+(`0x004FA0E0`) with `(bagID, slot)` set up on the Lua stack — same
+secure-action path a regular `UseContainerItem(bag, slot)` Lua call
+would take, so cooldown / combat / movement-cancel handling is
+identical. Returns `true` if a hearthstone was found and the call
+dispatched, `false` otherwise (the cast itself can still fail
+downstream — same caveat as manually calling `UseContainerItem`).
+
+Walking helper is shared between the two via `FindHearthstone(L,
+*outBag, *outSlot)`. Slot counts come from delegating to the engine's
+own `Script_GetContainerNumSlots` (`0x004F9560`) rather than a
+hardcoded vanilla cap, so custom servers with larger-than-24-slot
+bags work without code changes.
+
+See [src/item/Hearthstone.cpp](src/item/Hearthstone.cpp).
