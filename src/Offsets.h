@@ -27,6 +27,14 @@ enum Offsets {
     // __thiscall(spellID, 0, 0, isPet, 0, 0, 0); we always pass isPet=0.
     FUN_GAMETOOLTIP_BUILD_SPELL_TOOLTIP = 0x0052E610,
 
+    // Existing GameTooltip method-table entries we dispatch to from
+    // backported convenience methods. Each is `int __fastcall(void *L)`
+    // expecting the standard self+args layout on the Lua stack.
+    // (Slot numbers are the method-registry index per `docs/raw_methods.txt`.)
+    FUN_SCRIPT_GAMETOOLTIP_SET_HYPERLINK = 0x00531FD0, // slot 12
+    FUN_SCRIPT_GAMETOOLTIP_SET_UNIT_BUFF = 0x00534AC0, // slot 32
+    FUN_SCRIPT_GAMETOOLTIP_SET_UNIT_DEBUFF = 0x00534E30, // slot 33
+
     // Iterator that registers an array of frame-method bindings on a per-frame-type
     // method registry (e.g. VAR_GAMETOOLTIP_METHOD_REGISTRY for GameTooltip).
     // __fastcall(ecx = MethodEntry table, edx = count, [stack] = context).
@@ -126,6 +134,14 @@ enum Offsets {
     // address `0xC0E2A0`, not a pointer to it. See Script_GetItemInfo at
     // 0x0048E070 which calls `mov ecx, 0xC0E2A0` before the call.
     VAR_ITEMDB_CACHE = 0x00C0E2A0,
+
+    // `Script_GetItemInfo` Lua C function. We hook this to auto-warm the
+    // item cache on miss — vanilla 1.12's stock behavior is "return nil
+    // for uncached items and don't fire any query"; modern WoW (5.x+)
+    // auto-fires the load and emits `GET_ITEM_INFO_RECEIVED` when data
+    // arrives. The hook makes `GetItemInfo(uncached_id)` return nil
+    // first call but kick off the query, so subsequent calls work.
+    FUN_SCRIPT_GET_ITEM_INFO = 0x0048E070,
     // ItemStats_C *(__thiscall *)(void *cache, uint32_t itemID,
     //                             const uint64_t *guid /*may point to zero*/,
     //                             void *callback, void *userData,

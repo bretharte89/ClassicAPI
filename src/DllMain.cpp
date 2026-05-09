@@ -16,6 +16,7 @@
 #include "MinHook.h"
 #include "Offsets.h"
 #include "event/Custom.h"
+#include "item/Data.h"
 
 #include <string>
 
@@ -87,6 +88,14 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved) {
                       LoadScriptFunctions_o);
         HOOK_FUNCTION(Offsets::FUN_FRAME_REGISTER_EVENT, FrameRegisterEvent_h,
                       FrameRegisterEvent_o);
+        // Auto-warm the item cache on `GetItemInfo(uncached_id)` calls, so
+        // subsequent calls return valid data and GET_ITEM_INFO_RECEIVED
+        // fires when the response arrives — matches modern WoW (5.x+)
+        // behavior. Without this, vanilla 1.12's `GetItemInfo` returns
+        // nil for misses and never fires a query, forcing addons to roll
+        // their own warmup hacks.
+        HOOK_FUNCTION(Offsets::FUN_SCRIPT_GET_ITEM_INFO, Item::Data::Script_GetItemInfo_h,
+                      Item::Data::Script_GetItemInfo_o);
     } else if (reason == DLL_PROCESS_DETACH) {
         MH_Uninitialize();
     }

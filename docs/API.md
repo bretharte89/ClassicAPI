@@ -393,6 +393,69 @@ Equivalent to the function of the same name introduced in 3.0.
 
 ## GameTooltip
 
+### `GameTooltip:SetItemByID(itemID)`
+
+Modern method that renders an item tooltip from just an itemID. The
+1.12 workaround was constructing an item hyperlink and calling
+`SetHyperlink` — `tooltip:SetHyperlink("item:" .. id .. ":0:0:0:0:0:0:0")`
+— which works but forces every caller to know the hyperlink format.
+
+```lua
+GameTooltip:SetOwner(UIParent, "ANCHOR_CURSOR")
+GameTooltip:SetItemByID(6948)  -- Hearthstone
+GameTooltip:Show()
+```
+
+Implementation: snprintf the hyperlink string and dispatch to the
+existing `Script_GameTooltip_SetHyperlink` (registry slot 12).
+
+> **Item cache caveat.** 1.12 lazy-loads item data into the
+> client-side cache at `0x00C0E2A0` — the cache is fed by
+> `SMSG_ITEM_QUERY_SINGLE_RESPONSE` only when the player encounters
+> an item. For an itemID the player has never seen, the tooltip
+> renders only the name; full data appears once the cache is warm.
+>
+> The fix is to ensure the item is cached before opening the tooltip:
+>
+> ```lua
+> if C_Item.IsItemDataCachedByID(itemID) then
+>     GameTooltip:SetItemByID(itemID)
+> else
+>     C_Item.RequestLoadItemDataByID(itemID)
+>     -- register for ITEM_DATA_LOAD_RESULT(loadedItemID, success)
+>     -- and call SetItemByID once the matching itemID arrives
+> end
+> ```
+>
+> This caching behavior matches what `C_Item.GetItemInfoInstant`
+> documents — same underlying cache. Modern WoW (5.0+) has the same
+> caveat, just with `C_Item.RequestLoadItemData(itemLocation)` /
+> `Item:OnItemLoad`-style continuation.
+
+Equivalent to the function of the same name introduced in 8.0.
+
+### `GameTooltip:SetUnitAura(unit, index, [filter])`
+
+Modern unified-aura method. 1.12 splits this into `SetUnitBuff` and
+`SetUnitDebuff`; we dispatch to the right one based on the `filter`
+string (`"HARMFUL"` → `SetUnitDebuff`, anything else → `SetUnitBuff`).
+`filter` defaults to helpful when omitted, matching modern.
+
+```lua
+GameTooltip:SetOwner(UIParent, "ANCHOR_CURSOR")
+GameTooltip:SetUnitAura("player", 1, "HELPFUL")  -- first buff
+GameTooltip:SetUnitAura("player", 1, "HARMFUL")  -- first debuff
+GameTooltip:SetUnitAura("player", 1)              -- defaults to HELPFUL
+GameTooltip:Show()
+```
+
+Pure dispatcher — no engine changes; the underlying logic is whatever
+1.12's `SetUnitBuff` / `SetUnitDebuff` already does. Just lets you use
+the modern call shape (which most aura libraries backport from)
+without conditionally splitting on filter.
+
+Equivalent to the function of the same name introduced in 6.0.
+
 ### `GameTooltip:SetSpellByID(spellID)`
 
 Renders a spell tooltip for any `spellID`, including spells the player has
