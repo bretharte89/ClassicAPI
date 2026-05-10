@@ -82,6 +82,7 @@ build instructions.
   - [`CLASSIC_API_VERSION`](#classic_api_version)
   - [`LE_EXPANSION_*`](#le_expansion_)
   - [`LE_ITEM_QUALITY_*`](#le_item_quality_)
+  - [`LE_UNIT_STAT_*`](#le_unit_stat_)
 
 ## Spell
 
@@ -1852,4 +1853,24 @@ local _, _, quality = GetItemInfo(itemID)
 if quality and quality >= LE_ITEM_QUALITY_RARE then
     -- highlight in UI
 end
+```
+
+### `LE_UNIT_STAT_*`
+
+The primary-stat enum (modern `Enum.UnitStat`), exposed as Lua globals
+so addons can index `UnitStat(unit, statIndex)` symbolically:
+
+| Constant                | Value | Stat |
+|-------------------------|------:|------|
+| `LE_UNIT_STAT_STRENGTH`  | `1`  | Strength |
+| `LE_UNIT_STAT_AGILITY`   | `2`  | Agility |
+| `LE_UNIT_STAT_STAMINA`   | `3`  | Stamina |
+| `LE_UNIT_STAT_INTELLECT` | `4`  | Intellect |
+| `LE_UNIT_STAT_SPIRIT`    | `5`  | Spirit |
+
+Values are stable across every WoW expansion — `UnitStat("player", 1)`
+has always returned strength.
+
+```lua
+local _, effective = UnitStat("player", LE_UNIT_STAT_AGILITY)
 ```
