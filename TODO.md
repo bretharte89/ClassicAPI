@@ -1712,3 +1712,99 @@ cursor + `EquipItemByName("Robes of Antiquity", 5)` — refuses
 gracefully, cursor preserved. To work around: caller drops the
 cursor first (`ClearCursor()` or `PutItemInBag(0)`), then calls
 `EquipItemByName`.
+
+## 60. `GameTooltip:AddSpellByID(spellID)` — easy/medium
+
+Modern method that **appends** spell info to the current tooltip
+without clearing existing lines — natural pair to `SetSpellByID`,
+which clears + rebuilds. Lets callers compose tooltips like
+"talent name (line 1) + AddSpellByID(rankSpell) (rest)".
+
+Direct upgrade for our cross-class `GameTooltip:SetTalentByID`
+fallback (#43): the current tier-2 path renders just the spell
+tooltip, losing the talent name. With `AddSpellByID` we could do
+`ClearLines + AddLine(talentName) + AddDoubleLine("Rank 0/N", "")
++ AddSpellByID(spellID)` to match modern's richer cross-class
+tooltip exactly.
+
+Implementation question: 1.12's `BuildSpellTooltip` (the inner
+helper at `0x0052E610` we use for `SetSpellByID`) almost certainly
+clears the buffer first. We'd need a different entry point that
+appends, OR find where the line-emission helper sits inside
+`BuildSpellTooltip` and call that directly.
+
+Approach: disassemble `Script_GameTooltip_SetSpell` (`0x00532D10`)
+and `BuildSpellTooltip` to identify the "ClearLines" prologue and
+the "emit description / cost / range / cooldown" loop. If those
+are factored apart, the loop is callable standalone and `AddSpellByID`
+is a thin wrapper. If they're inlined, we'd either need to skip
+the clear ourselves (call after some no-op state setup) or
+manually call the line-emission primitives.
+
+## 61. `GameTooltip:GetItem()` / `GetSpell()` / `GetUnit()` — easy if reachable
+
+Modern query methods that return what the tooltip is currently
+showing:
+
+- `GetItem()` → `(name, link)`
+- `GetSpell()` → `(name, rank, spellID)`
+- `GetUnit()` → `(name, unitToken)`
+
+1.12 has `SetUnit` (slot 31), `SetSpell` (slot 18), and various
+`SetInventoryItem`/`SetBagItem`/`SetMerchantItem` (slots 19, 30,
+27) but no `Get*` counterparts. Modern addons that scrape tooltip
+state — rank parsers, link extractors, debug overlays — currently
+have to wrap every `SetX` call in their own state tracking.
+
+The engine almost certainly maintains "what am I currently
+displaying?" fields on the GameTooltip frame for its own redraw
+logic. Finding those fields is the work; once located, each `Get*`
+is a one-line read.
+
+Investigation steps:
+1. Set a known item via `SetItemByID(6948)` (Hearthstone)
+2. Search the GameTooltip frame's instance memory for the value
+   `6948` after the call
+3. Repeat with `SetSpellByID(133)` (Fireball) — find spellID slot
+4. Repeat with `SetUnit("player")` — find the unit-token or GUID
+   slot
+
+Each of these will reveal an offset on the frame's instance struct
+that holds the current state. Symmetric for the others.
+
+`GetItem()` returns a link — slightly more involved since we'd
+need to format the item link string (we have `Item::Tooltip` for
+this pattern).
+
+## 62. `GameTooltip:NumLines()` — trivial if reachable
+
+Returns the count of FontStrings currently rendered in the
+tooltip. The frame internally maintains a list of lines (it has
+to, for layout). If there's a count field, this is a single
+deref + push.
+
+Investigation: dump the GameTooltip frame instance after
+`AddLine` calls and look for an integer that increments. Probably
+near the FontStrings array pointer.
+
+Useful for tooltip-parsing addons that want to walk all lines
+without iterating until `_GetTooltipLine(i)` returns nil.
+
+## 63. `GameTooltip:SetInventoryItemByID(itemID)` — verify-then-skip-or-add
+
+Modern shows up alongside `SetItemByID` in the API list. Need to
+verify whether it does anything semantically different from
+`SetItemByID` — e.g., it might use the player's actual equipped
+item's stats (with random properties / enchants applied) rather
+than the base ItemSparse data.
+
+If it's a true variant, worth implementing: walk equipped slots
+for matching itemID, render with descriptor flags. If it's just
+an alias for `SetItemByID`, skip — addons can use the existing
+method.
+
+Test approach: in 1.15 / Classic Era, `SetInventoryItemByID(<an
+equipped item with random suffix>)` and compare against
+`SetItemByID(<same id>)`. If the rendered tooltip shows different
+suffix stats / enchants, they're distinct calls. If identical,
+just an alias.
