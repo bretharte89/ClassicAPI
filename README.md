@@ -17,18 +17,18 @@ Quick index:
 
 | Namespace | Calls |
 |-----------|-------|
-| Spell     | `GetSpellInfo`, `C_Spell.GetSpellInfo`, `C_Spell.GetSpellName`, `C_Spell.GetSpellTexture`, `GetSpellLink`, `C_Spell.GetSpellLink`, `FindSpellBookSlotByID`, `C_Spell.GetSpellDescription`, `IsPassiveSpell`, `C_Spell.IsSpellPassive`, `IsPlayerSpell`, `IsSpellKnown`, `IsUsableSpell`, `C_Spell.IsSpellUsable`, `GetSpellSchool` |
-| GameTooltip | `GameTooltip:SetSpellByID`, `GameTooltip:SetItemByID`, `GameTooltip:SetInventoryItemByID`, `GameTooltip:SetUnitAura`, `GameTooltip:SetTalentByID` |
-| Quest     | `GetQuestIDFromLogIndex`, `C_QuestLog.RequestLoadQuestByID` (+ `QUEST_DATA_LOAD_RESULT` event), `C_QuestLog.GetTitleForQuestID` |
-| Faction   | `GetFactionIDByIndex`, `GetFactionInfoByID`, `GetFactionParentID`, `C_Reputation.SetWatchedFactionByID` |
-| Item      | `C_Item.IsBound`, `C_Item.GetItemID`, `GetInventoryItemID`, `GetInventoryItemDurability`, `C_Item.GetItemFamily`, `C_Item.GetItemCount`, `C_Item.GetItemInfoInstant`, `GetItemIcon` / `C_Item.GetItemIcon` / `C_Item.GetItemIconByID`, `C_Item.IsItemDataCached(ByID)`, `C_Item.RequestLoadItemData(ByID)` (+ `ITEM_DATA_LOAD_RESULT` event), `OffhandHasWeapon`, `C_Item.IsEquippedItem`, `C_Item.EquipItemByName` |
-| Container | `C_Container.GetContainerItemID`, `C_Container.GetContainerItemDurability`, `C_Container.GetContainerNumFreeSlots`, `C_Container.PlayerHasHearthstone`, `C_Container.UseHearthstone` |
+| Spell     | `C_Spell.GetSpellDescription`, `C_Spell.GetSpellInfo`, `C_Spell.GetSpellLink`, `C_Spell.GetSpellName`, `C_Spell.GetSpellTexture`, `C_Spell.IsSpellPassive`, `C_Spell.IsSpellUsable`, `FindSpellBookSlotByID`, `GetSpellInfo`, `GetSpellLink`, `GetSpellSchool`, `IsPassiveSpell`, `IsPlayerSpell`, `IsSpellKnown`, `IsUsableSpell` |
+| GameTooltip | `GameTooltip:SetInventoryItemByID`, `GameTooltip:SetItemByID`, `GameTooltip:SetSpellByID`, `GameTooltip:SetTalentByID`, `GameTooltip:SetUnitAura` |
+| Quest     | `C_QuestLog.GetTitleForQuestID`, `C_QuestLog.RequestLoadQuestByID` (+ `QUEST_DATA_LOAD_RESULT` event), `GetQuestIDFromLogIndex` |
+| Faction   | `C_Reputation.SetWatchedFactionByID`, `GetFactionIDByIndex`, `GetFactionInfoByID`, `GetFactionParentID` |
+| Item      | `C_Item.EquipItemByName`, `C_Item.GetItemCount`, `C_Item.GetItemFamily`, `C_Item.GetItemID`, `C_Item.GetItemInfoInstant`, `C_Item.IsBound`, `C_Item.IsEquippedItem`, `C_Item.IsItemDataCached(ByID)`, `C_Item.RequestLoadItemData(ByID)` (+ `ITEM_DATA_LOAD_RESULT` event), `GetInventoryItemDurability`, `GetInventoryItemID`, `GetItemIcon` / `C_Item.GetItemIcon` / `C_Item.GetItemIconByID`, `OffhandHasWeapon` |
+| Container | `C_Container.GetContainerItemDurability`, `C_Container.GetContainerItemID`, `C_Container.GetContainerNumFreeSlots`, `C_Container.PlayerHasHearthstone`, `C_Container.UseHearthstone` |
 | Class     | `FillLocalizedClassList` |
 | Unit      | `UnitGUID`, `UnitIsAFK`, `UnitIsDND`, `UnitIsFeignDeath` |
-| State     | `IsMounted`, `IsStealthed`, `IsFalling`, `IsSwimming` |
-| AddOns    | `C_AddOns.GetAddOnName`, `C_AddOns.GetAddOnTitle`, `C_AddOns.GetAddOnNotes`, `C_AddOns.IsAddOnLoadable`, `C_AddOns.GetAddOnSecurity`, `C_AddOns.DoesAddOnExist` |
+| State     | `IsFalling`, `IsMounted`, `IsStealthed`, `IsSwimming` |
+| AddOns    | `C_AddOns.DoesAddOnExist`, `C_AddOns.GetAddOnName`, `C_AddOns.GetAddOnNotes`, `C_AddOns.GetAddOnSecurity`, `C_AddOns.GetAddOnTitle`, `C_AddOns.IsAddOnLoadable` |
 | Combat    | `InCombatLockdown` |
-| Talent    | `GetTalentSpellID`, `GetTalentIDByIndex` |
+| Talent    | `GetTalentIDByIndex`, `GetTalentSpellID` |
 | Time      | `GetServerTime` |
 | Events    | `C_EventUtils.IsEventValid` |
 | Globals   | `CLASSIC_API_VERSION`, `LE_EXPANSION_LEVEL_CURRENT`, `LE_EXPANSION_CLASSIC` … `LE_EXPANSION_MIDNIGHT`, `LE_ITEM_QUALITY_POOR` … `LE_ITEM_QUALITY_WOWTOKEN`, `LE_UNIT_STAT_STRENGTH` … `LE_UNIT_STAT_SPIRIT` |
