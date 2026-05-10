@@ -31,13 +31,9 @@ static FrameRegisterEvent_t FrameRegisterEvent_o = nullptr;
 static void __fastcall InvalidFunctionPtrCheck_h() {}
 
 static bool __fastcall FrameScript_Initialize_h() {
-    // BEFORE the engine tears down the old event table (which it does at
-    // the start of FrameScript_Initialize), invalidate our cache. Our
-    // injected names are Storm allocations, so the engine's
-    // `SMemFree(entry.name)` teardown loop handles cleanup correctly on
-    // its own — but the table is rebuilt at a fresh address afterwards,
-    // and our cached slot indices point into the old layout. Drop the
-    // writes gate and reset slots so post-rebuild `RetryAll` re-claims.
+    // BEFORE the engine tears down the old event table (at the start of
+    // FrameScript_Initialize), invalidate our cached slot indices. The
+    // table is rebuilt at a fresh allocation; the old slots are stale.
     Event::Custom::PrepareForReload();
 
     FrameScript_Initialize_o();
@@ -57,20 +53,22 @@ static bool __fastcall FrameScript_Initialize_h() {
 static void __fastcall LoadScriptFunctions_h() {
     LoadScriptFunctions_o();
     Game::RunModuleRegistrations();
-    // Permit table writes from this point on. Earlier writes (during the
-    // engine's own boot-time `RegisterEvent` calls, including those fired
-    // by SuperWoWhook) crash with `SMemFree` on slots the engine expected
-    // to still be NULL — see commit history / CLAUDE.md.
+    // Permit `Event::Custom::TryClaim` to actually write to the event
+    // table from here on. Earlier writes (during the engine's own
+    // boot-time `RegisterEvent` flurry, plus SuperWoWhook/etc.) can
+    // race with the engine's table init and trigger `SMemFree` on slots
+    // it still considers in-flight.
     Event::Custom::EnableWrites();
 }
 
-// Fires for every `frame:RegisterEvent(...)` call from Lua. By this point
-// the engine's event table is fully populated, so any custom events we
-// couldn't claim during the LoadScriptFunctions hook can be claimed now —
-// before the engine's strcmp scan against `eventName` actually runs.
+// Every Lua-side `frame:RegisterEvent(...)` is a chance to claim a slot
+// for any custom event still waiting. By this point the engine's table
+// is fully populated and SuperWoWhook / other DLLs have done their
+// post-rebuild writes, so the table state is settled and our backwards
+// walk finds genuine NULL slots near the tail.
 static void __fastcall FrameRegisterEvent_h(void *frame, void *edx,
                                             const char *eventName) {
-    Event::Custom::RetryAll();
+    Event::Custom::RetryClaims();
     FrameRegisterEvent_o(frame, edx, eventName);
 }
 

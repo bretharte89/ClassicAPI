@@ -13,7 +13,9 @@
 
 #include "Custom.h"
 
+#include "Game.h"
 #include "Offsets.h"
+#include "debug/Log.h"
 
 #include <cstdint>
 #include <cstring>
@@ -22,46 +24,38 @@ namespace Event::Custom {
 
 namespace {
 
-// Cache of registrations keyed by eventName pointer (callers always pass a
-// static literal, so pointer-equality is a valid identity check). A failed
-// claim caches as `slot = -1`; subsequent `Register` calls retry until it
-// succeeds. This is important because the engine's event table at
-// `[VAR_EVENT_TABLE_BASE_PTR]` isn't populated yet by the time our
-// `LoadScriptFunctions` hook fires — count starts at 0 and grows during
-// later boot phases. Retry-on-call lets us register late without needing
-// to find a precise "table is ready" hook point.
-struct CacheEntry {
+// Reservations registered by `AutoReserve` at static-init time, before
+// any engine code runs. `RetryClaims` (triggered by the
+// `Frame::RegisterEvent` hook) walks this list and claims a NULL slot
+// for each unclaimed entry.
+constexpr int MAX_RESERVED = 32;
+struct ReservedName {
     const char *name;
-    int slot;
+    int slot;  // -1 until claimed
 };
-constexpr int MAX_CACHE = 16;
-CacheEntry g_cache[MAX_CACHE];
-int g_cacheCount = 0;
+ReservedName g_reserved[MAX_RESERVED];
+int g_reservedCount = 0;
 bool g_writesEnabled = false;
 
-// Storm-allocate a copy of `s`. The engine's event table treats every
-// `entry.name` as a Storm-owned pointer — its reload teardown loop calls
-// `SMemFree(entry.name)` and validates the block against Storm's registered
-// allocations (panics with `ERROR #124 SMem3: ...` if the pointer didn't
-// come from `SMemAlloc`). So when we inject a name, we must hand it a real
-// Storm allocation, not a static literal in our DLL.
-//
-// We never call `SMemFree` ourselves — the engine's teardown owns the
-// lifetime once we've written the pointer into a slot.
-char *AllocStormCopy(const char *s) {
+// Engine's SStrDup at `FUN_STORM_SSTRDUP` — uses `SMemAlloc` internally
+// and is exactly what the engine itself does when filling event table
+// entries. Reload teardown's `SMemFree(entry.name)` validates that the
+// pointer came from `SMemAlloc`, so handing it an SStrDup'd block is
+// the only safe way to inject a name.
+char *SStrDup(const char *s) {
     if (s == nullptr)
         return nullptr;
-    using SMemAlloc_t = void *(__stdcall *)(size_t size, const char *file,
-                                            int line, int flags);
-    auto fn = reinterpret_cast<SMemAlloc_t>(Offsets::FUN_STORM_SMEM_ALLOC);
-    const size_t len = std::strlen(s);
-    char *buf = static_cast<char *>(fn(len + 1, __FILE__, __LINE__, 0));
-    if (buf == nullptr)
-        return nullptr;
-    std::memcpy(buf, s, len + 1);
-    return buf;
+    using SStrDup_t = char *(__stdcall *)(const char *src, const char *file,
+                                          int line);
+    auto fn = reinterpret_cast<SStrDup_t>(Offsets::FUN_STORM_SSTRDUP);
+    return fn(s, __FILE__, __LINE__);
 }
 
+// Walk the engine's event table from the END looking for a NULL-name
+// slot. High slots are preferred so our event ids stay out of the
+// engine's hardcoded slot-write range (the engine pre-fills slots
+// 549..699 with `SPELL_DAMAGE_EVENT_SELF` etc.) and so the dump output
+// in `_classicapi_DumpAllEvents` shows our events grouped at the tail.
 int TryClaim(const char *eventName) {
     if (!g_writesEnabled)
         return -1;
@@ -69,18 +63,15 @@ int TryClaim(const char *eventName) {
     const int count = *reinterpret_cast<int *>(Offsets::VAR_EVENT_TABLE_COUNT);
     if (base == nullptr || count <= 0)
         return -1;
-    // Walk the live entry range looking for the first slot whose name is
-    // NULL. `Frame::RegisterEvent` skips NULL-name entries during its
-    // strcmp loop (see the bail at 0x00702171), so they're safe to claim
-    // without breaking any existing event.
-    for (int i = 0; i < count; i++) {
+    for (int i = count - 1; i >= 0; --i) {
         auto **namePtr = reinterpret_cast<const char **>(
-            base + i * Offsets::EVENT_ENTRY_STRIDE + Offsets::OFF_EVENT_ENTRY_NAME);
+            base + i * Offsets::EVENT_ENTRY_STRIDE +
+            Offsets::OFF_EVENT_ENTRY_NAME);
         if (*namePtr == nullptr) {
-            char *stormName = AllocStormCopy(eventName);
-            if (stormName == nullptr)
+            char *copy = SStrDup(eventName);
+            if (copy == nullptr)
                 return -1;
-            *namePtr = stormName;
+            *namePtr = copy;
             return i;
         }
     }
@@ -89,57 +80,112 @@ int TryClaim(const char *eventName) {
 
 } // namespace
 
-int Register(const char *eventName) {
-    if (eventName == nullptr)
-        return -1;
-    for (int i = 0; i < g_cacheCount; i++) {
-        if (g_cache[i].name == eventName) {
-            if (g_cache[i].slot < 0)
-                g_cache[i].slot = TryClaim(eventName);
-            return g_cache[i].slot;
-        }
+AutoReserve::AutoReserve(const char *name) {
+    if (name == nullptr || g_reservedCount >= MAX_RESERVED)
+        return;
+    for (int i = 0; i < g_reservedCount; ++i) {
+        if (std::strcmp(g_reserved[i].name, name) == 0)
+            return;
     }
-    if (g_cacheCount >= MAX_CACHE)
-        return -1;
-    g_cache[g_cacheCount].name = eventName;
-    g_cache[g_cacheCount].slot = TryClaim(eventName);
-    return g_cache[g_cacheCount++].slot;
+    g_reserved[g_reservedCount].name = name;
+    g_reserved[g_reservedCount].slot = -1;
+    ++g_reservedCount;
 }
 
-void RetryAll() {
-    for (int i = 0; i < g_cacheCount; i++) {
-        if (g_cache[i].slot < 0)
-            g_cache[i].slot = TryClaim(g_cache[i].name);
+int Lookup(const char *name) {
+    if (name == nullptr)
+        return -1;
+    for (int i = 0; i < g_reservedCount; ++i) {
+        if (std::strcmp(g_reserved[i].name, name) == 0)
+            return g_reserved[i].slot;
+    }
+    return -1;
+}
+
+void RetryClaims() {
+    for (int i = 0; i < g_reservedCount; ++i) {
+        if (g_reserved[i].slot < 0)
+            g_reserved[i].slot = TryClaim(g_reserved[i].name);
     }
 }
 
 void EnableWrites() { g_writesEnabled = true; }
 
 void PrepareForReload() {
-    // The engine's teardown at 0x00701A40 walks every entry and calls
-    // `SMemFree(entry.name)`, which validates the block came from
-    // `SMemAlloc`. Our injected names are Storm allocations (see
-    // `AllocStormCopy`), so the engine's free path handles them
-    // correctly — we don't need to touch the engine's table here.
-    //
-    // We DO still need to invalidate our cache: the engine's teardown
-    // is followed by a full table rebuild at a fresh allocation, so
-    // every cached `slot` index points into the old layout and is no
-    // longer ours. Reset everything to `slot = -1` and drop the writes
-    // gate; `LoadScriptFunctions_h` will re-enable writes after the
-    // rebuild, and `RetryAll` (fired by every subsequent
-    // `RegisterEvent` from Lua) will re-claim and re-allocate.
-    for (int i = 0; i < g_cacheCount; i++)
-        g_cache[i].slot = -1;
+    for (int i = 0; i < g_reservedCount; ++i)
+        g_reserved[i].slot = -1;
     g_writesEnabled = false;
 }
 
 void Fire_DD(int eventID, int arg1, int arg2) {
     if (eventID < 0)
         return;
-    using FireEvent_DD_t = void(__cdecl *)(int eventID, const char *format, int a, int b);
+    using FireEvent_DD_t = void(__cdecl *)(int eventID, const char *format,
+                                           int a, int b);
     auto fn = reinterpret_cast<FireEvent_DD_t>(Offsets::FUN_FIRE_EVENT);
     fn(eventID, "%d%d", arg1, arg2);
 }
+
+void Fire_SD(int eventID, const char *arg1, int arg2) {
+    if (eventID < 0)
+        return;
+    using FireEvent_SD_t = void(__cdecl *)(int eventID, const char *format,
+                                           const char *a, int b);
+    auto fn = reinterpret_cast<FireEvent_SD_t>(Offsets::FUN_FIRE_EVENT);
+    fn(eventID, "%s%d", arg1, arg2);
+}
+
+// Diagnostic Lua functions — registered via the auto-register pattern
+// at the bottom of this file. Not on any hot path.
+namespace {
+
+int __fastcall Script_DumpSlot(void *L) {
+    if (!Game::Lua::IsNumber(L, 1)) {
+        Debug::Log::Printf("[dumpslot] usage: _classicapi_DumpSlot(slot)");
+        return 0;
+    }
+    const int slot = static_cast<int>(Game::Lua::ToNumber(L, 1));
+    auto *base = *reinterpret_cast<uint8_t **>(Offsets::VAR_EVENT_TABLE_BASE_PTR);
+    const int count = *reinterpret_cast<int *>(Offsets::VAR_EVENT_TABLE_COUNT);
+    const char *name = nullptr;
+    if (base != nullptr && slot >= 0 && slot < count) {
+        name = *reinterpret_cast<const char *const *>(
+            base + slot * Offsets::EVENT_ENTRY_STRIDE +
+            Offsets::OFF_EVENT_ENTRY_NAME);
+    }
+    Debug::Log::Printf("[dumpslot] base=0x%08X count=%d slot=%d name='%s'",
+                       static_cast<unsigned>(reinterpret_cast<uintptr_t>(base)),
+                       count, slot, name ? name : "(null)");
+    return 0;
+}
+
+int __fastcall Script_DumpAllEvents(void *) {
+    auto *base = *reinterpret_cast<uint8_t **>(Offsets::VAR_EVENT_TABLE_BASE_PTR);
+    const int count = *reinterpret_cast<int *>(Offsets::VAR_EVENT_TABLE_COUNT);
+    Debug::Log::Printf("[dumpall] base=0x%08X count=%d",
+                       static_cast<unsigned>(reinterpret_cast<uintptr_t>(base)),
+                       count);
+    if (base == nullptr)
+        return 0;
+    for (int i = 0; i < count; ++i) {
+        const char *name = *reinterpret_cast<const char *const *>(
+            base + i * Offsets::EVENT_ENTRY_STRIDE +
+            Offsets::OFF_EVENT_ENTRY_NAME);
+        if (name != nullptr && *name != '\0')
+            Debug::Log::Printf("[%d] %s", i, name);
+    }
+    Debug::Log::Printf("[dumpall] done");
+    return 0;
+}
+
+void RegisterDiagnostics() {
+    Game::Lua::RegisterGlobalFunction("_classicapi_DumpSlot", &Script_DumpSlot);
+    Game::Lua::RegisterGlobalFunction("_classicapi_DumpAllEvents",
+                                      &Script_DumpAllEvents);
+}
+
+const Game::ModuleAutoRegister _autoreg{&RegisterDiagnostics};
+
+} // namespace
 
 } // namespace Event::Custom

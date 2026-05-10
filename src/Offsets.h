@@ -725,10 +725,27 @@ enum Offsets {
     // `0x00774A40`). `__thiscall` with `(this=frame, eventName)`. Walks
     // the entry array at `[VAR_EVENT_TABLE_BASE_PTR]`, case-insensitively
     // strcmps against each entry's name, and appends `frame` to the
-    // matching entry's chain. We hook this so any addon's RegisterEvent
-    // call gives `Event::Custom::RetryAll` a chance to fix up custom
-    // events that boot-time registration couldn't claim yet.
+    // matching entry's chain.
     FUN_FRAME_REGISTER_EVENT = 0x00702140,
+
+    // `RebuildEventTable` — the engine's bulk event-table population
+    // routine. `__fastcall(const char **names, int count) -> void`
+    // (ECX = names array, EDX = count). Tears down any existing table
+    // (calling the per-entry teardown helper at 0x00701A40 + freeing
+    // the base pointer via SMemFree), allocates a fresh table of size
+    // `count * 16`, then loops `names[0..count-1]` and for each
+    // non-empty entry calls `SStrDup(name, file, line)` to allocate
+    // an engine-owned copy at `entry+0x00`.
+    //
+    // Called twice during boot (with two different name arrays — 26
+    // entries at 0x00B41E70, then 549 entries at 0x00BE1198) and once
+    // per `/reload`. We **don't hook this** — third-party DLLs
+    // (SuperWoWhook, transmogfix, nampower, etc.) all hook here too, and
+    // chaining their modifications to the `(names, count)` args makes the
+    // final table size unreliable (crashes seen with count → buffer-size
+    // mismatch). Instead, `Event::Custom` claims NULL slots from the live
+    // table after the rebuild settles. Kept for reference.
+    FUN_REBUILD_EVENT_TABLE = 0x00703D90,
 
     // `FireEvent` — the engine's event dispatcher. 149 callers in the
     // binary. `__cdecl void(int eventID, const char *format, ...)`.
@@ -772,6 +789,13 @@ enum Offsets {
     // name) doesn't trip its safety check on our injected pointers.
     FUN_STORM_SMEM_ALLOC = 0x006462E0,
     FUN_STORM_SMEM_FREE = 0x00646430,
+
+    // `SStrDup(const char *src, const char *file, int line)`. `__stdcall`.
+    // Storm's string-copy wrapper around `SMemAlloc` — used by the engine
+    // itself to populate event entry names. We use it from `Event::Custom`
+    // so the engine's reload-teardown `SMemFree` sees blocks that came
+    // from `SMemAlloc` (which it requires).
+    FUN_STORM_SSTRDUP = 0x0064A620,
 
     // Talent system — per-player talent state populated at login from
     // (class, race) + Talent.dbc / TalentTab.dbc. The engine maintains

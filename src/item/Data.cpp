@@ -45,21 +45,23 @@ using GetItemRecord_t = const uint8_t *(__thiscall *)(void *cache, uint32_t item
 // fires exactly one event, never both, depending on what initiated
 // the request. We honor the split with two distinct callbacks.
 //
-// Slots are looked up via `Event::Custom::Register` which caches by
-// pointer and retries failed claims; the engine's event table isn't
-// populated when our boot hook fires, so all early registrations
-// return -1 until `RetryAll` claims them later.
+// Names are reserved at static-init time via `Event::Custom::AutoReserve`;
+// the `RebuildEventTable` hook appends them to the engine's input array
+// at table-population time, so the engine itself allocates and tracks
+// our entries identically to its own.
 static constexpr const char *kItemDataLoadResult = "ITEM_DATA_LOAD_RESULT";
 static constexpr const char *kGetItemInfoReceived = "GET_ITEM_INFO_RECEIVED";
+static const Event::Custom::AutoReserve _reserveItemDataLoadResult{kItemDataLoadResult};
+static const Event::Custom::AutoReserve _reserveGetItemInfoReceived{kGetItemInfoReceived};
 
 static void FireGetItemInfoReceived(int itemID, int success) {
-    const int slot = Event::Custom::Register(kGetItemInfoReceived);
+    const int slot = Event::Custom::Lookup(kGetItemInfoReceived);
     if (slot >= 0)
         Event::Custom::Fire_DD(slot, itemID, success);
 }
 
 static void FireItemDataLoadResult(int itemID, int success) {
-    const int slot = Event::Custom::Register(kItemDataLoadResult);
+    const int slot = Event::Custom::Lookup(kItemDataLoadResult);
     if (slot >= 0)
         Event::Custom::Fire_DD(slot, itemID, success);
 }
@@ -217,15 +219,8 @@ static void RegisterLuaFunctions() {
     Game::Lua::RegisterTableFunction("C_Item", "RequestLoadItemDataByID",
                                      &Script_RequestLoadItemDataByID);
     Game::Lua::RegisterTableFunction("C_Item", "RequestLoadItemData", &Script_RequestLoadItemData);
-
-    // Seed both events so `Event::Custom::RetryAll` (driven by our hook
-    // on `Frame::RegisterEvent`) knows to claim slots for them. The
-    // engine's event table isn't populated yet when this fires, so all
-    // these calls return -1; later attempts via `RetryAll` or any
-    // direct `Register` call land them. Once claimed, slots are cached
-    // and reused.
-    Event::Custom::Register(kItemDataLoadResult);
-    Event::Custom::Register(kGetItemInfoReceived);
+    // Event names are reserved at file scope via `AutoReserve`; nothing
+    // to do here for events.
 }
 
 static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};

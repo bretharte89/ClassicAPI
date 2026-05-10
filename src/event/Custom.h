@@ -15,52 +15,65 @@
 
 namespace Event::Custom {
 
-// Claims an unused (`name == NULL`) slot in the engine's event-registration
-// table at `[VAR_EVENT_TABLE_BASE_PTR]`, sets its name to `eventName`, and
-// returns the slot index. After a successful registration, addons can
-// `frame:RegisterEvent(eventName)` and the engine will treat it like any
-// built-in event; a matching `Fire*` call dispatches to those frames.
+// Reserve an event name to be claimed in the engine's event table at
+// the next safe opportunity. Place a static instance at file scope:
 //
-// `eventName` must outlive the engine — pass a static string literal or
-// DLL-owned storage. Returns -1 if the table isn't initialized yet, or if
-// no NULL slot was found in the live entry range. A reasonable place to
-// call this is from a module's `RegisterLuaFunctions`, which fires after
-// engine boot.
-int Register(const char *eventName);
+//   static const Event::Custom::AutoReserve _r{"MY_EVENT"};
+//
+// Static-init chains the name onto an internal list *before* `DllMain`
+// runs. After the engine and any other DLLs have finished writing to
+// the event table (signaled by the first `Frame::RegisterEvent` call
+// from Lua, which our hook intercepts to fire `RetryClaims`), we walk
+// the table from the END looking for NULL-name slots and claim them
+// for our reserved names — engine-owned `SStrDup` storage, so the
+// engine's reload teardown frees them correctly.
+//
+// We don't hook `RebuildEventTable` directly: chaining with other DLLs
+// that hook the same function (SuperWoWhook, nampower, transmogfix,
+// VanillaMinimapTracking) led to count→buffer-size mismatches and
+// crashes in the engine's fill loop. The slot-claim approach lets each
+// DLL operate on the table independently of the others.
+//
+// The name pointer must outlive the engine (a string literal does).
+// Same name reserved twice is deduped; reserving more than 32 names
+// total silently drops the overflow.
+struct AutoReserve {
+    explicit AutoReserve(const char *name);
+};
 
-// Re-attempts `TryClaim` for any cached registration that hasn't succeeded
-// yet. The engine populates the event table during boot AFTER our
-// `LoadScriptFunctions` hook fires, so the boot-time `Register` calls
-// usually return -1; calling `RetryAll` from a later hook point (e.g.
-// `Frame::RegisterEvent`) catches them up just in time.
-void RetryAll();
+// Returns the slot id currently assigned to `name`, or -1 if not yet
+// claimed (e.g. before the first Lua-side `RegisterEvent` has
+// triggered `RetryClaims`). Slot indices may change across `/reload`,
+// so call this at fire time rather than caching the value.
+int Lookup(const char *name);
 
-// Permits `TryClaim` to actually write to the event table. Until this is
-// called, `Register` and `RetryAll` cache the name but DO NOT mutate the
-// engine's table. Boot-time `RegisterEvent` calls (including those fired
-// by SuperWoWhook and other DLLs) can race with the engine's own table
-// init and trigger `SMemFree` on slots they expected to still be NULL —
-// writing during that window crashed the engine. `DllMain.cpp` flips this
-// after `LoadScriptFunctions_h` returns, so all our writes happen after
-// the engine has finished its own setup.
+// Dispatches an event with two int args (format `"%d%d"`). Pass
+// booleans as 0/1 since the engine has no native bool format code.
+void Fire_DD(int eventID, int arg1, int arg2);
+
+// Dispatches with `(string, int)` — used by `MODIFIER_STATE_CHANGED`
+// for `(keyName, down)` payloads. `arg1` must outlive the call (the
+// engine doesn't copy strings out of varargs); for compile-time
+// literals this is automatic.
+void Fire_SD(int eventID, const char *arg1, int arg2);
+
+// Internal: try to claim a slot for every reservation that's still
+// unclaimed (`slot < 0`). Called from the `Frame::RegisterEvent` hook
+// in DllMain — every time Lua calls `frame:RegisterEvent(...)`, we
+// catch any reservations that couldn't claim earlier.
+void RetryClaims();
+
+// Internal: permit `TryClaim` to write to the event table. Held
+// closed until `LoadScriptFunctions_h` returns, so the boot phase
+// (during which the engine and SuperWoWhook fire many internal
+// `RegisterEvent` calls) can't trigger our writes. Writing during
+// that window crashes the engine in `SMemFree` on slots it expected
+// to still be NULL.
 void EnableWrites();
 
-// Call this BEFORE the engine's `FrameScript_Initialize_o` runs (i.e.
-// before each `/reload`). The engine's reload path iterates every entry
-// and `SMemFree`s its name; we hand it Storm-allocated copies (see
-// `AllocStormCopy` in Custom.cpp), so the free is safe — we don't need
-// to touch the engine's table here. What we DO need: drop the writes
-// gate and reset cached slot indices, since the engine reallocates the
-// table at a fresh address and our previous slot indices are stale.
+// Internal: invalidate cached slot indices before `/reload`. The
+// engine rebuilds the event table at a fresh allocation; our cached
+// slots point into the old layout and need to re-claim.
 void PrepareForReload();
-
-// Dispatches an event registered via `Register` with two int args
-// (format `"%d%d"`). Use this for `(itemID, success)`-style payloads;
-// pass booleans as 0/1 since the engine has no native bool format code.
-//
-// Standard C++ doesn't let us forward varargs through `...` to a varargs
-// callee, so each call shape lives in its own typed wrapper here. Add new
-// shapes (`Fire_S`, `Fire_SD`, etc.) as additional events come online.
-void Fire_DD(int eventID, int arg1, int arg2);
 
 } // namespace Event::Custom

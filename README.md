@@ -29,6 +29,7 @@ Quick index:
 | AddOns    | `C_AddOns.DoesAddOnExist`, `C_AddOns.GetAddOnName`, `C_AddOns.GetAddOnNotes`, `C_AddOns.GetAddOnSecurity`, `C_AddOns.GetAddOnTitle`, `C_AddOns.IsAddOnLoadable` |
 | Combat    | `InCombatLockdown` |
 | Hooks     | `hooksecurefunc` |
+| Input     | `IsLeftShiftKeyDown`, `IsRightShiftKeyDown`, `IsLeftControlKeyDown`, `IsRightControlKeyDown`, `IsLeftAltKeyDown`, `IsRightAltKeyDown`, `IsModifierKeyDown` (+ `MODIFIER_STATE_CHANGED` event) |
 | Talent    | `GetTalentIDByIndex`, `GetTalentSpellID` |
 | Time      | `GetServerTime` |
 | Events    | `C_EventUtils.IsEventValid` |

@@ -76,6 +76,12 @@ build instructions.
   - [`C_AddOns.DoesAddOnExist(indexOrName)`](#c_addonsdoesaddonexistindexorname)
 - [Combat](#combat)
   - [`InCombatLockdown()`](#incombatlockdown)
+- [Input](#input)
+  - [`IsLeftShiftKeyDown()` / `IsRightShiftKeyDown()`](#isleftshiftkeydown--isrightshiftkeydown)
+  - [`IsLeftControlKeyDown()` / `IsRightControlKeyDown()`](#isleftcontrolkeydown--isrightcontrolkeydown)
+  - [`IsLeftAltKeyDown()` / `IsRightAltKeyDown()`](#isleftaltkeydown--isrightaltkeydown)
+  - [`IsModifierKeyDown()`](#ismodifierkeydown)
+  - [`MODIFIER_STATE_CHANGED` event](#modifier_state_changed-event)
 - [Talent](#talent)
   - [`GetTalentSpellID(tabIndex, talentIndex, [rank])`](#gettalentspellidtabindex-talentindex-rank)
   - [`GetTalentIDByIndex(tabIndex, talentIndex)`](#gettalentidbyindextabindex-talentindex)
@@ -1884,6 +1890,74 @@ Errors via `lua_error` on:
 - Non-function `callback`
 - `target[name]` not resolvable to a function (covers typos and
   hooking unknown frame methods)
+
+## Input
+
+1.12 ships `IsShiftKeyDown` / `IsControlKeyDown` / `IsAltKeyDown` but
+they only report "any shift/ctrl/alt" — there's no built-in way to tell
+left from right. These seven functions add the missing distinction
+plus an `IsModifierKeyDown()` rollup.
+
+### `IsLeftShiftKeyDown()` / `IsRightShiftKeyDown()`
+### `IsLeftControlKeyDown()` / `IsRightControlKeyDown()`
+### `IsLeftAltKeyDown()` / `IsRightAltKeyDown()`
+
+Each returns `1` when the corresponding key is physically down, `nil`
+otherwise — matching the convention 1.12's own `IsShiftKeyDown` etc.
+use.
+
+```lua
+if IsLeftShiftKeyDown() and not IsRightShiftKeyDown() then
+    -- left-shift-only binding
+end
+```
+
+### `IsModifierKeyDown()`
+
+Returns `1` if **any** of the six modifier keys is down, `nil`
+otherwise. Equivalent to
+`IsShiftKeyDown() or IsControlKeyDown() or IsAltKeyDown()` but in one
+call.
+
+### `MODIFIER_STATE_CHANGED` event
+
+Fires on every modifier-key press and release with `(key, down)`:
+
+| arg1 (`key`) | `LSHIFT`, `RSHIFT`, `LCTRL`, `RCTRL`, `LALT`, `RALT` |
+| arg2 (`down`) | `1` on press, `0` on release |
+
+Only transitions fire — key autorepeat does not. Matches 2.4.3+
+semantics.
+
+```lua
+local f = CreateFrame("Frame")
+f:RegisterEvent("MODIFIER_STATE_CHANGED")
+f:SetScript("OnEvent", function()
+    -- in vanilla 1.12 OnEvent receives no args; engine sets `event` and
+    -- `arg1..argN` as globals before invoking the handler.
+    if event == "MODIFIER_STATE_CHANGED" and arg1 == "LSHIFT" then
+        print("left shift", arg2 == 1 and "down" or "up")
+    end
+end)
+```
+
+**Implementation notes**
+
+L/R modifier distinction doesn't exist anywhere in the 1.12 engine's
+own state — its `IsShiftKeyDown` chain bottoms out at
+`GetKeyState(VK_SHIFT)` (the merged virtual key, `0x10`), never the
+L/R-aware `VK_LSHIFT` / `VK_RSHIFT`. The OS-level keystate *does* have
+the distinction; we capture it by installing a `WH_GETMESSAGE` Win32
+thread hook on the engine's message-pump thread, decoding each
+`WM_KEY{,SYS}{DOWN,UP}` message (using `MapVirtualKeyA(scancode,
+MAPVK_VSC_TO_VK_EX)` to resolve `VK_SHIFT` to L/R and the `KF_EXTENDED`
+bit in `lParam` for `VK_CONTROL` / `VK_MENU`), and maintaining a
+6-bit cached bitmap that the seven query functions read.
+
+The thread-message hook is per-thread, not per-`HWND` — it survives
+renderer-state changes that recreate WoW's main window (e.g. toggling
+vertical sync), where an `SetWindowLongPtr`-style `WNDPROC` subclass
+would be left dangling.
 
 ## Talent
 

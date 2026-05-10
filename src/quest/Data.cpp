@@ -21,6 +21,7 @@
 namespace Quest::Data {
 
 static constexpr const char *kQuestDataLoadResult = "QUEST_DATA_LOAD_RESULT";
+static const Event::Custom::AutoReserve _reserveQuestDataLoadResult{kQuestDataLoadResult};
 
 // Same `__stdcall(userData, success)` shape as `Item::Data::ItemLoadCallback`.
 // The engine's invocation pattern at 0x00562EEB et al. is:
@@ -31,7 +32,7 @@ static constexpr const char *kQuestDataLoadResult = "QUEST_DATA_LOAD_RESULT";
 // `ret 8` cleans both args. We encode the questID into `userData` at
 // request time so the callback knows which quest completed.
 static void __stdcall QuestLoadCallback(void *userData, int success) {
-    const int slot = Event::Custom::Register(kQuestDataLoadResult);
+    const int slot = Event::Custom::Lookup(kQuestDataLoadResult);
     if (slot < 0)
         return;
     const auto questID =
@@ -47,7 +48,7 @@ static void RequestAndMaybeNotify(uint32_t questID) {
     // invoking our callback. Fire the event ourselves so addons get the
     // notification regardless of cache state, matching modern semantics.
     if (wasCached) {
-        const int slot = Event::Custom::Register(kQuestDataLoadResult);
+        const int slot = Event::Custom::Lookup(kQuestDataLoadResult);
         if (slot >= 0)
             Event::Custom::Fire_DD(slot, static_cast<int>(questID), 1);
     }
@@ -68,11 +69,7 @@ static int __fastcall Script_RequestLoadQuestByID(void *L) {
 static void RegisterLuaFunctions() {
     Game::Lua::RegisterTableFunction("C_QuestLog", "RequestLoadQuestByID",
                                      &Script_RequestLoadQuestByID);
-
-    // Seed the event-name cache so `Event::Custom::RetryAll` (driven by
-    // our hook on `Frame::RegisterEvent`) can claim a slot once the
-    // engine's event table is populated. Same pattern as Item::Data.
-    Event::Custom::Register(kQuestDataLoadResult);
+    // Event name reserved at file scope via `AutoReserve`.
 }
 
 static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};

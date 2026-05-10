@@ -2049,3 +2049,104 @@ directly off the frame's Lua table. Simpler, but doesn't compose
 with `HookScript` polyfills automatically (each addon would
 clobber the previous).
 
+## ~~66. Left/right modifier keys + `MODIFIER_STATE_CHANGED` event~~ — DONE
+
+Shipped in [src/input/Modifier.cpp](src/input/Modifier.cpp). Adds
+the seven query functions (`IsLeftShiftKeyDown`, `IsRightShiftKeyDown`,
+`IsLeftControlKeyDown`, `IsRightControlKeyDown`, `IsLeftAltKeyDown`,
+`IsRightAltKeyDown`, `IsModifierKeyDown`) plus the 2.4.3+
+`MODIFIER_STATE_CHANGED(key, down)` event. All seven match the
+modern WoW return shape (`1` for down, `nil` for not-down).
+
+### Why this needed a Win32 hook
+
+The engine has **no L/R distinction anywhere in its state**. 1.12's
+own `IsShiftKeyDown` chain bottoms out at `GetKeyState(VK_SHIFT)` —
+the merged virtual key `0x10` — at `0x00436024`, never the L/R-aware
+`VK_LSHIFT` / `VK_RSHIFT` (`0xA0` / `0xA1`). Helper3 at `0x00436D80`
+returns a struct with only 3 modifier slots (shift/ctrl/alt), confirmed
+by inspection. No amount of digging in engine memory finds L/R state
+because **it never existed there**.
+
+There IS a 6-bit field at `[*[0x00C0ED38] + 0x269C]` that looks
+structurally identical to 2.4.3's L/R modifier bitmask at `[+0x130]`
+— same shift-and-mask helper at `0x005936C0`, same 6-bit dispatch
+limit. We chased it for a while. Empirically the field is something
+else entirely (some kind of input-device-flags bitmask) — it stays at
+`0x3BF` regardless of which modifier is held. The 2.4.3 → 1.12
+structural similarity is misleading; the field's meaning evolved.
+
+The OS-level keystate **does** have the L/R distinction (VK_LSHIFT /
+VK_RSHIFT etc.), and 1.12 already uses Win32 `GetKeyState` for its own
+modifier checks — so calling `GetAsyncKeyState(VK_LSHIFT)` ourselves
+is the same primitive the engine already uses, just with the L/R-aware
+VK codes.
+
+### Why a `WH_GETMESSAGE` hook over `SetWindowLongPtr` subclass
+
+We initially subclassed WoW's `WNDPROC` (via `EnumWindows` to find the
+`GxWindowClassD3d`/`GxWindowClassOpenGl` HWND, then `SetWindowLongPtrA`
+to install a wrapper). Worked for L/R queries and the event. Then the
+user toggled vsync and the event went silent — WoW destroys and
+recreates its main window on some renderer state changes, so the
+subclass was left dangling on a destroyed HWND.
+
+Switched to `SetWindowsHookExA(WH_GETMESSAGE, ..., GetCurrentThreadId())`.
+The hook is per-thread, not per-HWND, so it survives any number of
+window recreations. Decodes `WM_KEY{,SYS}{DOWN,UP}` messages,
+maintains a 6-bit cached bitmap that the queries read, and fires
+`MODIFIER_STATE_CHANGED` on transitions.
+
+### L/R decoding from WM_KEY messages
+
+- `VK_SHIFT` (the merged virtual key the OS delivers for either key)
+  → `MapVirtualKeyA(scancode, MAPVK_VSC_TO_VK_EX)` returns
+  `VK_LSHIFT` or `VK_RSHIFT` based on the hardware scancode.
+- `VK_CONTROL` / `VK_MENU` → the `KF_EXTENDED` flag (bit 24) of
+  `lParam` discriminates: extended = right, plain = left.
+- `VK_L*` / `VK_R*` delivered directly (some keyboards, SendInput) →
+  accepted as-is.
+
+### `MODIFIER_STATE_CHANGED` and the custom-event saga
+
+Documented as part of the broader event-table investigation in
+CLAUDE.md's "Events" section. Short version: we tried three approaches
+to inject custom event names into the engine's event table.
+
+**Approach A — slot-claim (original Event::Custom)**: walk the live
+table for NULL slots, write our `SMemAlloc`+memcpy'd name. Works.
+Downside: first NULL slots were near the head of the table (slot 1
+got `MINIMAP_BLIP_TRACKING_CHANGED` from VanillaMinimapTracking,
+which felt off).
+
+**Approach B — rebuild-hook + tail-injection**: hook
+`RebuildEventTable` at `0x00703D90`, pad the input array to 1024
+entries, place our names at the tail (slots 1020+). Engine's own
+SStrDup handles allocation, so we never write to engine memory.
+Worked for a single DLL. **Crashed when SuperWoWhook, nampower,
+transmogfix, and VanillaMinimapTracking all hooked the same
+function**: their layered modifications to `(names, count)` produced
+a count→buffer-size mismatch, and the engine's fill loop wrote off
+the end of the allocated buffer on its last iteration.
+
+**Approach C — slot-claim + backward walk (final)**: same as A but
+walk the table from `count-1` downward looking for NULL slots, so
+high indices are claimed first. Each DLL works on the table
+independently — no hook chaining, no argument modification, no
+crashes. Custom events naturally group at the tail (verified: slots
+695..699 with all five custom events when ClassicAPI +
+VanillaMinimapTracking are both loaded). Also swapped
+`SMemAlloc + memcpy` for the engine's own `SStrDup` at `0x0064A620`
+— cleaner allocator, exactly matches what the engine's bulk
+rebuild does.
+
+The intermediate rebuild-hook approach also uncovered the engine's
+**hardcoded post-rebuild slot writes**: the bulk rebuild populates
+slots 0..548 from its `0x00BE1198` name array, then engine code
+writes specific events to hardcoded slot indices in the 549..699
+range (`SPELL_DAMAGE_EVENT_SELF` at slot 549,
+`SPELL_DAMAGE_EVENT_OTHER` at 550, etc.). Documented in CLAUDE.md.
+This is why claiming slots from low indices early-on would have
+gotten clobbered — the slot-claim approach only fires after Lua's
+first `RegisterEvent` call, by which point the engine's writes have
+settled.
