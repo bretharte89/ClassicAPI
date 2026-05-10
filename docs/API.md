@@ -23,6 +23,7 @@ build instructions.
   - [`C_Spell.IsSpellUsable(spellID)`](#c_spellisspellusablespellid)
 - [GameTooltip](#gametooltip)
   - [`GameTooltip:SetSpellByID(spellID)`](#gametooltipsetspellbyidspellid)
+  - [`GameTooltip:SetTalentByID(talentID)`](#gametooltipsettalentbyidtalentid)
 - [Quest](#quest)
   - [`GetQuestIDFromLogIndex(index)`](#getquestidfromlogindexindex)
   - [`C_QuestLog.RequestLoadQuestByID(questID)`](#c_questlogrequestloadquestbyidquestid)
@@ -568,6 +569,47 @@ GameTooltip:Show()
 ```
 
 Equivalent to the function of the same name introduced in 3.0.
+
+### `GameTooltip:SetTalentByID(talentID)`
+
+Renders a tooltip for the talent identified by `Talent.dbc` primary
+key — the natural pair to
+[`GetTalentIDByIndex`](#gettalentidbyindextabindex-talentindex).
+Works for any class's talents, not just the player's.
+
+Two-tier resolution:
+
+| Tier | When it applies | Tooltip rendered |
+|------|-----------------|------------------|
+| Player class (rich) | `talentID` belongs to one of the player's loaded tabs | Full talent tooltip — name, "Rank N/M", description, prereqs, "click to learn" prompts |
+| Cross-class (fallback) | `talentID` is from another class | Spell tooltip for the talent's rank-1 spellID — name, cast time, range, mana cost, description |
+
+The fallback exists because vanilla 1.12 only loads the local
+player's class talent data into the engine's per-player TabInfo
+arrays. For other classes, we look up the talent in `Talent.dbc`
+directly and dispatch the rank-1 spell tooltip — functionally
+"what does this talent do?" without the rank counter. Modern WoW
+adds talent name and "Rank 0/N" decorations on top of the spell
+description for cross-class; we don't replicate that here yet.
+
+Silent no-op (no tooltip change) when:
+
+- `talentID` doesn't match any record in `Talent.dbc`
+- `talentID` is `nil`, non-numeric, or non-positive
+
+```lua
+-- Player's own class — rich tooltip
+local talentID = GetTalentIDByIndex(1, 9)        -- player's tab 1, talent 9
+GameTooltip:SetOwner(UIParent, "ANCHOR_CURSOR")
+GameTooltip:SetTalentByID(talentID)
+GameTooltip:Show()
+
+-- Other class — spell tooltip for the talent's primary ability
+GameTooltip:SetTalentByID(2065)                   -- works regardless of player class
+GameTooltip:Show()
+```
+
+Equivalent to the function of the same name introduced in 5.0.
 
 ## Quest
 

@@ -890,27 +890,63 @@ modern by-ID tooltip dispatcher.
 
 See [src/talent/Info.cpp](src/talent/Info.cpp).
 
-## 43. `GameTooltip:SetTalentByID(talentID)` — medium
+## ~~43. `GameTooltip:SetTalentByID(talentID)`~~ — DONE
 
-Modern method that renders a talent tooltip from just a talentID —
-the natural pair to #42 `GetTalentIDByIndex`. 1.12 has
-`GameTooltip:SetTalent(tabIndex, talentIndex)` already (at
-`0x00535170`, registry slot 34), but no by-ID variant.
+Shipped as [src/talent/Tooltip.cpp](src/talent/Tooltip.cpp). Works
+for **any class's** talents, not just the player's. Two-tier
+resolution:
 
-Implementation: look up the Talent.dbc record by talentID, extract
-the `(TabID, tier, column)`, reverse to a 1-based `(tab, idx)`
-pair (re-using the same walk #42 / #36 use), then dispatch to the
-existing `Script_GameTooltip_SetTalent` at `0x00535170`. The
-existing function does all the heavy lifting (player-object
-resolve, talent record read, tooltip line construction) — we're
-just adapting the input shape.
+1. **Player-class fast path** — walks the local player's TabInfo
+   arrays for a matching talentID (same arrays #42 reads from,
+   inverted). On hit, dispatches to `Script_GameTooltip_SetTalent`
+   (registry slot 34, `0x00535170`) with the resolved `(tab, idx)`.
+   Renders the full talent tooltip with rank counter, prereqs, and
+   the "click to learn next rank" prompt.
+2. **Cross-class fallback via `Talent.dbc`** — vanilla 1.12 only
+   loads the local player's class talent data into TabInfo, so
+   other classes' talents aren't findable in tier 1. Tier 2 looks
+   up the talent record directly in `Talent.dbc` (records pointer
+   `0x00C0D6E8`, count `0x00C0D6EC`, indexed by talentID), reads
+   the rank-1 spellID at `+0x10`, and dispatches the spell tooltip
+   via the same `Spell::Tooltip::ShowByID` helper that
+   `SetSpellByID` uses. Renders the spell info (cast time, range,
+   mana cost, description) without talent-specific decorations
+   (rank counter, prereq lines).
 
-The "reverse" mapping is the tricky part: Talent.dbc rows aren't
-natively keyed by `(tab, idx)`; the visible order is computed at
-display time. Same helper #42 uses, just inverted.
+Modern WoW's cross-class tooltip is slightly richer (talent name +
+"Rank 0/N" header before the spell description). Building that
+would require Lua-level `GameTooltip:AddLine` work; deferred since
+the spell tooltip already answers "what does this talent do?".
 
-If we ship #42 first, this becomes a thin wrapper — the talentID →
-`(tab, idx)` mapping is symmetric to #42's `(tab, idx)` → talentID.
+### Refactoring done as part of this
+
+Extracted `Spell::Tooltip::ShowByID(L, spellID)` into
+[src/spell/Tooltip.h](src/spell/Tooltip.h) so the resolve-self +
+`BuildSpellTooltip` chain is shared between
+`GameTooltip:SetSpellByID` and the cross-class fallback in
+`SetTalentByID`. Saves duplicating the
+`FrameScript_PushObject`/`GetObject` inline-asm sequence.
+
+### `Talent.dbc` record layout (verified standard vanilla schema)
+
+| Offset | Field |
+|--------|-------|
+| `+0x00` | `uint32 ID` |
+| `+0x04` | `uint32 TabID` |
+| `+0x08` | `uint32 TierID` (row, 0-based) |
+| `+0x0C` | `uint32 ColumnIndex` (0-based) |
+| `+0x10` | `uint32 SpellRank[0..8]` — rank-1 spellID at `+0x10` |
+
+The per-player `TalentEntry` (in `TabInfo->talents[]`) shares the
+same `SpellRank` offset, so we reuse `OFF_TALENT_SPELL_RANK = 0x10`
+for both. The `TalentEntry` stride (`0x54`) and the Talent.dbc
+record stride differ — Talent.dbc records may be larger — but for
+our purpose only the rank-1 spellID at `+0x10` matters.
+
+### Verified in-game
+
+User tested both tiers — own-class talents render the full talent
+tooltip, cross-class IDs render the corresponding spell tooltip.
 
 ## ~~44. `GameTooltip:SetItemByID(itemID)`~~ — DONE
 

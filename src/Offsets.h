@@ -41,6 +41,7 @@ enum Offsets {
     FUN_SCRIPT_GAMETOOLTIP_SET_HYPERLINK = 0x00531FD0, // slot 12
     FUN_SCRIPT_GAMETOOLTIP_SET_UNIT_BUFF = 0x00534AC0, // slot 32
     FUN_SCRIPT_GAMETOOLTIP_SET_UNIT_DEBUFF = 0x00534E30, // slot 33
+    FUN_SCRIPT_GAMETOOLTIP_SET_TALENT = 0x00535170, // slot 34
 
     // Iterator that registers an array of frame-method bindings on a per-frame-type
     // method registry (e.g. VAR_GAMETOOLTIP_METHOD_REGISTRY for GameTooltip).
@@ -789,6 +790,27 @@ enum Offsets {
     OFF_TALENT_SPELL_RANK = 0x10,
     TALENT_ENTRY_STRIDE = 0x54,
     TALENT_MAX_RANKS = 9,
+
+    // Talent.dbc — standard 5-DWORD class shape, records pointer at
+    // `+0x08` and count at `+0x0C` of the class instance at
+    // `0x00C0D6E0`. Records is an array of `TalentRec *` indexed
+    // directly by talentID (sparse — many slots NULL since talent IDs
+    // skip across classes). Used by `GameTooltip:SetTalentByID` to
+    // resolve cross-class talents that aren't in the local player's
+    // loaded TabInfo arrays.
+    //
+    // Record layout (verified standard vanilla Talent.dbc schema):
+    //   +0x00  uint32  ID
+    //   +0x04  uint32  TabID
+    //   +0x08  uint32  TierID (row, 0-based)
+    //   +0x0C  uint32  ColumnIndex (0-based)
+    //   +0x10  uint32  SpellRank[0..8]   — rank-1 spellID at +0x10
+    //
+    // The per-player `TalentEntry` (in `TabInfo->talents[]`) shares
+    // the same SpellRank offset, which is why we can reuse
+    // `OFF_TALENT_SPELL_RANK` here without redefining it.
+    VAR_TALENT_DBC_RECORDS = 0x00C0D6E8,
+    VAR_TALENT_DBC_COUNT = 0x00C0D6EC,
 
     // Engine's `Script_GetTalentInfo` Lua C function. We call it from
     // `GetTalentSpellID` to derive the player's currentRank without

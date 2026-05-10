@@ -13,6 +13,7 @@
 
 #include "Game.h"
 #include "Offsets.h"
+#include "spell/Tooltip.h"
 
 #include <cstdint>
 
@@ -52,6 +53,17 @@ static void *ResolveTooltipObject(void *L) {
     return result;
 }
 
+void ShowByID(void *L, int spellID) {
+    if (spellID <= 0)
+        return;
+    void *tooltipObj = ResolveTooltipObject(L);
+    if (tooltipObj == nullptr)
+        return;
+    auto BuildSpellTooltip =
+        reinterpret_cast<BuildSpellTooltip_t>(Offsets::FUN_GAMETOOLTIP_BUILD_SPELL_TOOLTIP);
+    BuildSpellTooltip(tooltipObj, spellID, 0, 0, 0, 0, 0, 0);
+}
+
 static int __fastcall Script_GameTooltipSetSpellByID(void *L) {
     if (Game::Lua::Type(L, 1) != 5) {
         Game::Lua::Error(L, "Usage: GameTooltipSetSpellByID(self, spellID)");
@@ -61,20 +73,8 @@ static int __fastcall Script_GameTooltipSetSpellByID(void *L) {
         Game::Lua::Error(L, "Usage: GameTooltipSetSpellByID(self, spellID)");
         return 0;
     }
-
-    void *tooltipObj = ResolveTooltipObject(L);
-    if (tooltipObj == nullptr) {
-        Game::Lua::Error(L, "Wrong object type for member function");
-        return 0;
-    }
-
     const int spellID = static_cast<int>(Game::Lua::ToNumber(L, 2));
-    if (spellID <= 0)
-        return 0;
-
-    auto BuildSpellTooltip =
-        reinterpret_cast<BuildSpellTooltip_t>(Offsets::FUN_GAMETOOLTIP_BUILD_SPELL_TOOLTIP);
-    BuildSpellTooltip(tooltipObj, spellID, 0, 0, 0, 0, 0, 0);
+    ShowByID(L, spellID);
     return 0;
 }
 
