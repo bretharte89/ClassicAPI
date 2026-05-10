@@ -3,7 +3,7 @@
 Reference for packaging files (addons, FrameXML overrides, art) into an
 MPQ patch archive that vanilla 1.12 picks up at boot. Captured because
 the MPQEditor docs are sparse, the script syntax is non-obvious from
-the GUI, and there's a Turtle WoW naming constraint that's easy to
+the GUI, and there's a 1.12 patch-MPQ naming constraint that's easy to
 miss.
 
 ## When this matters
@@ -25,7 +25,7 @@ Useful when you want files to:
   via a small `Interface\FrameXML\AddedSlashCommands.xml` MPQ insert
   that calls `UIParentLoadAddOn` for backported tools.
 
-Confirmed empirically (1.12.1, Turtle WoW client, Octo build):
+Confirmed empirically (1.12.1):
 
 | Test                                    | Result |
 |-----------------------------------------|--------|
@@ -52,9 +52,9 @@ MPQEditor.exe /console build.txt
 Get help on individual commands with `help <command>` inside a script
 or interactive console (e.g., `help add`).
 
-## Filename constraint (Turtle WoW)
+## Filename constraint
 
-Turtle WoW's MPQ loader **only accepts patch archives matching the
+Vanilla 1.12's MPQ loader **only accepts patch archives matching the
 single-character `patch-X.mpq` form**. Names with multi-character
 suffixes are silently rejected.
 
