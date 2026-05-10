@@ -81,6 +81,7 @@ build instructions.
 - [Globals](#globals)
   - [`CLASSIC_API_VERSION`](#classic_api_version)
   - [`LE_EXPANSION_*`](#le_expansion_)
+  - [`LE_ITEM_QUALITY_*`](#le_item_quality_)
 
 ## Spell
 
@@ -1818,5 +1819,37 @@ end
 -- Probe for ClassicAPI presence
 if LE_EXPANSION_LEVEL_CURRENT then
     -- the constants are defined → ClassicAPI is loaded
+end
+```
+
+### `LE_ITEM_QUALITY_*`
+
+The item-quality enum (modern `Enum.ItemQuality`), exposed as Lua
+globals so addons backporting modern code can do
+`if quality >= LE_ITEM_QUALITY_RARE then ...` against the integer
+quality returned by `GetItemInfo` / `C_Item.GetItemInfoInstant`.
+
+| Constant                       | Value | Color in tooltip |
+|--------------------------------|------:|------------------|
+| `LE_ITEM_QUALITY_POOR`         | `0`   | gray (junk) |
+| `LE_ITEM_QUALITY_COMMON`       | `1`   | white |
+| `LE_ITEM_QUALITY_UNCOMMON`     | `2`   | green |
+| `LE_ITEM_QUALITY_RARE`         | `3`   | blue |
+| `LE_ITEM_QUALITY_EPIC`         | `4`   | purple |
+| `LE_ITEM_QUALITY_LEGENDARY`    | `5`   | orange |
+| `LE_ITEM_QUALITY_ARTIFACT`     | `6`   | gold *(TBC+ only)* |
+| `LE_ITEM_QUALITY_HEIRLOOM`     | `7`   | light blue *(WotLK+ only)* |
+| `LE_ITEM_QUALITY_WOWTOKEN`     | `8`   | orange *(WoD+ only)* |
+
+Values 0..5 (POOR..LEGENDARY) correspond to actual qualities present
+in vanilla 1.12. Higher values are exposed for source compatibility
+with modern addons — vanilla items will never carry those quality
+values, so a comparison like `quality == LE_ITEM_QUALITY_HEIRLOOM`
+trivially never matches and the rest of the code path is unreachable.
+
+```lua
+local _, _, quality = GetItemInfo(itemID)
+if quality and quality >= LE_ITEM_QUALITY_RARE then
+    -- highlight in UI
 end
 ```
