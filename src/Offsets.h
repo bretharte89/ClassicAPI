@@ -414,12 +414,18 @@ enum Offsets {
     // `Script_GetFactionInfo` to produce all 11 returns.
     FUN_RESOLVE_FACTION_INDEX = 0x004D5FA0,
     FUN_SCRIPT_GET_FACTION_INFO = 0x004D64F0,
-    // Engine's existing `SetWatchedFactionIndex(index)` Lua C function.
-    // Takes a 1-based displayed-list index, converts to 0-based,
-    // resolves to a factionID via FUN_RESOLVE_FACTION_INDEX, then
-    // calls the inner watched-faction setter at 0x4D6240. Index 0
-    // resolves to factionID 0 which clears the watched faction.
-    FUN_SCRIPT_SET_WATCHED_FACTION_INDEX = 0x004D6B60,
+    // Inner watched-faction setter — `__fastcall(ecx = factionID) → void`.
+    // The engine's `Script_SetWatchedFactionIndex` (0x004D6B60) is a
+    // thin Lua-side wrapper that takes a 1-based displayed-list index,
+    // resolves it to a factionID via FUN_RESOLVE_FACTION_INDEX, and
+    // forwards to this. Going through the wrapper requires a round-
+    // trip through the resolver (and excludes unencountered factions),
+    // so for `C_Reputation.SetWatchedFactionByID` we call this
+    // directly with the user-supplied factionID. factionID == 0
+    // clears the watched faction (the engine handles 0 as "no
+    // watched"). Updates `[player+0xE68]+0x10C4` and persists the
+    // value via the engine's CVar / event machinery.
+    FUN_PLAYER_SET_WATCHED_FACTION = 0x004D6240,
     VAR_FACTION_DISPLAY_COUNT = 0x00B73764,
     VAR_FACTION_VISIBLE_MAX_INDEX = 0x00B73760,
 

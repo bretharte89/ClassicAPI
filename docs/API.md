@@ -31,6 +31,8 @@ build instructions.
   - [`GetFactionIDByIndex(factionIndex)`](#getfactionidbyindexfactionindex)
   - [`GetFactionInfoByID(factionID)`](#getfactioninfobyidfactionid)
   - [`GetFactionParentID(factionID)`](#getfactionparentidfactionid)
+- [Reputation](#reputation)
+  - [`C_Reputation.SetWatchedFactionByID(factionID)`](#c_reputationsetwatchedfactionbyidfactionid)
 - [Item](#item)
   - [`C_Item.IsBound(itemLocation)`](#c_itemisbounditemlocation)
   - [`C_Item.GetItemID(itemLocation)`](#c_itemgetitemiditemlocation)
@@ -736,6 +738,38 @@ regardless of whether the player has rep with it.
 
 Equivalent to the function of the same name introduced in 3.0 (as
 the 13th return of `GetFactionInfoByID`).
+
+## Reputation
+
+### `C_Reputation.SetWatchedFactionByID(factionID)`
+
+Sets the faction shown above the XP bar by ID. The vanilla
+`SetWatchedFactionIndex(displayedIndex)` accepts only a 1-based
+displayed-list index, which forces addons to walk the index list
+themselves. This wrapper takes a `factionID` directly.
+
+- `factionID > 0` — sets the watched faction. Works even for
+  factions the player hasn't yet encountered (the rep bar will
+  show nothing until the player gains rep, then displays
+  normally).
+- `factionID == 0` — clears the watched faction.
+- `factionID < 0` — silent no-op.
+
+Returns nothing. The engine's UI / event machinery refreshes
+automatically — `GetWatchedFactionInfo()` reflects the new state
+on the next call.
+
+```lua
+C_Reputation.SetWatchedFactionByID(72)  -- Stormwind
+print(GetWatchedFactionInfo())          -- "Stormwind", ...
+
+C_Reputation.SetWatchedFactionByID(0)   -- clear
+print(GetWatchedFactionInfo())          -- (empty)
+```
+
+Implementation calls the engine's inner watched-faction setter
+directly, bypassing `Script_SetWatchedFactionIndex`'s
+displayed-index round-trip.
 
 ## Item
 

@@ -194,10 +194,41 @@ static int __fastcall Script_GetFactionParentID(void *L) {
     return 1;
 }
 
+// `C_Reputation.SetWatchedFactionByID(factionID)` — sets the faction
+// shown above the XP bar by ID rather than by displayed-list index.
+// Modern API; vanilla 1.12 only exposes `SetWatchedFactionIndex(idx)`,
+// which forces addons to walk the index list themselves.
+//
+// Calls the engine's inner watched-faction setter at
+// `FUN_PLAYER_SET_WATCHED_FACTION` directly, bypassing the
+// engine's index-based wrapper (which round-trips through the
+// resolver and rejects unencountered factions). Passing factionID
+// 0 clears the watched faction.
+//
+// Negative IDs are silently ignored.
+static int __fastcall Script_C_Reputation_SetWatchedFactionByID(void *L) {
+    if (!Game::Lua::IsNumber(L, 1)) {
+        Game::Lua::Error(L,
+            "Usage: C_Reputation.SetWatchedFactionByID(factionID)");
+        return 0;
+    }
+    const int factionID = static_cast<int>(Game::Lua::ToNumber(L, 1));
+    if (factionID < 0)
+        return 0;
+
+    using SetWatched_t = void(__fastcall *)(int factionID);
+    auto fn = reinterpret_cast<SetWatched_t>(
+        Offsets::FUN_PLAYER_SET_WATCHED_FACTION);
+    fn(factionID);
+    return 0;
+}
+
 static void RegisterLuaFunctions() {
     Game::Lua::RegisterGlobalFunction("GetFactionIDByIndex", &Script_GetFactionIDByIndex);
     Game::Lua::RegisterGlobalFunction("GetFactionInfoByID", &Script_GetFactionInfoByID);
     Game::Lua::RegisterGlobalFunction("GetFactionParentID", &Script_GetFactionParentID);
+    Game::Lua::RegisterTableFunction("C_Reputation", "SetWatchedFactionByID",
+                                     &Script_C_Reputation_SetWatchedFactionByID);
 }
 
 static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};

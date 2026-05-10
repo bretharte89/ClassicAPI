@@ -21,6 +21,7 @@ Quick index:
 | GameTooltip | `GameTooltip:SetSpellByID`, `GameTooltip:SetItemByID`, `GameTooltip:SetUnitAura` |
 | Quest     | `GetQuestIDFromLogIndex`, `C_QuestLog.RequestLoadQuestByID` (+ `QUEST_DATA_LOAD_RESULT` event), `C_QuestLog.GetTitleForQuestID` |
 | Faction   | `GetFactionIDByIndex`, `GetFactionInfoByID`, `GetFactionParentID` |
+| Reputation | `C_Reputation.SetWatchedFactionByID` |
 | Item      | `C_Item.IsBound`, `C_Item.GetItemID`, `GetInventoryItemID`, `GetInventoryItemDurability`, `C_Item.GetItemFamily`, `C_Item.GetItemCount`, `C_Item.GetItemInfoInstant`, `GetItemIcon` / `C_Item.GetItemIcon` / `C_Item.GetItemIconByID`, `C_Item.IsItemDataCached(ByID)`, `C_Item.RequestLoadItemData(ByID)` (+ `ITEM_DATA_LOAD_RESULT` event), `OffhandHasWeapon` |
 | Container | `C_Container.GetContainerItemID`, `C_Container.GetContainerItemDurability`, `C_Container.GetContainerNumFreeSlots`, `C_Container.PlayerHasHearthstone`, `C_Container.UseHearthstone` |
 | Unit      | `UnitGUID`, `UnitIsAFK`, `UnitIsDND`, `UnitIsFeignDeath` |

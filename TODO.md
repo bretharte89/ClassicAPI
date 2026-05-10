@@ -597,19 +597,23 @@ short trace through `Script_GetCurrentCastingInfo`-style functions
 (if any exist) or the cast-bar timer logic. Worth doing because
 modern action-bar addons gate "highlight the active button" on this.
 
-## 33. `C_Reputation.*` cluster — easy
+## 33. `C_Reputation.*` cluster — partial DONE
 
 Modern table-shape and ID-based variants of the existing reputation
 API. Most are thin wrappers around what we already have — useful for
 addons backporting modern Lua-side code that prefers the C_Reputation
 namespace.
 
-- **`C_Reputation.SetWatchedFactionByID(factionID)`** — walks the
-  faction-index resolver to find the index for `factionID`, then calls
-  the engine's `Script_SetWatchedFactionIndex`. Same approach as our
-  `GetFactionInfoByID`. Highest-value of the cluster — RepBuddy
-  explicitly takes the fast path here when available
-  (`Util/RepBuddy.lua:286`).
+- ✅ **`C_Reputation.SetWatchedFactionByID(factionID)`** — DONE.
+  Calls the engine's inner watched-faction setter at
+  `FUN_PLAYER_SET_WATCHED_FACTION = 0x004D6240` (`__fastcall(ecx =
+  factionID) → void`) directly, bypassing
+  `Script_SetWatchedFactionIndex`'s displayed-index round-trip.
+  Works for unencountered factions too (the rep bar shows nothing
+  until the player gains rep, then displays normally). factionID 0
+  clears. Verified: Darnassus → 72 (Stormwind) → 0 (clear) all
+  reflected by `GetWatchedFactionInfo()` immediately. Lives in
+  `src/faction/Info.cpp`.
 - **`C_Reputation.SetWatchedFactionByIndex(index)`** — modern alias
   for `SetWatchedFactionIndex`. One-line registration that points to
   the engine function via our existing wrapper.
@@ -620,12 +624,11 @@ namespace.
   `barMax`, `currentStanding`, `atWarWith`, `canToggleAtWar`,
   `isHeader`, `isCollapsed`, `hasRep`, `factionID`).
 - **`C_Reputation.GetWatchedFactionData()`** — table form of
-  `GetWatchedFactionInfo` (which 1.12 has natively).
-
-All five share the same faction-index resolver
-(`FUN_RESOLVE_FACTION_INDEX`) and walk pattern we already use in
-`src/faction/Info.cpp`. Could land as a single `src/faction/CInfo.cpp`
-adding the C_Reputation registrations.
+  `GetWatchedFactionInfo` (which 1.12 has natively). The watched
+  factionID is stored at `[player + 0xE68] + 0x10C4` per the
+  inner setter's compare-and-skip path — useful if we add a
+  `IsWatchedFaction(id)` getter too (engine has one at
+  `0x004D62F0` already).
 
 ## 34. `C_DateAndTime.GetSecondsUntilDailyReset()` — easy
 
