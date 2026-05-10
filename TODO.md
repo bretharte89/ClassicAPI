@@ -1557,3 +1557,122 @@ via `SetTop(L, 1)`, then loops `PushString(token); PushString(name);
 SetTable(L, 1)` per record. `SetTable` consumes both stack values
 so the table sits alone at idx 1 throughout the loop. Returns 1
 to push the (same) table back to Lua.
+
+## 59. `C_Item.EquipItemByName` cursor-free path — DEFERRED, partial
+
+Currently shipped in [src/item/Equipment.cpp](src/item/Equipment.cpp)
+as a cursor-state guard: refuses to operate when `CursorHasItem()` is
+true rather than clobber the held item. Modern WoW's `EquipItemByName`
+silently preserves the cursor by routing through an engine-internal
+"swap by GUID" helper that doesn't touch cursor state. The 1.12 engine
+has the same primitive at the binary level but it's not reachable from
+addon space without significant additional reverse-engineering.
+
+### Why we can't just call the obvious helper
+
+A standalone-looking CMSG_SWAP_INV_ITEM (opcode 0x10D) builder exists
+at `0x005E0B50` — `int __stdcall(int slot1, int slot2)`, builds a
+local Packet, writes opcode + 2 slot bytes, ends with an indirect
+call through vtable `0x007FF9E4`. **It's dead code.** Verified two
+ways:
+
+- Zero callers in the binary (full xref scan). The function entry
+  is intact but nothing reaches it.
+- The vtable at `0x007FF9E4` is a memory-buffer vtable, NOT a
+  network-packet vtable. `vtable+4 = 0x00417BD0` reads as a "Send"
+  by name pattern but its body just calls `SMemFree(buffer)` —
+  it's a destructor, not a transmitter.
+
+Calling `0x005E0B50` directly was tested empirically: the user
+reported `EquipItemByName(item, slot)` "doesn't do anything" with
+this path active. Consistent with the dead-code analysis — the
+function builds a packet in memory and immediately frees it.
+
+### Where the production CMSG_SWAP_INV_ITEM actually goes
+
+Real `0x10D` traffic flows through a different chain:
+
+```
+0x501130  gate function (10 callers; reads cursor-state globals)
+  ↓
+0x468460  generic action dispatcher (1090 total callers, 538 with ECX=0x10)
+  ↓
+0x464870  thin 2-arg wrapper
+  ↓
+0x464890  inner (GCC-style stack-aligned prologue, complex body)
+```
+
+Two structural traps caught me:
+
+1. **The `edx = 0x0084ECA0` arg looks like a class table.** It's not —
+   it's a `__FILE__` debug string (`"E:\build\buildWoW\WoW\Source\Ui\
+   QuestFrame.cpp"`). Just metadata for engine logging.
+2. **`0x468460` with `ECX=0x10` is called 538 times across the binary
+   with 100+ distinct "opcode" values pushed.** It's a generic
+   action register, not a packet send. The actual transmission is
+   deeper.
+
+### State coupling that prevents direct invocation
+
+`0x501130` reads slot values from globals `[0xBE0810]` (src) and
+`[0xBE0814]` (dst). These are populated by upstream cursor machinery
+— writes traced to:
+
+- `0x500D86` / `0x500D88` — cleanup path of an "item action" handler
+  (writes both globals from struct fields `[ebx+8]` / `[ebx+0xC]`)
+- `0x501201` / `0x501207` — internal to `0x501130` itself
+
+To call `0x501130` from outside, we'd need to set up the action-
+handler struct AND the globals. Reproducing that state machine
+without breaking it is the bottleneck.
+
+### What's needed to finish
+
+A focused RE pass to find the actual `Connection::Send(packet,
+size)` (or equivalent) at the bottom of the packet pipeline. Once
+that's identified, build CMSG_SWAP_INV_ITEM bytes ourselves:
+
+```
+[opcode: u32 0x10D]  (or u16 + size header — verify by sniffing
+                      what the engine actually transmits)
+[dst_slot: u8]
+[src_slot: u8]
+```
+
+Linear-slot encoding (already documented in `Offsets.h`):
+- `0..18`  paperdoll equipment (head..tabard)
+- `19..22` equipped bag containers
+- `23..38` backpack contents
+- For backpack source from Lua bag/slot: `linearSrc = 22 + slot`
+- For dst equipment slot: `linearDst = dstSlot - 1`
+
+Items inside equipped bags (bagID 1..4) need CMSG_SWAP_ITEM (0x10E)
+instead — `[srcBag, srcSlot, dstBag, dstSlot]` payload, where
+`dstBag = 0xFF` for paperdoll. Add when we have the send path
+identified.
+
+### Risk if we get it wrong
+
+Bad opcodes or malformed payloads can disconnect the client mid-
+session ("disconnected from server"). Worth packet-sniffing a real
+drag-and-drop equip via Wireshark or similar before committing —
+don't trust the static analysis alone for protocol details.
+
+### Cross-reference
+
+2.4.3 has a clean engine-internal helper at `0x5E8310`
+(`ItemMgr::EquipByGUID` — `__thiscall(this=invMgr, guidLo, guidHi,
+dstSlot, 0)`) that bundles the find-and-move cleanly, called from
+`Script_EquipItemByName` at `0x4A0D80`. 1.12's equivalent (if it
+exists at all as a single function) hasn't surfaced through xref or
+pattern search. The 2.4.3 disassembly is in the conversation
+history; useful as a reference for what the bundled call looked
+like before Blizzard refactored.
+
+### Status
+
+Cursor-guard implementation ships. Tested with hearthstone-on-
+cursor + `EquipItemByName("Robes of Antiquity", 5)` — refuses
+gracefully, cursor preserved. To work around: caller drops the
+cursor first (`ClearCursor()` or `PutItemInBag(0)`), then calls
+`EquipItemByName`.
