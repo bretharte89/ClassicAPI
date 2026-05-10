@@ -1814,3 +1814,150 @@ break naturally produces the same ordering — lucky, since the
 INVSLOT constants happen to be ordered with the "primary" slot
 numbered lower than its peer. Locked in with a code comment so
 the loop direction doesn't accidentally drift in future refactors.
+## 64. `OnTooltipSetItem` / `OnTooltipSetSpell` / `OnTooltipSetUnit` script handlers — DEFERRED, scoped
+
+Modern WoW fires `OnTooltipSetItem` / `Spell` / `Unit` script handlers
+on `GameTooltip` after each `SetX` finishes filling the tooltip. The
+canonical addon pattern:
+
+```lua
+GameTooltip:HookScript("OnTooltipSetItem", function(self)
+    local _, link = self:GetItem()  -- depends on TODO #61
+    -- augment tooltip
+end)
+```
+
+1.12 has the tooltip script-handler infrastructure but only fires
+**three** specific names: `OnTooltipAddMoney`, `OnTooltipCleared`,
+`OnTooltipSetDefaultAnchor`. The modern set is missing.
+
+### Architecture (verified)
+
+- 1.12 has **`GetScript` (`0x00774780`) and `SetScript` (`0x007748D0`)**
+  natively, but **no native `HookScript`**. Addons polyfill `HookScript`
+  Lua-side — confirmed via:
+  - `!!!ClassicAPI/api/api.lua:458`
+  - `pfUI/modules/eqcompare.lua:224`
+
+  Both polyfills compose through `GetScript` + `SetScript`, so
+  hooking those two makes every existing `HookScript` polyfill in
+  the wild work for our new names. We don't need to write one
+  ourselves.
+
+- The script-name → handler-storage mapping lives in a virtual
+  method on `GameTooltip` (resolved via `vtable[?]`), pointed at by
+  one entry in `.rdata` at `FO=0x408F6C` → matcher function at
+  `0x005295D0`. The matcher's body:
+
+  ```
+  push 0x7FFFFFFF; push "OnTooltipSetDefaultAnchor"; push scriptName
+  call SStrCmpI → if match: lea eax, [frame+0x444]; ret
+  push 0x7FFFFFFF; push "OnTooltipCleared"; push scriptName
+  call SStrCmpI → if match: lea eax, [frame+0x44C]; ret
+  push 0x7FFFFFFF; push "OnTooltipAddMoney"; push scriptName
+  call SStrCmpI → if match: lea eax, [frame+0x454]; ret
+  xor eax, eax; ret  // unknown name
+  ```
+
+  Frame storage layout: 8 bytes per script handler slot (probably
+  `{lua_func_ref, flags}`).
+
+- `GetScript`'s "doesn't have a 'X' script" error fires when this
+  matcher returns 0 AND the name isn't in the standard frame
+  scripts (OnEvent, OnEnter, etc.).
+
+### Implementation plan
+
+**Phase 1 — Script handler intercept** (~half-day)
+
+- MinHook on `Script_GetScript` (`0x00774780`) and
+  `Script_SetScript` (`0x007748D0`). Both are real functions
+  (already addressable, not just registry slots).
+- For each:
+  1. Read scriptName from Lua stack.
+  2. If name ∈ `{"OnTooltipSetItem", "OnTooltipSetSpell", "OnTooltipSetUnit"}`:
+     - Validate stack[1] is a frame.
+     - For Set: store handler in our registry table.
+     - For Get: push from our registry table or `nil`.
+     - Return without invoking original.
+  3. Else: tail-call original.
+- Storage: Lua registry table (allocated once at boot, kept alive
+  via a known registry index). Keys: `frame_va * "/" * scriptName`.
+  Handler lookup is `lua_gettable(L, our_table_idx)`.
+- Lua ref management: 5.0 uses `lua_ref`/`lua_getref`/`lua_unref`.
+  Need to find these in the binary (probably near the existing
+  Lua C API offsets at `0x6F3xxx`); else use a pure Lua-table
+  approach (set `our_table[key] = function`, retrieve with
+  `lua_gettable`).
+
+**Phase 2 — Fire from our existing entry points** (~1 hour)
+
+After `Spell::Tooltip::ShowByID` and `Item::Tooltip::Set*ByID`,
+call a `FireTooltipScript(L, frame, "OnTooltipSetItem")` helper
+that does `lua_gettable` for the handler and `lua_pcall(L, 1, 0)`
+with `frame` as arg.
+
+This gives a working but incomplete OnTooltipSetItem — fires for
+our two ByID functions but not for the engine's
+`SetInventoryItem`/`SetBagItem`/etc.
+
+**Phase 3 — Cover engine `Set*Item` functions** (~2-4 hours)
+
+Either hook each individually (~19 `Script_*Item` functions in 1.12,
+list in `docs/raw_methods.txt`) or find a unified inner builder:
+
+- Item: no unified `BuildItemTooltip` apparent — each
+  `Script_GameTooltip_Set*Item` builds independently. Hooking each
+  via MinHook is straightforward but adds 19 hook points.
+  Alternative: find the deeper inner helper they all converge on.
+  The Set*Item functions all have similar prologues; trace one
+  thoroughly to find the shared call.
+- Spell: **`BuildSpellTooltip` at `0x0052E610`** is the unified
+  builder (we already use it from `SetSpellByID`). Single hook.
+- Unit: find inner of `Script_GameTooltip_SetUnit`
+  (slot 31, `0x005349B0`).
+
+**Phase 4 — GetItem/GetSpell/GetUnit** (TODO #61, related)
+
+For handlers to be useful, addons typically need to know *what*
+was set. Find frame state offsets where the engine stores the
+current item/spell/unit. Approach:
+
+1. Set known value via `SetItemByID(6948)` / `SetSpellByID(133)` /
+   `SetUnit("player")`.
+2. Dump GameTooltip frame instance memory.
+3. Search for `6948` / `133` / player GUID.
+4. Each match reveals the offset for that state field.
+
+Once located, `GetItem()`, `GetSpell()`, `GetUnit()` are trivial
+deref+push. Implementation roughly the same as `OffhandHasWeapon`
+or `IsEquippedItem` patterns.
+
+### Risks
+
+- **Hot-path hooks:** `GetScript` and `SetScript` are called by
+  every frame for every script registration. Mistakes in our hooks
+  can break the entire UI. Test extensively before shipping.
+- **Lua ref leaks:** if a frame is destroyed while we hold a ref
+  to its handler, we leak. Need a "frame destroyed" hook (or
+  rely on garbage collection of a weak-keyed table).
+- **Engine internals path:** finding the unified item builder
+  (Phase 3) might require deep RE; falling back to 19 individual
+  hooks is safe but ugly.
+
+### Alternative deferred design — Option B (in case Phase 1 turns
+out unworkable in practice)
+
+Skip the SetScript/GetScript intercept entirely. Provide:
+
+```lua
+GameTooltip.OnTooltipSetItem = function(self) ... end
+```
+
+(field-assignment, no HookScript polyfill needed). We fire from
+all the same places as Phase 2-3, but instead of `lua_gettable`
+on our registry table, we do `lua_getfield(frame, "OnTooltipSetItem")`
+directly off the frame's Lua table. Simpler, but doesn't compose
+with `HookScript` polyfills automatically (each addon would
+clobber the previous).
+
