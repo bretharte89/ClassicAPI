@@ -31,7 +31,6 @@ build instructions.
   - [`GetFactionIDByIndex(factionIndex)`](#getfactionidbyindexfactionindex)
   - [`GetFactionInfoByID(factionID)`](#getfactioninfobyidfactionid)
   - [`GetFactionParentID(factionID)`](#getfactionparentidfactionid)
-- [Reputation](#reputation)
   - [`C_Reputation.SetWatchedFactionByID(factionID)`](#c_reputationsetwatchedfactionbyidfactionid)
 - [Item](#item)
   - [`C_Item.IsBound(itemLocation)`](#c_itemisbounditemlocation)
@@ -738,8 +737,6 @@ regardless of whether the player has rep with it.
 
 Equivalent to the function of the same name introduced in 3.0 (as
 the 13th return of `GetFactionInfoByID`).
-
-## Reputation
 
 ### `C_Reputation.SetWatchedFactionByID(factionID)`
 
