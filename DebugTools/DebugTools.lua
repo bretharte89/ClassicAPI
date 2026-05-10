@@ -29,50 +29,6 @@ EVENT_TRACE_EVENT_COLORS = {};
 EVENT_TRACE_EVENT_COLORS["System"]  = _normalFontColor;
 EVENT_TRACE_EVENT_COLORS["Elapsed"] = { .6, .6, .6, 1 };
 
--- Default events to register when /etrace start is issued. The user can
--- /etrace add additional events. Vanilla doesn't expose RegisterAllEvents.
-local DEFAULT_TRACED_EVENTS = {
-    "ADDON_LOADED", "VARIABLES_LOADED", "PLAYER_LOGIN", "PLAYER_LOGOUT",
-    "PLAYER_ENTERING_WORLD", "PLAYER_LEAVING_WORLD",
-    "PLAYER_TARGET_CHANGED", "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED",
-    "PLAYER_DEAD", "PLAYER_ALIVE", "PLAYER_UNGHOST", "PLAYER_LEVEL_UP",
-    "PLAYER_AURAS_CHANGED", "PLAYER_XP_UPDATE",
-    "UNIT_HEALTH", "UNIT_MANA", "UNIT_MAXHEALTH", "UNIT_MAXMANA",
-    "UNIT_LEVEL", "UNIT_FACTION", "UNIT_NAME_UPDATE",
-    "UNIT_PORTRAIT_UPDATE", "UNIT_INVENTORY_CHANGED",
-    "BAG_UPDATE", "BAG_UPDATE_COOLDOWN",
-    "ITEM_LOCK_CHANGED", "ITEM_PUSH",
-    "QUEST_LOG_UPDATE", "QUEST_ACCEPTED", "QUEST_FINISHED",
-    "QUEST_PROGRESS", "QUEST_DETAIL", "QUEST_COMPLETE", "QUEST_GREETING",
-    "MERCHANT_SHOW", "MERCHANT_CLOSED",
-    "TRADE_SHOW", "TRADE_CLOSED", "TRADE_REQUEST", "TRADE_REQUEST_CANCEL",
-    "LOOT_OPENED", "LOOT_CLOSED",
-    "BANKFRAME_OPENED", "BANKFRAME_CLOSED",
-    "MAIL_SHOW", "MAIL_CLOSED", "MAIL_INBOX_UPDATE",
-    "AUCTION_HOUSE_SHOW", "AUCTION_HOUSE_CLOSED",
-    "TAXIMAP_OPENED", "TAXIMAP_CLOSED",
-    "PARTY_MEMBERS_CHANGED", "PARTY_LEADER_CHANGED",
-    "PARTY_LOOT_METHOD_CHANGED", "RAID_ROSTER_UPDATE",
-    "CHAT_MSG_SAY", "CHAT_MSG_PARTY", "CHAT_MSG_RAID", "CHAT_MSG_RAID_LEADER",
-    "CHAT_MSG_GUILD", "CHAT_MSG_OFFICER",
-    "CHAT_MSG_WHISPER", "CHAT_MSG_WHISPER_INFORM",
-    "CHAT_MSG_SYSTEM", "CHAT_MSG_YELL", "CHAT_MSG_CHANNEL",
-    "CHAT_MSG_LOOT", "CHAT_MSG_MONEY",
-    "SPELLCAST_START", "SPELLCAST_STOP", "SPELLCAST_FAILED",
-    "SPELLCAST_INTERRUPTED", "SPELLCAST_DELAYED",
-    "SPELLCAST_CHANNEL_START", "SPELLCAST_CHANNEL_UPDATE",
-    "SPELLCAST_CHANNEL_STOP",
-    "ACTIONBAR_SLOT_CHANGED", "ACTIONBAR_PAGE_CHANGED",
-    "ACTIONBAR_UPDATE_USABLE", "ACTIONBAR_UPDATE_COOLDOWN",
-    "UI_ERROR_MESSAGE", "UI_INFO_MESSAGE",
-    "UPDATE_FACTION", "SKILL_LINES_CHANGED", "SPELLS_CHANGED",
-    "TIME_PLAYED_MSG",
-    "TRADE_SKILL_SHOW", "TRADE_SKILL_CLOSE",
-    "CRAFT_SHOW", "CRAFT_CLOSE",
-    "GOSSIP_SHOW", "GOSSIP_CLOSED",
-    "FRIENDLIST_UPDATE", "WHO_LIST_UPDATE", "GUILD_ROSTER_UPDATE",
-};
-
 -- Vanilla has no Frame:IsMouseOver(); do it ourselves from cursor + bounds.
 local function DebugTools_IsMouseOver(frame)
     if (not frame) then return false; end
@@ -301,18 +257,7 @@ function EventTraceFrame_StartEventCapture()
     _framesSinceLast = 0;
     _timeSinceLast   = 0;
 
-    -- 1.12 does expose RegisterAllEvents; fall back to the curated list only
-    -- if it's missing on this client.
-    if (_EventTraceFrame.RegisterAllEvents) then
-        _EventTraceFrame:RegisterAllEvents();
-    else
-        for _, ev in ipairs(DEFAULT_TRACED_EVENTS) do
-            _EventTraceFrame.tracedEvents[ev] = true;
-        end
-        for ev, _ in pairs(_EventTraceFrame.tracedEvents) do
-            pcall(function() _EventTraceFrame:RegisterEvent(ev); end);
-        end
-    end
+    _EventTraceFrame:RegisterAllEvents();
 
     EventTraceFrame_OnEvent(_EventTraceFrame, "Begin Capture");
 end
