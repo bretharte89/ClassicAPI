@@ -13,24 +13,134 @@ functions. No companion addon is required.
 
 Full per-function reference: **[docs/API.md](docs/API.md)**.
 
-Quick index:
+### Spell
 
-| Namespace | Calls |
-|-----------|-------|
-| Spell     | `GetSpellInfo` (with `(slot, bookType)` overload), `C_Spell.GetSpellInfo`, `C_Spell.GetSpellName`, `C_Spell.GetSpellTexture`, `GetSpellLink` (with `(slot, bookType)` overload), `C_Spell.GetSpellLink`, `FindSpellBookSlotByID`, `C_Spell.GetSpellDescription`, `IsPassiveSpell` (with `(slot, bookType)` overload), `C_Spell.IsSpellPassive`, `IsPlayerSpell`, `IsSpellKnown`, `IsUsableSpell` (with `(slot, bookType)` overload), `C_Spell.IsSpellUsable` |
-| GameTooltip | `GameTooltip:SetSpellByID`, `GameTooltip:SetItemByID`, `GameTooltip:SetUnitAura` |
-| Quest     | `GetQuestIDFromLogIndex`, `C_QuestLog.RequestLoadQuestByID` (+ `QUEST_DATA_LOAD_RESULT` event), `C_QuestLog.GetTitleForQuestID` |
-| Faction   | `GetFactionIDByIndex`, `GetFactionInfoByID`, `GetFactionParentID` |
-| Item      | `C_Item.IsBound`, `C_Item.GetItemID`, `GetInventoryItemID`, `GetInventoryItemDurability`, `C_Item.GetItemFamily`, `C_Item.GetItemCount`, `C_Item.GetItemInfoInstant`, `GetItemIcon` / `C_Item.GetItemIcon` / `C_Item.GetItemIconByID`, `C_Item.IsItemDataCached(ByID)`, `C_Item.RequestLoadItemData(ByID)` (+ `ITEM_DATA_LOAD_RESULT` event) |
-| Container | `C_Container.GetContainerItemID`, `C_Container.GetContainerItemDurability`, `C_Container.GetContainerNumFreeSlots`, `C_Container.PlayerHasHearthstone`, `C_Container.UseHearthstone` |
-| Unit      | `UnitGUID`, `UnitIsAFK`, `UnitIsDND`, `UnitIsFeignDeath` |
-| State     | `IsMounted`, `IsStealthed`, `IsFalling`, `IsSwimming` |
-| AddOns    | `C_AddOns.GetAddOnName`, `C_AddOns.GetAddOnTitle`, `C_AddOns.GetAddOnNotes`, `C_AddOns.IsAddOnLoadable`, `C_AddOns.GetAddOnSecurity`, `C_AddOns.DoesAddOnExist` |
-| Combat    | `InCombatLockdown` |
-| Talent    | `GetTalentSpellID`, `GetTalentIDByIndex` |
-| Time      | `GetServerTime` |
-| Events    | `C_EventUtils.IsEventValid` |
-| Globals   | `CLASSIC_API_VERSION`, `LE_EXPANSION_LEVEL_CURRENT`, `LE_EXPANSION_CLASSIC` … `LE_EXPANSION_MIDNIGHT` |
+| Call | Notes |
+|------|-------|
+| `GetSpellInfo` | + `(slot, bookType)` overload |
+| `C_Spell.GetSpellInfo` | |
+| `C_Spell.GetSpellName` | |
+| `C_Spell.GetSpellTexture` | |
+| `GetSpellLink` | + `(slot, bookType)` overload |
+| `C_Spell.GetSpellLink` | |
+| `FindSpellBookSlotByID` | |
+| `C_Spell.GetSpellDescription` | |
+| `IsPassiveSpell` | + `(slot, bookType)` overload |
+| `C_Spell.IsSpellPassive` | |
+| `IsPlayerSpell` | |
+| `IsSpellKnown` | optional `isPet` arg |
+| `IsUsableSpell` | + `(slot, bookType)` overload |
+| `C_Spell.IsSpellUsable` | |
+
+### GameTooltip
+
+| Call | Notes |
+|------|-------|
+| `GameTooltip:SetSpellByID` | |
+| `GameTooltip:SetItemByID` | |
+| `GameTooltip:SetUnitAura` | optional `filter` arg |
+
+### Quest
+
+| Call | Notes |
+|------|-------|
+| `GetQuestIDFromLogIndex` | |
+| `C_QuestLog.RequestLoadQuestByID` | fires `QUEST_DATA_LOAD_RESULT` |
+| `C_QuestLog.GetTitleForQuestID` | |
+
+### Faction
+
+| Call |
+|------|
+| `GetFactionIDByIndex` |
+| `GetFactionInfoByID` |
+| `GetFactionParentID` |
+
+### Item
+
+| Call | Notes |
+|------|-------|
+| `C_Item.IsBound` | |
+| `C_Item.GetItemID` | |
+| `GetInventoryItemID` | |
+| `GetInventoryItemDurability` | |
+| `C_Item.GetItemFamily` | |
+| `C_Item.GetItemCount` | optional `includeBank`, `includeUses` |
+| `C_Item.GetItemInfoInstant` | |
+| `GetItemIcon` / `C_Item.GetItemIcon` / `C_Item.GetItemIconByID` | three input forms |
+| `C_Item.IsItemDataCached` / `C_Item.IsItemDataCachedByID` | |
+| `C_Item.RequestLoadItemData` / `C_Item.RequestLoadItemDataByID` | fires `ITEM_DATA_LOAD_RESULT` |
+
+### Container
+
+| Call |
+|------|
+| `C_Container.GetContainerItemID` |
+| `C_Container.GetContainerItemDurability` |
+| `C_Container.GetContainerNumFreeSlots` |
+| `C_Container.PlayerHasHearthstone` |
+| `C_Container.UseHearthstone` |
+
+### Unit
+
+| Call |
+|------|
+| `UnitGUID` |
+| `UnitIsAFK` |
+| `UnitIsDND` |
+| `UnitIsFeignDeath` |
+
+### State
+
+| Call |
+|------|
+| `IsMounted` |
+| `IsStealthed` |
+| `IsFalling` |
+| `IsSwimming` |
+
+### AddOns
+
+| Call |
+|------|
+| `C_AddOns.GetAddOnName` |
+| `C_AddOns.GetAddOnTitle` |
+| `C_AddOns.GetAddOnNotes` |
+| `C_AddOns.IsAddOnLoadable` |
+| `C_AddOns.GetAddOnSecurity` |
+| `C_AddOns.DoesAddOnExist` |
+
+### Combat
+
+| Call |
+|------|
+| `InCombatLockdown` |
+
+### Talent
+
+| Call | Notes |
+|------|-------|
+| `GetTalentSpellID` | optional `rank` arg |
+| `GetTalentIDByIndex` | |
+
+### Time
+
+| Call |
+|------|
+| `GetServerTime` |
+
+### Events
+
+| Call |
+|------|
+| `C_EventUtils.IsEventValid` |
+
+### Globals
+
+| Constant | Description |
+|----------|-------------|
+| `CLASSIC_API_VERSION` | DLL version probe (defined when loaded) |
+| `LE_EXPANSION_*` | expansion-level enum, `LE_EXPANSION_CLASSIC` … `LE_EXPANSION_MIDNIGHT` |
 
 ## Installation
 
