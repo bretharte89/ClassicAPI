@@ -786,4 +786,50 @@ enum Offsets {
     VAR_ADDON_ARRAY = 0x00BE1B94,
     VAR_ADDON_COUNT = 0x00BE1B90,
 
+    // Player visibility/state byte field, broadcast in UpdateFields.
+    // Found empirically via _classicapi_DescDump (see src/debug/).
+    // Treated as a u32 but the meaningful bits all live in byte 0:
+    //   0x02 — set when the player has any visibility/form-modifying
+    //          state active (stealth, mount, possibly shapeshift —
+    //          set by stealth and mount in our test data).
+    //   0x08, 0x10 — set together when mounted (alongside 0x02).
+    //
+    // Ambiguity: bit 0x02 alone doesn't distinguish stealth from
+    // other visibility-modifying states. Stealth detection AND-gates
+    // with `mountDisplayID == 0` to exclude mount; if shapeshift
+    // also sets bit 0x02 we'd false-positive on druids in form
+    // (untested). The robust path is to walk the player's aura
+    // list looking for the actual stealth/prowl spell — left as
+    // future work if false-positives turn up.
+    OFF_PLAYER_FIELD_VIS_BYTES = 0x17C,
+    PLAYER_VIS_BIT_STEALTH = 0x02,
+
+    // Mount display ID — the creature display ID the engine renders
+    // under the mounted player. Zero when not mounted, non-zero
+    // (typically a 4-digit creature display ID like 0x4306) when
+    // mounted. Broadcast in UpdateFields, so works for any unit's
+    // descriptor — though we only expose `IsMounted()` for the
+    // player to match modern API semantics.
+    OFF_UNIT_FIELD_MOUNTDISPLAYID = 0x1FC,
+
+    // Local player movement-flags u32. Lives directly on the
+    // CGPlayer object (not the broadcast descriptor) — this is
+    // client-side state the engine maintains for outbound
+    // MSG_MOVE_* packets, never visible for remote units. Found
+    // empirically by diffing _classicapi_PlayerLog snapshots
+    // (standing/swimming/falling).
+    //
+    // Bit values match vanilla MOVEFLAG_* protocol constants —
+    // verified by matching observed values to the documented
+    // 1.12 movement-flag set:
+    //   0x0001 FORWARD     0x2000  FALLING (in-air, moving down)
+    //   0x4000 FALLING_FAR (extended fall)
+    //   0x8000 PENDING_STOP
+    //   0x200000 SWIMMING
+    //   0x1000000 FLYING (no flying mounts in vanilla, but the bit
+    //                     exists for druid Flight Form etc.)
+    OFF_PLAYER_MOVEMENT_FLAGS = 0x9E8,
+    MOVEFLAG_FALLING = 0x2000,
+    MOVEFLAG_FALLING_FAR = 0x4000,
+    MOVEFLAG_SWIMMING = 0x200000,
 };
