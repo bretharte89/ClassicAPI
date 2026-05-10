@@ -526,11 +526,11 @@ displayable as a spellbook button.
 
 ### How we caught the bug pre-ship
 
-I initially implemented `IsSpellKnown` using the same bitmap as
+Initially implemented `IsSpellKnown` using the same bitmap as
 `IsPlayerSpell`, on the (wrong) assumption that the two functions
 were equivalent in 1.12 since the bitmap was the engine's
-authoritative knowledge store. The user pushed back: "I feel like
-[`IsSpellKnown`] is not as powerful as `IsPlayerSpell`."
+authoritative knowledge store. Caught in review — `IsSpellKnown`
+is meant to be the stricter check, distinct from `IsPlayerSpell`.
 
 Cross-binary lookup confirmed: 3.3.5's `Script_IsSpellKnown` at
 `0x0053C3A0` calls an inner helper at `0x0053B4E0` that does a strict
@@ -585,7 +585,7 @@ the initial reading where I thought the JNE went the other way.
 nearby player's head, not just yourself — the function at `0x005EC9E0`
 checks `[unit + 0xE68] + 0x08` bit 1 universally and only special-cases
 the local player when a global at `[0x00B6E5CC]` is set (probably a
-"hide my own AFK indicator" preference toggle). User confirmed in-game
+"hide my own AFK indicator" preference toggle). Verified in-game
 on a non-Turtle stock 1.12.1 server.
 
 ## 32. `IsCurrentSpell(spellID)` — easy
@@ -951,7 +951,7 @@ our purpose only the rank-1 spellID at `+0x10` matters.
 
 ### Verified in-game
 
-User tested both tiers — own-class talents render the full talent
+Both tiers tested — own-class talents render the full talent
 tooltip, cross-class IDs render the corresponding spell tooltip.
 
 ## ~~44. `GameTooltip:SetItemByID(itemID)`~~ — DONE
@@ -1038,7 +1038,7 @@ The naive walk-based implementation (originally drafted) failed for
 profession recipes — turns out vanilla 1.12's `VAR_PLAYER_SPELLBOOK`
 arrays DON'T contain profession recipe spellIDs (verified
 empirically: a tailor with Bolt of Linen Cloth fails
-`FindSpellBookSlotByID(2963)`). User flagged the bug.
+`FindSpellBookSlotByID(2963)`). Surfaced during in-game testing.
 
 To confirm whether 1.12 had a unified spell-knowledge data structure,
 I dumped 5.4.8's `Script_IsPlayerSpell` (5.4 = the version where the
@@ -1625,10 +1625,10 @@ ways:
   by name pattern but its body just calls `SMemFree(buffer)` —
   it's a destructor, not a transmitter.
 
-Calling `0x005E0B50` directly was tested empirically: the user
-reported `EquipItemByName(item, slot)` "doesn't do anything" with
-this path active. Consistent with the dead-code analysis — the
-function builds a packet in memory and immediately frees it.
+Calling `0x005E0B50` directly was tested empirically: with that
+path active, `EquipItemByName(item, slot)` produced no observable
+effect. Consistent with the dead-code analysis — the function
+builds a packet in memory and immediately frees it.
 
 ### Where the production CMSG_SWAP_INV_ITEM actually goes
 
@@ -1795,6 +1795,71 @@ near the FontStrings array pointer.
 
 Useful for tooltip-parsing addons that want to walk all lines
 without iterating until `_GetTooltipLine(i)` returns nil.
+
+## ~~65. `hooksecurefunc(name|table, [name,] callback)`~~ — DONE
+
+Shipped as [src/HookSecureFunc.cpp](src/HookSecureFunc.cpp). Pure C
+implementation using a `lua_pushcclosure` with two upvalues
+(`orig`, `callback`). The wrapper calls orig with `LUA_MULTRET`,
+then callback (returns discarded), then returns orig's full result
+list with no count cap.
+
+### Why pure C, not embedded Lua
+
+Originally drafted as a Lua source string executed via
+`FrameScript_Execute` at boot. Reworked to pure C to keep all
+implementation in one language and avoid embedded source strings;
+the refactor added three Lua C API offsets we hadn't wrapped before
+(`lua_gettop` at `0x6F3070`, `lua_remove`, `lua_call` at
+`0x6F4180`), plus the `LUA_UPVALUEINDEX(i) = GLOBALS_INDEX - i`
+helper.
+
+### Lua API offset corrections discovered along the way
+
+While diagnosing why `hooksecurefunc("GetSpellInfo", fn)` was returning
+"target field is not a function", a series of `_classicapi_*Probe`
+helpers traced the failure to **three misidentified offsets** in
+`docs/LuaCAPI.md` (and `Offsets.h`):
+
+| VA | Doc'd as | Actually is |
+|----|----------|-------------|
+| `0x006F30D0` | `lua_pushvalue` | **`lua_remove`** (shift-down loop + decr_top) |
+| `0x006F32B0` | `lua_remove`    | **`lua_replace`** (TValue copy + decr_top)   |
+| `0x006F3350` | `lua_replace`   | **`lua_pushvalue`** (TValue copy → top + incr_top) |
+
+How we caught it: `_classicapi_PushValueProbe` showed `GetTop` going
+from `1 → 0` after `PushValue(L, 1)` — the supposed `lua_pushvalue`
+was actually popping (lua_remove behavior). Disassembly of `0x6F30D0`
+confirmed the shift-down loop + `add [ecx+8], -0x10`, vs `0x6F3350`
+which has the standard `add [ecx+8], 0x10` incr_top after a single
+TValue copy.
+
+`Offsets.h` and `docs/LuaCAPI.md` both updated. The misidentified
+offsets had no observable effect previously because no code in the
+project used `PushValue` outside `HookSecureFunc.cpp` — every
+existing call path uses `PushString`/`PushNumber` for fresh pushes
+and `SetTable`/`GetTable` for stack manipulation.
+
+### Why 1.12 needs this even without taint
+
+Modern's "secure" label is about taint propagation in 3.x+ protected
+frames. 1.12 has no taint system; the function is functionally a
+plain after-hook with return preservation. We ship it for **modern
+API parity** — addons being backported from later expansions
+frequently use `hooksecurefunc(GameTooltip, "SetInventoryItem", ...)`
+and similar patterns, expecting the original to run first and their
+callback to fire afterward. Both forms (global by name, table+method)
+are supported.
+
+### Cross-version reference
+
+2.4.3 has the strings `hooksecurefunc`/`securecall`/`issecure`
+clustered together at `FO=0x4D2CF8`/`0x4D2D08`/`0x4D2D28` in `.rdata`,
+suggesting they're a "secure environment helpers" string table for
+the engine's taint-propagation code. The `hooksecurefunc` Lua
+implementation itself is in `FrameXML/RestrictedFrames.lua` even in
+modern WoW — the engine never had an internal C version we could
+mirror.
 
 ## ~~63. `GameTooltip:SetInventoryItemByID(itemID)`~~ — DONE
 

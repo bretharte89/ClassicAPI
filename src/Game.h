@@ -25,6 +25,12 @@ using CFunction = int(__fastcall *)(void *L);
 
 // Lua 5.0 pseudo-index used to read/write entries on the globals table.
 constexpr int GLOBALS_INDEX = -10001;
+// LUA_UPVALUEINDEX(i) — pseudo-index for accessing the i-th upvalue
+// of a C closure. Lua 5.0 layout: `LUA_GLOBALSINDEX - i`.
+constexpr int UpvalueIndex(int i) { return GLOBALS_INDEX - i; }
+
+// `lua_call` / `lua_pcall` nresults sentinel meaning "all".
+constexpr int MULTRET = -1;
 
 // Type tag values returned by `Type()` (lua_type).
 constexpr int TYPE_NIL = 0;
@@ -52,7 +58,10 @@ using lua_rawget_t = void(__fastcall *)(void *L, int idx);
 using lua_settable_t = void(__fastcall *)(void *L, int idx);
 using lua_rawset_t = void(__fastcall *)(void *L, int idx);
 using lua_insert_t = void(__fastcall *)(void *L, int idx);
+using lua_remove_t = void(__fastcall *)(void *L, int idx);
+using lua_gettop_t = int(__fastcall *)(void *L);
 using lua_settop_t = void(__fastcall *)(void *L, int idx);
+using lua_call_t = void(__fastcall *)(void *L, int nargs, int nresults);
 using lua_type_t = int(__fastcall *)(void *L, int index);
 using lua_error_t = void(__cdecl *)(void *L, const char *);
 
@@ -73,7 +82,10 @@ extern const lua_rawget_t RawGet;
 extern const lua_settable_t SetTable;
 extern const lua_rawset_t RawSet;
 extern const lua_insert_t Insert;
+extern const lua_remove_t Remove;
+extern const lua_gettop_t GetTop;
 extern const lua_settop_t SetTop;
+extern const lua_call_t Call;
 extern const lua_type_t Type;
 extern const lua_error_t Error;
 

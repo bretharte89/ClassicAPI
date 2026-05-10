@@ -36,7 +36,10 @@ const lua_rawget_t RawGet = reinterpret_cast<lua_rawget_t>(Offsets::LUA_RAW_GET)
 const lua_settable_t SetTable = reinterpret_cast<lua_settable_t>(Offsets::LUA_SET_TABLE);
 const lua_rawset_t RawSet = reinterpret_cast<lua_rawset_t>(Offsets::LUA_RAW_SET);
 const lua_insert_t Insert = reinterpret_cast<lua_insert_t>(Offsets::LUA_INSERT);
+const lua_remove_t Remove = reinterpret_cast<lua_remove_t>(Offsets::LUA_REMOVE);
+const lua_gettop_t GetTop = reinterpret_cast<lua_gettop_t>(Offsets::LUA_GET_TOP);
 const lua_settop_t SetTop = reinterpret_cast<lua_settop_t>(Offsets::LUA_SET_TOP);
+const lua_call_t Call = reinterpret_cast<lua_call_t>(Offsets::LUA_CALL);
 const lua_type_t Type = reinterpret_cast<lua_type_t>(Offsets::LUA_TYPE);
 const lua_error_t Error = reinterpret_cast<lua_error_t>(Offsets::LUA_ERROR);
 

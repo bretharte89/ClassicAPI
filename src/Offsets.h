@@ -666,7 +666,15 @@ enum Offsets {
     LUA_PUSH_NIL = 0x6F37F0,
     LUA_PUSH_BOOLEAN = 0x6F39F0,
     LUA_PUSH_STRING = 0x6F3890,
-    LUA_PUSH_VALUE = 0x6F30D0,    // (was 0x6F3350, which is lua_replace — see docs/LuaCAPI.md)
+    // Verified empirically via `_classicapi_PushValueProbe` —
+    // pushes a number then dups via PushValue, checks GetTop tracks.
+    // **Doc note:** `docs/LuaCAPI.md` reports `0x6F30D0` as lua_pushvalue
+    // and `0x6F32B0` as lua_remove; both are wrong. `0x6F30D0` is
+    // actually `lua_remove` (has the shift-down loop and `decr_top`),
+    // and `0x6F3350` is `lua_pushvalue` (index-resolve → TValue copy
+    // to L->top → `add [ecx+8], 0x10` incr_top). `0x6F32B0` is
+    // `lua_replace` (single TValue copy + decr_top).
+    LUA_PUSH_VALUE = 0x6F3350,
     LUA_PUSH_CCLOSURE = 0x6F3920,
     LUA_NEW_TABLE = 0x6F3C90,
     LUA_GET_TABLE = 0x6F3A40,     // (was 0x6F3EA0, which is lua_rawset)
@@ -674,8 +682,12 @@ enum Offsets {
     LUA_SET_TABLE = 0x6F3E20,
     LUA_RAW_SET = 0x6F3EA0,
     LUA_INSERT = 0x6F31A0,
+    LUA_REMOVE = 0x6F30D0,        // (was 0x6F32B0, which is lua_replace)
+    LUA_REPLACE = 0x6F32B0,
     LUA_TYPE = 0x6F3400,
+    LUA_GET_TOP = 0x6F3070,
     LUA_SET_TOP = 0x6F3080,
+    LUA_CALL = 0x6F4180,
     LUA_ERROR = 0x6F4940,
 
     // Global `lua_State *`. The engine keeps one main thread state here; we

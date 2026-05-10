@@ -105,8 +105,9 @@ static int __fastcall Script_GameTooltipSetInventoryItemByID(void *L) {
     // identical rings, identical trinkets), modern client behavior
     // is to render the lower-numbered slot — MAINHAND (16) before
     // OFFHAND (17), FINGER1 (11) before FINGER2 (12), TRINKET1 (13)
-    // before TRINKET2 (14). Confirmed against modern by the user;
-    // our ascending walk + first-match-break naturally matches.
+    // before TRINKET2 (14). Verified empirically against the modern
+    // client; our ascending walk + first-match-break naturally
+    // matches.
     int foundSlot = 0;
     for (int slot = Offsets::EQUIPMENT_SLOT_FIRST;
          slot <= Offsets::EQUIPMENT_SLOT_LAST; ++slot) {

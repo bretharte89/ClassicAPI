@@ -77,10 +77,10 @@ context but not byte-by-byte verified.
 |--------------|-------------------------|----------|--------------------------------------------------------------|------|
 | `0x006F3070` | `lua_gettop`            | fastcall | `(top - base) >> 4`                                          | ★   |
 | `0x006F3080` | `lua_settop`            | fastcall |                                                              | ✓   |
-| `0x006F30D0` | `lua_pushvalue`         | fastcall | resolves pseudo-indices (`-10000`, `-10001`)                 | ★   |
+| `0x006F30D0` | `lua_remove`            | fastcall | shift-down loop + decr_top; previously misidentified as `lua_pushvalue` | ★ |
 | `0x006F31A0` | `lua_insert`            | fastcall | called as `lua_insert(L, -2)` from `FrameScript_RegisterFunction` | ✓   |
-| `0x006F32B0` | `lua_remove`            | fastcall |                                                              | ◦   |
-| `0x006F3350` | `lua_replace`           | fastcall |                                                              | ◦   |
+| `0x006F32B0` | `lua_replace`           | fastcall | single TValue copy + decr_top; previously misidentified as `lua_remove` | ★ |
+| `0x006F3350` | `lua_pushvalue`         | fastcall | index-resolve → TValue copy → `add [ecx+8], 0x10` incr_top; resolves pseudo-indices (`-10000`, `-10001`); previously misidentified as `lua_replace` | ★   |
 
 ### Access (type & conversion)
 

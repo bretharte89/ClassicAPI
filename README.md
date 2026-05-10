@@ -28,6 +28,7 @@ Quick index:
 | State     | `IsFalling`, `IsMounted`, `IsStealthed`, `IsSwimming` |
 | AddOns    | `C_AddOns.DoesAddOnExist`, `C_AddOns.GetAddOnName`, `C_AddOns.GetAddOnNotes`, `C_AddOns.GetAddOnSecurity`, `C_AddOns.GetAddOnTitle`, `C_AddOns.IsAddOnLoadable` |
 | Combat    | `InCombatLockdown` |
+| Hooks     | `hooksecurefunc` |
 | Talent    | `GetTalentIDByIndex`, `GetTalentSpellID` |
 | Time      | `GetServerTime` |
 | Events    | `C_EventUtils.IsEventValid` |

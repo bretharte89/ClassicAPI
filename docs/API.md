@@ -1849,6 +1849,42 @@ Equivalent to `UnitAffectingCombat("player")` but faster — reads the
 `UNIT_FLAG_IN_COMBAT` bit directly off the player CGUnit's
 m_objectFields, no token-resolution roundtrip.
 
+## Hooks
+
+### `hooksecurefunc(name, callback)` / `hooksecurefunc(table, name, callback)`
+
+Modern post-call hook: the original function runs first, then
+`callback` runs with the same args (return values discarded). The
+original's return values propagate to the caller.
+
+```lua
+hooksecurefunc("GetSpellInfo", function(spellID)
+    print("GetSpellInfo called with " .. tostring(spellID))
+end)
+
+hooksecurefunc(GameTooltip, "SetInventoryItem", function(self, unit, slot)
+    -- runs after the engine fills the tooltip
+    print("inventory tooltip:", unit, slot)
+end)
+```
+
+The "secure" label refers to taint-propagation behavior introduced in
+3.0 for protected-frame manipulation. Vanilla 1.12 has no taint
+system, so the function is functionally equivalent to a plain
+"after-hook" — just preserves modern API parity for addons being
+backported from later expansions.
+
+Implemented in pure C: builds a Lua C closure with `(orig, callback)`
+as upvalues; the wrapper calls orig with `LUA_MULTRET`, then callback,
+then returns orig's full result list. No return-count cap — works
+correctly for functions returning any number of values.
+
+Errors via `lua_error` on:
+- Non-string `name`
+- Non-function `callback`
+- `target[name]` not resolvable to a function (covers typos and
+  hooking unknown frame methods)
+
 ## Talent
 
 ### `GetTalentSpellID(tabIndex, talentIndex, [rank])`
