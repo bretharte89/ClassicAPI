@@ -61,6 +61,15 @@ Slash commands provided:
 | `/framestack` (or `/fstack`) | Tooltip showing the frame hierarchy under the mouse cursor. |
 | `/luaerrors` (or `/scripterrors`) | Lua error display window. |
 
+Lua globals provided (backports of 3.3.5 helpers that don't exist in
+1.12):
+
+| Global | Purpose |
+|--------|---------|
+| `print(...)` | Backport of the 3.3.5 `print` — concats varargs with `" "` and pushes to `DEFAULT_CHAT_FRAME`. Routes through `setprinthandler`'s handler; falls back via `geterrorhandler` if the handler errors. |
+| `setprinthandler(func)` / `getprinthandler()` | Install / query a custom print handler. Useful for redirecting print output in tests. |
+| `tostringall(...)` | Apply `tostring()` to every vararg, preserving the count. Lua 5.0-compatible (uses `arg.n` since `select` doesn't exist in 5.0). |
+
 To install: copy [`DebugTools/`](DebugTools/) into your
 `Interface/AddOns/` directory like any other addon.
 

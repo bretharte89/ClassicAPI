@@ -1305,11 +1305,23 @@ the desired return on top, return 1 to Lua) fixed it.
 
 - **`GetAddOnInterfaceVersion(index)`** — reads `## Interface:` from
   the .toc. The engine parses this at addon-load time; we'd need
-  to find where it stores the per-addon value.
-- **`GetAddOnLocalTable(index)`** — returns the addon's private
-  namespace (the table passed as second arg to addon files via
-  the `... = name, addonTable` shape). Engine maintains it; we'd
-  need to find the storage.
+  to find where it stores the per-addon value. (Note: vanilla also
+  exposes `GetAddOnMetadata(name, "Interface")` natively, which
+  may already cover this — verify before implementing.)
+- **`GetAddOnLocalTable(index)`** — NOT FEASIBLE in 1.12. The
+  modern API returns the addon's private namespace passed as the
+  second `...` arg to each addon file (`local name, addon = ...`).
+  Verified empirically: vanilla 1.12 calls `lua_pcall(L, 0, 0, -2)`
+  on every addon chunk — `nargs = 0`, so `...` is always empty.
+  Confirmed at four pcall sites in the addon-loader region
+  (0x704B68, 0x704D22, 0x704E79, 0x705199), all with the same
+  `xor edx, edx; mov ecx, L; call lua_pcall` pattern. The
+  convention was added in 3.0+ when WoW moved to Lua 5.1; the
+  underlying engine machinery (per-addon table allocation,
+  vararg injection) doesn't exist in 1.12. Adding it would
+  require hooking the pcall sites to inject args AND maintaining
+  a per-addon-name table map ourselves — a feature add, not just
+  an API exposure. Skip unless an addon explicitly needs it.
 - **`DoesAddOnHaveLoadError(index)`** — load-error tracking. May
   not exist in 1.12 in a queryable form.
 - **`IsAddOnDefaultEnabled(index)`** — initial-enabled state from
