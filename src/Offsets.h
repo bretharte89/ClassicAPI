@@ -39,6 +39,7 @@ enum Offsets {
     // expecting the standard self+args layout on the Lua stack.
     // (Slot numbers are the method-registry index per `docs/raw_methods.txt`.)
     FUN_SCRIPT_GAMETOOLTIP_SET_HYPERLINK = 0x00531FD0, // slot 12
+    FUN_SCRIPT_GAMETOOLTIP_SET_INVENTORY_ITEM = 0x00532EE0, // slot 19
     FUN_SCRIPT_GAMETOOLTIP_SET_UNIT_BUFF = 0x00534AC0, // slot 32
     FUN_SCRIPT_GAMETOOLTIP_SET_UNIT_DEBUFF = 0x00534E30, // slot 33
     FUN_SCRIPT_GAMETOOLTIP_SET_TALENT = 0x00535170, // slot 34

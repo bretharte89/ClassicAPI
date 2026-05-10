@@ -1790,21 +1790,27 @@ near the FontStrings array pointer.
 Useful for tooltip-parsing addons that want to walk all lines
 without iterating until `_GetTooltipLine(i)` returns nil.
 
-## 63. `GameTooltip:SetInventoryItemByID(itemID)` — verify-then-skip-or-add
+## ~~63. `GameTooltip:SetInventoryItemByID(itemID)`~~ — DONE
 
-Modern shows up alongside `SetItemByID` in the API list. Need to
-verify whether it does anything semantically different from
-`SetItemByID` — e.g., it might use the player's actual equipped
-item's stats (with random properties / enchants applied) rather
-than the base ItemSparse data.
+Shipped in [src/item/Tooltip.cpp](src/item/Tooltip.cpp).
+Confirmed empirically distinct from `SetItemByID`: with run-speed
+enchanted boots equipped, `SetInventoryItemByID` shows the
+enchant line; `SetItemByID` shows the base item only.
 
-If it's a true variant, worth implementing: walk equipped slots
-for matching itemID, render with descriptor flags. If it's just
-an alias for `SetItemByID`, skip — addons can use the existing
-method.
+Implementation walks character-pane slots 1..19 looking for an
+equipped item matching `itemID`; on hit, dispatches to the
+engine's existing `Script_GameTooltip_SetInventoryItem` (registry
+slot 19, `0x00532EE0`) with `("player", slot)` rewritten onto the
+Lua stack. Silent no-op when the item isn't currently equipped —
+caller falls back to `SetItemByID` for unworn items.
 
-Test approach: in 1.15 / Classic Era, `SetInventoryItemByID(<an
-equipped item with random suffix>)` and compare against
-`SetItemByID(<same id>)`. If the rendered tooltip shows different
-suffix stats / enchants, they're distinct calls. If identical,
-just an alias.
+### Duplicate-item slot ordering — verified
+
+When the player has duplicates of the same itemID equipped, modern
+client renders the **lower-numbered slot** first: MAINHAND (16)
+before OFFHAND (17), FINGER1 (11) before FINGER2 (12), TRINKET1
+(13) before TRINKET2 (14). Our ascending 1..19 walk + first-match-
+break naturally produces the same ordering — lucky, since the
+INVSLOT constants happen to be ordered with the "primary" slot
+numbered lower than its peer. Locked in with a code comment so
+the loop direction doesn't accidentally drift in future refactors.

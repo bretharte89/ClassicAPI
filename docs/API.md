@@ -24,6 +24,7 @@ build instructions.
 - [GameTooltip](#gametooltip)
   - [`GameTooltip:SetSpellByID(spellID)`](#gametooltipsetspellbyidspellid)
   - [`GameTooltip:SetTalentByID(talentID)`](#gametooltipsettalentbyidtalentid)
+  - [`GameTooltip:SetInventoryItemByID(itemID)`](#gametooltipsetinventoryitembyiditemid)
 - [Quest](#quest)
   - [`GetQuestIDFromLogIndex(index)`](#getquestidfromlogindexindex)
   - [`C_QuestLog.RequestLoadQuestByID(questID)`](#c_questlogrequestloadquestbyidquestid)
@@ -610,6 +611,45 @@ GameTooltip:Show()
 ```
 
 Equivalent to the function of the same name introduced in 5.0.
+
+### `GameTooltip:SetInventoryItemByID(itemID)`
+
+Renders the tooltip for the **equipped instance** of `itemID` —
+walks character-pane slots 1..19, finds the matching item, and
+shows it with its actual enchants, random-suffix stats, and
+broken/locked state. Distinct from
+[`SetItemByID`](#gametooltipsetitembyiditemid), which shows the
+clean ItemSparse data with no instance-specific decorations.
+
+For example, on a pair of boots with a run-speed enchant equipped:
+
+| Method | Renders |
+|--------|---------|
+| `SetItemByID(<bootsID>)` | Base boots tooltip — name, armor, durability, level req. **No enchant.** |
+| `SetInventoryItemByID(<bootsID>)` | Same plus `Enchanted: Minor Speed` and any random-suffix lines. |
+
+Silent no-op if the item isn't currently equipped — fall back to
+`SetItemByID` for unworn items, or check via
+[`C_Item.IsEquippedItem`](#c_itemisequippeditemitem) first.
+
+When the player has duplicates of the same itemID equipped
+(matched MH/OH weapons, identical rings, identical trinkets), the
+**lower-numbered slot wins** — MAINHAND before OFFHAND, FINGER1
+before FINGER2, TRINKET1 before TRINKET2. Matches modern client
+behavior (verified empirically).
+
+```lua
+local _, _, _, _, _, _, _, _, _, _, _, _, _, link = GetItemInfo(itemID)
+GameTooltip:SetOwner(UIParent, "ANCHOR_CURSOR")
+if C_Item.IsEquippedItem(itemID) then
+    GameTooltip:SetInventoryItemByID(itemID)  -- shows enchants/suffix
+else
+    GameTooltip:SetItemByID(itemID)            -- shows base stats
+end
+GameTooltip:Show()
+```
+
+Equivalent to the function of the same name introduced in 8.0.
 
 ## Quest
 
