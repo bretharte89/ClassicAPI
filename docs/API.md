@@ -50,6 +50,8 @@ build instructions.
   - [`C_Container.GetContainerNumFreeSlots(bagID)`](#c_containergetcontainernumfreeslotsbagid)
   - [`C_Container.PlayerHasHearthstone()`](#c_containerplayerhashearthstone)
   - [`C_Container.UseHearthstone()`](#c_containerusehearthstone)
+- [Class](#class)
+  - [`FillLocalizedClassList(table [, isFemale])`](#filllocalizedclasslisttable-isfemale)
 - [Unit](#unit)
   - [`UnitGUID(unit)`](#unitguidunit)
   - [`UnitIsAFK(unit)`](#unitisafkunit)
@@ -1331,6 +1333,40 @@ on the stack. No new use-item logic is introduced — this is a
 convenience wrapper.
 
 Equivalent to the function of the same name introduced in 9.0.
+
+## Class
+
+### `FillLocalizedClassList(table [, isFemale])`
+
+Fills the passed-in table with `[classToken] = localizedClassName`
+pairs for every class in `ChrClasses.dbc`, and returns the same
+table for chaining.
+
+The table is mutated in place. Existing keys are overwritten;
+unrelated keys are preserved.
+
+```lua
+local classes = FillLocalizedClassList({})
+-- classes.WARRIOR = "Warrior"
+-- classes.MAGE    = "Mage"
+-- classes.PRIEST  = "Priest"
+-- ...
+```
+
+Modern API supports an optional `isFemale` boolean to fetch female-
+form names. Vanilla 1.12 has no separate female-name array in
+`ChrClasses.dbc` — `Name[9]` (one localized string per locale)
+sits exactly between offsets `+0x14` and `+0x38`, with the class
+token immediately after, leaving no room. The arg is accepted for
+signature parity but ignored; the same names are returned either way.
+Most locales (English included) wouldn't differentiate the two
+anyway, so callers won't typically notice.
+
+Sparse class IDs (vanilla skips classID 6 — Death Knight didn't
+exist yet — and a few others) have NULL records and are silently
+skipped.
+
+Equivalent to the function of the same name introduced in 3.0.
 
 ## Unit
 

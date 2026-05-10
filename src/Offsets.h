@@ -412,6 +412,25 @@ enum Offsets {
     // `GetFactionInfoByID` we walk it to find the displayed-index of a
     // given factionID, then replace Lua arg 1 and tail-call
     // `Script_GetFactionInfo` to produce all 11 returns.
+    // ChrClasses.dbc — class metadata. Standard 5-DWORD class shape.
+    // Records is a flat array of record pointers indexed by classID
+    // (records[0] unused, records[1..count]).
+    //
+    // Per-record fields used by `FillLocalizedClassList`, derived from
+    // `Script_GetSelectedClass` (`0x004716E0`):
+    //   +0x14   char *Name[9]    — localized class names (locale-indexed)
+    //   +0x38   char *Filename   — class token ("WARRIOR", "MAGE", etc.)
+    //
+    // Vanilla 1.12 has no separate female-name array — `Name[9]` is
+    // exactly the 36 bytes between `+0x14` and `+0x38`, so the
+    // `isFemale` arg of `FillLocalizedClassList` is a no-op for this
+    // client (and matches the male names that English/most locales
+    // use anyway).
+    VAR_CHRCLASSES_RECORDS = 0x00C0DEF4,
+    VAR_CHRCLASSES_COUNT = 0x00C0DEF8,
+    OFF_CHRCLASSES_NAMES = 0x14,
+    OFF_CHRCLASSES_FILENAME = 0x38,
+
     FUN_RESOLVE_FACTION_INDEX = 0x004D5FA0,
     FUN_SCRIPT_GET_FACTION_INFO = 0x004D64F0,
     // Inner watched-faction setter — `__fastcall(ecx = factionID) → void`.

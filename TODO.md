@@ -1518,3 +1518,30 @@ in vanilla. `UnitOnTaxi("player")` covers the only flight-like
 state the client tracks. Function and `MOVEFLAG_FLYING`
 constant both removed; `Offsets.h` carries a comment noting
 the empirical result so this doesn't get re-attempted.
+
+## ~~58. `FillLocalizedClassList(table [, isFemale])`~~ — DONE
+
+Shipped as `src/classes/Info.cpp`. Iterates `ChrClasses.dbc`
+records and writes `tbl[classToken] = localizedClassName` for
+each, returning the same table for chaining.
+
+ChrClasses record layout (derived from `Script_GetSelectedClass`
+at `0x004716E0`):
+
+- `+0x14` — `char *Name[9]` localized class names (one per locale)
+- `+0x38` — `char *Filename` class token (`"WARRIOR"`, `"MAGE"`, etc.)
+
+Vanilla 1.12 has no separate female-name array — `Name[9]` is
+exactly the 36 bytes between `+0x14` and `+0x38` (= 9 locales × 4
+byte ptr), with the token immediately after. The modern
+`isFemale` arg is accepted for signature parity but ignored;
+same names returned regardless. Most locales (English included)
+don't differentiate gender forms anyway, so callers won't typically
+notice. Sparse classIDs (vanilla skips classID 6 — Death Knight
+didn't exist) have NULL records and are silently skipped.
+
+Stack discipline: takes the table at idx 1, drops any extra args
+via `SetTop(L, 1)`, then loops `PushString(token); PushString(name);
+SetTable(L, 1)` per record. `SetTable` consumes both stack values
+so the table sits alone at idx 1 throughout the loop. Returns 1
+to push the (same) table back to Lua.
