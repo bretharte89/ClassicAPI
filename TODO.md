@@ -790,23 +790,29 @@ See [src/talent/Info.cpp](src/talent/Info.cpp) and the talent block
 (`VAR_TALENT_TAB_*` / `OFF_TABINFO_*` / `OFF_TALENT_SPELL_RANK`) in
 [src/Offsets.h](src/Offsets.h).
 
-## 37. `GetSpellSchool(spellID)` — easy
+## ~~37. `GetSpellSchool(spellID)`~~ — DONE
 
-Returns the spell's damage school as a 1-based index and locale-
-independent string: `(schoolID, schoolName)` where `schoolName` is
-one of `"Physical"`, `"Holy"`, `"Fire"`, `"Nature"`, `"Frost"`,
-`"Shadow"`, `"Arcane"`. Modern `GetSchoolString(school)` does the
-mapping; we'd expose both the raw ID and the string in one call.
+Shipped as [src/spell/School.cpp](src/spell/School.cpp). Returns
+`(schoolID, schoolName)` where schoolID is 1-based (1=Physical,
+7=Arcane) and schoolName is the locale-independent English name.
 
-`Spell.dbc` has the `SchoolMask` byte field (single dword, only one
-bit set in 1.12 — multi-school is a TBC+ thing). Offset within the
-record needs to be derived; the engine's `Script_GetSpellInfo` /
-spell tooltip builder reads it.
+### Spell.dbc School field — VERIFIED OFFSET
 
-Used by combat log breakdown addons, dispel logic (which schools your
-class can dispel), resistance-aware aura libraries, and damage meter
-school tagging. Currently addons either maintain hardcoded
-spellID→school tables or scan tooltips for the first-line color tag.
+Vanilla 1.12 stores School as a **0-based integer at record `+0x04`**
+(NOT the SchoolMask form the original TODO note speculated — that's
+TBC+). Verified empirically via the probe Lua functions:
+
+```
+/dump _classicapi_FindSpellField(133, 116, 4, 16)   -- mask form: empty
+/dump _classicapi_FindSpellField(133, 116, 2, 4)    -- 0-based int: offset 4 ✓
+/dump _classicapi_FindSpellField(133, 116, 3, 5)    -- 1-based int: empty
+```
+
+Fireball (133) → School=2 (Fire); Frostbolt (116) → School=4 (Frost).
+
+The probe helpers (`_classicapi_ProbeSpellRecord`,
+`_classicapi_FindSpellField`) were temporarily exposed to derive the
+offset and removed in the same commit that shipped `GetSpellSchool`.
 
 ## 38. `GetSpellRadius(spellID)` — easy
 

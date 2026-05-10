@@ -21,6 +21,7 @@ build instructions.
   - [`IsSpellKnown(spellID, [isPet])`](#isspellknownspellid-ispet)
   - [`IsUsableSpell(spell)` / `IsUsableSpell(slot, bookType)`](#isusablespellspell--isusablespellslot-booktype)
   - [`C_Spell.IsSpellUsable(spellID)`](#c_spellisspellusablespellid)
+  - [`GetSpellSchool(spellID)`](#getspellschoolspellid)
 - [GameTooltip](#gametooltip)
   - [`GameTooltip:SetSpellByID(spellID)`](#gametooltipsetspellbyidspellid)
   - [`GameTooltip:SetTalentByID(talentID)`](#gametooltipsettalentbyidtalentid)
@@ -490,6 +491,41 @@ local usable, noMana = C_Spell.IsSpellUsable(133)
 ```
 
 Equivalent to the function of the same name introduced in 10.x.
+
+### `GetSpellSchool(spellID)`
+
+Returns `(schoolID, schoolName)` for any spell — known to the player
+or not. `schoolID` is 1-based; `schoolName` is the locale-independent
+English name.
+
+| schoolID | schoolName |
+|---------:|------------|
+| 1 | `"Physical"` |
+| 2 | `"Holy"` |
+| 3 | `"Fire"` |
+| 4 | `"Nature"` |
+| 5 | `"Frost"` |
+| 6 | `"Shadow"` |
+| 7 | `"Arcane"` |
+
+Reads directly from `Spell.dbc` record `+0x04`. Vanilla 1.12 stores
+School as a single 0-based integer (no multi-school `SchoolMask`
+combinations — that's a TBC+ thing), so a spell belongs to exactly
+one school.
+
+Returns `nil` for invalid spellIDs (out of range or unpopulated
+`Spell.dbc` slot).
+
+```lua
+local id, name = GetSpellSchool(133)   -- 3, "Fire"   (Fireball)
+local id, name = GetSpellSchool(116)   -- 5, "Frost"  (Frostbolt)
+local id, name = GetSpellSchool(635)   -- 2, "Holy"   (Holy Light)
+```
+
+Useful for combat-log breakdown addons, dispel-eligibility checks,
+resistance-aware aura libraries, and damage-meter school tagging.
+Previously addons either maintained hardcoded `spellID → school`
+tables or scanned tooltips for the first-line color tag.
 
 ## GameTooltip
 

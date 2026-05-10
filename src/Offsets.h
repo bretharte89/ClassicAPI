@@ -639,6 +639,16 @@ enum Offsets {
     // Used by Script_GetSpellName/Texture and BuildSpellTooltip.
     VAR_SPELL_RECORDS = 0x00C0D788,            // SpellRecord *records[spellID]
     VAR_SPELL_RECORD_COUNT = 0x00C0D78C,       // max spellID
+
+    // Spell.dbc School field — 0-based integer at record +0x04.
+    // Verified empirically against Fireball (133) → School=2 (Fire)
+    // and Frostbolt (116) → School=4 (Frost) on Octo 1.12.1. Vanilla
+    // doesn't use the multi-bit SchoolMask form (TBC+); a spell
+    // belongs to exactly one school. Mapping:
+    //   0 = Physical  1 = Holy  2 = Fire    3 = Nature
+    //   4 = Frost     5 = Shadow 6 = Arcane
+    OFF_SPELL_SCHOOL = 0x04,
+    SPELL_SCHOOL_COUNT = 7,
     VAR_SPELL_RANGE_RECORDS = 0x00C0D79C,      // SpellRange.dbc
     VAR_SPELL_RANGE_COUNT = 0x00C0D7A0,
     VAR_SPELL_ICON_RECORDS = 0x00C0D7EC,       // SpellIcon.dbc

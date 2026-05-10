@@ -17,7 +17,7 @@ Quick index:
 
 | Namespace | Calls |
 |-----------|-------|
-| Spell     | `GetSpellInfo` (with `(slot, bookType)` overload), `C_Spell.GetSpellInfo`, `C_Spell.GetSpellName`, `C_Spell.GetSpellTexture`, `GetSpellLink` (with `(slot, bookType)` overload), `C_Spell.GetSpellLink`, `FindSpellBookSlotByID`, `C_Spell.GetSpellDescription`, `IsPassiveSpell` (with `(slot, bookType)` overload), `C_Spell.IsSpellPassive`, `IsPlayerSpell`, `IsSpellKnown`, `IsUsableSpell` (with `(slot, bookType)` overload), `C_Spell.IsSpellUsable` |
+| Spell     | `GetSpellInfo` (with `(slot, bookType)` overload), `C_Spell.GetSpellInfo`, `C_Spell.GetSpellName`, `C_Spell.GetSpellTexture`, `GetSpellLink` (with `(slot, bookType)` overload), `C_Spell.GetSpellLink`, `FindSpellBookSlotByID`, `C_Spell.GetSpellDescription`, `IsPassiveSpell` (with `(slot, bookType)` overload), `C_Spell.IsSpellPassive`, `IsPlayerSpell`, `IsSpellKnown`, `IsUsableSpell` (with `(slot, bookType)` overload), `C_Spell.IsSpellUsable`, `GetSpellSchool` |
 | GameTooltip | `GameTooltip:SetSpellByID`, `GameTooltip:SetItemByID`, `GameTooltip:SetInventoryItemByID`, `GameTooltip:SetUnitAura`, `GameTooltip:SetTalentByID` |
 | Quest     | `GetQuestIDFromLogIndex`, `C_QuestLog.RequestLoadQuestByID` (+ `QUEST_DATA_LOAD_RESULT` event), `C_QuestLog.GetTitleForQuestID` |
 | Faction   | `GetFactionIDByIndex`, `GetFactionInfoByID`, `GetFactionParentID`, `C_Reputation.SetWatchedFactionByID` |
