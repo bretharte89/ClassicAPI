@@ -758,4 +758,32 @@ enum Offsets {
     OFF_GAMETIME_DAY = 0x0C,
     OFF_GAMETIME_MONTH = 0x10,
     OFF_GAMETIME_YEAR = 0x14,
+
+    // AddOn registry. The engine keeps a flat 4-byte-stride array of
+    // `AddOnEntry *` at `[VAR_ADDON_ARRAY]`, with the in-use count at
+    // `[VAR_ADDON_COUNT]`. Each entry's first 12 bytes are an inline
+    // null-terminated name buffer, so an `AddOnEntry *` can be passed
+    // directly to `lua_pushstring` to push the addon's name (which is
+    // exactly what `Script_GetAddOnInfo` does for ret1).
+    //
+    // Per-field accessors (all `__fastcall(ecx=name) → char* or NULL`):
+    // each one looks up the addon by name in the engine's hash table,
+    // then reads a single hardcoded field from the addon's metadata
+    // hash table and returns its string value (NULL if the addon
+    // doesn't exist or the field is missing). The `name` arg can be
+    // either a real C string OR an `AddOnEntry *` — the entry's
+    // first 12 bytes are an inline null-terminated name, so it
+    // doubles as a valid `const char *`.
+    //
+    // We use these directly in the `C_AddOns.*` wrappers to avoid
+    // dispatching to `Script_GetAddOnInfo` (which pushes a 7-tuple
+    // when we only want one field, and worse, errors via `lua_error`
+    // for out-of-range numeric indices).
+    FUN_ADDON_GET_BY_INDEX = 0x0051DF00,        // (idx0Based) → AddOnEntry* or NULL
+    FUN_ADDON_GET_TITLE_BY_NAME = 0x0051DF20,   // (name) → title string or NULL
+    FUN_ADDON_GET_NOTES_BY_NAME = 0x0051E050,   // (name) → notes string or NULL
+    FUN_SCRIPT_GET_ADDON_INFO = 0x0048E390,
+    VAR_ADDON_ARRAY = 0x00BE1B94,
+    VAR_ADDON_COUNT = 0x00BE1B90,
+
 };
