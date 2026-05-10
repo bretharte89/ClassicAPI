@@ -1851,6 +1851,23 @@ and similar patterns, expecting the original to run first and their
 callback to fire afterward. Both forms (global by name, table+method)
 are supported.
 
+### Unhookable globals
+
+Modern WoW rejects `hooksecurefunc("<core lua/secure fn>", ...)` outright
+to keep callers from clobbering language primitives or breaking taint
+propagation. We mirror that with a name blacklist in `Script_HookSecureFunc`
+that fires `lua_error` with `"hooksecurefunc: function is unhookable"`
+when the two-arg form targets one of: `getfenv`, `getmetatable`,
+`hooksecurefunc`, `ipairs`, `issecurevalue`, `issecurevariable`, `next`,
+`pairs`, `pcall`, `pcallwithenv`, `rawget`, `rawset`, `scrub`,
+`securecall`, `securecallfunction`, `secureexecuterange`, `select`,
+`setfenv`, `setmetatable`, `type`, `unpack`, `wipe`, `xpcall`.
+
+Three-arg form (table + name + callback) is exempt: hooking
+`MyLib.pairs` is fine even if `_G.pairs` is not — the blacklist is
+specifically about replacing functions on the globals table. A user who
+passes `_G` explicitly as the table target is opting in deliberately.
+
 ### Cross-version reference
 
 2.4.3 has the strings `hooksecurefunc`/`securecall`/`issecure`

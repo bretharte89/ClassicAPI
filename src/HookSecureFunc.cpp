@@ -13,9 +13,37 @@
 
 #include "Game.h"
 
+#include <cstring>
+
 namespace HookSecureFunc {
 
 namespace {
+
+// Names that must not be hooked when targeting `_G`. Hooking any of these
+// would either break taint propagation (the "secure" functions) or replace
+// core Lua language primitives whose behavior the engine depends on
+// internally — e.g. `pairs` is called from C in the iterator path; if Lua
+// `pairs` is replaced with a wrapper closure, the engine still gets the
+// original via its own table-method dispatch, but Lua-side iteration goes
+// through our wrapper, and the two diverging is a footgun. Modern WoW
+// rejects the hook outright; we mirror that. Sorted alphabetically.
+const char *const kUnhookableNames[] = {
+    "getfenv", "getmetatable", "hooksecurefunc", "ipairs", "issecurevalue",
+    "issecurevariable", "next", "pairs", "pcall", "pcallwithenv", "rawget",
+    "rawset", "scrub", "securecall", "securecallfunction",
+    "secureexecuterange", "select", "setfenv", "setmetatable", "type",
+    "unpack", "wipe", "xpcall",
+};
+
+bool IsUnhookable(const char *name) {
+    if (name == nullptr)
+        return false;
+    for (const char *blocked : kUnhookableNames) {
+        if (std::strcmp(name, blocked) == 0)
+            return true;
+    }
+    return false;
+}
 
 // Wrapper closure body — called when the hooked function is invoked.
 // Stack contains the wrapper's args (`[arg1..argN]`); the closure's
@@ -97,6 +125,21 @@ int __fastcall Script_HookSecureFunc(void *L) {
     if (Game::Lua::Type(L, callbackIdx) != Game::Lua::TYPE_FUNCTION) {
         Game::Lua::Error(L, "hooksecurefunc: callback must be a function");
         return 0;
+    }
+
+    // Block the hook when targeting `_G` and the name is in the unhookable
+    // set. We don't apply this to the three-arg form (table targets):
+    // hooking `MyLib.pairs` is fine even if Lua's global `pairs` is not —
+    // the blacklist is specifically about `_G[name]`. A user who passes
+    // `_G` explicitly as the table target is opting in deliberately and we
+    // don't second-guess it.
+    if (targetIdx == Game::Lua::GLOBALS_INDEX) {
+        const char *name = Game::Lua::ToString(L, nameIdx);
+        if (IsUnhookable(name)) {
+            Game::Lua::Error(L,
+                "hooksecurefunc: function is unhookable");
+            return 0;
+        }
     }
 
     // Fetch target[name] — the original function. `gettable` uses
