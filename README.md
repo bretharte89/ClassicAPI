@@ -24,6 +24,8 @@ Quick index:
 | Item      | `C_Item.IsBound`, `C_Item.GetItemID`, `GetInventoryItemID`, `GetInventoryItemDurability`, `C_Item.GetItemFamily`, `C_Item.GetItemCount`, `C_Item.GetItemInfoInstant`, `GetItemIcon` / `C_Item.GetItemIcon` / `C_Item.GetItemIconByID`, `C_Item.IsItemDataCached(ByID)`, `C_Item.RequestLoadItemData(ByID)` (+ `ITEM_DATA_LOAD_RESULT` event) |
 | Container | `C_Container.GetContainerItemID`, `C_Container.GetContainerItemDurability`, `C_Container.GetContainerNumFreeSlots`, `C_Container.PlayerHasHearthstone`, `C_Container.UseHearthstone` |
 | Unit      | `UnitGUID`, `UnitIsAFK`, `UnitIsDND`, `UnitIsFeignDeath` |
+| State     | `IsMounted`, `IsStealthed`, `IsFalling`, `IsSwimming` |
+| AddOns    | `C_AddOns.GetAddOnName`, `C_AddOns.GetAddOnTitle`, `C_AddOns.GetAddOnNotes`, `C_AddOns.IsAddOnLoadable`, `C_AddOns.GetAddOnSecurity`, `C_AddOns.DoesAddOnExist` |
 | Combat    | `InCombatLockdown` |
 | Talent    | `GetTalentSpellID`, `GetTalentIDByIndex` |
 | Time      | `GetServerTime` |

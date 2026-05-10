@@ -53,6 +53,18 @@ build instructions.
   - [`UnitIsAFK(unit)`](#unitisafkunit)
   - [`UnitIsDND(unit)`](#unitisdndunit)
   - [`UnitIsFeignDeath(unit)`](#unitisfeigndeathunit)
+- [State](#state)
+  - [`IsMounted()`](#ismounted)
+  - [`IsStealthed()`](#isstealthed)
+  - [`IsFalling()`](#isfalling)
+  - [`IsSwimming()`](#isswimming)
+- [AddOns](#addons)
+  - [`C_AddOns.GetAddOnName(indexOrName)`](#c_addonsgetaddonnameindexorname)
+  - [`C_AddOns.GetAddOnTitle(indexOrName)`](#c_addonsgetaddontitleindexorname)
+  - [`C_AddOns.GetAddOnNotes(indexOrName)`](#c_addonsgetaddonnotesindexorname)
+  - [`C_AddOns.IsAddOnLoadable(indexOrName)`](#c_addonsisaddonloadableindexorname)
+  - [`C_AddOns.GetAddOnSecurity(indexOrName)`](#c_addonsgetaddonsecurityindexorname)
+  - [`C_AddOns.DoesAddOnExist(indexOrName)`](#c_addonsdoesaddonexistindexorname)
 - [Combat](#combat)
   - [`InCombatLockdown()`](#incombatlockdown)
 - [Talent](#talent)
@@ -1342,6 +1354,169 @@ UnitIsFeignDeath("target")   -- true if a feigning hunter
 > `/dump UnitIsFeignDeath("target")` is the diagnostic.
 
 Equivalent to the function of the same name introduced in 3.0.
+
+## State
+
+Player movement / visibility state queries that modern WoW exposes
+as no-arg globals. 1.12 doesn't bind them to Lua despite the engine
+tracking the underlying state — broadcast in UpdateFields for some
+(mount, stealth visibility), local-only for others (falling,
+swimming).
+
+### `IsMounted()`
+
+Returns `true` if the player is currently mounted, `false` otherwise.
+
+Reads `UNIT_FIELD_MOUNTDISPLAYID` from the player's broadcast
+descriptor. The field holds a creature display ID (the model the
+engine renders under the player) when mounted, and `0` otherwise.
+
+```lua
+if not IsMounted() then
+    CastSpellByName("Summon Dreadsteed")
+end
+```
+
+Equivalent to the function of the same name introduced in 1.10.
+
+### `IsStealthed()`
+
+Returns `true` if the player is currently in Stealth (Rogue) or
+Prowl (Druid), `false` otherwise.
+
+Reads bit `0x02` of the player visibility byte at descriptor
+`+0x17C` and AND-gates with `MountDisplayID == 0` to disambiguate
+mount (which sets the same bit). Untested for Druid shapeshift
+forms — if you find a false-positive there, file an issue and we'll
+switch to walking the player's aura array for the actual stealth
+spell.
+
+```lua
+if IsStealthed() then
+    -- defer the spell that would break stealth
+end
+```
+
+### `IsFalling()`
+
+Returns `true` if the player is currently mid-jump or falling,
+`false` otherwise.
+
+Reads the local CGPlayer movement-flags word at `+0x9E8` and tests
+`MOVEFLAG_FALLING | MOVEFLAG_FALLING_FAR` (`0x2000 | 0x4000`). This
+is client-side state (outbound `MSG_MOVE_*` data, never visible for
+remote units), so the function only meaningfully applies to the
+local player.
+
+```lua
+if not IsFalling() then
+    -- safe to bind ground-targeted spell
+end
+```
+
+### `IsSwimming()`
+
+Returns `true` if the player is currently swimming (in liquid, with
+the swim animation/movement set), `false` otherwise.
+
+Same movement-flags word as `IsFalling`, testing `MOVEFLAG_SWIMMING`
+(`0x200000`). Local-player only.
+
+```lua
+if IsSwimming() then
+    -- breath bar logic, mount-failure suppression, etc.
+end
+```
+
+## AddOns
+
+Six modern `C_AddOns.*` getters that splat the legacy
+`GetAddOnInfo(arg)` 7-tuple `(name, title, notes, enabled,
+loadable, reason, security)` into single-field accessors. Most
+bypass `GetAddOnInfo` entirely and call the engine's per-field
+helpers directly.
+
+All accept either a 1-based index (`1..GetNumAddOns()`) or an
+addon directory name string.
+
+### `C_AddOns.GetAddOnName(indexOrName)`
+
+Returns the addon's directory name as the engine sees it (the
+folder name on disk). For numeric input, returns the engine's
+canonical casing; for string input, echoes the input verbatim
+once existence is confirmed. Returns `nil` for missing addons.
+
+```lua
+C_AddOns.GetAddOnName(1)            -- "Atlas-TW"
+C_AddOns.GetAddOnName("DebugTools") -- "DebugTools"
+C_AddOns.GetAddOnName("garbage")    -- nil
+```
+
+### `C_AddOns.GetAddOnTitle(indexOrName)`
+
+Returns the `## Title:` from the addon's `.toc` file, with WoW
+color-code escapes applied. `nil` for missing addons or addons
+without a title field.
+
+```lua
+C_AddOns.GetAddOnTitle("DebugTools") -- "UI Debug Tools"
+```
+
+### `C_AddOns.GetAddOnNotes(indexOrName)`
+
+Returns the `## Notes:` from the `.toc`. `nil` for missing
+addons or addons without notes.
+
+```lua
+C_AddOns.GetAddOnNotes("DebugTools")
+-- "Tools for developing addons (backport of Blizzard_DebugTools 3.3.5 to 1.12.1 / Lua 5.0)"
+```
+
+### `C_AddOns.IsAddOnLoadable(indexOrName)`
+
+Returns `loadable, reason` — a real boolean and a status string
+(or `nil`).
+
+`reason` comes from a small status table the engine consults when
+populating `GetAddOnInfo`'s 6th return: `"DISABLED"`, `"BANNED"`,
+`"CORRUPT"`, `"INSECURE"`, `"NOT_DEMAND_LOADED"`,
+`"INTERFACE_VERSION"`, `"MISSING"`. `nil` when the addon is
+loadable. The full modern signature accepts optional `character`
+and `demandLoaded` arguments — those are ignored here since vanilla
+1.12 has no per-character addon enable state.
+
+```lua
+C_AddOns.IsAddOnLoadable("DebugTools")        -- true, nil
+C_AddOns.IsAddOnLoadable("HardcoreTooltips")  -- false, "DISABLED"
+C_AddOns.IsAddOnLoadable("garbage")           -- false, nil
+```
+
+### `C_AddOns.GetAddOnSecurity(indexOrName)`
+
+Returns `"SECURE"` for Blizzard-signed addons or `"INSECURE"` for
+user addons. Returns `nil` for missing addons. Vanilla addons
+loaded from `Interface/AddOns/` are always insecure.
+
+```lua
+C_AddOns.GetAddOnSecurity("DebugTools") -- "INSECURE"
+```
+
+### `C_AddOns.DoesAddOnExist(indexOrName)`
+
+Returns `true` iff the engine's addon registry has a matching
+entry, `false` otherwise. Cheap existence probe used by addons
+doing soft-dependency checks.
+
+The implementation goes through the registry directly rather than
+dispatching to `GetAddOnInfo` — the engine echoes its input name
+back as ret1 unconditionally (before the lookup), so a
+`GetAddOnInfo("garbage") ~= nil` heuristic returns true for any
+string. This wrapper avoids that.
+
+```lua
+C_AddOns.DoesAddOnExist("DebugTools")  -- true
+C_AddOns.DoesAddOnExist("garbage")     -- false
+```
 
 ## Combat
 

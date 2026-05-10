@@ -1238,7 +1238,7 @@ which fires after the engine's `LoadScriptFunctions` boot phase.
 
 See [src/expansion/Constants.cpp](src/expansion/Constants.cpp).
 
-## 54. `C_AddOns.*` namespace — convenience wrappers + research
+## ~~54. `C_AddOns.*` namespace — convenience wrappers~~ — DONE (Tier 2)
 
 Modern WoW (10.x) moved most addon API into the `C_AddOns` namespace.
 1.12 already exposes most of the underlying functions as globals;
@@ -1253,27 +1253,50 @@ Bulk wrapping of 17 existing 1.12 globals (`IsAddOnLoaded`,
 the namespace can `C_AddOns = C_AddOns or {} ; C_AddOns.IsAddOnLoaded
 = IsAddOnLoaded` themselves in two lines.
 
-### Tier 2 — convenience wrappers around `GetAddOnInfo` (small)
+### ~~Tier 2 — convenience wrappers around `GetAddOnInfo`~~ — DONE
 
-Modern split out single-field getters that are derivable from
-the existing `GetAddOnInfo` 7-tuple `(name, title, notes, enabled,
-loadable, reason, security)`. Each is a thin Lua C function that
-calls the engine's `Script_GetAddOnInfo` internally, then pushes
-just the requested return:
+Shipped as `src/addons/Info.cpp`. Six wrappers, all bypassing
+`Script_GetAddOnInfo` and reading directly from the engine's
+addon-registry helpers we found at `0x0051DF00..0x0051E050`:
 
-- `C_AddOns.GetAddOnName(index)` → `name`
-- `C_AddOns.GetAddOnTitle(index)` → `title`
-- `C_AddOns.GetAddOnNotes(index)` → `notes`
-- `C_AddOns.IsAddOnLoadable(index)` → `loadable` (boolean)
-- `C_AddOns.GetAddOnSecurity(index)` → `security` (`"s"` / `"i"`)
-- `C_AddOns.DoesAddOnExist(nameOrIndex)` → boolean (returns
-  `false` if `GetAddOnInfo` returns nil, `true` otherwise)
+- `C_AddOns.GetAddOnName(indexOrName)` — direct via `GetByIndex`
+  (numeric: returns the entry's inline name buffer; string:
+  echoes the input after validating existence).
+- `C_AddOns.GetAddOnTitle(indexOrName)` — calls
+  `GetTitleByName` (`0x0051DF20`) directly.
+- `C_AddOns.GetAddOnNotes(indexOrName)` — calls
+  `GetNotesByName` (`0x0051E050`) directly.
+- `C_AddOns.IsAddOnLoadable(arg [, character, demandLoaded])` —
+  returns `(loadable, reason)`. Still dispatches through
+  `Script_GetAddOnInfo` (5th + 6th return) because the engine's
+  per-field accessor is buried behind a locale-derived field key.
+  Gated on a `ResolveAddOnName` existence check first to avoid
+  the `lua_error` `Script_GetAddOnInfo` raises for out-of-range
+  numeric indices.
+- `C_AddOns.GetAddOnSecurity(indexOrName)` — same dispatch
+  shape as `IsAddOnLoadable`.
+- `C_AddOns.DoesAddOnExist(indexOrName)` — direct via
+  `ResolveAddOnName`; correctly returns `false` for unknown
+  names rather than the dispatch-based heuristic which
+  false-positived on garbage strings (engine echoes the input
+  back as ret1 even on miss).
 
-Implementation strategy: do the engine call via the Lua C API
-(`SetTop` + `PushNumber`/`PushString` for the arg, call
-`Script_GetAddOnInfo` directly via its offset, then read the
-requested return from the stack). Same dispatch trick
-`Item::Hearthstone` uses for `Script_UseContainerItem`.
+The underlying `FUN_ADDON_GET_BY_INDEX` / `_TITLE_BY_NAME` /
+`_NOTES_BY_NAME` accessors share a hash-table walk: they take a
+char* name (entry pointer doubles as a name string thanks to
+the inline 12-byte buffer), hash it to find the registry entry,
+then walk a per-entry metadata hash table keyed by the field
+name (`"Title"`, `"Notes"`) to extract the value. We piggyback
+on the same name → entry lookup for all wrappers.
+
+Notable bug caught in testing: the original implementation used
+`PushValue` + `Insert(L, 1)` + `SetTop(L, 1)` to pull the
+desired return down to the bottom of the stack. That combo
+silently returned the LAST pushed value of `Script_GetAddOnInfo`
+regardless of `returnPos` — same family of broken-stack-state
+issues as the `RegisterTableFunction` gotcha in CLAUDE.md.
+Replacing with `SetTop(L, 1 + returnPos)` (truncate to keep
+the desired return on top, return 1 to Lua) fixed it.
 
 ### Tier 3 — research / new work
 
@@ -1368,7 +1391,60 @@ check if any look like further string pointers), and trace
 self-contained than `GetAddOnInfo` and might reveal a cleaner
 field-access pattern.
 
-Until then, Tier 2 wrappers remain `Script_GetAddOnInfo`
-dispatch — correct behavior, modest extra overhead. Switching
-to direct reads is purely a perf optimization with no
-functional improvement.
+Tier 3 (interface version, addon local table, etc.) still
+deferred — none of those have a proven 1.12 storage location.
+
+## ~~55. `IsMounted` / `IsStealthed` / `IsFalling` / `IsSwimming`~~ — DONE
+
+Shipped as `src/unit/State.cpp`. Modern globals that 1.12
+doesn't bind to Lua, despite the underlying state being tracked
+by the engine. All four read directly off the local player
+struct or its descriptor — no dispatch:
+
+- `IsMounted()` — checks `UNIT_FIELD_MOUNTDISPLAYID` at
+  descriptor `+0x1FC`. Non-zero means the engine is rendering
+  a mount.
+- `IsStealthed()` — checks bit `0x02` of the player visibility
+  byte at descriptor `+0x17C`, AND-gated with `MountDisplayID
+  == 0` (mount also sets that bit). May false-positive on
+  shapeshift/possess/etc. — untested, fix by walking the
+  player's aura list looking for the actual stealth/prowl
+  spell if it turns up in practice.
+- `IsFalling()` — checks `MOVEFLAG_FALLING | MOVEFLAG_FALLING_FAR`
+  (`0x2000 | 0x4000`) on the local player's movement-flags u32
+  at `+0x9E8`. This is client-side state (outbound MSG_MOVE_*
+  data), not broadcast — only meaningful for the local player.
+- `IsSwimming()` — same movement-flags word, `MOVEFLAG_SWIMMING`
+  (`0x200000`).
+
+### How we found the offsets
+
+A general-purpose probe system in `src/debug/` (Probe.cpp +
+Log.cpp + Log.h) writes labeled descriptor / player-object
+snapshots to `C:\Git\ClassicAPI\debug.log` (gitignored). User
+runs `_classicapi_DescLog("baseline", 0, 0x100)` then
+`_classicapi_DescLog("mounted", 0, 0x100)` etc.; agent reads
+the log file directly and diffs.
+
+Findings:
+
+- **MountDisplayID** found by diffing baseline vs mounted
+  descriptor — only `+0x1FC` changed from 0 to a creature
+  display ID like `0x4306`.
+- **Stealth bit** found by diffing baseline vs stealthed —
+  `+0x17C` byte 0 went `0 → 0x02`. Mounted state went
+  `0 → 0x1A` (= bits 1, 3, 4). Bit 1 is shared, bits 3+4
+  are mount-specific.
+- **Movement flags** found by diffing standing/swimming/falling
+  player-object dumps. `+0x9E8` went `0 → 0x200000` (swimming)
+  and `0 → 0xE001` (falling: bits 0x1 FORWARD + 0x2000 FALLING
+  + 0x4000 FALLING_FAR + 0x8000 PENDING_STOP). Bit values
+  match documented vanilla `MOVEFLAG_*` constants exactly.
+
+The probe helpers (`_classicapi_DescDump`, `_classicapi_PlayerDump`,
+`_classicapi_DescLog`, `_classicapi_PlayerLog`,
+`_classicapi_LogClear`, `_classicapi_LogAppend`) are kept in
+the build as a reusable offset-finding scaffold. They write
+labeled blocks to `debug.log` so the file can be read directly
+by agents/tooling. Path is hardcoded to the repo location;
+see `src/debug/Log.cpp` if you ever move the project.
