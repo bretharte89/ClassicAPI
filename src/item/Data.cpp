@@ -14,12 +14,12 @@
 #include "Game.h"
 #include "Offsets.h"
 #include "event/Custom.h"
+#include "item/Arg.h"
 #include "item/Data.h"
 #include "item/Location.h"
 
 #include <cstdint>
 #include <cstdio>
-#include <cstdlib>
 #include <cstring>
 
 namespace Item::Data {
@@ -113,22 +113,6 @@ static const uint8_t *CacheFetch(uint32_t itemID, ItemLoadCallback_t callback) {
     return fn(cache, itemID, &zeroGuid, cb, userData, 0);
 }
 
-// Same input shape as `Item::Info::ResolveItemID` — accepts a number or a
-// string containing "item:NNN" (matches both the bare shorthand and full
-// chat links). Returns 0 on bad input or unparseable strings.
-static int ParseItemArg(void *L, int idx) {
-    if (Game::Lua::IsNumber(L, idx))
-        return static_cast<int>(Game::Lua::ToNumber(L, idx));
-    if (Game::Lua::Type(L, idx) != Game::Lua::TYPE_STRING)
-        return 0;
-    const char *s = Game::Lua::ToString(L, idx);
-    if (s == nullptr)
-        return 0;
-    if (const char *m = std::strstr(s, "item:"))
-        return std::atoi(m + 5);
-    return std::atoi(s);
-}
-
 // Resolves an item-location table at stack idx to the itemID by walking
 // `Location::Resolve` -> CGItem -> instance block (+0x08) -> itemID (+0x0C).
 // Returns 0 if the slot is empty or the table is malformed.
@@ -145,7 +129,7 @@ static int ResolveLocationToItemID(void *L, int idx) {
 }
 
 static int __fastcall Script_IsItemDataCachedByID(void *L) {
-    const int itemID = ParseItemArg(L, 1);
+    const int itemID = Item::Arg::ResolveItemID(L, 1);
     const bool cached =
         (itemID > 0) && (CacheFetch(static_cast<uint32_t>(itemID), nullptr) != nullptr);
     Game::Lua::PushBoolean(L, cached ? 1 : 0);
@@ -194,14 +178,14 @@ void WarmCache(uint32_t itemID) {
 Script_GetItemInfo_t Script_GetItemInfo_o = nullptr;
 
 int __fastcall Script_GetItemInfo_h(void *L) {
-    const int itemID = ParseItemArg(L, 1);
+    const int itemID = Item::Arg::ResolveItemID(L, 1);
     if (itemID > 0)
         WarmCache(static_cast<uint32_t>(itemID));
     return Script_GetItemInfo_o(L);
 }
 
 static int __fastcall Script_RequestLoadItemDataByID(void *L) {
-    const int itemID = ParseItemArg(L, 1);
+    const int itemID = Item::Arg::ResolveItemID(L, 1);
     if (itemID <= 0) {
         Game::Lua::PushBoolean(L, 0);
         return 1;

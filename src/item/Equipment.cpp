@@ -13,10 +13,12 @@
 
 #include "Game.h"
 #include "Offsets.h"
+#include "item/Arg.h"
 #include "item/ID.h"
 #include "item/Location.h"
 
 #include <cstdint>
+#include <cstring>
 
 namespace Item::Equipment {
 
@@ -75,10 +77,64 @@ int __fastcall Script_OffhandHasWeapon(void *L) {
     return 1;
 }
 
+// `C_Item.IsEquippedItem(item)` — true iff any character-pane equipment
+// slot (1..19) currently holds an item matching `item`. Modern API
+// accepts:
+//   - itemID number → exact match against the equipped slot's itemID
+//   - "item:N..." string → parse the link's first numeric field as the
+//                          itemID and match the same way
+//   - plain string → case-insensitive name match against the cached
+//                    `m_name[0]` of each equipped item
+//
+// Returns false (never errors) for invalid input, an empty inventory,
+// or an uncached match candidate. Walks slots in order and short-
+// circuits on the first hit.
+int __fastcall Script_C_Item_IsEquippedItem(void *L) {
+    const auto arg = Item::Arg::Resolve(L, 1);
+    if (arg.itemID <= 0 && arg.name == nullptr) {
+        Game::Lua::PushBoolean(L, 0);
+        return 1;
+    }
+
+    for (int slot = Offsets::EQUIPMENT_SLOT_FIRST; slot <= Offsets::EQUIPMENT_SLOT_LAST; ++slot) {
+        auto *item = Item::Location::ResolveEquipmentSlot(slot);
+        if (item == nullptr) continue;
+
+        const int id = Item::ID::FromCGItem(item);
+        if (id == 0) continue;
+
+        if (arg.itemID > 0) {
+            if (id == arg.itemID) {
+                Game::Lua::PushBoolean(L, 1);
+                return 1;
+            }
+            continue;
+        }
+
+        // Name-match path — peek the item-cache record and compare
+        // `m_name[0]`. Uncached items short-circuit to "no match"
+        // rather than firing a load; matches modern API semantics
+        // (sync call, possibly stale, never blocks).
+        auto *record = PeekItemRecord(static_cast<uint32_t>(id));
+        if (record == nullptr) continue;
+        const char *name = *reinterpret_cast<const char *const *>(
+            record + Offsets::OFF_ITEMSTATS_NAME);
+        if (name == nullptr) continue;
+        if (_stricmp(name, arg.name) == 0) {
+            Game::Lua::PushBoolean(L, 1);
+            return 1;
+        }
+    }
+
+    Game::Lua::PushBoolean(L, 0);
+    return 1;
+}
+
 } // namespace
 
 static void RegisterLuaFunctions() {
     Game::Lua::RegisterGlobalFunction("OffhandHasWeapon", &Script_OffhandHasWeapon);
+    Game::Lua::RegisterTableFunction("C_Item", "IsEquippedItem", &Script_C_Item_IsEquippedItem);
 }
 
 static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};

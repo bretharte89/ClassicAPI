@@ -13,13 +13,13 @@
 
 #include "Game.h"
 #include "Offsets.h"
+#include "item/Arg.h"
 #include "item/Data.h"
 #include "item/ID.h"
 #include "item/Location.h"
 
 #include <cstdint>
 #include <cstdio>
-#include <cstdlib>
 #include <cstring>
 
 namespace Item::Info {
@@ -111,26 +111,8 @@ static bool BuildIconPath(uint32_t displayInfoID, char *out, size_t outSize) {
     return true;
 }
 
-// Resolves Lua arg at index 1 to an itemID. Accepts numeric values and strings
-// containing the substring "item:NNN" (matches both the bare "item:1234..."
-// shorthand and the full "|cff...|Hitem:1234:...|h[Name]|h|r" chat link).
-// Returns 0 (sentinel for "couldn't resolve") for everything else; we follow
-// vanilla GetItemInfo and don't accept item names.
-static int ResolveItemID(void *L) {
-    if (Game::Lua::IsNumber(L, 1))
-        return static_cast<int>(Game::Lua::ToNumber(L, 1));
-    if (Game::Lua::Type(L, 1) != Game::Lua::TYPE_STRING)
-        return 0;
-    const char *s = Game::Lua::ToString(L, 1);
-    if (s == nullptr)
-        return 0;
-    if (const char *itemMarker = strstr(s, "item:"))
-        return atoi(itemMarker + 5);
-    return atoi(s);
-}
-
 static int __fastcall Script_GetItemInfoInstant(void *L) {
-    const int itemID = ResolveItemID(L);
+    const int itemID = Item::Arg::ResolveItemID(L, 1);
     if (itemID <= 0)
         return 0;
     const uint8_t *record = FetchItemRecord(static_cast<uint32_t>(itemID));
@@ -207,7 +189,7 @@ static int __fastcall Script_C_Item_GetItemIcon(void *L) {
 // `"item:NN"` string (full chat links work too via the same parser
 // `GetItemInfoInstant` uses).
 static int __fastcall Script_C_Item_GetItemIconByID(void *L) {
-    return PushIconForItemID(L, ResolveItemID(L));
+    return PushIconForItemID(L, Item::Arg::ResolveItemID(L, 1));
 }
 
 // Convert 1.12's raw `BagFamily` ID to the modern bitmask encoding.
@@ -250,7 +232,7 @@ uint32_t BagFamilyIdToBitmask(uint32_t rawId) {
 // loot items do carry the field reliably (arrows, bullets, shards,
 // herbs all return their proper raw IDs).
 static int __fastcall Script_C_Item_GetItemFamily(void *L) {
-    const int itemID = ResolveItemID(L);
+    const int itemID = Item::Arg::ResolveItemID(L, 1);
     if (itemID <= 0)
         return 0;
     const uint8_t *record = FetchItemRecord(static_cast<uint32_t>(itemID));

@@ -13,34 +13,15 @@
 
 #include "Game.h"
 #include "Offsets.h"
+#include "item/Arg.h"
 #include "item/ID.h"
 #include "item/Location.h"
 
 #include <cstdint>
-#include <cstdlib>
-#include <cstring>
 
 namespace Item::Count {
 
 namespace {
-
-// Same Lua-arg parser as `Item::Info::ResolveItemID` — accepts a number
-// or a string containing `"item:NNN"` (matches the bare shorthand and
-// full chat links). Returns 0 for unparseable input. We don't promote
-// the Info.cpp version to a header for a single extra caller; if a
-// fourth module wants this, factor out then.
-int ParseItemArg(void *L, int luaIdx) {
-    if (Game::Lua::IsNumber(L, luaIdx))
-        return static_cast<int>(Game::Lua::ToNumber(L, luaIdx));
-    if (Game::Lua::Type(L, luaIdx) != Game::Lua::TYPE_STRING)
-        return 0;
-    const char *s = Game::Lua::ToString(L, luaIdx);
-    if (s == nullptr)
-        return 0;
-    if (const char *m = std::strstr(s, "item:"))
-        return std::atoi(m + 5);
-    return std::atoi(s);
-}
 
 // Asks the engine how many slots `bagID` has by invoking the existing
 // `Script_GetContainerNumSlots` Lua C function. Same dispatch trick
@@ -223,7 +204,7 @@ int CountInBankBags(int targetItemID) {
 // Anyone equipping a wand to count its charges should use
 // `GetInventoryItemID` + a separate charges read.
 int __fastcall Script_C_Item_GetItemCount(void *L) {
-    const int itemID = ParseItemArg(L, 1);
+    const int itemID = Item::Arg::ResolveItemID(L, 1);
     if (itemID <= 0) {
         Game::Lua::PushNumber(L, 0);
         return 1;

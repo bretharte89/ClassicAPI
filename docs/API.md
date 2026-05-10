@@ -44,6 +44,7 @@ build instructions.
   - [`C_Item.IsItemDataCachedByID(item)` / `C_Item.IsItemDataCached(itemLocation)`](#c_itemisitemdatacachedbyiditem--c_itemisitemdatacacheditemlocation)
   - [`C_Item.RequestLoadItemDataByID(item)` / `C_Item.RequestLoadItemData(itemLocation)`](#c_itemrequestloaditemdatabyiditem--c_itemrequestloaditemdataitemlocation)
   - [`OffhandHasWeapon()`](#offhandhasweapon)
+  - [`C_Item.IsEquippedItem(item)`](#c_itemisequippeditemitem)
 - [Container](#container)
   - [`C_Container.GetContainerItemID(bagIndex, slotIndex)`](#c_containergetcontaineritemidbagindex-slotindex)
   - [`C_Container.GetContainerItemDurability(containerIndex, slotIndex)`](#c_containergetcontaineritemdurabilitycontainerindex-slotindex)
@@ -1161,6 +1162,42 @@ end
 ```
 
 Equivalent to the function of the same name introduced in 3.0.
+
+### `C_Item.IsEquippedItem(item)`
+
+Returns `true` if `item` is currently equipped in any of the 19
+character-pane slots, `false` otherwise. Walks slots 1..19 in order and
+short-circuits on the first match.
+
+`item` accepts the same shapes as `GetItemInfo`:
+
+| Form | Example | Match strategy |
+|------|---------|----------------|
+| itemID | `2589` | exact `itemID` equality |
+| bare link | `"item:2589:0:0:0"` | parses the first numeric field |
+| chat link | `\124cffffffff\124Hitem:2589:0:0:0\124h[Linen Cloth]\124h\124r` | extracts itemID after `\124Hitem:` |
+| name | `"Linen Cloth"` | case-insensitive match against the cached `m_name[0]` of each equipped item |
+
+Returns `false` (no Lua error) for invalid input — `nil`, empty string,
+or a string that doesn't parse as any of the above.
+
+The name-match path requires the candidate equipped item to be in the
+client item cache; equipped items are always cached, so this is a
+non-issue in practice.
+
+```lua
+if C_Item.IsEquippedItem(2589) then
+    -- Linen Cloth is equipped (silly example — pick a wearable item)
+end
+
+-- From a chat link click:
+if C_Item.IsEquippedItem(itemLink) then ...
+
+-- By localized name:
+if C_Item.IsEquippedItem("Thunderfury, Blessed Blade of the Windseeker") then ...
+```
+
+Equivalent to the function of the same name introduced in 3.x.
 
 ## Container
 

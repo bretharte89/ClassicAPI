@@ -317,6 +317,12 @@ enum Offsets {
     // VanillaHelpers's `Game.h` (`struct ItemStats_C`); we only need these.
     OFF_ITEMSTATS_CLASS = 0x00,
     OFF_ITEMSTATS_SUBCLASS = 0x04,
+    // `char *m_name[4]` per VanillaHelpers's `struct ItemStats_C`. Only
+    // m_name[0] is the primary localized item name (e.g., "Linen Cloth");
+    // m_name[1..3] are random-property suffix slots that are typically
+    // null for non-randomized items. Used by `C_Item.IsEquippedItem`'s
+    // name-string match form.
+    OFF_ITEMSTATS_NAME = 0x08,
     OFF_ITEMSTATS_DISPLAY_INFO_ID = 0x18,
     OFF_ITEMSTATS_INVENTORY_TYPE = 0x2C,
     // Bag-only fields. `m_containerSlots` (slot count) and `m_bagFamily`
@@ -886,4 +892,10 @@ enum Offsets {
     // occupy the main-hand slot exclusively.
     INVTYPE_WEAPON = 13,
     INVTYPE_WEAPONOFFHAND = 22,
+
+    // Character-pane equipment slot range: 1..19 (head=1, neck=2, …,
+    // tabard=19). Used by `C_Item.IsEquippedItem` to walk every slot
+    // looking for a matching item.
+    EQUIPMENT_SLOT_FIRST = 1,
+    EQUIPMENT_SLOT_LAST = 19,
 };
