@@ -17,20 +17,20 @@ Quick index:
 
 | Namespace | Calls |
 |-----------|-------|
-| Spell | `GetSpellInfo` (+ `(slot, bookType)` overload)<br>`C_Spell.GetSpellInfo`<br>`C_Spell.GetSpellName`<br>`C_Spell.GetSpellTexture`<br>`GetSpellLink` (+ `(slot, bookType)` overload)<br>`C_Spell.GetSpellLink`<br>`FindSpellBookSlotByID`<br>`C_Spell.GetSpellDescription`<br>`IsPassiveSpell` (+ `(slot, bookType)` overload)<br>`C_Spell.IsSpellPassive`<br>`IsPlayerSpell`<br>`IsSpellKnown`<br>`IsUsableSpell` (+ `(slot, bookType)` overload)<br>`C_Spell.IsSpellUsable` |
-| GameTooltip | `GameTooltip:SetSpellByID`<br>`GameTooltip:SetItemByID`<br>`GameTooltip:SetUnitAura` |
-| Quest | `GetQuestIDFromLogIndex`<br>`C_QuestLog.RequestLoadQuestByID` (+ `QUEST_DATA_LOAD_RESULT` event)<br>`C_QuestLog.GetTitleForQuestID` |
-| Faction | `GetFactionIDByIndex`<br>`GetFactionInfoByID`<br>`GetFactionParentID` |
-| Item | `C_Item.IsBound`<br>`C_Item.GetItemID`<br>`GetInventoryItemID`<br>`GetInventoryItemDurability`<br>`C_Item.GetItemFamily`<br>`C_Item.GetItemCount`<br>`C_Item.GetItemInfoInstant`<br>`GetItemIcon` / `C_Item.GetItemIcon` / `C_Item.GetItemIconByID`<br>`C_Item.IsItemDataCached(ByID)`<br>`C_Item.RequestLoadItemData(ByID)` (+ `ITEM_DATA_LOAD_RESULT` event) |
-| Container | `C_Container.GetContainerItemID`<br>`C_Container.GetContainerItemDurability`<br>`C_Container.GetContainerNumFreeSlots`<br>`C_Container.PlayerHasHearthstone`<br>`C_Container.UseHearthstone` |
-| Unit | `UnitGUID`<br>`UnitIsAFK`<br>`UnitIsDND`<br>`UnitIsFeignDeath` |
-| State | `IsMounted`<br>`IsStealthed`<br>`IsFalling`<br>`IsSwimming` |
-| AddOns | `C_AddOns.GetAddOnName`<br>`C_AddOns.GetAddOnTitle`<br>`C_AddOns.GetAddOnNotes`<br>`C_AddOns.IsAddOnLoadable`<br>`C_AddOns.GetAddOnSecurity`<br>`C_AddOns.DoesAddOnExist` |
-| Combat | `InCombatLockdown` |
-| Talent | `GetTalentSpellID`<br>`GetTalentIDByIndex` |
-| Time | `GetServerTime` |
-| Events | `C_EventUtils.IsEventValid` |
-| Globals | `CLASSIC_API_VERSION`<br>`LE_EXPANSION_LEVEL_CURRENT`<br>`LE_EXPANSION_CLASSIC` … `LE_EXPANSION_MIDNIGHT` |
+| Spell     | `GetSpellInfo` (with `(slot, bookType)` overload), `C_Spell.GetSpellInfo`, `C_Spell.GetSpellName`, `C_Spell.GetSpellTexture`, `GetSpellLink` (with `(slot, bookType)` overload), `C_Spell.GetSpellLink`, `FindSpellBookSlotByID`, `C_Spell.GetSpellDescription`, `IsPassiveSpell` (with `(slot, bookType)` overload), `C_Spell.IsSpellPassive`, `IsPlayerSpell`, `IsSpellKnown`, `IsUsableSpell` (with `(slot, bookType)` overload), `C_Spell.IsSpellUsable` |
+| GameTooltip | `GameTooltip:SetSpellByID`, `GameTooltip:SetItemByID`, `GameTooltip:SetUnitAura` |
+| Quest     | `GetQuestIDFromLogIndex`, `C_QuestLog.RequestLoadQuestByID` (+ `QUEST_DATA_LOAD_RESULT` event), `C_QuestLog.GetTitleForQuestID` |
+| Faction   | `GetFactionIDByIndex`, `GetFactionInfoByID`, `GetFactionParentID` |
+| Item      | `C_Item.IsBound`, `C_Item.GetItemID`, `GetInventoryItemID`, `GetInventoryItemDurability`, `C_Item.GetItemFamily`, `C_Item.GetItemCount`, `C_Item.GetItemInfoInstant`, `GetItemIcon` / `C_Item.GetItemIcon` / `C_Item.GetItemIconByID`, `C_Item.IsItemDataCached(ByID)`, `C_Item.RequestLoadItemData(ByID)` (+ `ITEM_DATA_LOAD_RESULT` event) |
+| Container | `C_Container.GetContainerItemID`, `C_Container.GetContainerItemDurability`, `C_Container.GetContainerNumFreeSlots`, `C_Container.PlayerHasHearthstone`, `C_Container.UseHearthstone` |
+| Unit      | `UnitGUID`, `UnitIsAFK`, `UnitIsDND`, `UnitIsFeignDeath` |
+| State     | `IsMounted`, `IsStealthed`, `IsFalling`, `IsSwimming` |
+| AddOns    | `C_AddOns.GetAddOnName`, `C_AddOns.GetAddOnTitle`, `C_AddOns.GetAddOnNotes`, `C_AddOns.IsAddOnLoadable`, `C_AddOns.GetAddOnSecurity`, `C_AddOns.DoesAddOnExist` |
+| Combat    | `InCombatLockdown` |
+| Talent    | `GetTalentSpellID`, `GetTalentIDByIndex` |
+| Time      | `GetServerTime` |
+| Events    | `C_EventUtils.IsEventValid` |
+| Globals   | `CLASSIC_API_VERSION`, `LE_EXPANSION_LEVEL_CURRENT`, `LE_EXPANSION_CLASSIC` … `LE_EXPANSION_MIDNIGHT` |
 
 ## Installation
 
