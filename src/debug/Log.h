@@ -13,31 +13,57 @@
 
 #pragma once
 
-// Persistent debug log shared by all probe modules. Writes to
-// `C:\Git\ClassicAPI\debug.log` so it can be read directly from the
-// repo by tooling/agents — the file is gitignored. Used during
-// offset-finding sessions where we need to compare the same dump
-// across multiple in-game states (e.g., baseline / mounted /
-// stealthed) without having to paste each result back into chat.
+#include <cstdint>
+
+// Persistent debug log shared by all probe / tracing modules. Writes
+// to `C:\Git\ClassicAPI\debug.log` so it can be read directly from
+// the repo by tooling/agents — the file is gitignored. Used during
+// offset-finding sessions, runtime tracing of unfamiliar code paths,
+// post-mortem inspection, and anywhere `OutputDebugString` would be
+// awkward to capture.
 //
-// Each Append call writes a labeled section:
+// Three writing primitives:
+//   Append(label, content) — labeled block (good for snapshot diffs)
+//   Printf(fmt, ...)       — one-line trace, no label
+//   HexDump(label, ptr,
+//           len, base)     — hex+ASCII dump of a memory range, SEH-
+//                            wrapped so faulting reads don't crash
+//                            the host process; `base` is the address
+//                            shown in the offset column (defaults to
+//                            the actual VA of `ptr`).
+//
+// And `Clear()` to truncate before a fresh session.
+
+namespace Debug::Log {
+
+// Truncates the debug log file. Safe to call before any writer.
+void Clear();
+
+// Appends a labeled block. Format:
 //   === <label> ===
 //   <content>
 //   <blank line>
 //
-// `Clear` truncates the file. Pair Clear() at the start of a probe
-// session with one Append() per state.
-
-namespace Debug::Log {
-
-// Truncates the debug log file. Safe to call before any Append.
-void Clear();
-
-// Appends a labeled block. Both args are nul-terminated C strings;
-// `label` may be nullptr (rendered as "(no label)") and `content`
-// may be nullptr (rendered as empty). No formatting is applied to
-// `content` — it's written verbatim, so the caller controls layout
-// (newlines, hex prefixes, etc.).
+// Both args are nul-terminated C strings; either may be nullptr.
+// `content` is written verbatim — caller controls layout.
 void Append(const char *label, const char *content);
+
+// Appends a single line (no label, no surrounding blank line).
+// Auto-appends '\n' if `fmt` doesn't end with one. printf-style
+// formatting; capped at ~2KB per call.
+void Printf(const char *fmt, ...);
+
+// Hex-dumps `len` bytes starting at `ptr`, formatted xxd-style with
+// 16 bytes per row, both hex and ASCII columns. The offset column
+// shows `base + i` — pass `base = (uintptr_t)ptr` to display real
+// addresses, or `base = 0` to get pure relative offsets.
+//
+// SEH-wrapped: if the read faults partway through (page boundary,
+// freed memory, etc.), the dump stops at the last successful row
+// and notes the failed offset. Safe to call with any pointer.
+void HexDump(const char *label, const void *ptr, int len, uintptr_t base);
+
+// Convenience: HexDump with `base = (uintptr_t)ptr`.
+void HexDump(const char *label, const void *ptr, int len);
 
 } // namespace Debug::Log

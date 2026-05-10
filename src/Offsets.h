@@ -414,6 +414,12 @@ enum Offsets {
     // `Script_GetFactionInfo` to produce all 11 returns.
     FUN_RESOLVE_FACTION_INDEX = 0x004D5FA0,
     FUN_SCRIPT_GET_FACTION_INFO = 0x004D64F0,
+    // Engine's existing `SetWatchedFactionIndex(index)` Lua C function.
+    // Takes a 1-based displayed-list index, converts to 0-based,
+    // resolves to a factionID via FUN_RESOLVE_FACTION_INDEX, then
+    // calls the inner watched-faction setter at 0x4D6240. Index 0
+    // resolves to factionID 0 which clears the watched faction.
+    FUN_SCRIPT_SET_WATCHED_FACTION_INDEX = 0x004D6B60,
     VAR_FACTION_DISPLAY_COUNT = 0x00B73764,
     VAR_FACTION_VISIBLE_MAX_INDEX = 0x00B73760,
 
@@ -832,4 +838,27 @@ enum Offsets {
     MOVEFLAG_FALLING = 0x2000,
     MOVEFLAG_FALLING_FAR = 0x4000,
     MOVEFLAG_SWIMMING = 0x200000,
+    // No `MOVEFLAG_FLYING` constant intentionally. Vanilla 1.12
+    // doesn't flip a flying bit during taxi flights (verified
+    // empirically: `IsFlying()` checking 0x01000000 stayed false
+    // throughout a flightpath on which `UnitOnTaxi("player")`
+    // correctly returned 1). Server-driven splines drive taxi
+    // animation directly without touching the local movement-
+    // flags word. Use `UnitOnTaxi` for taxi detection.
+
+    // Equipment-slot index for the off-hand. Slots 1..19 are the
+    // character-pane equipment slots (1=head … 19=tabard); 17 is
+    // the off-hand slot the engine uses when looking up shields,
+    // off-hand weapons, and held items via `ItemMgr::GetItemBySlot`.
+    INVSLOT_OFFHAND = 17,
+
+    // INVTYPE values that count as "weapon" for `OffhandHasWeapon`.
+    // INVTYPE_WEAPON (13) covers any one-handed weapon equippable in
+    // either hand (sword, axe, mace, dagger, fist). INVTYPE_WEAPONOFFHAND
+    // (22) covers weapons that can ONLY go in the off-hand. Shields
+    // (14), Holdables (23 — tomes/orbs), and empty slots all return
+    // false. INVTYPE_2HWEAPON (17) is excluded because two-handers
+    // occupy the main-hand slot exclusively.
+    INVTYPE_WEAPON = 13,
+    INVTYPE_WEAPONOFFHAND = 22,
 };

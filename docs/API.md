@@ -42,6 +42,7 @@ build instructions.
   - [`C_Item.GetItemInfoInstant(item)`](#c_itemgetiteminfoinstantitem)
   - [`C_Item.IsItemDataCachedByID(item)` / `C_Item.IsItemDataCached(itemLocation)`](#c_itemisitemdatacachedbyiditem--c_itemisitemdatacacheditemlocation)
   - [`C_Item.RequestLoadItemDataByID(item)` / `C_Item.RequestLoadItemData(itemLocation)`](#c_itemrequestloaditemdatabyiditem--c_itemrequestloaditemdataitemlocation)
+  - [`OffhandHasWeapon()`](#offhandhasweapon)
 - [Container](#container)
   - [`C_Container.GetContainerItemID(bagIndex, slotIndex)`](#c_containergetcontaineritemidbagindex-slotindex)
   - [`C_Container.GetContainerItemDurability(containerIndex, slotIndex)`](#c_containergetcontaineritemdurabilitycontainerindex-slotindex)
@@ -1097,6 +1098,34 @@ f:SetScript("OnEvent", function()
 end)
 C_Item.RequestLoadItemDataByID(2589)
 ```
+
+### `OffhandHasWeapon()`
+
+Returns `true` if the player has a one-handed weapon (or off-hand-only
+weapon) equipped in the off-hand slot, `false` otherwise. Used by
+dual-wield checks and any addon backporting modern weapon-equipment
+logic.
+
+Returns `false` for:
+
+- Empty off-hand
+- Shields (`INVTYPE_SHIELD`)
+- Held items — tomes, orbs, librams (`INVTYPE_HOLDABLE`)
+- Off-hand item data not yet cached (typically only on first login,
+  before the engine has the item record; warms up after a peek)
+
+Returns `true` for `INVTYPE_WEAPON` (any one-handed weapon — sword,
+axe, mace, dagger, fist) and `INVTYPE_WEAPONOFFHAND` (off-hand-only
+weapons). Two-handers occupy the main-hand slot exclusively, so they
+never apply.
+
+```lua
+if OffhandHasWeapon() then
+    -- Apply mainhand+offhand poison, refresh dual-wield rotation, etc.
+end
+```
+
+Equivalent to the function of the same name introduced in 3.0.
 
 ## Container
 

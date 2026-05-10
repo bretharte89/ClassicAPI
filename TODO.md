@@ -1421,8 +1421,11 @@ struct or its descriptor — no dispatch:
 
 A general-purpose probe system in `src/debug/` (Probe.cpp +
 Log.cpp + Log.h) writes labeled descriptor / player-object
-snapshots to `C:\Git\ClassicAPI\debug.log` (gitignored). User
-runs `_classicapi_DescLog("baseline", 0, 0x100)` then
+snapshots to `<WoW dir>\Logs\classicapi_debug.log` (alongside
+the engine's `FrameXML.log`, `Sound.log`, etc.). Path is
+resolved at runtime via `GetModuleFileNameA(nullptr)` so the
+DLL works against any client install. User runs
+`_classicapi_DescLog("baseline", 0, 0x100)` then
 `_classicapi_DescLog("mounted", 0, 0x100)` etc.; agent reads
 the log file directly and diffs.
 
@@ -1443,8 +1446,72 @@ Findings:
 
 The probe helpers (`_classicapi_DescDump`, `_classicapi_PlayerDump`,
 `_classicapi_DescLog`, `_classicapi_PlayerLog`,
-`_classicapi_LogClear`, `_classicapi_LogAppend`) are kept in
+`_classicapi_LogClear`, `_classicapi_LogAppend`,
+`_classicapi_LogPrintf`, `_classicapi_HexDump`) are kept in
 the build as a reusable offset-finding scaffold. They write
-labeled blocks to `debug.log` so the file can be read directly
-by agents/tooling. Path is hardcoded to the repo location;
-see `src/debug/Log.cpp` if you ever move the project.
+labeled blocks to `<WoW dir>\Logs\classicapi_debug.log`,
+sharing the location convention engine logs and other
+injected DLLs (nampower, etc.) use. Path is computed at
+runtime — no hardcoded install location.
+
+The C++ `Debug::Log` API (in `src/debug/Log.h`) backs the
+Lua bindings and is available to any module via
+`#include "debug/Log.h"`:
+
+- `Debug::Log::Clear()` — truncate the file.
+- `Debug::Log::Append(label, content)` — labeled block, content
+  written verbatim. Best for snapshot diffs.
+- `Debug::Log::Printf(fmt, ...)` — printf-style one-line trace.
+  Auto-newlines if the caller didn't include one.
+- `Debug::Log::HexDump(label, ptr, len, [base])` — xxd-style
+  hex+ASCII dump of a memory range, 16 bytes per row, with
+  the offset column showing `base + i`. SEH-wrapped: if a row
+  faults (page boundary, freed memory) the dump stops cleanly
+  and notes the failed offset rather than crashing the host.
+
+`HexDump` is the most useful for arbitrary-VA inspection — call
+it on a struct pointer to scan layouts, or from Lua via
+`_classicapi_HexDump(label, addr, len)` to inspect engine
+globals without a per-investigation probe module.
+
+## ~~56. `OffhandHasWeapon()`~~ — DONE
+
+Shipped as `src/item/Equipment.cpp`. Resolves the off-hand
+equipment slot (slot 17) via `Item::Location::ResolveEquipmentSlot`,
+reads the cached `ItemStats_C` record's `m_inventoryType` at
+`+0x2C`, and returns true iff it's `INVTYPE_WEAPON` (13) or
+`INVTYPE_WEAPONOFFHAND` (22). Shields, holdables (tomes/orbs),
+empty slots, and uncached items all return false.
+
+No async load is fired — modern API behavior matches; if the
+off-hand item isn't cached the function silently returns false
+until something else warms the cache. Typically only matters on
+first login before the player's own gear is in the cache, which
+in practice is loaded eagerly anyway.
+
+## 57. `IsFlying()` — TESTED, DROPPED
+
+Modern `IsFlying()` returns true when on a flying mount. Vanilla
+1.12 has no flying mounts, so the closest semantic mapping is
+"on a flightpath" (i.e., `UnitOnTaxi("player") == 1`).
+
+Initial implementation tested `MOVEFLAG_FLYING = 0x01000000` on
+the local movement-flags word at `[CGPlayer + 0x9E8]`. The bit
+is documented in CMaNGOS as `MOVEMENTFLAG_FLYING`, but verified
+empirically that 1.12 does NOT set it during taxi flights —
+`/dump IsFlying()` stayed false through an entire flightpath
+on which `/dump UnitOnTaxi("player")` correctly returned 1.
+
+Vanilla taxi rides are server-driven splines that animate the
+mount/character without flipping a local movement-flag bit;
+the FLYING bit only ever gets set on flying mounts (which
+don't exist) or possibly GM fly mode (untested). Bit 0x01000000
+in vanilla may instead be `MOVEMENTFLAG_SPLINE_ENABLED` per
+some references, but if so, that bit also stays clear during
+normal taxi.
+
+Conclusion: there is no useful interpretation of `IsFlying()`
+in vanilla. `UnitOnTaxi("player")` covers the only flight-like
+state the client tracks. Function and `MOVEFLAG_FLYING`
+constant both removed; `Offsets.h` carries a comment noting
+the empirical result so this doesn't get re-attempted.
