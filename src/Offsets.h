@@ -454,6 +454,8 @@ enum Offsets {
     // ChrClasses.dbc — class metadata. Standard 5-DWORD class shape.
     // Records is a flat array of record pointers indexed by classID
     // (records[0] unused, records[1..count]).
+    FUN_RESOLVE_FACTION_INDEX = 0x004D5FA0,
+    FUN_SCRIPT_GET_FACTION_INFO = 0x004D64F0,
     //
     // Per-record fields used by `FillLocalizedClassList`, derived from
     // `Script_GetSelectedClass` (`0x004716E0`):
@@ -469,9 +471,6 @@ enum Offsets {
     VAR_CHRCLASSES_COUNT = 0x00C0DEF8,
     OFF_CHRCLASSES_NAMES = 0x14,
     OFF_CHRCLASSES_FILENAME = 0x38,
-
-    FUN_RESOLVE_FACTION_INDEX = 0x004D5FA0,
-    FUN_SCRIPT_GET_FACTION_INFO = 0x004D64F0,
     // Inner watched-faction setter — `__fastcall(ecx = factionID) → void`.
     // The engine's `Script_SetWatchedFactionIndex` (0x004D6B60) is a
     // thin Lua-side wrapper that takes a 1-based displayed-list index,
