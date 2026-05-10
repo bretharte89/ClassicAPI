@@ -70,7 +70,6 @@ function EventTraceFrame_OnLoad(self)
     self.rawtimes       = {};
     self.args           = { {}, {}, {}, {}, {}, {}, {}, {}, {} };
     self.ignoredEvents  = {};
-    self.tracedEvents   = {};   -- set of registered event names
     self.lastIndex      = 0;
     self.visibleButtons = EVENT_TRACE_NUM_BUTTONS;
     _EventTraceFrame    = self;
@@ -284,7 +283,6 @@ function EventTraceFrame_HandleSlashCmd(msg)
     local _, _, addEvent = string.find(msg, "^add%s+(%S+)");
     if (addEvent) then
         addEvent = string.upper(addEvent);
-        _EventTraceFrame.tracedEvents[addEvent] = true;
         if (_EventTraceFrame.started) then
             _EventTraceFrame:RegisterEvent(addEvent);
         end
@@ -296,7 +294,6 @@ function EventTraceFrame_HandleSlashCmd(msg)
     local _, _, rmEvent = string.find(msg, "^remove%s+(%S+)");
     if (rmEvent) then
         rmEvent = string.upper(rmEvent);
-        _EventTraceFrame.tracedEvents[rmEvent] = nil;
         if (_EventTraceFrame.started) then
             _EventTraceFrame:UnregisterEvent(rmEvent);
         end
