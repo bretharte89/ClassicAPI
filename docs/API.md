@@ -45,6 +45,7 @@ build instructions.
   - [`C_Item.RequestLoadItemDataByID(item)` / `C_Item.RequestLoadItemData(itemLocation)`](#c_itemrequestloaditemdatabyiditem--c_itemrequestloaditemdataitemlocation)
   - [`OffhandHasWeapon()`](#offhandhasweapon)
   - [`C_Item.IsEquippedItem(item)`](#c_itemisequippeditemitem)
+  - [`C_Item.EquipItemByName(itemInfo [, dstSlot])`](#c_itemequipitembynameiteminfo--dstslot)
 - [Container](#container)
   - [`C_Container.GetContainerItemID(bagIndex, slotIndex)`](#c_containergetcontaineritemidbagindex-slotindex)
   - [`C_Container.GetContainerItemDurability(containerIndex, slotIndex)`](#c_containergetcontaineritemdurabilitycontainerindex-slotindex)
@@ -1198,6 +1199,63 @@ if C_Item.IsEquippedItem("Thunderfury, Blessed Blade of the Windseeker") then ..
 ```
 
 Equivalent to the function of the same name introduced in 3.x.
+
+### `C_Item.EquipItemByName(itemInfo [, dstSlot])`
+
+Finds the first item in the player's bags matching `itemInfo` and
+equips it. With `dstSlot` (a 1-based character-pane slot, 1..19),
+equips to that specific slot; without, the engine auto-picks based on
+the item's inventory type.
+
+`itemInfo` accepts the same shapes as
+[`C_Item.IsEquippedItem`](#c_itemisequippeditemitem) — itemID number,
+bare `"item:N"` string, full chat link, or a localized item name. Name
+matches are case-insensitive against the cached `m_name[0]`.
+
+Returns nothing. Silently no-ops when:
+
+- the input is `nil`, an empty string, or otherwise unparseable
+- no matching item is in bags (already-equipped items aren't moved —
+  matches modern API behavior)
+- the engine refuses the equip — combat, locked item, type mismatch
+  with `dstSlot`, locked equipment slot, etc.
+
+Walks bags 0..4 in order and stops on the first match, then dispatches
+to the engine's `PickupContainerItem` + `EquipCursorItem` /
+`AutoEquipCursorItem` path. The dispatch goes through the same secure-
+action flow a direct Lua call would, so combat lockdown and the
+standard equip-failure error messages behave identically.
+
+**Cursor-state guard.** Because the dispatch path uses
+`PickupContainerItem` internally, an item already on the cursor would
+get swapped into the source bag slot. To avoid that side effect, the
+function checks `CursorHasItem()` first and refuses to operate (no-op
+return) when the cursor is non-empty. Callers must drop the cursor
+before calling — `ClearCursor()` or completing the held action.
+
+Background: vanilla 1.12 has a CMSG_SWAP_INV_ITEM (0x10D) packet
+builder that would let us bypass the cursor entirely (matching 2.4.3's
+`ItemMgr::EquipByGUID` semantic), but the only clean wrapper for it
+in the binary is dead code with zero callers. Other 0x10D build sites
+read from the engine's internal cursor-tracking globals, so they
+can't be called safely from outside that state machine. Refusing the
+swap when cursor is dirty is the safest available option until a
+working bypass is found.
+
+```lua
+-- By itemID, auto-pick slot:
+C_Item.EquipItemByName(2589)
+
+-- By name, force into off-hand (slot 17):
+C_Item.EquipItemByName("Linen Cloth", 17)
+
+-- From a chat link:
+C_Item.EquipItemByName(itemLink)
+```
+
+Equivalent to the function of the same name (as a global) introduced
+in 3.x. The `C_Item.` namespace placement matches Dragonflight-era
+addon conventions.
 
 ## Container
 

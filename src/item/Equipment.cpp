@@ -130,11 +130,134 @@ int __fastcall Script_C_Item_IsEquippedItem(void *L) {
     return 1;
 }
 
+// Asks the engine how many slots `bagID` has via the existing
+// `Script_GetContainerNumSlots` Lua C function. Same dispatch trick
+// `Item::Hearthstone` uses; delegates the "what's a valid bag, how
+// big is it" decision to the engine. Returns 0 for empty bag slots
+// (engine pushes 0 for "no bag equipped").
+//
+// Stomps the Lua stack — caller must own it.
+int GetContainerSlotCount(void *L, int bagID) {
+    Game::Lua::SetTop(L, 0);
+    Game::Lua::PushNumber(L, static_cast<double>(bagID));
+    using ScriptFn_t = int(__fastcall *)(void *L);
+    auto fn = reinterpret_cast<ScriptFn_t>(Offsets::FUN_SCRIPT_GET_CONTAINER_NUM_SLOTS);
+    fn(L);
+    if (!Game::Lua::IsNumber(L, -1))
+        return 0;
+    return static_cast<int>(Game::Lua::ToNumber(L, -1));
+}
+
+// Walks bags 0..4 looking for an item matching `arg`. On hit, sets
+// `*outBag` / `*outSlot` and returns true.
+//
+// itemID match is direct; name match peeks the item-cache record's
+// `m_name[0]` and compares case-insensitively. Stomps the Lua stack
+// per the helpers it calls.
+bool FindItemInBags(void *L, const Item::Arg::Resolved &arg, int *outBag, int *outSlot) {
+    for (int bag = 0; bag <= 4; ++bag) {
+        const int slotCount = GetContainerSlotCount(L, bag);
+        for (int slot = 1; slot <= slotCount; ++slot) {
+            const uint8_t *item = Item::Location::ResolveBag(L, bag, slot);
+            if (item == nullptr) continue;
+
+            const int id = Item::ID::FromCGItem(item);
+            if (id == 0) continue;
+
+            if (arg.itemID > 0) {
+                if (id == arg.itemID) {
+                    *outBag = bag;
+                    *outSlot = slot;
+                    return true;
+                }
+                continue;
+            }
+
+            auto *record = PeekItemRecord(static_cast<uint32_t>(id));
+            if (record == nullptr) continue;
+            const char *name = *reinterpret_cast<const char *const *>(
+                record + Offsets::OFF_ITEMSTATS_NAME);
+            if (name == nullptr) continue;
+            if (_stricmp(name, arg.name) == 0) {
+                *outBag = bag;
+                *outSlot = slot;
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+// `C_Item.EquipItemByName(itemInfo [, dstSlot])` — finds the first
+// item in the player's bags matching `itemInfo` (itemID, link, or
+// name) and equips it. With `dstSlot` (1..19 character-pane index),
+// equips to that slot specifically; without, the engine auto-picks.
+//
+// Returns nothing. Silently no-ops on:
+//   - bad/missing input
+//   - item not in bags (already-equipped items aren't moved — modern
+//     API behavior)
+//   - the engine refusing the equip (combat, item locked, type
+//     mismatch with `dstSlot`, etc.)
+//
+// Implementation dispatches to `Script_PickupContainerItem` then
+// `Script_AutoEquipCursorItem` / `Script_EquipCursorItem`. Same
+// pattern `Item::Hearthstone` uses for `UseContainerItem` — delegates
+// to the engine's secure-action path so combat/lockdown/lock states
+// are handled the same way they are for direct Lua calls.
+int __fastcall Script_C_Item_EquipItemByName(void *L) {
+    const auto arg = Item::Arg::Resolve(L, 1);
+    if (arg.itemID <= 0 && arg.name == nullptr) {
+        return 0;
+    }
+
+    const bool hasDstSlot = Game::Lua::IsNumber(L, 2);
+    const int dstSlot = hasDstSlot ? static_cast<int>(Game::Lua::ToNumber(L, 2)) : 0;
+
+    // Refuse the swap if the player's cursor is holding something —
+    // the dispatch path below uses PickupContainerItem internally,
+    // which would clobber the held item by swapping it into the
+    // source bag slot. Better to no-op than to silently swap
+    // someone's hearthstone into wherever the source weapon was.
+    using ScriptFn_t = int(__fastcall *)(void *L);
+    Game::Lua::SetTop(L, 0);
+    auto cursorHasItem = reinterpret_cast<ScriptFn_t>(Offsets::FUN_SCRIPT_CURSOR_HAS_ITEM);
+    cursorHasItem(L);
+    if (Game::Lua::ToBoolean(L, -1) != 0) {
+        Game::Lua::SetTop(L, 0);
+        return 0;
+    }
+    Game::Lua::SetTop(L, 0);
+
+    int bag = -1, slot = -1;
+    if (!FindItemInBags(L, arg, &bag, &slot)) {
+        return 0;
+    }
+
+    Game::Lua::SetTop(L, 0);
+    Game::Lua::PushNumber(L, static_cast<double>(bag));
+    Game::Lua::PushNumber(L, static_cast<double>(slot));
+    auto pickup = reinterpret_cast<ScriptFn_t>(Offsets::FUN_SCRIPT_PICKUP_CONTAINER_ITEM);
+    pickup(L);
+
+    Game::Lua::SetTop(L, 0);
+    if (hasDstSlot) {
+        Game::Lua::PushNumber(L, static_cast<double>(dstSlot));
+        auto equip = reinterpret_cast<ScriptFn_t>(Offsets::FUN_SCRIPT_EQUIP_CURSOR_ITEM);
+        equip(L);
+    } else {
+        auto equip = reinterpret_cast<ScriptFn_t>(Offsets::FUN_SCRIPT_AUTO_EQUIP_CURSOR_ITEM);
+        equip(L);
+    }
+    return 0;
+}
+
 } // namespace
 
 static void RegisterLuaFunctions() {
     Game::Lua::RegisterGlobalFunction("OffhandHasWeapon", &Script_OffhandHasWeapon);
     Game::Lua::RegisterTableFunction("C_Item", "IsEquippedItem", &Script_C_Item_IsEquippedItem);
+    Game::Lua::RegisterTableFunction("C_Item", "EquipItemByName", &Script_C_Item_EquipItemByName);
 }
 
 static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
