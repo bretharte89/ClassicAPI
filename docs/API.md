@@ -35,6 +35,7 @@ build instructions.
   - [`GetFactionInfoByID(factionID)`](#getfactioninfobyidfactionid)
   - [`GetFactionParentID(factionID)`](#getfactionparentidfactionid)
   - [`C_Reputation.SetWatchedFactionByID(factionID)`](#c_reputationsetwatchedfactionbyidfactionid)
+  - [`FACTION_STANDING_CHANGED` event](#faction_standing_changed-event)
 - [Item](#item)
   - [`C_Item.IsBound(itemLocation)`](#c_itemisbounditemlocation)
   - [`C_Item.GetItemID(itemLocation)`](#c_itemgetitemiditemlocation)
@@ -900,6 +901,55 @@ print(GetWatchedFactionInfo())          -- (empty)
 Implementation calls the engine's inner watched-faction setter
 directly, bypassing `Script_SetWatchedFactionIndex`'s
 displayed-index round-trip.
+
+### `FACTION_STANDING_CHANGED` event
+
+Fires once per reputation change with `(factionID, newStanding, repGained)`:
+
+| arg1 (`factionID`)    | Faction.dbc row ID of the faction whose standing changed |
+| arg2 (`newStanding`)  | New total standing value (post-change `barValue`)        |
+| arg3 (`repGained`)    | Signed delta — positive on gain, negative on loss        |
+
+Polyfills the modern event of the same name. Vanilla 1.12 exposes only
+`CHAT_MSG_COMBAT_FACTION_CHANGE`, whose `arg1` is the localized chat
+string (`"Your Stormwind reputation has increased by 100."`) — addons
+have to parse the text and reverse-resolve the faction name back to
+an ID. This event lets addons skip that work.
+
+Does **not** fire for the initial faction sync at login or `/reload`
+— matches modern semantics. Only fires when a real reputation gain or
+loss arrives from the server (`SMSG_SET_FACTION_STANDING`).
+
+```lua
+local f = CreateFrame("Frame")
+f:RegisterEvent("FACTION_STANDING_CHANGED")
+f:SetScript("OnEvent", function()
+    -- in vanilla 1.12 OnEvent receives no args; engine sets `event`
+    -- and `arg1..argN` as globals before invoking the handler.
+    if event == "FACTION_STANDING_CHANGED" then
+        local name = GetFactionInfoByID(arg1)
+        print(string.format("%s: %+d  (now %d)", name, arg3, arg2))
+    end
+end)
+```
+
+`repGained` is signed: positive for gains, negative for the rare loss
+case (e.g. killing a Goblin Commodity Exchange NPC drops your rep
+with Booty Bay).
+
+**Implementation notes**
+
+Hooks the engine's per-rep-change notify dispatcher at `0x0062C5F0`
+— the chokepoint called once per `(factionID, signedDelta)` from
+the per-slot setter at `0x004D6330`, gated by "value-actually-changed
+AND notify-flag-set". The setter has already written the new delta
+into the per-slot storage by the time the hook fires, so we read the
+total back via `FUN_REPUTATION_GET_STANDING(factionID)` (`0x004D6370`)
+to produce the `newStanding` payload.
+
+The hook calls the original first so the engine's
+`CHAT_MSG_COMBAT_FACTION_CHANGE` event still fires normally — no
+behavior change for addons that depended on the chat text.
 
 ## Item
 

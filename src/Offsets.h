@@ -577,6 +577,34 @@ enum Offsets {
     OFF_FACTION_NAMES = 0x4C,
     OFF_FACTION_DESCRIPTIONS = 0x70,
 
+    // Per-faction current standing — `__fastcall(ecx = factionID) → int`.
+    // Returns `base + delta` where the two values are stored at
+    // `+0x08` / `+0x0C` of the player's rep slot (slot stride 0x10,
+    // 64 slots at `0x00B73290`). Returns 0 for factionIDs not in the
+    // player's reputation list (i.e. unencountered). Used by the
+    // FACTION_STANDING_CHANGED event firing to push the live total
+    // after the engine's setter has written the new delta.
+    FUN_REPUTATION_GET_STANDING = 0x004D6370,
+
+    // `__fastcall(ecx = factionID, edx = signedDelta)`. This is the
+    // engine's "reputation changed, fire the chat event" notify
+    // helper — it formats the localized chat message and dispatches
+    // `CHAT_MSG_COMBAT_FACTION_CHANGE`. Called from `FUN_004D6330`
+    // (the per-slot setter) at `0x004D635C`, only when:
+    //   1. The stored standing value actually changed for this slot.
+    //   2. The setter's `notify` arg was non-zero (i.e. the call
+    //      came from the per-update SMSG handler, not the bulk init
+    //      handler that runs at login).
+    // Hooking here matches modern WoW's `FACTION_STANDING_CHANGED`
+    // semantics: fires once per real reputation change, skipping the
+    // initial faction sync at login. ECX/EDX layout means the hook
+    // can read factionID + delta in registers; for the modern
+    // `(factionID, newStanding)` payload, call
+    // `FUN_REPUTATION_GET_STANDING(factionID)` from inside the hook
+    // (the setter has already written the new value by this point,
+    // so it returns the updated total).
+    FUN_REPUTATION_FIRE_NOTIFY = 0x0062C5F0,
+
     // Quest static-info cache (the client-side cache of QUEST_QUERY_RESPONSE
     // payloads — descriptions, objectives, reward text). Same five-arg
     // `_GetRecord` shape as the item cache, keyed by questID. Verified by

@@ -16,6 +16,7 @@
 #include "MinHook.h"
 #include "Offsets.h"
 #include "event/Custom.h"
+#include "faction/StandingChanged.h"
 #include "item/Data.h"
 
 static Game::FrameScript_Initialize_t FrameScript_Initialize_o = nullptr;
@@ -99,6 +100,15 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved) {
         // their own warmup hacks.
         HOOK_FUNCTION(Offsets::FUN_SCRIPT_GET_ITEM_INFO, Item::Data::Script_GetItemInfo_h,
                       Item::Data::Script_GetItemInfo_o);
+        // Fire `FACTION_STANDING_CHANGED(factionID, newStanding)` on every
+        // reputation change. Hooks the engine's per-rep-change chat
+        // notify dispatcher, which is the precise gate for "value
+        // actually changed AND notify flag set" — matches modern
+        // FACTION_STANDING_CHANGED semantics (skips initial faction
+        // sync at login).
+        HOOK_FUNCTION(Offsets::FUN_REPUTATION_FIRE_NOTIFY,
+                      Faction::StandingChanged::FireNotify_h,
+                      Faction::StandingChanged::FireNotify_o);
     } else if (reason == DLL_PROCESS_DETACH) {
         MH_Uninitialize();
     }

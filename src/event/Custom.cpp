@@ -126,6 +126,15 @@ void Fire_DD(int eventID, int arg1, int arg2) {
     fn(eventID, "%d%d", arg1, arg2);
 }
 
+void Fire_DDD(int eventID, int arg1, int arg2, int arg3) {
+    if (eventID < 0)
+        return;
+    using FireEvent_DDD_t = void(__cdecl *)(int eventID, const char *format,
+                                            int a, int b, int c);
+    auto fn = reinterpret_cast<FireEvent_DDD_t>(Offsets::FUN_FIRE_EVENT);
+    fn(eventID, "%d%d%d", arg1, arg2, arg3);
+}
+
 void Fire_SD(int eventID, const char *arg1, int arg2) {
     if (eventID < 0)
         return;

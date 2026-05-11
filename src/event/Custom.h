@@ -51,6 +51,10 @@ int Lookup(const char *name);
 // booleans as 0/1 since the engine has no native bool format code.
 void Fire_DD(int eventID, int arg1, int arg2);
 
+// Three-int variant — `(eventID, %d%d%d, a, b, c)`. Used by
+// `FACTION_STANDING_CHANGED(factionID, newStanding, repGained)`.
+void Fire_DDD(int eventID, int arg1, int arg2, int arg3);
+
 // Dispatches with `(string, int)` — used by `MODIFIER_STATE_CHANGED`
 // for `(keyName, down)` payloads. `arg1` must outlive the call (the
 // engine doesn't copy strings out of varargs); for compile-time
