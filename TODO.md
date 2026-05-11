@@ -2614,19 +2614,6 @@ but item-keyed instead of spell-keyed.
 If we wire up the unit-position read primitive for either of
 these, the other comes nearly free.
 
-## 93. `GetClassColor(classToken)` — easy
-
-5.x-era addition that wraps the FrameXML `RAID_CLASS_COLORS`
-table — returns `(r, g, b, hex)` for a class token like
-`"WARRIOR"`. Heavy addon dependency on this; backports usually
-ship their own table.
-
-Could ship from C++ as a static lookup (12 hardcoded RGB
-values + tokens — they don't change), or just expose
-`RAID_CLASS_COLORS` as a Lua global from `ChrClasses.dbc` reads.
-The latter is more faithful (custom servers can add classes and
-have them show up).
-
 ## ~~76. `C_DateAndTime.*` namespace — DONE (7 of 8)
 
 Backport of modern's date-math namespace. Six functions are pure
