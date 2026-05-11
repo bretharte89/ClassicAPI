@@ -40,6 +40,7 @@ const lua_remove_t Remove = reinterpret_cast<lua_remove_t>(Offsets::LUA_REMOVE);
 const lua_gettop_t GetTop = reinterpret_cast<lua_gettop_t>(Offsets::LUA_GET_TOP);
 const lua_settop_t SetTop = reinterpret_cast<lua_settop_t>(Offsets::LUA_SET_TOP);
 const lua_call_t Call = reinterpret_cast<lua_call_t>(Offsets::LUA_CALL);
+const lua_pcall_t PCall = reinterpret_cast<lua_pcall_t>(Offsets::LUA_PCALL);
 const lua_type_t Type = reinterpret_cast<lua_type_t>(Offsets::LUA_TYPE);
 const lua_error_t Error = reinterpret_cast<lua_error_t>(Offsets::LUA_ERROR);
 

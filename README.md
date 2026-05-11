@@ -24,7 +24,7 @@ Quick index:
 | Item      | `C_Item.EquipItemByName`, `C_Item.GetItemCount`, `C_Item.GetItemFamily`, `C_Item.GetItemID`, `C_Item.GetItemInfoInstant`, `C_Item.IsBound`, `C_Item.IsEquippedItem`, `C_Item.IsItemDataCached(ByID)`, `C_Item.RequestLoadItemData(ByID)` (+ `ITEM_DATA_LOAD_RESULT` event), `GetInventoryItemDurability`, `GetInventoryItemID`, `GetItemIcon` / `C_Item.GetItemIcon` / `C_Item.GetItemIconByID`, `OffhandHasWeapon` |
 | Container | `C_Container.GetContainerItemDurability`, `C_Container.GetContainerItemID`, `C_Container.GetContainerNumFreeSlots`, `C_Container.PlayerHasHearthstone`, `C_Container.UseHearthstone` |
 | Class     | `FillLocalizedClassList` |
-| Unit      | `UnitGUID`, `UnitIsAFK`, `UnitIsDND`, `UnitIsFeignDeath`, `UnitIsPossessed` |
+| Unit      | `UnitGUID`, `UnitIsAFK`, `UnitIsDND`, `UnitIsFeignDeath`, `UnitIsInMyGuild`, `UnitIsPossessed` |
 | State     | `IsFalling`, `IsMounted`, `IsStealthed`, `IsSwimming` |
 | AddOns    | `C_AddOns.DoesAddOnExist`, `C_AddOns.GetAddOnName`, `C_AddOns.GetAddOnNotes`, `C_AddOns.GetAddOnSecurity`, `C_AddOns.GetAddOnTitle`, `C_AddOns.IsAddOnLoadable` |
 | Combat    | `InCombatLockdown` |

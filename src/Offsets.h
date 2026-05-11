@@ -182,6 +182,58 @@ enum Offsets {
     PLAYER_FLAG_AFK = 0x02,
     PLAYER_FLAG_DND = 0x04,
 
+    // Guild-key field on the CGPlayer sub-struct. Verified by
+    // disassembling `Script_GetGuildInfo` at `0x004C9330`: after
+    // resolving the unit and checking the GUID-is-player bit, the
+    // function reads `mov ecx, [edi+0xE68]; mov ecx, [ecx+0x0C]` —
+    // if the value is 0, returns nil; otherwise passes it as the
+    // first arg to the guild cache lookup at `0x00560D30`. Two
+    // players in the same guild end up with the same value here
+    // (the cache key uniquely identifies a guild record), so
+    // `UnitIsInMyGuild` can compare this field between `"player"`
+    // and the input unit when the data is loaded — sidestepping the
+    // roster fetch requirement entirely for visible units.
+    //
+    // Populated immediately for the local player on guild join, and
+    // for any other player-controlled unit whose `+0xE68` sub-struct
+    // the engine has synced (party members, raid members, the
+    // current target, etc.). For unsynced units it reads 0.
+    OFF_PLAYER_INFO_GUILD_KEY = 0x0C,
+
+    // Guild roster — the per-character cache populated by
+    // SMSG_GUILD_ROSTER. `[VAR_GUILD_ROSTER_PTR]` is `GuildMember **`
+    // (a heap-allocated array of pointers), indexed `[0..total-1]` where
+    // total = `[VAR_GUILD_ROSTER_TOTAL_COUNT]`. Includes offline
+    // members — the "show offline" UI toggle controls what
+    // `GetNumGuildMembers()` returns by default and how the roster
+    // panel renders, but the underlying array always holds every
+    // member the server sent. Entries can still be NULL for other
+    // reasons (e.g. pending refresh), so null-check per entry.
+    //
+    // Verified by disassembling `Script_GetGuildRosterInfo` at
+    // `0x004D1200`:
+    //   mov ecx, [0x00B73118]         ; count
+    //   cmp eax, ecx; jae bail
+    //   mov edx, [0x00B72704]         ; roster base
+    //   mov edi, [edx+eax*4]          ; entry = roster[idx]
+    //   test edi, edi; je bail
+    //   lea edx, [edi+8]; call lua_pushstring   ; name at +0x08 (inline char[])
+    //
+    // Other GuildMember fields the engine pushes from the same loop:
+    //   +0x38  int level
+    //   +0x3C  int classIndex
+    //   +0x44  int rankIndex
+    // (We don't read these, but they're verified in the same function.)
+    //
+    // The companion `[0x00B7311C]` global is the online-only count
+    // (returned by `GetNumGuildMembers()` when called with no args).
+    // The roster array spans the full total — both counts share the
+    // same backing storage; online vs. total only affects the iteration
+    // bound the Lua API uses, not the underlying array.
+    VAR_GUILD_ROSTER_PTR = 0x00B72704,
+    VAR_GUILD_ROSTER_TOTAL_COUNT = 0x00B73118,
+    OFF_GUILD_MEMBER_NAME = 0x08,
+
     // PackBagSlot — __fastcall(L, void **outInvMgr, int *outLinearSlot, int *outUnused) → bool.
     // Reads bagID at Lua stack[1] and slot at stack[2], validates them, and
     // returns the inventory manager + linear slot ready to feed into GetItemBySlot.
@@ -692,6 +744,7 @@ enum Offsets {
     LUA_GET_TOP = 0x6F3070,
     LUA_SET_TOP = 0x6F3080,
     LUA_CALL = 0x6F4180,
+    LUA_PCALL = 0x6F41A0,
     LUA_ERROR = 0x6F4940,
 
     // Global `lua_State *`. The engine keeps one main thread state here; we

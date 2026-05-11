@@ -62,6 +62,7 @@ build instructions.
   - [`UnitIsAFK(unit)`](#unitisafkunit)
   - [`UnitIsDND(unit)`](#unitisdndunit)
   - [`UnitIsFeignDeath(unit)`](#unitisfeigndeathunit)
+  - [`UnitIsInMyGuild(unitOrName)`](#unitisinmyguildunitorname)
   - [`UnitIsPossessed(unit)`](#unitispossessedunit)
 - [State](#state)
   - [`IsMounted()`](#ismounted)
@@ -1666,6 +1667,47 @@ UnitIsFeignDeath("target")   -- true if a feigning hunter
 ```
 
 Equivalent to the function of the same name introduced in 3.0.
+
+### `UnitIsInMyGuild(unitOrName)`
+
+Returns `1` if the unit/character shares the player's guild, `nil`
+otherwise. Accepts either a unit token (`"player"`, `"target"`,
+`"party1"`, etc.) or a literal character name (`"Bob"`), matching
+3.3.5's `Script_UnitIsInMyGuild` (`0x0060C4B0` in the Frostmourne
+client).
+
+```lua
+UnitIsInMyGuild("player")    -- 1 if you're in any guild
+UnitIsInMyGuild("target")    -- 1 if your target is a guildmate
+UnitIsInMyGuild("party1")    -- 1 if party member 1 is a guildmate
+UnitIsInMyGuild("Bob")       -- 1 if there's a guildmate named Bob
+```
+
+Resolution strategy:
+
+1. Calls `UnitName(input)` via `lua_pcall` to canonicalize the input.
+   Tokens resolve cleanly; literal names hit the engine's "Unknown
+   unit name" error which `pcall` swallows.
+2. For valid tokens, attempts a fast direct comparison against the
+   player's guild-key field at `[unit + 0xE68 + 0x0C]` — same field
+   `GetGuildInfo` reads, populated immediately on guild join for the
+   local player and for any synced player-controlled unit. No roster
+   fetch needed for nearby/loaded units.
+3. Falls back to walking the engine's guild roster array (same
+   backing storage `GetGuildRosterInfo` reads) by name. Required for
+   out-of-range party members, distant raid members, and literal
+   name input — needs `GuildRoster()` to have been called and the
+   server's response to have arrived.
+
+Return convention matches 3.3.5: `1.0` / `nil`, not boolean. Both
+work for `if UnitIsInMyGuild(x) then` checks.
+
+The slow path reads the engine's full roster count
+(`[0x00B73118]`, the same value `GetNumGuildMembers(true)` returns),
+not the online-only count, so offline guildmates resolve too — the
+"show offline" toggle doesn't affect lookup. The only requirement
+is that `GuildRoster()` has been called and the server's
+SMSG_GUILD_ROSTER response has arrived.
 
 ### `UnitIsPossessed(unit)`
 
