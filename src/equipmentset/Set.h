@@ -53,28 +53,37 @@ constexpr int MAX_NAME_LEN = 31;
 // "X / 10" don't surprise users.
 constexpr int MAX_SETS = 10;
 
-// `GetItemLocations` encoding — matches Classic Era 1.15.x's
-// `EquipmentManager_UnpackLocation` so addon code that decodes the
-// returned values works unchanged.
+// `GetItemLocations` encoding — matches Blizzard FrameXML's
+// `EquipmentManager_UnpackLocation` (constants are in
+// `Constants.lua`: `ITEM_INVENTORY_LOCATION_*` and
+// `ITEM_INVENTORY_BAG_BIT_OFFSET`). Verified against the Classic Era
+// 1.15.x install at `_classic_/BlizzardInterfaceCode/`.
 //
-//   bit 8  (0x100)  PLAYER — the local player's storage (always 1 here
-//                            since we don't expose other players' sets)
-//   bit 9  (0x200)  BANK   — main bank or a bank bag
-//   bit 10 (0x400)  BAGS   — inside a bag (player or bank)
-//   bits 0..7       slot   — 1-based slot within the container
-//   bits 16..23     bag    — bag ID (0..4 player, 5..10 bank, ignored
-//                            when BAGS bit is clear)
+//   bit 20 (0x00100000)  PLAYER — local player paperdoll/bags
+//   bit 21 (0x00200000)  BAGS   — inside a bag (player or bank)
+//   bit 22 (0x00400000)  BANK   — main bank or bank bag
+//   bits 0..7            slot   — 1-based slot within the container
+//   bits 8..15           bag    — bag index (only when BAGS bit set)
 //
-// Composition by source:
-//   equipped (paperdoll)  → PLAYER                       | slot
-//   backpack / player bag → PLAYER | BAGS                | (bag<<16) | slot
-//   main bank             → PLAYER | BANK                | slot
-//   bank bag              → PLAYER | BANK | BAGS         | (bag<<16) | slot
-constexpr int LOC_PLAYER = 0x100;
-constexpr int LOC_BANK = 0x200;
-constexpr int LOC_BAGS = 0x400;
+// Composition by source — note PLAYER and BANK are **mutually
+// exclusive** in the encoding (unpack uses `if player elseif bank`,
+// so setting both leaves an unaccounted-for BANK bit in the slot
+// remainder):
+//   equipped (paperdoll)  → PLAYER         | slot
+//   backpack / player bag → PLAYER | BAGS  | (bag << 8)         | slot   (bag 0..4)
+//   main bank             → BANK           | slot                          (slot 1..28)
+//   bank bag              → BANK   | BAGS  | ((bagID - 4) << 8) | slot   (bagID 5..10)
+//
+// The `bagID - 4` shift on bank bags lets unpack store an internal
+// 1..6 in the field, then add `ITEM_INVENTORY_BANK_BAG_OFFSET` (= 4)
+// back at unpack time to recover bag 5..10. Same scheme the engine
+// uses natively.
+constexpr int LOC_PLAYER = 0x00100000;
+constexpr int LOC_BAGS = 0x00200000;
+constexpr int LOC_BANK = 0x00400000;
 constexpr int LOC_SLOT_MASK = 0xFF;
-constexpr int LOC_BAG_SHIFT = 16;
+constexpr int LOC_BAG_SHIFT = 8;
+constexpr int BANK_BAG_OFFSET = 4;
 
 inline int PackEquipped(int slot) { return LOC_PLAYER | (slot & LOC_SLOT_MASK); }
 inline int PackBag(int bag, int slot) {
@@ -82,10 +91,11 @@ inline int PackBag(int bag, int slot) {
            (slot & LOC_SLOT_MASK);
 }
 inline int PackMainBank(int slot) {
-    return LOC_PLAYER | LOC_BANK | (slot & LOC_SLOT_MASK);
+    return LOC_BANK | (slot & LOC_SLOT_MASK);
 }
-inline int PackBankBag(int bag, int slot) {
-    return LOC_PLAYER | LOC_BANK | LOC_BAGS | ((bag & 0xFF) << LOC_BAG_SHIFT) |
+inline int PackBankBag(int bagID, int slot) {
+    const int internalBag = bagID - BANK_BAG_OFFSET; // 5..10 → 1..6
+    return LOC_BANK | LOC_BAGS | ((internalBag & 0xFF) << LOC_BAG_SHIFT) |
            (slot & LOC_SLOT_MASK);
 }
 

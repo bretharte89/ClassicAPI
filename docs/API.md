@@ -1810,20 +1810,37 @@ itemID separate from the live CGItem record.
 ### `C_EquipmentSet.GetItemLocations(setID)`
 
 Returns a hash table `{ [slot] = locationCode }`. Location codes use
-the modern bit-packed encoding that Classic Era 1.15.x's
-`EquipmentManager_UnpackLocation` decodes:
+the same bit-packed encoding Blizzard's FrameXML
+`EquipmentManager_UnpackLocation` decodes (constants in
+`Blizzard_FrameXMLBase/Classic/Constants.lua`):
 
 | Bit/field | Meaning |
 |-----------|---------|
-| `0x100` (PLAYER) | Always set (we don't expose other players' sets) |
-| `0x200` (BANK) | Item is in the bank (main or bank bag) |
-| `0x400` (BAGS) | Item is inside a bag (player or bank bag) |
-| bits 0..7 | Slot (1-based) within the container |
-| bits 16..23 | Bag ID (0..4 player, 5..10 bank); ignored when BAGS bit is clear |
+| `0x00100000` (PLAYER) | Item is in a player slot (equipped or in a player bag) |
+| `0x00200000` (BAGS)   | Item is inside a bag (player or bank) |
+| `0x00400000` (BANK)   | Item is in the bank (main or bank bag) |
+| bits 0..7             | Slot (1-based) within the container |
+| bits 8..15            | Bag index — present only when BAGS bit is set |
 
-Special values:
+PLAYER and BANK are **mutually exclusive** in the encoding (the
+unpack uses `if player elseif bank`). Bank bags subtract 4 from the
+bagID before storing so the field fits cleanly; unpack reverses this
+to give back bag IDs 5..10. Composition:
+
+| Location | Bits | Example |
+|----------|------|---------|
+| Equipped (paperdoll slot 1..19) | `PLAYER | slot` | `0x100007` = legs (slot 7) |
+| Backpack / player bag 1..4 | `PLAYER | BAGS | (bag<<8) | slot` | `0x300205` = bag 2 slot 5 |
+| Main bank slot 1..28 | `BANK | slot` | `0x400003` = bank slot 3 |
+| Bank bag 5..10 | `BANK | BAGS | ((bag-4)<<8) | slot` | `0x600101` = bank bag 5 slot 1 |
+
+Special values returned in the table entry:
 - `1` — slot is ignored (`GetIgnoredSlots` lists these)
 - `-1` — item is missing (was in the set, can't find now)
+
+The packed codes pass cleanly through Blizzard's
+`EquipmentManager_UnpackLocation` if you want to use the
+shared-FrameXML helpers in your addon UI.
 
 ### `C_EquipmentSet.CreateEquipmentSet(name [, icon])`
 
