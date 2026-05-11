@@ -13,29 +13,50 @@ functions. No companion addon is required.
 
 Full per-function reference: **[docs/API.md](docs/API.md)**.
 
-Quick index:
+### Calls
 
 | Namespace | Calls |
 |-----------|-------|
-| Spell     | `C_Spell.GetSpellDescription`, `C_Spell.GetSpellInfo`, `C_Spell.GetSpellLink`, `C_Spell.GetSpellName`, `C_Spell.GetSpellTexture`, `C_Spell.IsSpellPassive`, `C_Spell.IsSpellUsable`, `FindSpellBookSlotByID`, `GetSpellInfo`, `GetSpellLink`, `GetSpellSchool`, `IsPassiveSpell`, `IsPlayerSpell`, `IsSpellKnown`, `IsUsableSpell` |
-| GameTooltip | `GameTooltip:SetInventoryItemByID`, `GameTooltip:SetItemByID`, `GameTooltip:SetSpellByID`, `GameTooltip:SetTalentByID`, `GameTooltip:SetUnitAura` |
-| Quest     | `C_QuestLog.GetTitleForQuestID`, `C_QuestLog.RequestLoadQuestByID` (+ `QUEST_DATA_LOAD_RESULT` event), `GetQuestIDFromLogIndex` |
-| Faction   | `C_Reputation.SetWatchedFactionByID`, `GetFactionIDByIndex`, `GetFactionInfoByID`, `GetFactionParentID` (+ `FACTION_STANDING_CHANGED` event) |
-| Item      | `C_Item.EquipItemByName`, `C_Item.GetItemCount`, `C_Item.GetItemFamily`, `C_Item.GetItemID`, `C_Item.GetItemInfoInstant`, `C_Item.IsBound`, `C_Item.IsEquippedItem`, `C_Item.IsItemDataCached(ByID)`, `C_Item.RequestLoadItemData(ByID)` (+ `ITEM_DATA_LOAD_RESULT` event), `GetInventoryItemDurability`, `GetInventoryItemID`, `GetItemIcon` / `C_Item.GetItemIcon` / `C_Item.GetItemIconByID`, `C_Item.GetItemSpell`, `C_Item.IsEquippableItem`, `OffhandHasWeapon` |
+| AddOns | `C_AddOns.DoesAddOnExist`, `C_AddOns.GetAddOnName`, `C_AddOns.GetAddOnNotes`, `C_AddOns.GetAddOnSecurity`, `C_AddOns.GetAddOnTitle`, `C_AddOns.IsAddOnLoadable` |
+| Chat | `GetCurrentChatGUID` |
+| Class | `FillLocalizedClassList` |
+| Combat | `InCombatLockdown` |
 | Container | `C_Container.GetContainerItemDurability`, `C_Container.GetContainerItemID`, `C_Container.GetContainerNumFreeSlots`, `C_Container.PlayerHasHearthstone`, `C_Container.UseHearthstone` |
-| EquipmentSet | `C_EquipmentSet.CanUseEquipmentSets`, `C_EquipmentSet.CreateEquipmentSet`, `C_EquipmentSet.DeleteEquipmentSet`, `C_EquipmentSet.EquipmentSetContainsLockedItems`, `C_EquipmentSet.GetEquipmentSetID`, `C_EquipmentSet.GetEquipmentSetIDs`, `C_EquipmentSet.GetEquipmentSetInfo`, `C_EquipmentSet.GetIgnoredSlots`, `C_EquipmentSet.GetItemIDs`, `C_EquipmentSet.GetItemLocations`, `C_EquipmentSet.GetNumEquipmentSets`, `C_EquipmentSet.IgnoreSlotForSave` / `UnignoreSlotForSave` / `IsSlotIgnoredForSave` / `ClearIgnoredSlotsForSave`, `C_EquipmentSet.ModifyEquipmentSet`, `C_EquipmentSet.SaveEquipmentSet`, `C_EquipmentSet.UseEquipmentSet` (+ `EQUIPMENT_SETS_CHANGED` / `EQUIPMENT_SWAP_FINISHED` events; sets persist to `WTF\Account\...\ClassicAPI_EquipmentSets.txt`) |
-| Class     | `FillLocalizedClassList` |
-| Unit      | `GetPlayerInfoByGUID`, `UnitGUID`, `UnitIsAFK`, `UnitIsDND`, `UnitIsFeignDeath`, `UnitIsInMyGuild`, `UnitIsPossessed` |
-| State     | `IsAssistingRitual`, `IsFalling`, `IsMounted`, `IsStealthed`, `IsSwimming` |
-| Chat      | `GetCurrentChatGUID` |
-| AddOns    | `C_AddOns.DoesAddOnExist`, `C_AddOns.GetAddOnName`, `C_AddOns.GetAddOnNotes`, `C_AddOns.GetAddOnSecurity`, `C_AddOns.GetAddOnTitle`, `C_AddOns.IsAddOnLoadable` |
-| Combat    | `InCombatLockdown` |
-| Hooks     | `hooksecurefunc` |
-| Input     | `IsLeftShiftKeyDown`, `IsRightShiftKeyDown`, `IsLeftControlKeyDown`, `IsRightControlKeyDown`, `IsLeftAltKeyDown`, `IsRightAltKeyDown`, `IsModifierKeyDown` (+ `MODIFIER_STATE_CHANGED` event) |
-| Talent    | `GetTalentIDByIndex`, `GetTalentSpellID` |
-| Time      | `GetServerTime`, `C_DateAndTime.AdjustTimeByDays`, `C_DateAndTime.AdjustTimeByMinutes`, `C_DateAndTime.CompareCalendarTime`, `C_DateAndTime.GetCalendarTimeFromEpoch`, `C_DateAndTime.GetCurrentCalendarTime`, `C_DateAndTime.GetSecondsUntilDailyReset`, `C_DateAndTime.GetServerTimeLocal` |
-| Events    | `C_EventUtils.IsEventValid` (+ `BAG_UPDATE_DELAYED` event) |
-| Globals   | `CLASSIC_API_VERSION`, `LE_EXPANSION_LEVEL_CURRENT`, `LE_EXPANSION_CLASSIC` … `LE_EXPANSION_MIDNIGHT`, `LE_ITEM_QUALITY_POOR` … `LE_ITEM_QUALITY_WOWTOKEN`, `LE_UNIT_STAT_STRENGTH` … `LE_UNIT_STAT_SPIRIT` |
+| EquipmentSet | `C_EquipmentSet.CanUseEquipmentSets`, `C_EquipmentSet.ClearIgnoredSlotsForSave`, `C_EquipmentSet.CreateEquipmentSet`, `C_EquipmentSet.DeleteEquipmentSet`, `C_EquipmentSet.EquipmentSetContainsLockedItems`, `C_EquipmentSet.GetEquipmentSetID`, `C_EquipmentSet.GetEquipmentSetIDs`, `C_EquipmentSet.GetEquipmentSetInfo`, `C_EquipmentSet.GetIgnoredSlots`, `C_EquipmentSet.GetItemIDs`, `C_EquipmentSet.GetItemLocations`, `C_EquipmentSet.GetNumEquipmentSets`, `C_EquipmentSet.IgnoreSlotForSave`, `C_EquipmentSet.IsSlotIgnoredForSave`, `C_EquipmentSet.ModifyEquipmentSet`, `C_EquipmentSet.SaveEquipmentSet`, `C_EquipmentSet.UnignoreSlotForSave`, `C_EquipmentSet.UseEquipmentSet` (sets persist to `WTF\Account\...\ClassicAPI_EquipmentSets.txt`) |
+| Events | `C_EventUtils.IsEventValid` |
+| Faction | `C_Reputation.SetWatchedFactionByID`, `GetFactionIDByIndex`, `GetFactionInfoByID`, `GetFactionParentID` |
+| GameTooltip | `GameTooltip:SetInventoryItemByID`, `GameTooltip:SetItemByID`, `GameTooltip:SetSpellByID`, `GameTooltip:SetTalentByID`, `GameTooltip:SetUnitAura` |
+| Hooks | `hooksecurefunc` |
+| Input | `IsLeftAltKeyDown`, `IsLeftControlKeyDown`, `IsLeftShiftKeyDown`, `IsModifierKeyDown`, `IsRightAltKeyDown`, `IsRightControlKeyDown`, `IsRightShiftKeyDown` |
+| Item | `C_Item.EquipItemByName`, `C_Item.GetItemCount`, `C_Item.GetItemFamily`, `C_Item.GetItemIcon`, `C_Item.GetItemIconByID`, `C_Item.GetItemID`, `C_Item.GetItemInfoInstant`, `C_Item.GetItemSpell`, `C_Item.IsBound`, `C_Item.IsEquippableItem`, `C_Item.IsEquippedItem`, `C_Item.IsItemDataCached`, `C_Item.IsItemDataCachedByID`, `C_Item.RequestLoadItemData`, `C_Item.RequestLoadItemDataByID`, `GetInventoryItemDurability`, `GetInventoryItemID`, `GetItemIcon`, `OffhandHasWeapon` |
+| Quest | `C_QuestLog.GetTitleForQuestID`, `C_QuestLog.RequestLoadQuestByID`, `GetQuestIDFromLogIndex` |
+| Spell | `C_Spell.GetSpellDescription`, `C_Spell.GetSpellInfo`, `C_Spell.GetSpellLink`, `C_Spell.GetSpellName`, `C_Spell.GetSpellTexture`, `C_Spell.IsSpellPassive`, `C_Spell.IsSpellUsable`, `FindSpellBookSlotByID`, `GetSpellInfo`, `GetSpellLink`, `GetSpellSchool`, `IsPassiveSpell`, `IsPlayerSpell`, `IsSpellKnown`, `IsUsableSpell` |
+| State | `IsAssistingRitual`, `IsFalling`, `IsMounted`, `IsStealthed`, `IsSwimming` |
+| Talent | `GetTalentIDByIndex`, `GetTalentSpellID` |
+| Time | `C_DateAndTime.AdjustTimeByDays`, `C_DateAndTime.AdjustTimeByMinutes`, `C_DateAndTime.CompareCalendarTime`, `C_DateAndTime.GetCalendarTimeFromEpoch`, `C_DateAndTime.GetCurrentCalendarTime`, `C_DateAndTime.GetSecondsUntilDailyReset`, `C_DateAndTime.GetServerTimeLocal`, `GetServerTime` |
+| Unit | `GetPlayerInfoByGUID`, `UnitGUID`, `UnitIsAFK`, `UnitIsDND`, `UnitIsFeignDeath`, `UnitIsInMyGuild`, `UnitIsPossessed` |
+
+### Events
+
+| Event | Payload |
+|-------|---------|
+| `BAG_UPDATE_DELAYED` | *(none)* |
+| `EQUIPMENT_SETS_CHANGED` | *(none)* |
+| `EQUIPMENT_SWAP_FINISHED` | `success, setID` |
+| `FACTION_STANDING_CHANGED` | `factionID, newStanding, repGained` |
+| `ITEM_DATA_LOAD_RESULT` | `itemID, success` |
+| `MODIFIER_STATE_CHANGED` | `keyName, down` |
+| `QUEST_DATA_LOAD_RESULT` | `questID, success` |
+
+### Globals
+
+| Group | Constants |
+|-------|-----------|
+| Version | `CLASSIC_API_VERSION` |
+| Expansion | `LE_EXPANSION_LEVEL_CURRENT`, `LE_EXPANSION_CLASSIC` … `LE_EXPANSION_MIDNIGHT` |
+| Item inventory location | `ITEM_INVENTORY_BAG_BIT_OFFSET`, `ITEM_INVENTORY_BANK_BAG_OFFSET`, `ITEM_INVENTORY_LOCATION_BAGS`, `ITEM_INVENTORY_LOCATION_BANK`, `ITEM_INVENTORY_LOCATION_PLAYER` |
+| Item quality | `LE_ITEM_QUALITY_POOR` … `LE_ITEM_QUALITY_WOWTOKEN` |
+| Unit stat | `LE_UNIT_STAT_STRENGTH` … `LE_UNIT_STAT_SPIRIT` |
 
 ## Installation
 
