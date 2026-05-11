@@ -1828,12 +1828,21 @@ Either signal alone is ambiguous (the warlock channeling matches
 the first; mining and other GO-targeted casts match the second);
 the conjunction is portal-clicker-specific.
 
+The engine fires `SPELLCAST_CHANNEL_START` / `SPELLCAST_CHANNEL_STOP`
+on the portal click, even though there's no castbar — Blizzard's
+vanilla castbar UI filters out spell ID 698 (Ritual of Summoning),
+but the events themselves fire normally. Combine them with this
+function for ritual-specific triggers:
+
 ```lua
 local frame = CreateFrame("Frame")
-frame:RegisterEvent("PLAYER_STARTED_MOVING")
+frame:RegisterEvent("SPELLCAST_CHANNEL_START")
+frame:RegisterEvent("SPELLCAST_CHANNEL_STOP")
 frame:SetScript("OnEvent", function()
-    if IsAssistingRitual() then
-        UIErrorsFrame:AddMessage("Warning: moving will break ritual")
+    if event == "SPELLCAST_CHANNEL_START" and IsAssistingRitual() then
+        -- player just committed to a ritual portal
+    elseif event == "SPELLCAST_CHANNEL_STOP" then
+        -- channel ended; was it a ritual?
     end
 end)
 ```
