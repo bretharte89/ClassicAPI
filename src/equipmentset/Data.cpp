@@ -1,0 +1,225 @@
+// This file is part of ClassicAPI.
+//
+// ClassicAPI is free software: you can redistribute it and/or modify it under the terms
+// of the GNU Lesser General Public License as published by the Free Software Foundation, either
+// version 3 of the License, or (at your option) any later version.
+//
+// ClassicAPI is distributed in the hope that it will be useful, but WITHOUT ANY
+// WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+// PURPOSE. See the GNU Lesser General Public License for more details.
+//
+// You should have received a copy of the GNU Lesser General Public License along with
+// ClassicAPI. If not, see <https://www.gnu.org/licenses/>.
+
+#include "Data.h"
+
+#include "Game.h"
+#include "Offsets.h"
+#include "Storage.h"
+#include "event/Custom.h"
+
+#include <algorithm>
+#include <cstdint>
+#include <cstring>
+
+namespace EquipmentSet::Data {
+
+namespace {
+
+std::vector<Set> g_sets;
+std::string g_path;
+bool g_loaded = false;
+bool g_ignoredForSave[SLOT_COUNT] = {};
+
+void *ResolvePlayerInvMgr() {
+    using ResolveUnitToken_t = void *(__fastcall *)(const char *);
+    auto fn = reinterpret_cast<ResolveUnitToken_t>(Offsets::FUN_RESOLVE_UNIT_TOKEN);
+    auto *player = static_cast<uint8_t *>(fn("player"));
+    if (player == nullptr)
+        return nullptr;
+    return player + Offsets::OFF_PLAYER_INVENTORY_MANAGER;
+}
+
+// Reads the GUID currently in paperdoll slot `slot1Based` (1..19) by
+// indexing the player invMgr's flat GUID array. Slot 1 (HEAD) lives
+// at linear index 0; the equipment paperdoll occupies indices 0..18.
+// Returns 0 for empty slots or unresolved player.
+uint64_t ReadEquippedGUID(int slot1Based) {
+    auto *invMgr = static_cast<uint8_t *>(ResolvePlayerInvMgr());
+    if (invMgr == nullptr)
+        return 0;
+    auto *guids = *reinterpret_cast<uint64_t **>(
+        invMgr + Offsets::OFF_INVMGR_GUID_ARRAY);
+    if (guids == nullptr)
+        return 0;
+    return guids[slot1Based - 1];
+}
+
+void PopulateFromEquipped(Set *set) {
+    for (int i = 0; i < SLOT_COUNT; ++i) {
+        if (g_ignoredForSave[i]) {
+            set->items[i] = GUID_IGNORED;
+        } else {
+            set->items[i] = ReadEquippedGUID(i + 1);
+        }
+    }
+}
+
+uint32_t NextAvailableID() {
+    uint32_t maxID = 0;
+    for (const auto &s : g_sets)
+        if (s.setID > maxID)
+            maxID = s.setID;
+    return maxID + 1;
+}
+
+void FireChanged() {
+    const int slot = Event::Custom::Lookup(kEventName);
+    if (slot >= 0)
+        Event::Custom::Fire_None(slot);
+}
+
+void Persist() {
+    if (!g_path.empty())
+        Storage::Save(g_path, g_sets);
+}
+
+} // namespace
+
+void EnsureLoaded() {
+    if (g_loaded)
+        return;
+    g_path = Storage::ResolveFilePath();
+    if (g_path.empty())
+        return; // session globals not yet populated; retry on next call
+    Storage::Load(g_path, &g_sets);
+    g_loaded = true;
+}
+
+const std::vector<Set> &All() {
+    EnsureLoaded();
+    return g_sets;
+}
+
+const Set *FindByID(uint32_t setID) {
+    EnsureLoaded();
+    for (const auto &s : g_sets)
+        if (s.setID == setID)
+            return &s;
+    return nullptr;
+}
+
+const Set *FindByName(const char *name) {
+    if (name == nullptr)
+        return nullptr;
+    EnsureLoaded();
+    for (const auto &s : g_sets)
+        if (s.name == name)
+            return &s;
+    return nullptr;
+}
+
+int IndexOf(uint32_t setID) {
+    EnsureLoaded();
+    for (size_t i = 0; i < g_sets.size(); ++i)
+        if (g_sets[i].setID == setID)
+            return static_cast<int>(i);
+    return -1;
+}
+
+uint32_t Create(const char *name, const char *icon) {
+    EnsureLoaded();
+    if (g_path.empty() || name == nullptr || name[0] == '\0')
+        return 0;
+    if (g_sets.size() >= MAX_SETS)
+        return 0;
+    if (FindByName(name) != nullptr)
+        return 0;
+    Set s;
+    s.setID = NextAvailableID();
+    s.name = name;
+    if (s.name.size() > MAX_NAME_LEN)
+        s.name.resize(MAX_NAME_LEN);
+    s.icon = (icon != nullptr && icon[0] != '\0') ? icon : DefaultIcon();
+    PopulateFromEquipped(&s);
+    g_sets.push_back(std::move(s));
+    Persist();
+    FireChanged();
+    return g_sets.back().setID;
+}
+
+bool SaveExisting(uint32_t setID, const char *icon) {
+    EnsureLoaded();
+    if (g_path.empty())
+        return false;
+    const int idx = IndexOf(setID);
+    if (idx < 0)
+        return false;
+    Set &s = g_sets[idx];
+    if (icon != nullptr && icon[0] != '\0')
+        s.icon = icon;
+    PopulateFromEquipped(&s);
+    Persist();
+    FireChanged();
+    return true;
+}
+
+bool Rename(uint32_t setID, const char *newName) {
+    EnsureLoaded();
+    if (g_path.empty() || newName == nullptr || newName[0] == '\0')
+        return false;
+    const int idx = IndexOf(setID);
+    if (idx < 0)
+        return false;
+    // Reject duplicate names that belong to a different set.
+    const Set *clash = FindByName(newName);
+    if (clash != nullptr && clash->setID != setID)
+        return false;
+    g_sets[idx].name = newName;
+    if (g_sets[idx].name.size() > MAX_NAME_LEN)
+        g_sets[idx].name.resize(MAX_NAME_LEN);
+    Persist();
+    FireChanged();
+    return true;
+}
+
+bool Delete(uint32_t setID) {
+    EnsureLoaded();
+    if (g_path.empty())
+        return false;
+    const int idx = IndexOf(setID);
+    if (idx < 0)
+        return false;
+    g_sets.erase(g_sets.begin() + idx);
+    Persist();
+    FireChanged();
+    return true;
+}
+
+void IgnoreSlot(int slot1Based) {
+    if (slot1Based < 1 || slot1Based > SLOT_COUNT)
+        return;
+    g_ignoredForSave[slot1Based - 1] = true;
+    FireChanged();
+}
+
+void UnignoreSlot(int slot1Based) {
+    if (slot1Based < 1 || slot1Based > SLOT_COUNT)
+        return;
+    g_ignoredForSave[slot1Based - 1] = false;
+    FireChanged();
+}
+
+void ClearIgnoredSlots() {
+    for (int i = 0; i < SLOT_COUNT; ++i)
+        g_ignoredForSave[i] = false;
+    FireChanged();
+}
+
+bool IsSlotIgnored(int slot1Based) {
+    if (slot1Based < 1 || slot1Based > SLOT_COUNT)
+        return false;
+    return g_ignoredForSave[slot1Based - 1];
+}
+
+} // namespace EquipmentSet::Data

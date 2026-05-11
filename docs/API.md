@@ -57,6 +57,24 @@ build instructions.
   - [`C_Container.GetContainerNumFreeSlots(bagID)`](#c_containergetcontainernumfreeslotsbagid)
   - [`C_Container.PlayerHasHearthstone()`](#c_containerplayerhashearthstone)
   - [`C_Container.UseHearthstone()`](#c_containerusehearthstone)
+- [EquipmentSet](#equipmentset)
+  - [Overview & file format](#overview--file-format)
+  - [`C_EquipmentSet.CanUseEquipmentSets()`](#c_equipmentsetcanuseequipmentsets)
+  - [`C_EquipmentSet.GetNumEquipmentSets()`](#c_equipmentsetgetnumequipmentsets)
+  - [`C_EquipmentSet.GetEquipmentSetIDs()`](#c_equipmentsetgetequipmentsetids)
+  - [`C_EquipmentSet.GetEquipmentSetID(name)`](#c_equipmentsetgetequipmentsetidname)
+  - [`C_EquipmentSet.GetEquipmentSetInfo(setID)`](#c_equipmentsetgetequipmentsetinfosetid)
+  - [`C_EquipmentSet.GetIgnoredSlots(setID)`](#c_equipmentsetgetignoredslotssetid)
+  - [`C_EquipmentSet.GetItemIDs(setID)`](#c_equipmentsetgetitemidssetid)
+  - [`C_EquipmentSet.GetItemLocations(setID)`](#c_equipmentsetgetitemlocationssetid)
+  - [`C_EquipmentSet.CreateEquipmentSet(name [, icon])`](#c_equipmentsetcreateequipmentsetname--icon)
+  - [`C_EquipmentSet.SaveEquipmentSet(setID [, icon])`](#c_equipmentsetsaveequipmentsetsetid--icon)
+  - [`C_EquipmentSet.ModifyEquipmentSet(setID, newName)`](#c_equipmentsetmodifyequipmentsetsetid-newname)
+  - [`C_EquipmentSet.DeleteEquipmentSet(setID)`](#c_equipmentsetdeleteequipmentsetsetid)
+  - [`C_EquipmentSet.IgnoreSlotForSave(slot)` / `UnignoreSlotForSave` / `IsSlotIgnoredForSave` / `ClearIgnoredSlotsForSave`](#c_equipmentsetignoreslotforsaveslot--unignoreslotforsave--isslotignoredforsave--clearignoredslotsforsave)
+  - [`C_EquipmentSet.EquipmentSetContainsLockedItems(setID)`](#c_equipmentsetequipmentsetcontainslockeditemssetid)
+  - [`C_EquipmentSet.UseEquipmentSet(setID)`](#c_equipmentsetuseequipmentsetsetid)
+  - [`EQUIPMENT_SETS_CHANGED` event](#equipment_sets_changed-event)
 - [Class](#class)
   - [`FillLocalizedClassList(table [, isFemale])`](#filllocalizedclasslisttable-isfemale)
 - [Unit](#unit)
@@ -1672,6 +1690,205 @@ on the stack. No new use-item logic is introduced — this is a
 convenience wrapper.
 
 Equivalent to the function of the same name introduced in 9.0.
+
+## EquipmentSet
+
+Backports the modern `C_EquipmentSet.*` namespace on top of a
+client-side persistent store. Vanilla 1.12 had no equipment-set
+functionality at all (Blizzard introduced it in 3.1.2 as
+`SaveEquipmentSet` etc., then namespaced it into `C_EquipmentSet` in
+Legion) — and even when it shipped natively, the data lived
+server-side, synced via `SMSG_EQUIPMENT_SET_LIST`. Vanilla servers
+don't speak that opcode and won't ever, so each character's sets are
+kept in a per-character file under `WTF\Account\...`. The format
+matches what `VanillaMinimapTracking` does for its tracking config.
+
+### Overview & file format
+
+Sets are stored in
+`WTF\Account\<account>\<realm>\<character>\ClassicAPI_EquipmentSets.txt`
+in a line-oriented, human-readable format:
+
+```
+# ClassicAPI Equipment Sets v1
+set 1
+  name=Tanking
+  icon=INV_Shield_06
+  slot 1 guid=0x0000000040000123
+  slot 2 ignored
+  slot 5 guid=0x0000000040000789
+set 2
+  name=Healing
+  icon=Spell_Holy_HolyBolt
+  ...
+```
+
+Identity is by **item GUID**, snapshotted at `CreateEquipmentSet` /
+`SaveEquipmentSet` time. `UseEquipmentSet` searches every player-owned
+container for those GUIDs and dispatches pickup→equip pairs for items
+that aren't already where they belong. Two limitations to know about:
+
+- **Bank bag contents** (the items inside bags 5..10) only resolve
+  while the bank window is open. The engine populates each bank-bag
+  invMgr on `BANKFRAME_OPENED` and clears it on close. Items in the
+  24-slot core bank are always available (their GUIDs live on the
+  player invMgr's flat array, populated at login).
+- **Equipping from the bank** is not supported by vanilla's protocol
+  — `UseEquipmentSet` skips bank items rather than try and fail.
+  Retrieve the items first, then re-run.
+
+Modern's signatures take a numeric `iconFileID`; we accept icon path
+strings (e.g. `"INV_Shield_06"`) since vanilla has no fileDataID
+system. Same string-or-default fallback semantic as 4.3.4 native.
+
+Cap is **10 sets per character**, matching 4.3.4. The full list re-
+serializes on every mutation; a corrupted file is harmless (parse
+errors leave the in-memory list empty and the next save rewrites the
+file from scratch).
+
+> Note: this is a **fresh client-side namespace**, not a polyfill of
+> some specific Blizzard build's behavior. The shape mirrors Classic
+> Era 1.15.x's `C_EquipmentSet.*` where it can, but anything that
+> requires server-side state (cross-character sharing, the
+> "Equipment Manager" specialization tab) isn't supported.
+
+### `C_EquipmentSet.CanUseEquipmentSets()`
+
+Returns `true` unconditionally. Vanilla has no banker/feature gate
+on equipment-set storage; we ship the feature for every character.
+Equivalent to Classic Era's behavior.
+
+### `C_EquipmentSet.GetNumEquipmentSets()`
+
+Returns the count of sets stored for the current character. Loads
+the file on first call after login.
+
+### `C_EquipmentSet.GetEquipmentSetIDs()`
+
+Returns a numeric-keyed table of every setID in storage order
+(insertion-order; not alphabetical). Empty table when nothing's
+saved.
+
+### `C_EquipmentSet.GetEquipmentSetID(name)`
+
+Returns the numeric setID for a set with the given name, or `nil` if
+no set by that name exists. Names are exact (case-sensitive, no
+trimming).
+
+### `C_EquipmentSet.GetEquipmentSetInfo(setID)`
+
+Returns the nine values modern ships:
+
+```
+name, icon, setID, isEquipped,
+numItems, numEquipped, numInInventory, numMissing, numIgnored
+```
+
+`isEquipped` is `true` when every resolvable item in the set is in
+its target slot (missing items don't disqualify — useful so a set
+that includes a bank-stored cloak still shows as equipped after you
+swap in the rest). `numItems` excludes ignored slots; `numIgnored`
+counts them separately. Returns nothing for an unknown setID.
+
+### `C_EquipmentSet.GetIgnoredSlots(setID)`
+
+Returns a numeric-keyed table of slot indices (1..19) that the set
+has flagged ignored. Empty table when no slots are ignored. Ignored
+slots are recorded **per-set at save time**, by reading the global
+`IgnoreSlotForSave` state — not retroactively editable on a saved set.
+
+### `C_EquipmentSet.GetItemIDs(setID)`
+
+Returns a hash table `{ [slot] = itemID }` for every set slot whose
+item is currently resolvable. Missing items (GUID stored but client
+can't find a CGItem) are omitted because vanilla doesn't keep an
+itemID separate from the live CGItem record.
+
+### `C_EquipmentSet.GetItemLocations(setID)`
+
+Returns a hash table `{ [slot] = locationCode }`. Location codes use
+the modern bit-packed encoding that Classic Era 1.15.x's
+`EquipmentManager_UnpackLocation` decodes:
+
+| Bit/field | Meaning |
+|-----------|---------|
+| `0x100` (PLAYER) | Always set (we don't expose other players' sets) |
+| `0x200` (BANK) | Item is in the bank (main or bank bag) |
+| `0x400` (BAGS) | Item is inside a bag (player or bank bag) |
+| bits 0..7 | Slot (1-based) within the container |
+| bits 16..23 | Bag ID (0..4 player, 5..10 bank); ignored when BAGS bit is clear |
+
+Special values:
+- `1` — slot is ignored (`GetIgnoredSlots` lists these)
+- `-1` — item is missing (was in the set, can't find now)
+
+### `C_EquipmentSet.CreateEquipmentSet(name [, icon])`
+
+Snapshots the player's currently-equipped items into a new set and
+returns its setID. Honors `IgnoreSlotForSave` — slots flagged ignored
+at call time get the ignored marker instead of the equipped item's
+GUID.
+
+Returns the new setID on success. Returns nothing if:
+- the name is empty or already in use
+- the cap of 10 sets is reached
+
+`icon` defaults to `"INV_Misc_QuestionMark"` if omitted.
+
+### `C_EquipmentSet.SaveEquipmentSet(setID [, icon])`
+
+Overwrites an existing set's contents with the player's currently-
+equipped items. Same ignored-slot handling as `CreateEquipmentSet`.
+If `icon` is provided it replaces the set's previous icon; otherwise
+the icon is left unchanged.
+
+### `C_EquipmentSet.ModifyEquipmentSet(setID, newName)`
+
+Renames an existing set. Fails silently if the new name is empty,
+already in use by a different set, or the setID doesn't exist.
+
+### `C_EquipmentSet.DeleteEquipmentSet(setID)`
+
+Removes the set. SetIDs are not reused — the next `Create` call
+allocates one higher than any seen.
+
+### `C_EquipmentSet.IgnoreSlotForSave(slot)` / `UnignoreSlotForSave` / `IsSlotIgnoredForSave` / `ClearIgnoredSlotsForSave`
+
+Global "skip this slot the next time `CreateEquipmentSet` or
+`SaveEquipmentSet` runs" state, indexed by 1-based slot (1..19).
+Persists for the rest of the session; not written to the WTF file.
+Use it when building a set that should leave (say) the tabard slot
+free — set the ignore flag, then call `CreateEquipmentSet`, then
+optionally `ClearIgnoredSlotsForSave()` afterward.
+
+### `C_EquipmentSet.EquipmentSetContainsLockedItems(setID)`
+
+Returns `true` if any item in the set is currently flagged "locked"
+by the engine — a pending pickup or use is in flight that
+`UseEquipmentSet` would race with. Reads bit 2 (`0x04`) of
+`ITEM_FIELD_FLAGS` for each resolvable item in the set.
+
+### `C_EquipmentSet.UseEquipmentSet(setID)`
+
+Walks the set and dispatches pickup→equip pairs for every item that
+isn't already in its target slot. Items in the bank are skipped
+silently (vanilla can't equip from bank). Missing items are skipped
+silently. Returns `true` if the call ran (the set existed), `false`
+otherwise.
+
+> Behavior: this is **not a perfect swap solver**. If two set items
+> want each other's slots ("ring A in slot 11, ring B in slot 12, set
+> swaps them") the cursor cleanup may stash one in a free bag slot
+> instead of completing the cycle. Re-run `UseEquipmentSet(setID)`
+> and the next pass picks up the stashed item and finishes. The
+> 4.3.4 native uses a temporary-bag-slot shuffle to nail this in one
+> pass; we leave that as future work.
+
+### `EQUIPMENT_SETS_CHANGED` event
+
+Fires (with no payload) after any mutation: `Create`, `Save`,
+`Modify`, `Delete`, and the four `*IgnoredSlot*` calls. Addon UI
+should re-read its set list / button state when this fires.
 
 ## Class
 

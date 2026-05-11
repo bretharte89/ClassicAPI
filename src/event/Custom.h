@@ -47,6 +47,11 @@ struct AutoReserve {
 // so call this at fire time rather than caching the value.
 int Lookup(const char *name);
 
+// Dispatches an event with no payload (empty format string). Used by
+// `EQUIPMENT_SETS_CHANGED` and other notifications whose only signal
+// is "something in this domain changed — go re-read".
+void Fire_None(int eventID);
+
 // Dispatches an event with two int args (format `"%d%d"`). Pass
 // booleans as 0/1 since the engine has no native bool format code.
 void Fire_DD(int eventID, int arg1, int arg2);

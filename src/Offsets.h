@@ -1273,4 +1273,31 @@ enum Offsets {
     // looking for a matching item.
     EQUIPMENT_SLOT_FIRST = 1,
     EQUIPMENT_SLOT_LAST = 19,
+
+    // CGItem instance block GUID — qword at +0x00 of the instance block
+    // (which sits behind the pointer at CGItem +0x08). Sibling of
+    // OFF_INSTANCE_BLOCK_ITEM_ID at +0x0C in the same block.
+    OFF_INSTANCE_BLOCK_GUID = 0x00,
+
+    // `Script_ClearCursor` / `Script_PickupInventoryItem` Lua C
+    // functions — both `__fastcall(void *L)`. ClearCursor takes no
+    // args, drops anything held on the cursor. PickupInventoryItem
+    // reads a 1-based character-pane slot at Lua stack[1] and lifts
+    // that equipped item onto the cursor (or swaps with the existing
+    // cursor contents). Used by `C_EquipmentSet.UseEquipmentSet` to
+    // assemble the pickup→equip chain for each set item.
+    FUN_SCRIPT_CLEAR_CURSOR = 0x004895B0,
+    FUN_SCRIPT_PICKUP_INVENTORY_ITEM = 0x004C8DA0,
+
+    // Engine session globals used by `EquipmentSet::Storage` to build
+    // the per-character WTF path. Same layout VanillaMinimapTracking
+    // uses for its own persistence file. Account is the value WoW
+    // writes the per-character WTF directory under — NOT the saved-
+    // credentials CVAR. Character name is an inline buffer (NUL byte
+    // at index 0 means "no active character yet"). Realm name lives
+    // inside a struct one indirection in.
+    VAR_ACCOUNT_NAME_PTR = 0x00BE1C0C,
+    VAR_CHARACTER_NAME = 0x00C27D88,
+    VAR_REALM_INFO_PTR = 0x00C28130,
+    OFF_REALM_INFO_NAME = 0x20,
 };
