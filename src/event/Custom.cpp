@@ -128,6 +128,14 @@ void Fire_None(int eventID) {
     fn(eventID, "");
 }
 
+void Fire_D(int eventID, int arg1) {
+    if (eventID < 0)
+        return;
+    using FireEvent_D_t = void(__cdecl *)(int eventID, const char *format, int a);
+    auto fn = reinterpret_cast<FireEvent_D_t>(Offsets::FUN_FIRE_EVENT);
+    fn(eventID, "%d", arg1);
+}
+
 void Fire_DD(int eventID, int arg1, int arg2) {
     if (eventID < 0)
         return;

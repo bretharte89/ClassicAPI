@@ -2445,20 +2445,13 @@ shuffle. ~50 LOC.
 
 For now, the known limitation is documented in `docs/API.md`.
 
-## 74. `EQUIPMENT_SWAP_PENDING` event
+## ~~74. `EQUIPMENT_SWAP_PENDING` event~~ — DONE
 
-Modern WoW fires both `EQUIPMENT_SWAP_PENDING(setID)` at the START
-of an equipment-manager swap and `EQUIPMENT_SWAP_FINISHED(success,
-setID)` at the END. We currently only ship FINISHED. PENDING is
-useful for addon UI that wants to grey out the set's button during
-the swap, even though our UseEquipmentSet completes synchronously
-(no actual pending state).
-
-Trivial: add an `AutoReserve` for `EQUIPMENT_SWAP_PENDING`, call
-`Fire_D(slot, setID)` at the top of `Script_UseEquipmentSet` after
-validating the set exists. Need to add `Fire_D` (single-int) to
-`Event::Custom` since we don't have it yet — or just pass a dummy
-second arg through `Fire_DD`.
+Fires `(setID)` at the start of `UseEquipmentSet` right after the
+set-exists check, before any pickup/equip work. Skipped when the
+set doesn't exist (only FINISHED with `success=false` fires
+there). Added `Event::Custom::Fire_D` (single-int variant) to
+support the one-arg signature.
 
 ## 75. Bank-bag walk — extract shared helper
 

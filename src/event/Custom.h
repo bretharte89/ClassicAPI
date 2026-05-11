@@ -52,6 +52,10 @@ int Lookup(const char *name);
 // is "something in this domain changed — go re-read".
 void Fire_None(int eventID);
 
+// Dispatches an event with one int arg (format `"%d"`). Used by
+// `EQUIPMENT_SWAP_PENDING(setID)`.
+void Fire_D(int eventID, int arg1);
+
 // Dispatches an event with two int args (format `"%d%d"`). Pass
 // booleans as 0/1 since the engine has no native bool format code.
 void Fire_DD(int eventID, int arg1, int arg2);

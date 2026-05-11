@@ -400,6 +400,13 @@ int __fastcall Script_UseEquipmentSet(void *L) {
         return 1;
     }
 
+    // Fire PENDING right after the set-exists check, before any of
+    // the pickup/equip work. Addon UI can use this to gate swap-in-
+    // progress visuals.
+    const int pendingEvt = Event::Custom::Lookup(kSwapPendingEvent);
+    if (pendingEvt >= 0)
+        Event::Custom::Fire_D(pendingEvt, static_cast<int>(setID));
+
     // Clear any preexisting cursor state — otherwise our PickupX
     // calls will swap with whatever's held instead of lifting.
     Game::Lua::SetTop(L, 0);
@@ -502,6 +509,7 @@ static void RegisterLuaFunctions() {
 
 static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
 static const Event::Custom::AutoReserve _reserve{kEventName};
-static const Event::Custom::AutoReserve _reserveSwap{kSwapFinishedEvent};
+static const Event::Custom::AutoReserve _reservePending{kSwapPendingEvent};
+static const Event::Custom::AutoReserve _reserveFinished{kSwapFinishedEvent};
 
 } // namespace EquipmentSet::Api

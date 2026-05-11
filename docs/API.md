@@ -76,6 +76,7 @@ build instructions.
   - [`C_EquipmentSet.EquipmentSetContainsLockedItems(setID)`](#c_equipmentsetequipmentsetcontainslockeditemssetid)
   - [`C_EquipmentSet.UseEquipmentSet(setID)`](#c_equipmentsetuseequipmentsetsetid)
   - [`EQUIPMENT_SETS_CHANGED` event](#equipment_sets_changed-event)
+  - [`EQUIPMENT_SWAP_PENDING` event](#equipment_swap_pending-event)
   - [`EQUIPMENT_SWAP_FINISHED` event](#equipment_swap_finished-event)
 - [Class](#class)
   - [`FillLocalizedClassList(table [, isFemale])`](#filllocalizedclasslisttable-isfemale)
@@ -1942,6 +1943,18 @@ otherwise.
 Fires (with no payload) after any mutation: `Create`, `Save`,
 `Modify`, `Delete`, and the four `*IgnoredSlot*` calls. Addon UI
 should re-read its set list / button state when this fires.
+
+### `EQUIPMENT_SWAP_PENDING` event
+
+Fires with a single payload arg — `setID` — at the **start** of
+`UseEquipmentSet`, right after the set-exists check passes and
+before any pickup/equip work begins. Modern addons use this to
+gate "swap in progress" UI state (grey out the set button, show
+a spinner, etc.) until `EQUIPMENT_SWAP_FINISHED` arrives.
+
+Doesn't fire if `UseEquipmentSet` is called with an unknown
+setID — in that case only `EQUIPMENT_SWAP_FINISHED(false, setID)`
+fires.
 
 ### `EQUIPMENT_SWAP_FINISHED` event
 
