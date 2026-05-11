@@ -96,10 +96,22 @@ constexpr int LOC_MISSING = -1;
 // coincidence, not load-bearing).
 constexpr int LOC_IGNORED = 1;
 
-// Custom event name. Modern fires `EQUIPMENT_SETS_CHANGED` with no
-// payload on any mutation (create / save / modify / delete / ignore-
-// slot change). We reserve the slot via `Event::Custom::AutoReserve`
-// in `Api.cpp`.
+// Custom event names. Both are reserved at module-init time via
+// `Event::Custom::AutoReserve` in `Api.cpp`.
+//
+//   EQUIPMENT_SETS_CHANGED   — no payload; fires on any mutation
+//                              (create / save / modify / delete /
+//                              ignore-slot change). Addon UI re-reads
+//                              its list / button state on this.
+//   EQUIPMENT_SWAP_FINISHED  — `(success: bool, setID: int)`; fires
+//                              at the end of `UseEquipmentSet`.
+//                              `success` is false when the set
+//                              doesn't exist, true otherwise (we
+//                              don't probe whether each individual
+//                              pickup→equip pair actually completed,
+//                              matching modern's "we dispatched"
+//                              definition of success).
 constexpr const char *kEventName = "EQUIPMENT_SETS_CHANGED";
+constexpr const char *kSwapFinishedEvent = "EQUIPMENT_SWAP_FINISHED";
 
 } // namespace EquipmentSet

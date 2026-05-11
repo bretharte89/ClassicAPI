@@ -395,6 +395,9 @@ int __fastcall Script_UseEquipmentSet(void *L) {
     const uint32_t setID = ArgSetID(L, 1);
     const Set *s = Data::FindByID(setID);
     if (s == nullptr) {
+        const int evt = Event::Custom::Lookup(kSwapFinishedEvent);
+        if (evt >= 0)
+            Event::Custom::Fire_DD(evt, 0, static_cast<int>(setID));
         Game::Lua::PushBoolean(L, 0);
         return 1;
     }
@@ -449,6 +452,10 @@ int __fastcall Script_UseEquipmentSet(void *L) {
     reinterpret_cast<int(__fastcall *)(void *)>(
         Offsets::FUN_SCRIPT_CLEAR_CURSOR)(L);
 
+    const int evt = Event::Custom::Lookup(kSwapFinishedEvent);
+    if (evt >= 0)
+        Event::Custom::Fire_DD(evt, 1, static_cast<int>(setID));
+
     Game::Lua::PushBoolean(L, 1);
     return 1;
 }
@@ -497,5 +504,6 @@ static void RegisterLuaFunctions() {
 
 static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
 static const Event::Custom::AutoReserve _reserve{kEventName};
+static const Event::Custom::AutoReserve _reserveSwap{kSwapFinishedEvent};
 
 } // namespace EquipmentSet::Api

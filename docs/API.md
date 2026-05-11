@@ -75,6 +75,7 @@ build instructions.
   - [`C_EquipmentSet.EquipmentSetContainsLockedItems(setID)`](#c_equipmentsetequipmentsetcontainslockeditemssetid)
   - [`C_EquipmentSet.UseEquipmentSet(setID)`](#c_equipmentsetuseequipmentsetsetid)
   - [`EQUIPMENT_SETS_CHANGED` event](#equipment_sets_changed-event)
+  - [`EQUIPMENT_SWAP_FINISHED` event](#equipment_swap_finished-event)
 - [Class](#class)
   - [`FillLocalizedClassList(table [, isFemale])`](#filllocalizedclasslisttable-isfemale)
 - [Unit](#unit)
@@ -1889,6 +1890,16 @@ otherwise.
 Fires (with no payload) after any mutation: `Create`, `Save`,
 `Modify`, `Delete`, and the four `*IgnoredSlot*` calls. Addon UI
 should re-read its set list / button state when this fires.
+
+### `EQUIPMENT_SWAP_FINISHED` event
+
+Fires at the end of every `UseEquipmentSet` call with two payload
+args: `success` (1 if the set existed and we dispatched the swap, 0
+if the setID was unknown) and `setID`. Note this is "we ran the
+dispatch" success — not "every item ended up in its target slot."
+Items that were in the bank or that couldn't complete a swap cycle
+in one pass still report success=1. Listen for this if you want to
+re-paint the character pane / refresh tooltips after a swap.
 
 ## Class
 
