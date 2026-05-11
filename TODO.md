@@ -2233,3 +2233,155 @@ Three possible non-conflicting paths:
 
 Prefer #2 if a read-only signal exists; #1 only if a verifiably
 quiet hook target turns up; #3 as the honest fallback.
+
+## 68. `UnitChannelInfo(unit)` / `UnitCastingInfo(unit)` — medium
+
+Modern signatures return `(name, _, texture, startMs, endMs, _, _,
+spellID)` for the unit's currently channeled / cast spell. 1.12
+exposes nothing equivalent — the closest is `SPELLCAST_CHANNEL_*`
+events, which only fire for the local player and don't carry
+spellID payloads.
+
+The data is sitting in the broadcast descriptor:
+
+- `UNIT_FIELD_CHANNEL_SPELL` at descriptor `+0x228` (already in
+  `Offsets.h` as `OFF_UNIT_FIELD_CHANNEL_SPELL`). Verified via the
+  warlock/clicker/fishing diffs in the `IsAssistingRitual` session
+  — non-zero = currently channeling that spell.
+- `UNIT_FIELD_CHANNEL_OBJECT` at descriptor `+0x38/+0x3C`
+  (`OFF_UNIT_FIELD_CHANNEL_OBJECT`). 64-bit GUID of the channel
+  target — bobber for fishing, lock for lockpicking, etc. Zero for
+  channels that don't bind to a GameObject (warlock spells, Ritual
+  of Summoning).
+
+That gives us spellID immediately, and `name` + `texture` via the
+existing `GetSpellInfo(spellID)` chain. Worth shipping a partial
+function that omits the `startMs`/`endMs` returns and let callers
+do their own duration estimation off `SPELLCAST_CHANNEL_START` —
+or hunt for the per-unit cast-time fields the engine uses for the
+local castbar.
+
+What's missing for the full modern signature: the start/end-time
+fields. The local player has `Script_SpellStopCasting`-adjacent
+state at fixed VAs (`m_castingSpellId`, `m_castStartMs`,
+`m_castEndMs`) — but for *other* units we'd need to either find
+broadcast UpdateFields holding the same, or compute end-time on
+the client from `Spell.dbc`'s cast time when we see a fresh
+UNIT_FIELD_CHANNEL_SPELL value. The 5.4.8/3.3.5 binaries are the
+right next stop for this.
+
+Companion field to investigate while we're in here: `desc 0x1320`
+captures the *prior* channeled spellID after the channel ends —
+see entry #71 for what that's about.
+
+## 69. `IsGathering()` — easy (local player only)
+
+No-arg local-player boolean that fires while the player is
+mid-gather: herb pick, ore mine, fishing-bobber-loot, lockpicking,
+skinning. Modern WoW doesn't expose this exact concept but addons
+that care (auto-attack suppression, mouse-look reversion, autorun
+toggles) reverse-engineer it from `LOOT_OPENED` /
+`UNIT_SPELLCAST_*` events. A direct read is cleaner.
+
+State machine from the `IsAssistingRitual` session, verified by
+diffing the player while gathering:
+
+- `[player + 0x1D28]` / `[player + 0x1D2C]` — 64-bit GUID of the
+  GameObject the player is gathering from. `0xF110xxxx` high half
+  = vanilla GameObject prefix. Set when the gather animation
+  starts, cleared when it ends or breaks.
+- `[player + 0xD48]` — small int, `0` baseline, `1` during gather.
+  Confirmed for herb gather; mining sets the same field. Cleanest
+  single-bit signal we have.
+- `UNIT_FIELD_FLAGS` (descriptor `+0xA0`) bit `0x1000` is cleared
+  during gather — unclear what the bit semantically means (other
+  emulator sources don't agree on this bit's name in vanilla), but
+  it's another way to detect the state.
+
+Three implementation options worth picking between:
+
+1. **`IsGathering()`** boolean, `[player+0xD48] != 0`. One line.
+2. **`GatheringObjectGUID()`** returning `(lo, hi)` from
+   `[player+0x1D28]/+0x1D2C`. Lets addons distinguish herb-from-
+   herb / chest-from-chest. Modest extra surface.
+3. **Family of `IsHerbing()` / `IsMining()` / `IsFishing()`** —
+   requires looking up the GameObject's type/sub-class from its
+   GUID, which means walking the engine's GO cache. Significantly
+   more work; defer unless someone has a use case.
+
+Fishing is the trickiest case — `/cast Fishing` is a regular spell
+cast (sets UNIT_CHANNEL_SPELL = 7620), the bobber sits in water
+during a separate wait phase (UNIT_CHANNEL_OBJECT = bobber GUID),
+then the right-click bobber action triggers the gather/loot
+machinery (sets `[player+0x1D28]/+0x1D2C` to the bobber GUID, but
+NOT `0xD48`). So `[player+0xD48]` is "gather-cast active"
+(herbing/mining), and `[player+0x1D28]` is the broader "engaged
+with a lootable GO" pointer. Pick which semantic you want before
+naming.
+
+## 70. `UnitStandState(unit)` — easy
+
+Modern `GetUnitStandStateValue(unit)` or `UnitStandState(unit)` (the
+name varies by expansion) returns an integer describing whether
+the unit is standing / sitting / sleeping / kneeling. Vanilla 1.12
+exposes only `IsSitOrStanding()` (local boolean) and lacks any
+"is target sitting" check.
+
+Verified directly via the `IsAssistingRitual` session: descriptor
+`+0x210` is `UNIT_BYTES_1` (CMaNGOS field 132 in the 1.12.1
+layout). The standstate is the **low byte** of that u32. Observed
+transition during a `/sit` on a chair: `0xEE00 → 0xEE05`,
+i.e. low byte 0 → 5 (`STANDSTATE_SIT_MEDIUM_CHAIR`).
+
+Vanilla standstate enum (from emulator sources, low byte of
+`UNIT_BYTES_1`):
+
+| Value | Meaning             |
+|------:|---------------------|
+| 0     | STANDING            |
+| 1     | SITTING             |
+| 2     | SITTING_CHAIR       |
+| 3     | SLEEPING            |
+| 4     | SITTING_LOW_CHAIR   |
+| 5     | SITTING_MEDIUM_CHAIR|
+| 6     | SITTING_HIGH_CHAIR  |
+| 7     | DEAD                |
+| 8     | KNEELING            |
+
+Implementation: resolve unit → descriptor → `[+0x210] & 0xFF`.
+Broadcast field, so it works for any synced unit (player, target,
+party/raid, inspect targets) — not local-only.
+
+While we're documenting `UNIT_BYTES_1`, the other bytes of the same
+u32 are worth deriving when needed (CMaNGOS docs say byte 1 =
+`PetTalents`, byte 2 = `VisFlag`, byte 3 = `AnimTier`), but none
+have an obvious modern-API hook in vanilla.
+
+## 71. Descriptor `+0x1320` — "last channeled spell" parking lot
+
+During the `IsAssistingRitual` investigation, the player's
+descriptor showed `+0x1320` flip from `0` to `0x2BA` (= 698 =
+Ritual of Summoning) **immediately after** the channel ended,
+where the active channel was at `+0x228`. So `+0x228` =
+UNIT_CHANNEL_SPELL (live), and `+0x1320` looks like a "previously
+channeled" stash that's populated on transition-to-zero.
+
+Not enough data to commit to a semantic yet. Open questions:
+
+- Does it also stash for fishing / lockpicking / mining channels?
+  We have one data point (the portal click) showing the behavior.
+- Does it clear, and if so when? (`/reload`? Next channel? Never?)
+- Is it a broadcast UpdateField or local-only?
+
+If it turns out to be a stable "last completed channel" field, it
+unlocks polyfills for the modern `UNIT_SPELLCAST_CHANNEL_STOP`
+event payload (which carries the spellID that just ended) without
+hooking the channel-stop code path. Lower-priority; useful but
+not load-bearing for any specific API in the polyfill addon
+today.
+
+Investigation plan when picked up: snap `+0x1320` before any
+channeled action, perform a clean channel, snap again immediately
+after channel end (use `_classicapi_DescDump(0x1320, 4)` for a
+targeted read). Repeat across several channel types and confirm
+the pattern.
