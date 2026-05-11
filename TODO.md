@@ -2163,31 +2163,101 @@ right answer is always a C++ engine hook. `FUN_FRAME_SCRIPT_EXECUTE`
 is gone from the codebase; pretend it doesn't exist. (See the
 saved feedback memory.)
 
-### Where to go next
+### Ghidra investigation (2026-05-11) — actual fire-site map
 
-Three possible non-conflicting paths:
+Disassembling 1.12 reveals **three call sites** of
+`FUN_00703F50(0x148, "%d", bagID)` (event ID `0x148` = 328 =
+BAG_UPDATE — derived from the BAG_UPDATE name pointer's position
+in the input array at `0x00BE16B8`, offset `0x520` from array
+base, divided by stride 4):
 
-1. **Find an obscure single-purpose engine function** that other
-   DLLs demonstrably don't touch — call sites of `FUN_FIRE_EVENT`
-   from the specific bag-update code path (e.g., the
-   `Script_GetBagName` / `Script_GetContainerItemInfo` neighborhood
-   in `0x004F8xxx`-`0x004FAxxx`), or whatever fires BAG_UPDATE from
-   network packet processing. A hook there avoids the popular targets.
+1. **`FUN_004F91A0`** — bag-slot diff loop (2 callers — quiet).
+   Walks linear slots `0x13..0x16` (player bags 1..4) and
+   `0x3B..0x44` (bank bags 5..10), comparing each against a cached
+   GUID snapshot at `DAT_00BDD060`. Fires `BAG_UPDATE(bagID)` for
+   each slot whose GUID changed. Also fires event `0x149`
+   (BAG_CLOSED) when a bag is removed. Called from the per-session
+   init (`FUN_004F8CC0`) and from packet-handler `FUN_004F8EC0`.
 
-2. **Read-only mechanism** — poll a global that tracks bag dirty
-   state. The engine maintains `[ItemMgr + 0x10]` "bank-aware mode"
-   and similar flags around the inventory manager; there may be a
-   dirty/sequence counter we can read once per frame from a
-   non-hooked surface (e.g., piggybacking on a tick that the rest of
-   our code already runs in). No new hook, no collision risk.
+2. **`FUN_004F8DB0`** — item-descriptor-change callback (4
+   callback registrations, all in init helpers). Direct
+   `FUN_00703F50(0x148, "%d", -2)` for slot range `0x51..0x70`
+   (keyring). Other slot ranges delegate to `FUN_004F9370`.
 
-3. **Document the limitation** and skip the polyfill — addons that
-   want this behavior on Octo-style multi-DLL clients can fall back
-   to debouncing `BAG_UPDATE` themselves via an `OnUpdate` timer.
-   Ship-quality, but admits defeat.
+3. **`FUN_004F9370`** — item→bag resolver (3 callers, all inside
+   the bag subsystem). Given an item GUID, searches `DAT_00BDD060`
+   for a match. Fires `BAG_UPDATE(0)` if the item belongs to the
+   player (backpack), `BAG_UPDATE(N)` if it's in bag N, returns
+   silently if not found in any bag. This is the **most common
+   path** — every "item moved within bags" event flows through
+   here.
 
-Prefer #2 if a read-only signal exists; #1 only if a verifiably
-quiet hook target turns up; #3 as the honest fallback.
+All three targets are quiet (≤4 callers each, all inside the bag
+code region `0x004F8DB0..0x004F94D0`). None overlap with the
+hot-loop hook targets the previous attempt collided on
+(`FUN_FIRE_EVENT`, the per-frame OnUpdate).
+
+### Revised implementation plan
+
+**Approach: hook all three fire sites + time-throttled emit.**
+
+```cpp
+DWORD g_lastDelayedFireTick = 0;
+constexpr DWORD DELAYED_COALESCE_MS = 10;  // ~one frame at 60Hz
+
+void EmitDelayedIfDue() {
+    const DWORD now = GetTickCount();
+    if (now - g_lastDelayedFireTick < DELAYED_COALESCE_MS) return;
+    g_lastDelayedFireTick = now;
+    const int slot = Event::Custom::Lookup(kBagDelayedEvent);
+    if (slot >= 0) Event::Custom::Fire_None(slot);
+}
+
+void __cdecl Bag_004F91A0_h() {
+    g_004F91A0_orig();
+    EmitDelayedIfDue();
+}
+
+// Same wrapper pattern for FUN_004F8DB0 (cdecl-style __thiscall —
+// it takes (int slotID, GUIDlo, GUIDhi, int *cachedGUID*) per the
+// decompile) and FUN_004F9370 (cdecl `(int lo, int hi)`).
+```
+
+Each hook just runs the original, then calls `EmitDelayedIfDue`
+which checks a `GetTickCount`-based throttle. First BAG_UPDATE
+in a frame fires DELAYED; subsequent fires within ~10ms (same
+frame at 60Hz) skip due to the throttle. Next frame's first
+fire (>16ms later) triggers DELAYED again.
+
+**Why this avoids the previous attempt's crash:** none of these
+three targets are common hook destinations for other DLLs. The
+problem before was hooking `FUN_FIRE_EVENT` (100+ callers,
+trafficked by every event) and `FUN_FRAMESCRIPT_FRAME_ONUPDATE`
+(per-frame dispatcher) — both prime collision targets for
+SuperWoWhook / nampower / transmogfix. The bag subsystem
+internals at `0x004F9xxx` aren't touched by those DLLs (none of
+them care about bag-update timing).
+
+**Semantic delta vs modern:** modern coalesces at exact end-of-
+frame; we coalesce within a 10ms window. For addons doing
+"rescan inventory on BAG_UPDATE_DELAYED" the difference isn't
+observable. The throttle is conservative enough to swallow
+packet bursts (typically <1ms between fires from the same
+packet) while letting frame-spanning bursts re-trigger.
+
+### Fallback if even three quiet hooks collide
+
+Drop to hooking only `FUN_004F9370` (the most common path).
+Misses bag-equip-itself and keyring cases but covers the 90%
+case of "user picked up an item / moved an item in bag." Single
+hook, lowest collision risk.
+
+### Honest fallback
+
+If both hook plans collide, document the limitation — addons
+that want this behavior on Octo-style multi-DLL clients can
+fall back to debouncing `BAG_UPDATE` themselves via an
+`OnUpdate` timer.
 
 ## 68. `UnitChannelInfo(unit)` / `UnitCastingInfo(unit)` — medium
 
