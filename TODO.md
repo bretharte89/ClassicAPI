@@ -647,25 +647,11 @@ namespace.
   `IsWatchedFaction(id)` getter too (engine has one at
   `0x004D62F0` already).
 
-## 34. `C_DateAndTime.GetSecondsUntilDailyReset()` — easy
+## ~~34. `C_DateAndTime.GetSecondsUntilDailyReset()`~~ — DONE (see #76)
 
-Modern API returns seconds until the next "daily reset" — vanilla 1.12
-has no daily reset concept (no daily quests, no LFG cooldown, etc.)
-but the closest sensible analog is **seconds until midnight server
-time**, which is what addons like RepBuddy actually use this for
-(`Util/RepBuddy.lua:185` — refreshes the day's earned-rep snapshot).
-
-Implementation: read server hour/minute from whatever global vanilla's
-`Script_GetGameTime` (`0x...` — find via `raw_globals.txt`) reads,
-then compute `(24-hour)*3600 - minute*60`. Returns an int. If the
-server hour can't be resolved (e.g. before first time-sync packet),
-fall back to `86400` (a full day) — better than 0, which would make
-addons think a reset just happened and wipe daily snapshots.
-
-Could share infrastructure with #5 `GetServerTime` if we wire that up
-first — if we have the server epoch, "seconds until next UTC midnight"
-is `86400 - (epoch % 86400)`. Otherwise the GetGameTime path stands
-alone.
+Shipped as part of the full `C_DateAndTime.*` backport — see #76.
+Uses `86400 - (Time::Server::CurrentEpoch() % 86400)` for server-
+midnight semantics.
 
 ## 35. `GetPlayerInfoByGUID(guid)` — multi-day, deferred
 
