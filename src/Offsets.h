@@ -138,6 +138,11 @@ enum Offsets {
     // by `UnitIsFeignDeath(unit)` — works on any unit since
     // UNIT_FIELD_FLAGS is broadcast in object updates.
     UNIT_FLAG_FEIGN_DEATH = 0x20000000,
+    // Bit 24 of UNIT_FIELD_FLAGS — set by the engine when a player is
+    // possessed (priest's `Mind Control`, warlock's `Subjugate Demon`).
+    // Standard vanilla `UNIT_FLAG_POSSESSED = 0x01000000` per emulator
+    // source (CMaNGOS/TrinityCore). Read by `UnitIsPossessed(unit)`.
+    UNIT_FLAG_POSSESSED = 0x01000000,
 
     // CGPlayer-side sub-struct, allocated for any player-controlled
     // unit (local self, target, party, raid, inspect targets — all of

@@ -128,12 +128,48 @@ int __fastcall Script_UnitIsFeignDeath(void *L) {
     return 1;
 }
 
+// `UnitIsPossessed(unit)` — returns true if the unit is currently
+// possessed (priest `Mind Control`, warlock `Subjugate Demon`). Reads
+// `UNIT_FIELD_FLAGS` bit 24 (`UNIT_FLAG_POSSESSED = 0x01000000`)
+// directly off the unit's m_objectFields descriptor. Same broadcast
+// path as FEIGN_DEATH — works for any unit token.
+int __fastcall Script_UnitIsPossessed(void *L) {
+    if (!Game::Lua::IsString(L, 1)) {
+        Game::Lua::Error(L, "Usage: UnitIsPossessed(\"unit\")");
+        return 0;
+    }
+    const char *token = Game::Lua::ToString(L, 1);
+    if (token == nullptr) {
+        Game::Lua::PushBoolean(L, 0);
+        return 1;
+    }
+
+    auto resolve = reinterpret_cast<ResolveUnitToken_t>(Offsets::FUN_RESOLVE_UNIT_TOKEN);
+    auto *unit = static_cast<const uint8_t *>(resolve(token));
+    if (unit == nullptr) {
+        Game::Lua::PushBoolean(L, 0);
+        return 1;
+    }
+    auto *fields = *reinterpret_cast<const uint8_t *const *>(
+        unit + Offsets::OFF_UNIT_DESCRIPTOR);
+    if (fields == nullptr) {
+        Game::Lua::PushBoolean(L, 0);
+        return 1;
+    }
+    const uint32_t unitFlags = *reinterpret_cast<const uint32_t *>(
+        fields + Offsets::OFF_UNIT_FIELD_FLAGS);
+    Game::Lua::PushBoolean(L,
+        (unitFlags & Offsets::UNIT_FLAG_POSSESSED) != 0 ? 1 : 0);
+    return 1;
+}
+
 } // namespace
 
 static void RegisterLuaFunctions() {
     Game::Lua::RegisterGlobalFunction("UnitIsAFK", &Script_UnitIsAFK);
     Game::Lua::RegisterGlobalFunction("UnitIsDND", &Script_UnitIsDND);
     Game::Lua::RegisterGlobalFunction("UnitIsFeignDeath", &Script_UnitIsFeignDeath);
+    Game::Lua::RegisterGlobalFunction("UnitIsPossessed", &Script_UnitIsPossessed);
 }
 
 static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};

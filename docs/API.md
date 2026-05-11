@@ -62,6 +62,7 @@ build instructions.
   - [`UnitIsAFK(unit)`](#unitisafkunit)
   - [`UnitIsDND(unit)`](#unitisdndunit)
   - [`UnitIsFeignDeath(unit)`](#unitisfeigndeathunit)
+  - [`UnitIsPossessed(unit)`](#unitispossessedunit)
 - [State](#state)
   - [`IsMounted()`](#ismounted)
   - [`IsStealthed()`](#isstealthed)
@@ -1665,6 +1666,23 @@ UnitIsFeignDeath("target")   -- true if a feigning hunter
 ```
 
 Equivalent to the function of the same name introduced in 3.0.
+
+### `UnitIsPossessed(unit)`
+
+Returns `true` if the unit is currently possessed (priest's `Mind
+Control`, warlock's `Subjugate Demon`). Reads `UNIT_FIELD_FLAGS` bit
+24 (`0x01000000`) — the standard vanilla `UNIT_FLAG_POSSESSED` per
+emulator sources — directly off the unit's m_objectFields descriptor.
+Works for any unit token since UNIT_FIELD_FLAGS is broadcast in
+object updates.
+
+```lua
+UnitIsPossessed("target")   -- true if mind-controlled
+```
+
+Distinct from `UnitIsCharmed`: charm covers any charm-type effect
+(including pets summoned via mob-charm spells), possess is the
+specific spell-driven take-over effect modern WoW splits out.
 
 ## State
 
