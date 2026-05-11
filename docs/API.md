@@ -1602,8 +1602,7 @@ Equivalent to the function of the same name introduced in 3.0.
 ### `C_Container.PlayerHasHearthstone()`
 
 Returns the itemID of the hearthstone if one is in the player's bags,
-or `nil` otherwise. Vanilla 1.12 only has a single hearthstone item
-(itemID `6948`), so the return is always either `6948` or `nil`.
+or `nil` otherwise.
 
 ```
 itemID = C_Container.PlayerHasHearthstone()
@@ -1615,14 +1614,26 @@ if C_Container.PlayerHasHearthstone() then
 end
 ```
 
-> **Modern WoW returns the actual itemID found.** Modern clients
-> recognize a list of hearthstone-equivalent toys (Garrison
-> Hearthstone, Dalaran Hearthstone, etc.); whichever is found in bags
-> is returned. None of those items exist in 1.12, so the original
-> Hearthstone (`6948`) is the only possible result here. Code
-> backporting from modern that does
-> `local id = C_Container.PlayerHasHearthstone()` works without
-> modification — `id` is just always `6948` when truthy.
+**Match logic.** An item counts as a hearthstone if **either**:
+1. Its itemID is `6948` (the vanilla Hearthstone — fast path, no
+   cache lookup needed), **or**
+2. Its on-use spell is spell `8690` (the "Hearthstone" cast itself).
+
+Rule 2 lets custom servers (Turtle WoW, etc.) ship reskinned
+hearthstone items with different itemIDs and still have them
+recognized — as long as their on-use is the Hearthstone spell.
+The return is the **actual matched itemID**, not a hardcoded
+constant, so code that wants to do something with the found id
+(`SetItemRef` for chat-linking, `GetItemInfo` for the item's
+name, etc.) gets the right value for any variant.
+
+> **Cache dependency for rule 2.** The on-use-spell check requires
+> the item's `ItemStats_C` record to be in the local cache. Items
+> currently in the player's bags are always cached (the engine
+> pre-fills the cache during bag sync), so the check is reliable
+> for this code path. The fallback to rule 1 (vanilla itemID
+> equality) covers the moment-of-login window before the cache is
+> fully populated.
 
 Walks bags 0..4 via the same chain
 [`C_Container.GetContainerItemID`](#c_containergetcontaineritemidbagindex-slotindex)

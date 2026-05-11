@@ -15,6 +15,7 @@
 #include "Offsets.h"
 #include "item/ID.h"
 #include "item/Location.h"
+#include "item/Spell.h"
 
 #include <cstdint>
 
@@ -41,46 +42,70 @@ int GetContainerSlotCount(void *L, int bagID) {
     return static_cast<int>(Game::Lua::ToNumber(L, -1));
 }
 
-// Walks the player's bags 0..4 looking for the hearthstone. Returns
-// `(bagID, slotIndex)` packed as positive ints in `outBag` / `outSlot`,
-// or `(-1, -1)` if no hearthstone is in bags. Stops on first match —
-// we don't care about duplicates.
+// Tests whether `itemID` is a hearthstone — either the vanilla one
+// (6948) or a custom-server variant that reuses Hearthstone's
+// on-use spell (8690). The itemID check is the fast path; the
+// on-use-spell check requires the item's ItemStats record to be in
+// the local cache, which is true for any item currently in the
+// player's bags (the engine pre-fills the cache during bag sync).
+bool IsHearthstoneItem(uint32_t itemID) {
+    if (itemID == Offsets::HEARTHSTONE_ITEM_ID)
+        return true;
+    return Item::Spell::OnUseSpellIDForItemID(itemID) ==
+           Offsets::HEARTHSTONE_SPELL_ID;
+}
+
+// Walks the player's bags 0..4 looking for a hearthstone-equivalent
+// item. Returns `(bagID, slotIndex, itemID)` in the out params, or
+// `(-1, -1, 0)` if none found. Stops on first match — we don't care
+// about duplicates.
+//
+// The `outItemID` lets `PlayerHasHearthstone` return the actual
+// matched itemID (which for a custom-server hearthstone won't be
+// `HEARTHSTONE_ITEM_ID`).
 //
 // Each `ResolveBag` / `GetContainerSlotCount` call clobbers Lua
 // stack[1]/[2], but we own the stack inside our callback context.
-bool FindHearthstone(void *L, int *outBag, int *outSlot) {
+bool FindHearthstone(void *L, int *outBag, int *outSlot, int *outItemID) {
     for (int bag = 0; bag <= 4; bag++) {
         const int slotCount = GetContainerSlotCount(L, bag);
         for (int slot = 1; slot <= slotCount; slot++) {
             const uint8_t *item = Item::Location::ResolveBag(L, bag, slot);
             if (item == nullptr)
                 continue;
-            if (Item::ID::FromCGItem(item) == Offsets::HEARTHSTONE_ITEM_ID) {
+            const int itemID = Item::ID::FromCGItem(item);
+            if (itemID > 0 && IsHearthstoneItem(static_cast<uint32_t>(itemID))) {
                 *outBag = bag;
                 *outSlot = slot;
+                *outItemID = itemID;
                 return true;
             }
         }
     }
     *outBag = -1;
     *outSlot = -1;
+    *outItemID = 0;
     return false;
 }
 
-// `C_Container.PlayerHasHearthstone()` — returns the itemID if a
-// hearthstone is in any of the player's bags (0..4), or `nil` if not.
-// In modern WoW the return is the specific hearthstone-toy itemID
-// found; vanilla 1.12 only has the original `HEARTHSTONE_ITEM_ID`
-// (6948), so the return is always 6948 or nil.
+// `C_Container.PlayerHasHearthstone()` — returns the itemID of any
+// hearthstone-equivalent item in the player's bags (0..4), or `nil`
+// if none found. "Hearthstone-equivalent" = itemID 6948 (vanilla) OR
+// any item whose on-use spell is 8690 (catches custom-server
+// hearthstone reskins; see `IsHearthstoneItem` above).
+//
+// Returns the **actual** matched itemID, not a hardcoded constant —
+// matches modern WoW's behavior where multiple hearthstone-toy
+// itemIDs are recognized and the specific one found gets returned.
 //
 // Walks the bags via `Item::Location::ResolveBag` — same path
 // `C_Container.GetContainerItemID` uses internally. Stops on first
 // match.
 int __fastcall Script_C_Container_PlayerHasHearthstone(void *L) {
-    int bag = -1, slot = -1;
-    if (!FindHearthstone(L, &bag, &slot))
+    int bag = -1, slot = -1, itemID = 0;
+    if (!FindHearthstone(L, &bag, &slot, &itemID))
         return 0;
-    Game::Lua::PushNumber(L, static_cast<double>(Offsets::HEARTHSTONE_ITEM_ID));
+    Game::Lua::PushNumber(L, static_cast<double>(itemID));
     return 1;
 }
 
@@ -98,8 +123,8 @@ int __fastcall Script_C_Container_PlayerHasHearthstone(void *L) {
 // regular `UseContainerItem(bag, slot)` Lua call would, so any spell-
 // queue / GCD / movement-cancel handling is unchanged.
 int __fastcall Script_C_Container_UseHearthstone(void *L) {
-    int bag = -1, slot = -1;
-    if (!FindHearthstone(L, &bag, &slot)) {
+    int bag = -1, slot = -1, itemID = 0;
+    if (!FindHearthstone(L, &bag, &slot, &itemID)) {
         Game::Lua::PushBoolean(L, 0);
         return 1;
     }

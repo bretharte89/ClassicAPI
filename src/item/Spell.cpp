@@ -23,6 +23,8 @@
 // `ITEM_SPELL_TRIGGER_ONUSE` localized strings — locale-fragile and
 // slow. This reads it directly off the cached `ItemStats_C` record.
 
+#include "item/Spell.h"
+
 #include "Game.h"
 #include "Offsets.h"
 #include "item/Arg.h"
@@ -55,7 +57,7 @@ const uint8_t *FetchItemRecord(uint32_t itemID) {
 // Vanilla server data on Turtle WoW has been observed to put the
 // ON_USE entry at slot index 0 for most items, but a few customized
 // items use later slots, so we scan all 5.
-int FindOnUseSpellID(const uint8_t *record) {
+int FindOnUseSpellIDInRecord(const uint8_t *record) {
     auto *spellIDs = reinterpret_cast<const uint32_t *>(
         record + Offsets::OFF_ITEMSTATS_SPELL_ID);
     auto *triggers = reinterpret_cast<const uint32_t *>(
@@ -95,7 +97,7 @@ int __fastcall Script_GetItemSpell(void *L) {
         Item::Data::WarmCache(static_cast<uint32_t>(itemID));
         return 0;
     }
-    const int spellID = FindOnUseSpellID(record);
+    const int spellID = FindOnUseSpellIDInRecord(record);
     if (spellID <= 0)
         return 0;
     const char *name = SpellNameForID(spellID);
@@ -107,6 +109,15 @@ int __fastcall Script_GetItemSpell(void *L) {
 }
 
 } // namespace
+
+int OnUseSpellIDForItemID(uint32_t itemID) {
+    if (itemID == 0)
+        return 0;
+    const uint8_t *record = FetchItemRecord(itemID);
+    if (record == nullptr)
+        return 0;
+    return FindOnUseSpellIDInRecord(record);
+}
 
 static void RegisterLuaFunctions() {
     Game::Lua::RegisterTableFunction("C_Item", "GetItemSpell", &Script_GetItemSpell);

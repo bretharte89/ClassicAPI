@@ -367,10 +367,17 @@ enum Offsets {
     // Lua). We invoke this from `C_Container.UseHearthstone` after
     // locating the hearthstone in bags.
     FUN_SCRIPT_USE_CONTAINER_ITEM = 0x004FA0E0,
-    // Vanilla 1.12 hearthstone is always itemID 6948. Modern WoW recognizes
-    // many hearthstone-equivalent toys (Garrison, Dalaran, etc.) but those
-    // items don't exist in 1.12, so a single-itemID match is exhaustive.
+    // Vanilla 1.12 hearthstone is always itemID 6948 and uses spell 8690
+    // ("Hearthstone" - 10-second cast, teleport to bind). Modern WoW
+    // recognizes many hearthstone-equivalent toys (Garrison, Dalaran,
+    // etc.) but those items don't exist in 1.12. Custom servers
+    // (Turtle WoW and similar) sometimes ship alternate hearthstone
+    // items that reuse spell 8690 as their on-use, so the hearthstone
+    // matcher OR's `itemID == HEARTHSTONE_ITEM_ID` against
+    // `OnUseSpellIDForItemID(itemID) == HEARTHSTONE_SPELL_ID` to catch
+    // both shapes.
     HEARTHSTONE_ITEM_ID = 6948,
+    HEARTHSTONE_SPELL_ID = 8690,
     // `Script_PickupContainerItem` Lua C function — `__fastcall(void *L)`.
     // Reads bagID at Lua stack[1] and slot at stack[2]; if an item is
     // present there, it goes onto the cursor (or, if cursor already holds
