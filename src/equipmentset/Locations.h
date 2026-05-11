@@ -24,21 +24,18 @@ namespace EquipmentSet::Locations {
 // (see Set.h's `PackEquipped`/`PackBag`/`PackMainBank`/`PackBankBag`).
 // Returns 0 if the GUID isn't found anywhere.
 //
-// Coverage:
-//   - paperdoll (slots 1..19)         — always available
-//   - backpack (bag 0, slots 1..16)   — always available
-//   - player bags 1..4                — always available
-//   - main bank (24 slots)            — always (raw GUID array read)
-//   - bank bag slots (bank bag items) — always (raw GUID array read)
-//   - bank bag CONTENTS (bags 5..10)  — only while bank window is open;
-//                                        the engine's bag invMgr is
-//                                        populated lazily and reading
-//                                        before that returns nothing
-//
-// `L` is required because the engine's `PackBagSlot` reads bag/slot
-// args off the Lua stack; we shape the stack inside this function.
-// Callers must own the stack; we leave it cleared on return.
-int FindGUID(void *L, uint64_t targetGuid);
+// Coverage — ALL locations are read via the player invMgr's flat
+// GUID array at `+0x04` and (for bag contents) via each bag's own
+// invMgr reached through the bag's vtable `+0x10`. None of this
+// goes through the engine's `GetItemBySlot` / `PackBagSlot` path,
+// so:
+//   - no Lua stack is touched (safe to call from any callback)
+//   - bank items resolve without the bank window ever being open
+//     (the GUIDs are populated from server data at login; only
+//     `GetItemBySlot` is gated by `VAR_BANK_GATE_GUID`, the
+//     underlying data is always present — same trick
+//     `C_Item.GetItemCount` uses)
+int FindGUID(uint64_t targetGuid);
 
 // Resolves a GUID to a `CGItem*` via the engine's GUID→CObject
 // resolver (`FUN_OBJECT_RESOLVE_BY_GUID`). Returns null if the item

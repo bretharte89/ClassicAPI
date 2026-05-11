@@ -20,12 +20,9 @@
 //
 // Identity is by item GUID — `SaveEquipmentSet` snapshots the GUIDs
 // currently worn, and `UseEquipmentSet` searches every player-owned
-// container for those GUIDs at use time. Bank bag *contents* (the
-// items inside bank bags 5..10) are only resolvable while the bank
-// window is open, since the engine populates each bank-bag invMgr
-// lazily on `BANKFRAME_OPENED`. Save and Use both observe this
-// limitation; main-bank slots (24-slot core) are always available
-// because their GUIDs live on the player invMgr's flat array.
+// container for those GUIDs at use time. The GUID search reads
+// invMgr GUID arrays directly (same trick `C_Item.GetItemCount`
+// uses), so bank items resolve without the bank window being open.
 //
 // Modern Classic Era's signatures use a numeric `iconFileID`; we
 // accept icon paths (e.g. `"INV_Shield_06"`) instead because vanilla
@@ -178,7 +175,7 @@ int __fastcall Script_GetEquipmentSetInfo(void *L) {
         if (g == GUID_EMPTY)
             continue;
         ++numItems;
-        const int loc = Locations::FindGUID(L, g);
+        const int loc = Locations::FindGUID(g);
         if (loc == 0) {
             ++numMissing;
         } else if ((loc & LOC_BAGS) == 0 && (loc & LOC_BANK) == 0 &&
@@ -256,6 +253,7 @@ int __fastcall Script_GetItemLocations(void *L) {
     const Set *s = Data::FindByID(setID);
     if (s == nullptr)
         return 0;
+
     Game::Lua::SetTop(L, 0);
     Game::Lua::NewTable(L);
     for (int i = 0; i < SLOT_COUNT; ++i) {
@@ -266,7 +264,7 @@ int __fastcall Script_GetItemLocations(void *L) {
         if (g == GUID_IGNORED) {
             loc = LOC_IGNORED;
         } else {
-            loc = Locations::FindGUID(L, g);
+            loc = Locations::FindGUID(g);
             if (loc == 0)
                 loc = LOC_MISSING;
         }
@@ -419,7 +417,7 @@ int __fastcall Script_UseEquipmentSet(void *L) {
         if (g == GUID_EMPTY || g == GUID_IGNORED)
             continue;
 
-        const int loc = Locations::FindGUID(L, g);
+        const int loc = Locations::FindGUID(g);
         if (loc == 0)
             continue; // missing — nothing to do
 

@@ -13,15 +13,32 @@
 
 #include "Locations.h"
 
-#include "Game.h"
 #include "Offsets.h"
-#include "item/Location.h"
 
 #include <cstdint>
 
 namespace EquipmentSet::Locations {
 
 namespace {
+
+// Linear slot ranges inside the player invMgr's flat GUID array.
+// Documented in Offsets.h ("Slot ranges, matching PackBagSlot's
+// linearization"); summarized here for quick reference:
+//   0..18    paperdoll equipment slots 1..19 (HEAD..TABARD)
+//   19..22   player bag SLOTS — bags 1..4 equipped on character
+//   23..38   backpack contents (16 slots)
+//   39..62   main bank (24 slots)
+//   63..68   bank bag SLOTS — bags 5..10 equipped in bank
+//   81+      keyring (irrelevant for equipment sets)
+//
+// Backpack lives inline in this array; the four player bag bags and
+// six bank bag bags each have their own invMgr with the same shape
+// (slot count at +0x00, GUID array pointer at +0x04). We reach them
+// by resolving the bag's CGContainer via `FUN_OBJECT_RESOLVE_BY_GUID`
+// and reading the bag's invMgr off `vtable[+0x10]`.
+constexpr int LINEAR_BAG_SLOT_FIRST = 19; // bag1 → linear 19
+constexpr int LINEAR_BACKPACK_FIRST = 23;
+constexpr int LINEAR_BACKPACK_LAST = 38;
 
 void *ResolvePlayer() {
     using ResolveUnitToken_t = void *(__fastcall *)(const char *);
@@ -36,110 +53,118 @@ uint8_t *ResolvePlayerInvMgr() {
     return player + Offsets::OFF_PLAYER_INVENTORY_MANAGER;
 }
 
-// Reads the GUID at a given linear slot in the player invMgr's flat
-// array. The array covers paperdoll → backpack → main bank → bank bag
-// slots. Bag contents (player or bank) live in separate per-bag
-// invMgrs and aren't reachable through this array.
-uint64_t ReadFlatGUID(int linearSlot) {
-    auto *invMgr = ResolvePlayerInvMgr();
+uint64_t *InvMgrGuidArray(const uint8_t *invMgr) {
+    if (invMgr == nullptr)
+        return nullptr;
+    return *reinterpret_cast<uint64_t *const *>(
+        invMgr + Offsets::OFF_INVMGR_GUID_ARRAY);
+}
+
+int InvMgrSlotCount(const uint8_t *invMgr) {
     if (invMgr == nullptr)
         return 0;
-    auto *guids = *reinterpret_cast<uint64_t **>(
-        invMgr + Offsets::OFF_INVMGR_GUID_ARRAY);
+    return static_cast<int>(*reinterpret_cast<const uint32_t *>(invMgr));
+}
+
+uint8_t *ResolveByGUID(int type, uint64_t guid) {
+    if (guid == 0)
+        return nullptr;
+    using ResolveByGUID_t = void *(__fastcall *)(int, const char *, uint32_t,
+                                                  uint32_t, int);
+    auto fn = reinterpret_cast<ResolveByGUID_t>(Offsets::FUN_OBJECT_RESOLVE_BY_GUID);
+    return static_cast<uint8_t *>(fn(type, "ItemMgr",
+                                     static_cast<uint32_t>(guid),
+                                     static_cast<uint32_t>(guid >> 32),
+                                     0x172));
+}
+
+// CGContainer exposes its own `CContainerInventory *` via vtable
+// `+0x10` — same dispatch `GetItemCount`'s bank walk uses. The
+// returned invMgr has the standard shape: slot count at +0x00,
+// flat GUID array at +0x04.
+uint8_t *BagInvMgr(uint8_t *bag) {
+    if (bag == nullptr)
+        return nullptr;
+    auto *vtable = *reinterpret_cast<uint8_t **>(bag);
+    using GetInvMgr_t = void *(__thiscall *)(void *);
+    auto getInvMgr = reinterpret_cast<GetInvMgr_t>(
+        *reinterpret_cast<uintptr_t *>(vtable + 0x10));
+    return static_cast<uint8_t *>(getInvMgr(bag));
+}
+
+// Walks one bag's contents for a matching GUID. Returns the 1-based
+// slot index of the match, or 0 if not found / bag unresolvable.
+// Works for both player bags (linear 19..22 of player invMgr) and
+// bank bags (linear 63..68) — the only differences are the source of
+// the bag's GUID and how the result encodes back into a location.
+int WalkBagContents(uint64_t bagGuid, uint64_t targetGuid) {
+    auto *bag = ResolveByGUID(Offsets::OBJ_TYPE_CONTAINER, bagGuid);
+    if (bag == nullptr)
+        return 0;
+    auto *bagInvMgr = BagInvMgr(bag);
+    if (bagInvMgr == nullptr)
+        return 0;
+    const int count = InvMgrSlotCount(bagInvMgr);
+    auto *guids = InvMgrGuidArray(bagInvMgr);
     if (guids == nullptr)
         return 0;
-    return guids[linearSlot];
-}
-
-// Reads the GUID off a `CGItem *` (instance block at +0x08, GUID at
-// the start of that block). Used to verify bag walks — `ResolveBag`
-// returns a CGItem and we then check its GUID against our target.
-uint64_t ReadCGItemGUID(const uint8_t *item) {
-    if (item == nullptr)
-        return 0;
-    auto *instance = *reinterpret_cast<const uint8_t *const *>(
-        item + Offsets::OFF_ITEM_INSTANCE_BLOCK);
-    if (instance == nullptr)
-        return 0;
-    return *reinterpret_cast<const uint64_t *>(
-        instance + Offsets::OFF_INSTANCE_BLOCK_GUID);
-}
-
-// Engine helper for "what's the slot count of bag N" — same primitive
-// the hearthstone finder uses. Returns 0 for empty bag slots.
-int BagSlotCount(void *L, int bagID) {
-    Game::Lua::SetTop(L, 0);
-    Game::Lua::PushNumber(L, static_cast<double>(bagID));
-    using ScriptFn_t = int(__fastcall *)(void *);
-    auto fn = reinterpret_cast<ScriptFn_t>(Offsets::FUN_SCRIPT_GET_CONTAINER_NUM_SLOTS);
-    fn(L);
-    if (!Game::Lua::IsNumber(L, -1))
-        return 0;
-    return static_cast<int>(Game::Lua::ToNumber(L, -1));
-}
-
-// Scans a single bag's contents for `targetGuid`. `bagID` is one of
-// 0..4 (player) or 5..10 (bank). Returns the 1-based slot index of
-// the match, or 0 if not found. Bank bag walks may legitimately
-// return 0 when the bank is closed — the engine's `GetItemBySlot`
-// gate suppresses the data, and we can't probe it without bypassing
-// engine-internal state.
-int WalkBagForGUID(void *L, int bagID, uint64_t targetGuid) {
-    const int count = BagSlotCount(L, bagID);
-    for (int slot = 1; slot <= count; ++slot) {
-        const uint8_t *item = Item::Location::ResolveBag(L, bagID, slot);
-        if (item == nullptr)
-            continue;
-        if (ReadCGItemGUID(item) == targetGuid)
-            return slot;
+    for (int i = 0; i < count; ++i) {
+        if (guids[i] == targetGuid)
+            return i + 1;
     }
     return 0;
 }
 
 } // namespace
 
-int FindGUID(void *L, uint64_t targetGuid) {
+int FindGUID(uint64_t targetGuid) {
     if (targetGuid == GUID_EMPTY || targetGuid == GUID_IGNORED)
         return 0;
 
-    // Paperdoll first — by far the most common hit since the user
-    // already has their gear on, especially right after `SaveEquipmentSet`.
+    auto *invMgr = ResolvePlayerInvMgr();
+    auto *guids = InvMgrGuidArray(invMgr);
+    if (guids == nullptr)
+        return 0;
+
+    // Paperdoll (linear 0..18 → slots 1..19). Most common hit
+    // because every set's items are equipped at save time.
     for (int slot = 1; slot <= SLOT_COUNT; ++slot) {
-        if (ReadFlatGUID(slot - 1) == targetGuid)
+        if (guids[slot - 1] == targetGuid)
             return PackEquipped(slot);
     }
 
-    // Backpack: linear slots 23..38 = bag 0 slots 1..16.
-    for (int s = Offsets::INVMGR_BANK_MAIN_FIRST_SLOT - 16;
-         s < Offsets::INVMGR_BANK_MAIN_FIRST_SLOT; ++s) {
-        if (ReadFlatGUID(s) == targetGuid) {
-            const int slot1 = s - (Offsets::INVMGR_BANK_MAIN_FIRST_SLOT - 16) + 1;
-            return PackBag(0, slot1);
-        }
+    // Backpack contents (linear 23..38 → bag 0, slots 1..16).
+    for (int s = LINEAR_BACKPACK_FIRST; s <= LINEAR_BACKPACK_LAST; ++s) {
+        if (guids[s] == targetGuid)
+            return PackBag(0, s - LINEAR_BACKPACK_FIRST + 1);
     }
 
-    // Main bank: linear slots 39..62 → bank slots 1..24.
+    // Main bank (linear 39..62 → slots 1..24). Direct read; the bank
+    // gate at `VAR_BANK_GATE_GUID` doesn't affect the underlying data.
     for (int s = Offsets::INVMGR_BANK_MAIN_FIRST_SLOT;
          s <= Offsets::INVMGR_BANK_MAIN_LAST_SLOT; ++s) {
-        if (ReadFlatGUID(s) == targetGuid) {
-            const int slot1 = s - Offsets::INVMGR_BANK_MAIN_FIRST_SLOT + 1;
-            return PackMainBank(slot1);
-        }
+        if (guids[s] == targetGuid)
+            return PackMainBank(s - Offsets::INVMGR_BANK_MAIN_FIRST_SLOT + 1);
     }
 
-    // Player bag contents (bags 1..4). Walks each bag's own invMgr
-    // via the engine's `PackBagSlot` path.
+    // Player bags 1..4 — bag containers live at linear 19..22 of the
+    // player invMgr; their contents live in each bag's own invMgr.
     for (int bag = 1; bag <= 4; ++bag) {
-        const int slot = WalkBagForGUID(L, bag, targetGuid);
+        const int linear = LINEAR_BAG_SLOT_FIRST + (bag - 1);
+        const int slot = WalkBagContents(guids[linear], targetGuid);
         if (slot > 0)
             return PackBag(bag, slot);
     }
 
-    // Bank bag contents (bags 5..10) — only resolves while bank is open.
-    for (int bag = 5; bag <= 10; ++bag) {
-        const int slot = WalkBagForGUID(L, bag, targetGuid);
-        if (slot > 0)
-            return PackBankBag(bag, slot);
+    // Bank bags 5..10 — bag containers at linear 63..68. Same walk as
+    // player bags; works without the bank window being open.
+    for (int linear = Offsets::INVMGR_BANK_BAG_FIRST_SLOT;
+         linear <= Offsets::INVMGR_BANK_BAG_LAST_SLOT; ++linear) {
+        const int slot = WalkBagContents(guids[linear], targetGuid);
+        if (slot > 0) {
+            const int bagID = 5 + (linear - Offsets::INVMGR_BANK_BAG_FIRST_SLOT);
+            return PackBankBag(bagID, slot);
+        }
     }
 
     return 0;
@@ -148,15 +173,7 @@ int FindGUID(void *L, uint64_t targetGuid) {
 const uint8_t *ResolveItemByGUID(uint64_t guid) {
     if (guid == GUID_EMPTY || guid == GUID_IGNORED)
         return nullptr;
-    using ResolveByGUID_t = void *(__fastcall *)(int type, const char *debugName,
-                                                  uint32_t guidLo, uint32_t guidHi,
-                                                  int priority);
-    auto fn = reinterpret_cast<ResolveByGUID_t>(Offsets::FUN_OBJECT_RESOLVE_BY_GUID);
-    auto *obj = fn(Offsets::OBJ_TYPE_ITEM, "ItemMgr",
-                   static_cast<uint32_t>(guid),
-                   static_cast<uint32_t>(guid >> 32),
-                   0x172);
-    return static_cast<const uint8_t *>(obj);
+    return ResolveByGUID(Offsets::OBJ_TYPE_ITEM, guid);
 }
 
 } // namespace EquipmentSet::Locations

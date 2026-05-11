@@ -1727,13 +1727,15 @@ set 2
 Identity is by **item GUID**, snapshotted at `CreateEquipmentSet` /
 `SaveEquipmentSet` time. `UseEquipmentSet` searches every player-owned
 container for those GUIDs and dispatches pickup→equip pairs for items
-that aren't already where they belong. Two limitations to know about:
+that aren't already where they belong. The search reads the
+underlying GUID arrays directly (same trick `C_Item.GetItemCount`
+uses for its `includeBank=true` path), so bank items resolve **even
+without the bank window being open** — the bank gate at
+`VAR_BANK_GATE_GUID` only suppresses `GetItemBySlot`, not the
+underlying data.
 
-- **Bank bag contents** (the items inside bags 5..10) only resolve
-  while the bank window is open. The engine populates each bank-bag
-  invMgr on `BANKFRAME_OPENED` and clears it on close. Items in the
-  24-slot core bank are always available (their GUIDs live on the
-  player invMgr's flat array, populated at login).
+One limitation worth knowing about:
+
 - **Equipping from the bank** is not supported by vanilla's protocol
   — `UseEquipmentSet` skips bank items rather than try and fail.
   Retrieve the items first, then re-run.
