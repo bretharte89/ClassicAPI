@@ -108,6 +108,50 @@ int __fastcall Script_IsSwimming(void *L) {
     return 1;
 }
 
+// `IsAssistingRitual()` — true iff the player is currently clicking
+// a warlock summoning portal (the channel-on-GameObject state where
+// movement breaks the channel and there's no castbar UI in vanilla).
+//
+// Distinct from spell channeling: this fires for the *participant*
+// who clicked the portal, not the warlock who cast Ritual of
+// Summoning. The warlock's own channel doesn't set this state.
+//
+// Detection: the engine writes the warlock's channel spell ID (698 =
+// Ritual of Summoning) into the clicker's UNIT_CHANNEL_SPELL, AND
+// sets a CGPlayer-local pointer at +0xB4 to the portal GameObject.
+// Either signal alone is ambiguous:
+//   - UNIT_CHANNEL_SPELL alone matches the warlock's own channel
+//     (and any real spell channel — fishing, Mind Flay, etc.).
+//   - The +0xB4 pointer alone matches any spell cast that targets a
+//     GameObject (notably mining, which is a regular cast on an ore
+//     node — desc[0x228] stays 0).
+// The conjunction is portal-clicker-specific in 1.12.
+//
+// Local-player only: the +0xB4 pointer lives on CGPlayer, not in
+// the broadcast UpdateField descriptor, so we can't read it for
+// `target` / `party*` / etc. Modern WoW has no exact analog —
+// vanilla's summoning ritual has no UI surface, which is what
+// motivates this function.
+int __fastcall Script_IsAssistingRitual(void *L) {
+    auto *player = Player();
+    if (player == nullptr) {
+        Game::Lua::PushBoolean(L, 0);
+        return 1;
+    }
+    auto *desc = PlayerDescriptor();
+    if (desc == nullptr) {
+        Game::Lua::PushBoolean(L, 0);
+        return 1;
+    }
+    const uint32_t channelSpell = *reinterpret_cast<const uint32_t *>(
+        desc + Offsets::OFF_UNIT_FIELD_CHANNEL_SPELL);
+    const void *castGameObject = *reinterpret_cast<const void *const *>(
+        player + Offsets::OFF_CGPLAYER_CAST_GAMEOBJECT_PTR);
+    Game::Lua::PushBoolean(L,
+        (channelSpell != 0 && castGameObject != nullptr) ? 1 : 0);
+    return 1;
+}
+
 } // namespace
 
 static void RegisterLuaFunctions() {
@@ -115,6 +159,8 @@ static void RegisterLuaFunctions() {
     Game::Lua::RegisterGlobalFunction("IsStealthed", &Script_IsStealthed);
     Game::Lua::RegisterGlobalFunction("IsFalling", &Script_IsFalling);
     Game::Lua::RegisterGlobalFunction("IsSwimming", &Script_IsSwimming);
+    Game::Lua::RegisterGlobalFunction("IsAssistingRitual",
+                                       &Script_IsAssistingRitual);
 }
 
 static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};

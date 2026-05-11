@@ -69,6 +69,7 @@ build instructions.
   - [`IsStealthed()`](#isstealthed)
   - [`IsFalling()`](#isfalling)
   - [`IsSwimming()`](#isswimming)
+  - [`IsAssistingRitual()`](#isassistingritual)
 - [AddOns](#addons)
   - [`C_AddOns.GetAddOnName(indexOrName)`](#c_addonsgetaddonnameindexorname)
   - [`C_AddOns.GetAddOnTitle(indexOrName)`](#c_addonsgetaddontitleindexorname)
@@ -1798,6 +1799,49 @@ if IsSwimming() then
     -- breath bar logic, mount-failure suppression, etc.
 end
 ```
+
+### `IsAssistingRitual()`
+
+Returns `true` if the local player is currently clicking a warlock
+summoning portal (the channel-on-GameObject state with no castbar
+UI, where movement breaks the channel), `false` otherwise.
+
+This is distinct from spell channeling: the function fires for
+*participants* who clicked the portal, not the warlock who cast
+Ritual of Summoning. Vanilla has no Lua surface for this state —
+the engine's `SPELLCAST_CHANNEL_*` events don't fire and
+`CastingInfo()` returns nothing — so addons that want to react to
+the player being committed to a ritual (e.g. suppress autorun
+toggles, hide nameplate clicks, warn before movement) have no other
+way to detect it.
+
+Detection uses two state slots:
+
+- `UNIT_CHANNEL_SPELL` (descriptor `+0x228`) — the warlock's channel
+  spell ID (698) is mirrored onto every clicker for the duration
+  of the ritual.
+- A CGPlayer-local pointer at `+0xB4` — the engine's "current spell
+  cast target GameObject" slot, set to the portal GO while the
+  clicker is engaged.
+
+Either signal alone is ambiguous (the warlock channeling matches
+the first; mining and other GO-targeted casts match the second);
+the conjunction is portal-clicker-specific.
+
+```lua
+local frame = CreateFrame("Frame")
+frame:RegisterEvent("PLAYER_STARTED_MOVING")
+frame:SetScript("OnEvent", function()
+    if IsAssistingRitual() then
+        UIErrorsFrame:AddMessage("Warning: moving will break ritual")
+    end
+end)
+```
+
+Local-player only — the `+0xB4` pointer lives on the CGPlayer
+object, not in the broadcast descriptor, so the function can't
+report state for `target` / `party*` / etc. Returns `false` when
+called before the player object is initialized (login screen).
 
 ## AddOns
 

@@ -34,6 +34,23 @@
 //      Debug::Log::Append rather than returning it. Use for ranges
 //      too long for /dump's output buffer (e.g., scanning the whole
 //      CGPlayer object for movement flags).
+//
+//   _classicapi_SnapAll()
+//      Captures a baseline snapshot of three regions on the player:
+//          • m_objectFields descriptor   [0,  0x400)
+//          • CGPlayer object             [0, 0x2000)
+//          • [unit + OFF_CGPLAYER_INFO]  [0, 0x2000)   (the +0xE68 sub-struct)
+//      Diff functions below compare the *live* memory to this snapshot.
+//      Workflow: stand idle, call SnapAll, perform the action whose
+//      state you want to localize (e.g. click warlock summoning portal),
+//      then call DiffAll[Log] before the state clears. Re-snap any time.
+//
+//   _classicapi_DiffAll() → string
+//   _classicapi_DiffAllLog(label)
+//      Emit `OFF=OLD→NEW` for every u32 that has changed since the last
+//      SnapAll, grouped into DESC / PLAYER / EXTRA sections. DiffAll
+//      returns the string (use for short diffs via /dump); DiffAllLog
+//      appends to debug.log (use for long diffs where /dump truncates).
 
 #include "Game.h"
 #include "Log.h"
@@ -41,6 +58,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 
 namespace Debug::Probe {
 
@@ -59,6 +77,18 @@ const uint8_t *ResolvePlayerDescriptor() {
         return nullptr;
     return *reinterpret_cast<const uint8_t *const *>(
         player + Offsets::OFF_UNIT_DESCRIPTOR);
+}
+
+// [unit + OFF_CGPLAYER_INFO] — the +0xE68 sub-struct documented in
+// Offsets.h. Holds PLAYER_FLAGS (+0x08) and visible-items (+0x118).
+// Most other +0xE68 fields are undocumented and are the reason this
+// region is a high-yield target for change-detection scans.
+const uint8_t *ResolvePlayerExtra() {
+    auto *player = ResolvePlayer();
+    if (player == nullptr)
+        return nullptr;
+    return *reinterpret_cast<const uint8_t *const *>(
+        player + Offsets::OFF_CGPLAYER_INFO);
 }
 
 // Writes non-zero u32 entries in [start, start+len) into `out` as
@@ -149,11 +179,140 @@ int __fastcall Script_PlayerLog(void *L) {
     return 0;
 }
 
+// Snapshot of a fixed-size byte range, used by Snap/Diff to compare
+// the live memory against a captured baseline.
+struct Snap {
+    static constexpr int kCap = 0x2000;
+    uint8_t data[kCap];
+    int start;
+    int len;
+    bool valid;
+};
+
+Snap descSnap;
+Snap playerSnap;
+Snap extraSnap;
+
+void TakeSnap(Snap &s, const uint8_t *base, int start, int len) {
+    s.valid = false;
+    s.start = start;
+    s.len = 0;
+    if (base == nullptr || len <= 0)
+        return;
+    if (len > Snap::kCap)
+        len = Snap::kCap;
+    std::memcpy(s.data, base + start, static_cast<size_t>(len));
+    s.len = len;
+    s.valid = true;
+}
+
+// Emit one `=== <label> ===` header line + each changed u32 as
+// `0xOFFSET=0xOLD->0xNEW`. Stops cleanly before overrunning the output
+// buffer (leaves room for the final nul + one safety margin). Returns
+// bytes written (excluding nul).
+int FormatDiff(const Snap &s, const uint8_t *base, const char *label,
+               char *out, int outLen) {
+    if (out == nullptr || outLen <= 0)
+        return 0;
+    int pos = 0;
+    const int header = std::snprintf(out + pos, outLen - pos, "%s: ", label);
+    if (header > 0)
+        pos += header;
+    if (!s.valid) {
+        const int n = std::snprintf(out + pos, outLen - pos, "(no snapshot) ");
+        if (n > 0)
+            pos += n;
+        return pos;
+    }
+    if (base == nullptr) {
+        const int n = std::snprintf(out + pos, outLen - pos, "(no base) ");
+        if (n > 0)
+            pos += n;
+        return pos;
+    }
+    int changes = 0;
+    for (int off = 0; off + 4 <= s.len && pos < outLen - 48; off += 4) {
+        const uint32_t oldV = *reinterpret_cast<const uint32_t *>(s.data + off);
+        const uint32_t newV = *reinterpret_cast<const uint32_t *>(
+            base + s.start + off);
+        if (oldV == newV)
+            continue;
+        const int n = std::snprintf(out + pos, outLen - pos,
+                                    "0x%X=0x%X->0x%X ",
+                                    s.start + off, oldV, newV);
+        if (n < 0)
+            break;
+        pos += n;
+        changes++;
+    }
+    if (changes == 0) {
+        const int n = std::snprintf(out + pos, outLen - pos, "(unchanged) ");
+        if (n > 0)
+            pos += n;
+    }
+    return pos;
+}
+
+int __fastcall Script_SnapAll(void *) {
+    TakeSnap(descSnap, ResolvePlayerDescriptor(), 0, 0x400);
+    TakeSnap(playerSnap, ResolvePlayer(), 0, 0x2000);
+    TakeSnap(extraSnap, ResolvePlayerExtra(), 0, 0x2000);
+    return 0;
+}
+
+int __fastcall Script_DiffAll(void *L) {
+    static char buf[3500];
+    int pos = 0;
+    pos += FormatDiff(descSnap, ResolvePlayerDescriptor(), "DESC",
+                      buf + pos, sizeof(buf) - pos);
+    pos += FormatDiff(playerSnap, ResolvePlayer(), "PLAYER",
+                      buf + pos, sizeof(buf) - pos);
+    pos += FormatDiff(extraSnap, ResolvePlayerExtra(), "EXTRA",
+                      buf + pos, sizeof(buf) - pos);
+    if (pos >= 0 && pos < static_cast<int>(sizeof(buf)))
+        buf[pos] = '\0';
+    else
+        buf[sizeof(buf) - 1] = '\0';
+    Game::Lua::PushString(L, buf);
+    return 1;
+}
+
+int __fastcall Script_DiffAllLog(void *L) {
+    if (!Game::Lua::IsString(L, 1)) {
+        Game::Lua::Error(L, "Usage: _classicapi_DiffAllLog(label)");
+        return 0;
+    }
+    const char *label = Game::Lua::ToString(L, 1);
+    static char buf[16384];
+    int pos = 0;
+    pos += FormatDiff(descSnap, ResolvePlayerDescriptor(), "DESC",
+                      buf + pos, sizeof(buf) - pos);
+    if (pos < static_cast<int>(sizeof(buf)) - 2) {
+        buf[pos++] = '\n';
+    }
+    pos += FormatDiff(playerSnap, ResolvePlayer(), "PLAYER",
+                      buf + pos, sizeof(buf) - pos);
+    if (pos < static_cast<int>(sizeof(buf)) - 2) {
+        buf[pos++] = '\n';
+    }
+    pos += FormatDiff(extraSnap, ResolvePlayerExtra(), "EXTRA",
+                      buf + pos, sizeof(buf) - pos);
+    if (pos >= 0 && pos < static_cast<int>(sizeof(buf)))
+        buf[pos] = '\0';
+    else
+        buf[sizeof(buf) - 1] = '\0';
+    Debug::Log::Append(label, buf);
+    return 0;
+}
+
 void RegisterLuaFunctions() {
     Game::Lua::RegisterGlobalFunction("_classicapi_DescDump", &Script_DescDump);
     Game::Lua::RegisterGlobalFunction("_classicapi_PlayerDump", &Script_PlayerDump);
     Game::Lua::RegisterGlobalFunction("_classicapi_DescLog", &Script_DescLog);
     Game::Lua::RegisterGlobalFunction("_classicapi_PlayerLog", &Script_PlayerLog);
+    Game::Lua::RegisterGlobalFunction("_classicapi_SnapAll", &Script_SnapAll);
+    Game::Lua::RegisterGlobalFunction("_classicapi_DiffAll", &Script_DiffAll);
+    Game::Lua::RegisterGlobalFunction("_classicapi_DiffAllLog", &Script_DiffAllLog);
 }
 
 const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};

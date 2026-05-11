@@ -136,6 +136,29 @@ enum Offsets {
     // source (CMaNGOS/TrinityCore). Read by `UnitIsPossessed(unit)`.
     UNIT_FLAG_POSSESSED = 0x01000000,
 
+    // `UNIT_FIELD_CHANNEL_OBJECT` lo/hi (64-bit GUID of the object the
+    // unit is currently channeling onto — bobber for fishing, lock for
+    // lockpicking, etc.). CMaNGOS vanilla field 20 (= 0x50) minus the
+    // 1.12.1 -0x18 unit-fields shift = 0x38. Verified empirically by
+    // diffing the player descriptor during fishing: 0x38/0x3C went
+    // `0 → bobber GUID` (high half `0xF110xxxx` = the vanilla
+    // GameObject-GUID prefix), back to 0 on cast end.
+    //
+    // Note: not every channel populates this. The warlock's Ritual of
+    // Summoning channel leaves it at 0 — that channel binds to the
+    // participants via the spell, not via UNIT_CHANNEL_OBJECT.
+    OFF_UNIT_FIELD_CHANNEL_OBJECT = 0x38,
+
+    // `UNIT_FIELD_CHANNEL_SPELL` (u32 spell ID the unit is currently
+    // channeling, or 0). CMaNGOS vanilla field 144 (= 0x240) minus the
+    // -0x18 shift = 0x228. Verified empirically: the warlock's diff
+    // shows `0x228 = 0 → 0x2BA` (698 = Ritual of Summoning) for the
+    // duration of his channel; same value appears on every clicker
+    // participating in the ritual; fishing populates it with 7620
+    // (Fishing spell ID). Broadcast UpdateField, so it's readable for
+    // any visible unit, not just the local player.
+    OFF_UNIT_FIELD_CHANNEL_SPELL = 0x228,
+
     // CGPlayer-side sub-struct, allocated for any player-controlled
     // unit (local self, target, party, raid, inspect targets — all of
     // them). Holds player-specific data that's *not* in the broadcast
@@ -164,11 +187,10 @@ enum Offsets {
     //
     // PLAYER_FLAGS being out-of-band (in this sub-struct rather than a
     // broadcast UpdateField) is a vanilla-only quirk — modern WoW
-    // (3.0+) added PLAYER_FLAGS as a UpdateField at descriptor +0x228,
-    // making it queryable through the standard UnitData broadcast
-    // path. In 1.12 the +0x228 slot holds something else entirely
-    // (multiple read sites in `.text`, but they test for non-zero
-    // rather than specific bits — likely duel state).
+    // (3.0+) added PLAYER_FLAGS as a UpdateField at descriptor +0x228.
+    // In 1.12, descriptor +0x228 is repurposed as UNIT_CHANNEL_SPELL
+    // (see OFF_UNIT_FIELD_CHANNEL_SPELL below); PLAYER_FLAGS only
+    // exists on the +0xE68 sub-struct here.
     OFF_CGPLAYER_INFO = 0xE68,
     OFF_PLAYER_INFO_FLAGS = 0x08,
     PLAYER_FLAG_AFK = 0x02,
@@ -1018,6 +1040,32 @@ enum Offsets {
     MOVEFLAG_FALLING = 0x2000,
     MOVEFLAG_FALLING_FAR = 0x4000,
     MOVEFLAG_SWIMMING = 0x200000,
+
+    // CGPlayer-local pointer to the GameObject the current spell cast
+    // is targeting. Holds a heap pointer (high bits in the user-mode
+    // range, e.g. `0x42908708` / `0x52FA1A08`) while the player is
+    // casting/channeling onto a GameObject; cleared on cast end or
+    // movement break. Local-only — does NOT broadcast.
+    //
+    // Empirically distinct from UNIT_FIELD_CHANNEL_OBJECT — the engine
+    // uses one or the other depending on the cast shape:
+    //
+    //   - **Set** during: clicking a warlock summoning portal (channel-
+    //     spell that doesn't populate UNIT_CHANNEL_OBJECT); mining
+    //     (regular spell cast on an ore node).
+    //   - **0** during: warlock channeling a spell (no GO target);
+    //     fishing (uses UNIT_CHANNEL_OBJECT for the bobber GUID);
+    //     herb gathering (no spell, pure GO-loot mechanism); mailbox /
+    //     gossip / sit / NPC interaction (instant, no animation).
+    //
+    // Used together with UNIT_FIELD_CHANNEL_SPELL to detect ritual
+    // participation — see `IsAssistingRitual()` in `unit/State.cpp`.
+    // The combined check `channelSpell != 0 && castGameObject != 0`
+    // uniquely identifies the portal-clicker state in 1.12 (mining
+    // fails `channelSpell != 0`; warlock/fishing fail
+    // `castGameObject != 0`).
+    OFF_CGPLAYER_CAST_GAMEOBJECT_PTR = 0xB4,
+
     // No `MOVEFLAG_FLYING` constant intentionally. Vanilla 1.12
     // doesn't flip a flying bit during taxi flights (verified
     // empirically: `IsFlying()` checking 0x01000000 stayed false
