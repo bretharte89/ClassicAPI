@@ -2151,3 +2151,85 @@ This is why claiming slots from low indices early-on would have
 gotten clobbered — the slot-claim approach only fires after Lua's
 first `RegisterEvent` call, by which point the engine's writes have
 settled.
+
+## 67. `BAG_UPDATE_DELAYED` event - ATTEMPTED, REVERTED
+
+Modern 5.4.8+ event that fires once per game frame in which any
+`BAG_UPDATE` fired. The 5.4.8 engine sets an
+`m_bagUpdateDelayedPending` flag from the bag-change pipeline and
+drains it from `CContainerMgr::Update` (its per-frame routine),
+producing exactly-one coalesced fire per frame.
+
+### What we tried
+
+A pure C++ hook chain:
+
+- Naked thunk over `FUN_FIRE_EVENT` (`0x00703F50`) — peek at the
+  event ID, set a pending flag on match against the cached
+  `BAG_UPDATE` slot, `jmp` to the trampoline so the variadic stack
+  passes through untouched.
+- Normal `__thiscall`-style hook over the per-frame OnUpdate
+  dispatcher at `0x00772890` — drain the pending flag and fire
+  `BAG_UPDATE_DELAYED` once per frame.
+
+Reservation via the existing `Event::Custom::AutoReserve` slot-claim
+machinery. The DLL compiled cleanly and registered the event;
+`IsEventValid("BAG_UPDATE_DELAYED")` returned `true`.
+
+### Why we reverted
+
+The DLL crashed during the login-screen XML load — `EIP=0x15FF075B`
+inside MinHook trampoline space, with zero bytes at that address,
+`ESP=0x001AEFEB` (misaligned), and stack ret-addr `0x00772954` inside
+the patched function. Classic signature of a corrupted MinHook
+trampoline.
+
+The user's Octo install loads SuperWoWhook, nampower, transmogfix,
+UnitXP_SP3, VanillaHelpers, VanillaMinimapTracking, and
+VanillaMultiMonitorFix alongside ours. Each links its own MinHook
+copy. Hooking high-traffic engine functions like the event dispatcher
+or per-frame OnUpdate sits squarely in the path where trampoline
+regions can collide between DLLs — same class of problem as the
+`RebuildEventTable` hook-chaining failure we already documented in
+CLAUDE.md.
+
+We removed `src/bag/UpdateDelayed.{cpp,h}`, the two `HOOK_FUNCTION`
+calls in `DllMain.cpp`, and `FUN_FRAMESCRIPT_FRAME_ONUPDATE` from
+`Offsets.h`.
+
+### Earlier dead end: Lua-source bootstrap from C++
+
+Before the hook attempt, I shipped a version that used
+`FUN_FRAME_SCRIPT_EXECUTE` (`0x00704CD0`) to inject a Lua snippet
+creating a hidden frame with `RegisterEvent("BAG_UPDATE")` /
+`SetScript("OnUpdate", ...)`. The user pushed back: embedding Lua
+source in the DLL is architecturally wrong for this project. The
+right answer is always a C++ engine hook. `FUN_FRAME_SCRIPT_EXECUTE`
+is gone from the codebase; pretend it doesn't exist. (See the
+saved feedback memory.)
+
+### Where to go next
+
+Three possible non-conflicting paths:
+
+1. **Find an obscure single-purpose engine function** that other
+   DLLs demonstrably don't touch — call sites of `FUN_FIRE_EVENT`
+   from the specific bag-update code path (e.g., the
+   `Script_GetBagName` / `Script_GetContainerItemInfo` neighborhood
+   in `0x004F8xxx`-`0x004FAxxx`), or whatever fires BAG_UPDATE from
+   network packet processing. A hook there avoids the popular targets.
+
+2. **Read-only mechanism** — poll a global that tracks bag dirty
+   state. The engine maintains `[ItemMgr + 0x10]` "bank-aware mode"
+   and similar flags around the inventory manager; there may be a
+   dirty/sequence counter we can read once per frame from a
+   non-hooked surface (e.g., piggybacking on a tick that the rest of
+   our code already runs in). No new hook, no collision risk.
+
+3. **Document the limitation** and skip the polyfill — addons that
+   want this behavior on Octo-style multi-DLL clients can fall back
+   to debouncing `BAG_UPDATE` themselves via an `OnUpdate` timer.
+   Ship-quality, but admits defeat.
+
+Prefer #2 if a read-only signal exists; #1 only if a verifiably
+quiet hook target turns up; #3 as the honest fallback.
