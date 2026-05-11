@@ -653,97 +653,49 @@ Shipped as part of the full `C_DateAndTime.*` backport — see #76.
 Uses `86400 - (Time::Server::CurrentEpoch() % 86400)` for server-
 midnight semantics.
 
-## 35. `GetPlayerInfoByGUID(guid)` — multi-day, deferred
+## ~~35. `GetPlayerInfoByGUID(guid)`~~ — DONE
 
-Modern Classic Era / 3.3.5 returns
-`localizedClass, englishClass, localizedRace, englishRace, sex, name, realm`
-for any GUID the engine knows about. **In 1.12 a partial backport is
-straightforward; the full version requires building our own packet-cache
-layer.** Investigated and parked.
+Modern 7-tuple `localizedClass, englishClass, localizedRace,
+englishRace, sex, name, realm` for any GUID the engine has cached.
+Implementation in [src/player/Info.cpp](src/player/Info.cpp).
 
-### What 1.12 has
+### What we ended up using
 
-- **Active object manager** (`ClntObjMgrObjectPtr` at `0x00468460`,
-  signature `__fastcall(typeMask, dbgStr, guid_lo, guid_hi, dbgCode) →
-  CGObject_C *`, `ret 0xC`). Resolves a GUID to a CGObject *only if the
-  object is currently active in the client* — your party, raid, target,
-  mouseover, nearby visible players. Returns NULL otherwise.
-  - For an active CGPlayer_C, race/class/sex are byte-packed in
-    `UNIT_FIELD_BYTES_0` at `[m_objectFields + 0x90]`
-    (`m_objectFields = [unit + 0x110]`):
-    - byte 0 = race, byte 1 = class, byte 2 = gender, byte 3 = power.
-  - The player's name is reachable via the CGObject vftable's
-    `GetName` slot (slot index ~28 per VanillaMinimapTracking's
-    `CGObject_C_VfTable`).
+The original investigation thought the engine's NameCache at
+`0x00CE870C` was the only client-side cache, and that it was fed
+only by visible objects (which would mean offline friends/guildies
+miss). Re-investigation with Ghidra MCP found a **different** cache
+— a dedicated player-info cache at `VAR_PLAYER_NAME_CACHE`
+(`0x00C0E228`) with lookup helper `FUN_PLAYER_INFO_LOOKUP`
+(`0x0055F080`). This one **is fed by SMSG_NAME_QUERY_RESPONSE**
+(opcode `0x51` handler at `0x005551A0`), which the engine
+auto-fires for any GUID surfacing in chat / raid / guild / etc.
 
-- **NameCache** (instance at `0x00CE870C`, generic-cache class with
-  init at `0x00760390`, allocator at `0x00760450`, entry-init helper
-  at `0x006C6C90`). Entry size **0x38 bytes**, ~256 buckets initially.
-  Layout (partial):
-  - `+0x00..+0x07`: GUID (likely)
-  - `+0x18`: state/flags (init = 3; bit 1 set = "in cache", bit 1 = ??)
-  - `+0x1C`: free-list link
-  - `+0x20..+0x2F`: ~16 bytes of payload — **fits a player name (≤12
-    chars + null), nothing more**.
-  - RTTI string `NameCache@@_KVCHashKeyGUID@@@@` at `0x00855EE3` confirms
-    the GUID-keyed shape.
+Cache hits give us name@+0x00, realm@+0x30, race@+0x138,
+sex@+0x13C, class@+0x140. Race goes through `ChrRaces.dbc`
+records (instance `0x00C0DEE0` / count `0x00C0DEE4`,
+`Filename@+0x3C` for englishRace and `Name[locale]@+0x44` for
+localizedRace). Class similar via `ChrClasses.dbc`.
 
-- The cache populator at `0x006C76A0` calls `ClntObjMgrObjectPtr` first
-  and only allocates a NameCache entry if the GUID resolves to a
-  CGObject with `[obj+0xD8] != 0`. **The engine's NameCache is not fed
-  by SMSG_NAME_QUERY_RESPONSE** — it only caches names for objects we've
-  already seen as live CGObjects. So even for offline guildies/friends,
-  this cache is empty.
+Sex value: engine stores 0/1, modern Lua API returns 2/3 — we
+add 2 to match.
 
-- **Friends/Guild/Who** caches do exist with GUID-bearing entries:
-  friends list at `0x00C28168` (record fields `name@+0x04`, `level@+0x10`,
-  `classID@+0x14`, `area@+0x18`), guild roster around `0x00C0E1EC`, who
-  results count at `0x00C2A120`. These have **class but no race** — the
-  SMSG_FRIEND_LIST and SMSG_GUILD_ROSTER wire formats simply don't carry
-  race or sex.
+### Coverage
 
-### Two implementation paths
+Anyone who's shown up in chat, your raid/party, your guild, or as
+a visible nameplate will be in the cache. Cold-target lookups for
+"never seen this character" return `nil`. The earlier-investigated
+"Path B" (active CMSG_NAME_QUERY firing for cache misses) wasn't
+needed because the existing cache populates from passive traffic
+broadly enough that the typical "addon wants info for someone in
+chat" case Just Works.
 
-**A. Visible-only (1-2 hours, narrow coverage)**
+### Refactor side effect
 
-Use `ClntObjMgrObjectPtr` + UNIT_FIELD_BYTES_0 + vftable->GetName.
-Returns the full 7-tuple for live CGPlayer_C objects, `nil` otherwise.
-Realm is whatever global holds the realm name (single-realm in 1.12).
-Class/race byte → string via static maps (1=Warrior … 11=Druid;
-1=Human … 8=Troll). Useful for tooltip/raid-frame use cases that
-already have the player resolvable.
-
-**B. Full async cache (3-5 days)**
-
-Build our own player-info cache fed by hooking SMSG_NAME_QUERY_RESPONSE
-(opcode `0x51`, wire format `GUID(8) + name(cstring) + realm(cstring) +
-race(u32) + sex(u32) + class(u32)`). Send CMSG_NAME_QUERY (`0x50`) for
-cache misses. Fire `NAME_QUERY_DATA_LOAD_RESULT(guid, success)` event on
-response (reuse `Event::Custom`).
-
-Two unsolved unknowns make this multi-day:
-
-1. **Where is opcode dispatch in 1.12?** No clean
-   `Net::RegisterPacketHandler` analog has been located. If dispatch is
-   a giant switch (likely), we'd hook the dispatcher itself or the
-   per-opcode handler we identify by static analysis. Need substantial
-   disassembly time.
-2. **What's the send-packet primitive?** Have to find a `CDataStore`
-   build + `CWorld::Send` analog and figure out the calling convention.
-
-If we ever take the dependency on SuperWoWhook (already loaded in the
-user's setup), it exposes `RegisterPacketHandler` and `SendPacket` as
-its own DLL ABI — would short-circuit both unknowns. But that introduces
-a hard dependency on a third-party DLL, contrary to ClassicAPI's design.
-
-### Recommended starting point when this gets picked up
-
-Path A (visible-only) lands quickly and covers the most common
-"resolve a GUID I'm already looking at" use case. Document the
-limitation prominently in the API doc. Defer Path B until either a
-concrete addon need surfaces or we end up doing the network-layer
-disassembly for another reason (e.g. a packet-driven feature like
-`C_FriendList` or `BNGetFriendInfo` polyfilling).
+`Race::EnglishRaceForID` and the class-string maps in this module
+read from DBCs at runtime rather than hardcoding the strings — so
+custom-server race additions (Turtle's Goblin/etc.) are picked up
+without code changes.
 
 ## ~~36. `GetTalentSpellID(tabIndex, talentIndex[, rank])`~~ — DONE
 
