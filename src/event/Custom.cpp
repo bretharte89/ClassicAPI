@@ -52,10 +52,13 @@ char *SStrDup(const char *s) {
 }
 
 // Walk the engine's event table from the END looking for a NULL-name
-// slot. High slots are preferred so our event ids stay out of the
-// engine's hardcoded slot-write range (the engine pre-fills slots
-// 549..699 with `SPELL_DAMAGE_EVENT_SELF` etc.) and so the dump output
-// in `_classicapi_DumpAllEvents` shows our events grouped at the tail.
+// slot. The bulk-init at `0x0051AB30` leaves ~200 NULL gaps scattered
+// through the 548-slot input names array (it only writes ~350 of the
+// slots explicitly; the rest stay zero-initialized from .data). UP
+// and DOWN walks both find these gaps — we go DOWN for convention with
+// VanillaMinimapTracking and so the dump in `_classicapi_DumpAllEvents`
+// shows our events grouped at the tail, visually distinct from engine
+// events.
 int TryClaim(const char *eventName) {
     if (!g_writesEnabled)
         return -1;

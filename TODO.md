@@ -2373,6 +2373,79 @@ u32 are worth deriving when needed (CMaNGOS docs say byte 1 =
 `PetTalents`, byte 2 = `VisFlag`, byte 3 = `AnimTier`), but none
 have an obvious modern-API hook in vanilla.
 
+## ~~72. `C_EquipmentSet.*` namespace — DONE
+
+Full backport of modern's equipment-set API on top of a client-side
+persistent store at `WTF\Account\<acct>\<realm>\<char>\
+ClassicAPI_EquipmentSets.txt`. 18 functions including `Create`,
+`Save`, `Modify`, `Delete`, `Use`, `GetItemLocations`, plus the
+ignored-slot quartet. Identity is by item GUID — `Locations::FindGUID`
+walks the player invMgr's flat GUID array for paperdoll / backpack /
+main bank, and reaches bag contents (player bags 1..4 and bank bags
+5..10) via each bag's CGContainer→invMgr through `vtable[+0x10]`.
+Same direct-read technique `C_Item.GetItemCount` uses, so bank items
+resolve without the bank window being open.
+
+Also exposes the `ITEM_INVENTORY_LOCATION_PLAYER` / `_BAGS` / `_BANK`
+/ `_BAG_BIT_OFFSET` / `_BANK_BAG_OFFSET` constants as Lua globals so
+addon code copy-pasted from modern FrameXML's
+`EquipmentManager_UnpackLocation` works unchanged. Fires
+`EQUIPMENT_SETS_CHANGED` (no payload) on any mutation and
+`EQUIPMENT_SWAP_FINISHED(success, setID)` at the end of
+`UseEquipmentSet`. See `docs/API.md` and `src/equipmentset/`.
+
+## 73. `C_EquipmentSet.UseEquipmentSet` — proper swap-cycle resolution
+
+`UseEquipmentSet` currently walks slots in order and does a
+pickup→equip pair per item. If two items in the set want each other's
+slots (e.g. ring A in slot 11 wants slot 12, ring B in slot 12 wants
+slot 11), the first pickup succeeds, the equip drops it correctly,
+but the second pickup picks up B and `EquipCursorItem` swaps it
+into the now-occupied slot — leaving one ring stashed on the cursor
+which our cleanup `ClearCursor` either drops back or routes to a free
+bag slot. Re-running `UseEquipmentSet` finishes the job, but it
+shouldn't take two calls.
+
+4.3.4 native fixes this with a temp-bag-slot shuffle: when a swap
+would race, it parks the cursor item in a free bag slot, picks up
+the target, equips, then re-fetches the parked item. The algorithm
+lives in `EquipmentManager_EquipItemByLocation` / the
+`EQUIPMENTMANAGER_INVENTORYSLOTS` lock-tracking machinery in modern
+FrameXML.
+
+Reasonable plan: port the modern Lua-side dependency-graph approach
+into C++. Build a slot→source map, detect cycles (two items want
+each other's slots), and for each cycle do the temp-bag-slot
+shuffle. ~50 LOC.
+
+For now, the known limitation is documented in `docs/API.md`.
+
+## 74. `EQUIPMENT_SWAP_PENDING` event
+
+Modern WoW fires both `EQUIPMENT_SWAP_PENDING(setID)` at the START
+of an equipment-manager swap and `EQUIPMENT_SWAP_FINISHED(success,
+setID)` at the END. We currently only ship FINISHED. PENDING is
+useful for addon UI that wants to grey out the set's button during
+the swap, even though our UseEquipmentSet completes synchronously
+(no actual pending state).
+
+Trivial: add an `AutoReserve` for `EQUIPMENT_SWAP_PENDING`, call
+`Fire_D(slot, setID)` at the top of `Script_UseEquipmentSet` after
+validating the set exists. Need to add `Fire_D` (single-int) to
+`Event::Custom` since we don't have it yet — or just pass a dummy
+second arg through `Fire_DD`.
+
+## 75. Bank-bag walk — extract shared helper
+
+`Item::Count::CountInBankBags` and `EquipmentSet::Locations` both
+walk bank-bag contents via the same pattern: read GUID at linear
+slot 63..68 of player invMgr → `FUN_OBJECT_RESOLVE_BY_GUID` with
+`OBJ_TYPE_CONTAINER` → invoke `vtable[+0x10]` to get the bag's own
+invMgr → walk that invMgr's flat GUID array at +0x04. Same
+boilerplate twice. If a third caller needs it, extract to
+`Item::Inventory::WalkBagsByGUID(callback)` or similar in a shared
+header. Not worth the refactor for two callers yet.
+
 ## 71. Descriptor `+0x1320` — "last channeled spell" parking lot
 
 During the `IsAssistingRitual` investigation, the player's
