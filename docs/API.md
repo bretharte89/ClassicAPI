@@ -49,6 +49,7 @@ build instructions.
   - [`C_Item.RequestLoadItemDataByID(item)` / `C_Item.RequestLoadItemData(itemLocation)`](#c_itemrequestloaditemdatabyiditem--c_itemrequestloaditemdataitemlocation)
   - [`C_Item.GetItemSpell(item)`](#c_itemgetitemspellitem)
   - [`OffhandHasWeapon()`](#offhandhasweapon)
+  - [`C_Item.IsEquippableItem(item)`](#c_itemisequippableitemitem)
   - [`C_Item.IsEquippedItem(item)`](#c_itemisequippeditemitem)
   - [`C_Item.EquipItemByName(itemInfo [, dstSlot])`](#c_itemequipitembynameiteminfo--dstslot)
 - [Container](#container)
@@ -1420,6 +1421,30 @@ end
 ```
 
 Equivalent to the function of the same name introduced in 3.0.
+
+### `C_Item.IsEquippableItem(item)`
+
+Returns `true` if `item` can be equipped in any character-pane slot,
+`false` otherwise. Reads `m_inventoryType` from the cached ItemStats
+record — INVTYPE_NON_EQUIP (value `0`) is the only "not equippable"
+value, so any non-zero inventory type passes (head, neck, weapon,
+shield, holdable, …).
+
+`item` is an itemID number or `"item:N..."` link. Item names aren't
+accepted — vanilla has no name→ID resolver, and equippability is an
+itemID-keyed property anyway.
+
+Returns `false` for uncached items (no async load fired). If you
+need it to wait for the cache, call `C_Item.RequestLoadItemDataByID`
+first and re-check on `ITEM_DATA_LOAD_RESULT`.
+
+```lua
+C_Item.IsEquippableItem(12640)  -- Lionheart Helm → true
+C_Item.IsEquippableItem(6948)   -- Hearthstone → false
+```
+
+Equivalent to the function of the same name introduced in 1.10
+(global in 4.3.4, namespaced under `C_Item` in modern Classic Era).
 
 ### `C_Item.IsEquippedItem(item)`
 

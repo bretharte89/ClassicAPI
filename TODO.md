@@ -444,12 +444,13 @@ Logic added to [src/spell/Lookup.cpp](src/spell/Lookup.cpp) as
 `Spell::Lookup::FindSpellbookSlot`; the Lua C function lives next to
 the other spell registrations in [src/spell/Info.cpp](src/spell/Info.cpp).
 
-## 26. `IsEquippableItem(item)` — trivial
+## ~~26. `C_Item.IsEquippableItem(item)`~~ — DONE
 
-Boolean: can the item be equipped at all? One-line check: fetch the
-ItemStats record (we already have `Item::Info::FetchItemRecord`) and
-test `m_inventoryType > 0`. The INVTYPE field is at
-`OFF_ITEMSTATS_INVENTORY_TYPE = 0x2C`, already wired up.
+Cache-record read of `m_inventoryType` at `OFF_ITEMSTATS_INVENTORY_TYPE`.
+Non-zero = equippable. Lives in `item/Equipment.cpp` alongside
+`OffhandHasWeapon` (which uses the same field) and `IsEquippedItem`.
+Synchronous; returns `false` on cache miss without firing a load.
+Namespaced under `C_Item` to match Classic Era 1.15.x.
 
 ## 27. `IsEquippedItem(item)` — easy
 
