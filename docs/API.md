@@ -124,6 +124,7 @@ build instructions.
   - [`C_DateAndTime.GetSecondsUntilDailyReset()`](#c_dateandtimegetsecondsuntildailyreset)
 - [Events](#events)
   - [`C_EventUtils.IsEventValid(eventName)`](#c_eventutilsiseventvalideventname)
+  - [`BAG_UPDATE_DELAYED` event](#bag_update_delayed-event)
 - [Globals](#globals)
   - [`CLASSIC_API_VERSION`](#classic_api_version)
   - [`LE_EXPANSION_*`](#le_expansion_)
@@ -2777,6 +2778,42 @@ SuperWoWhook, `IsEventValid("UNIT_CASTEVENT")` returns `true` because
 SuperWoWhook patches the binary's event names with its own. This matches
 what `frame:RegisterEvent` will actually accept, which is what addon code
 needs to know.
+
+### `BAG_UPDATE_DELAYED` event
+
+Fires (with no payload) once per frame in which any `BAG_UPDATE`
+fired. Matches modern WoW's coalescing semantic exactly — register
+for `BAG_UPDATE_DELAYED` instead of `BAG_UPDATE` and rescan once
+per frame regardless of how many updates fired.
+
+```lua
+local f = CreateFrame("Frame")
+f:RegisterEvent("BAG_UPDATE_DELAYED")
+f:SetScript("OnEvent", function() RescanMyInventory() end)
+```
+
+A trade with 6 stacks (12 `BAG_UPDATE`s, all processed in one
+frame) produces exactly 1 `BAG_UPDATE_DELAYED` at the end of the
+frame — matches Classic Era 1.15.x's observed behavior.
+
+Implemented by three hooks, none in regions other DLLs touch:
+- `FUN_004F91A0` / `FUN_004F9370` (bag subsystem at `0x004F9xxx`)
+  — each just sets a `g_pending` flag, no fire
+- `FUN_0066FD50` (engine's per-frame world-subsystem update at
+  `0x0066xxxx`, deep in the rendering pipeline, only one caller in
+  the entire binary) — drains the flag at the tail of the world
+  tick
+
+The world-tick hook is a tail hook (run original first, then fire
+DELAYED), so the fire happens after every other per-frame world
+work completes. Addon callbacks see DELAYED after their normal
+event handlers.
+
+> **Coverage limitation.** The keyring `BAG_UPDATE(-2)` path goes
+> through a separate function (`FUN_004F8DB0`) that uses
+> `__thiscall` with an awkward register-arg shape. Keyring updates
+> currently won't trigger `BAG_UPDATE_DELAYED`. Player bag (0..4)
+> and bank (5..10) updates work normally — the 95% case.
 
 ## Globals
 

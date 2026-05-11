@@ -2107,7 +2107,7 @@ gotten clobbered — the slot-claim approach only fires after Lua's
 first `RegisterEvent` call, by which point the engine's writes have
 settled.
 
-## 67. `BAG_UPDATE_DELAYED` event - ATTEMPTED, REVERTED
+## ~~67. `BAG_UPDATE_DELAYED` event~~ — DONE (2026-05-11 second attempt)
 
 Modern 5.4.8+ event that fires once per game frame in which any
 `BAG_UPDATE` fired. The 5.4.8 engine sets an

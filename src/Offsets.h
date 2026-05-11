@@ -1289,6 +1289,47 @@ enum Offsets {
     FUN_SCRIPT_CLEAR_CURSOR = 0x004895B0,
     FUN_SCRIPT_PICKUP_INVENTORY_ITEM = 0x004C8DA0,
 
+    // Bag-update fire sites — see TODO #67 for the full Ghidra
+    // investigation. Hook these two to detect BAG_UPDATE fires and
+    // emit BAG_UPDATE_DELAYED once per frame in which any fired.
+    //
+    //   FUN_BAG_SLOT_DIFF (`0x004F91A0`) — __cdecl `void()` (zero
+    //   args, ends with plain `RET`). Walks linear slots `0x13..0x16`
+    //   (player bags 1..4) and `0x3B..0x44` (bank bags 5..10),
+    //   comparing each against a cached GUID snapshot at
+    //   `DAT_00BDD060`. Fires `BAG_UPDATE(bagID)` for each slot
+    //   whose GUID changed. Called from per-session init
+    //   (FUN_004F8CC0) and a packet handler (FUN_004F8EC0) — 2
+    //   callers total, very quiet hook target.
+    //
+    //   FUN_BAG_ITEM_TO_BAG (`0x004F9370`) — __stdcall
+    //   `void(int guidLo, int guidHi)` (ends with `RET 0x8`).
+    //   Given an item GUID, searches the bag cache for which bag
+    //   contains it. Fires `BAG_UPDATE(0)` for backpack,
+    //   `BAG_UPDATE(N)` for bag N, returns silently if not in any
+    //   bag. **Most common BAG_UPDATE path** — every per-item
+    //   field-change goes through here. 3 callers, all within the
+    //   bag subsystem at `0x004F9xxx`.
+    //
+    // A third site (FUN_004F8DB0 at `0x004F8DB0`) handles keyring
+    // updates with a `BAG_UPDATE(-2)` direct fire — __thiscall
+    // calling convention plus ECX-context arg make the hook
+    // signature awkward; deferred for now. The two below cover
+    // the common cases.
+    FUN_BAG_SLOT_DIFF = 0x004F91A0,
+    FUN_BAG_ITEM_TO_BAG = 0x004F9370,
+    // World-subsystem per-frame update — runs exactly once per frame
+    // as part of the main world tick (`FUN_00482EA0`). Only one caller
+    // in the entire binary; deep in the rendering/world pipeline,
+    // nowhere near the chat/cast/transmog code regions that other
+    // DLLs (SuperWoWhook / nampower / transmogfix) hook. We hook the
+    // tail of this function to drain `BAG_UPDATE_DELAYED`'s pending
+    // flag — exact per-frame coalescing matching modern WoW.
+    //
+    // Calling convention: `__fastcall(int ecx, int edx, int stackArg)`,
+    // `RET 0x4` (callee cleans the one stack arg).
+    FUN_WORLD_TICK = 0x0066FD50,
+
     // Engine session globals used by `EquipmentSet::Storage` to build
     // the per-character WTF path. Same layout VanillaMinimapTracking
     // uses for its own persistence file. Account is the value WoW
