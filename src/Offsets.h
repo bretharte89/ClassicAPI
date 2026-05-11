@@ -501,6 +501,37 @@ enum Offsets {
     // (Found via xref scan for `mov reg, [reg+0x1D0]` in `.text`.)
     OFF_ITEMSTATS_BAG_FAMILY = 0x1D0,
 
+    // Item-spell tables — five parallel arrays starting at +0x11C in
+    // each `ItemStats_C` record. Each item has up to 5 spell slots
+    // (vanilla server data uses ≤2 for most items: e.g. Hearthstone
+    // 6948 uses slot 0 for spell 8690 with trigger 0 = `ON_USE`).
+    //
+    // Field offsets computed by summing struct members in
+    // VanillaHelpers's `ItemStats_C` definition; verified empirically
+    // against the Hearthstone case (spellID 8690, trigger 0).
+    //
+    // Trigger enum (CMaNGOS `ITEM_SPELLTRIGGER_*`):
+    //   0 = ON_USE        (potions, trinkets, scrolls, hearthstone)
+    //   1 = ON_EQUIP      (passive proc auras on equipped gear)
+    //   2 = CHANCE_ON_HIT (weapon proc effects)
+    //   4 = SOULSTONE     (soulstone-style on-death effect)
+    //   5 = ON_USE_NO_DELAY
+    //   6 = LEARN_SPELL   (recipe items)
+    //
+    // `GetItemSpell` matches modern WoW semantics — returns the
+    // ON_USE (trigger=0) entry only, ignoring ON_EQUIP procs / weapon
+    // procs / recipes. Walks all 5 slots since the ON_USE entry isn't
+    // always at index 0 (some Turtle WoW custom items put it later).
+    OFF_ITEMSTATS_SPELL_ID = 0x11C,        // u32[5] — spell ID per slot
+    OFF_ITEMSTATS_SPELL_TRIGGER = 0x130,   // u32[5] — trigger code per slot
+    ITEMSTATS_SPELL_SLOT_COUNT = 5,
+    ITEM_SPELLTRIGGER_ON_USE = 0,
+
+    // `Spell.dbc` `Name[9]` field at record +0x1E0 (9-locale string
+    // array, indexed by `[VAR_LOCALE_INDEX]`). Used by `GetItemSpell`
+    // to push the spell name half of its return.
+    OFF_SPELL_NAMES = 0x1E0,
+
     // First character-pane bag-slot index. INVSLOT_BAG1 = 20, BAG2 = 21,
     // BAG3 = 22, BAG4 = 23. Used to map a Lua bagID (1..4) onto the
     // equipment slot the bag occupies: `equipSlot = INVSLOT_BAG1 + bagID - 1`.

@@ -377,12 +377,28 @@ class strings. We already know the unit descriptor lives at
 `[unit + 0x110]` (see `UnitPlayerControlled` discovery for
 `GetInventoryItemID`).
 
-## 23. `GetItemSpell(item)` — easy
+## ~~23. `GetItemSpell(item)`~~ — DONE
 
-Returns the on-use spell name + spellID for items that have one
-(potions, trinkets, scrolls). Reads ItemStats fields that we haven't
-mapped yet — the `m_spellId[5]` array on the cached item record.
-Combine the spellID with `GetSpellInfo` for the name.
+Returns `(spellName, spellID)` for the on-use spell attached to an
+item (potions, trinkets, scrolls, hearthstone, food/drink), or nil
+for items without one. Reads the cached `ItemStats_C` record's
+`m_spellId[5]` array at `+0x11C` and `m_spellTrigger[5]` at `+0x130`,
+matching the first slot with `trigger == 0` (`ITEM_SPELLTRIGGER_ON_USE`).
+Combines with `Spell.dbc.Name[locale]` at record `+0x1E0` for the
+spell name.
+
+Offsets computed from VanillaHelpers's fully-decoded
+`ItemStats_C` struct; verified empirically against Hearthstone
+(itemID 6948, slot-0 spell 8690, trigger 0). Other trigger codes
+(`ON_EQUIP`=1, `CHANCE_ON_HIT`=2, `SOULSTONE`=4, `LEARN_SPELL`=6)
+are deliberately ignored — matches modern WoW's `GetItemSpell`,
+which only reports the on-use spell.
+
+Same auto-warmup pattern as the other cache-backed accessors:
+returns nil for uncached items and silently fires the cache fill,
+so a follow-up call after `GET_ITEM_INFO_RECEIVED` lands the data.
+
+See [src/item/Spell.cpp](src/item/Spell.cpp).
 
 ## ~~24. `GetInventoryItemDurability(invSlot)` / `C_Container.GetContainerItemDurability(containerIndex, slotIndex)`~~ — DONE
 

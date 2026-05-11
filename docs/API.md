@@ -47,6 +47,7 @@ build instructions.
   - [`C_Item.GetItemInfoInstant(item)`](#c_itemgetiteminfoinstantitem)
   - [`C_Item.IsItemDataCachedByID(item)` / `C_Item.IsItemDataCached(itemLocation)`](#c_itemisitemdatacachedbyiditem--c_itemisitemdatacacheditemlocation)
   - [`C_Item.RequestLoadItemDataByID(item)` / `C_Item.RequestLoadItemData(itemLocation)`](#c_itemrequestloaditemdatabyiditem--c_itemrequestloaditemdataitemlocation)
+  - [`C_Item.GetItemSpell(item)`](#c_itemgetitemspellitem)
   - [`OffhandHasWeapon()`](#offhandhasweapon)
   - [`C_Item.IsEquippedItem(item)`](#c_itemisequippeditemitem)
   - [`C_Item.EquipItemByName(itemInfo [, dstSlot])`](#c_itemequipitembynameiteminfo--dstslot)
@@ -1315,6 +1316,56 @@ f:SetScript("OnEvent", function()
 end)
 C_Item.RequestLoadItemDataByID(2589)
 ```
+
+### `C_Item.GetItemSpell(item)`
+
+Returns `(spellName, spellID)` for the on-use spell attached to an
+item (potions, trinkets, scrolls, hearthstone, food/drink, etc.),
+or `nil` for items without one (vendor trash, regular gear, weapons
+with passive procs).
+
+`item` accepts the same input shapes as `GetItemInfo` — a numeric
+itemID, a chat-link `"|cffffffff|Hitem:6948:0:0:0|h[...]|h|r"`
+fragment, or a `"item:NNN"` short form.
+
+```lua
+C_Item.GetItemSpell(6948)
+-- "Hearthstone", 8690
+
+C_Item.GetItemSpell(13442)
+-- "Mighty Rage Potion", 17528
+
+C_Item.GetItemSpell(11288)  -- a soulstone (trigger=4, not ON_USE)
+-- nil
+
+C_Item.GetItemSpell(2589)   -- Linen Cloth, no spell
+-- nil
+```
+
+Returns the **ON_USE** spell only. Vanilla items can carry up to 5
+spell entries in their `ItemStats_C` record, each with its own
+trigger code:
+
+| Trigger | Meaning | Surfaced by `GetItemSpell`? |
+|---|---|---|
+| 0 | `ON_USE` | **yes** |
+| 1 | `ON_EQUIP` (passive aura on gear) | no |
+| 2 | `CHANCE_ON_HIT` (weapon procs) | no |
+| 4 | `SOULSTONE` (on-death) | no |
+| 5 | `ON_USE_NO_DELAY` | no (TODO: should we add this?) |
+| 6 | `LEARN_SPELL` (recipes) | no |
+
+This matches modern WoW's `GetItemSpell`, which only reports on-use
+triggers. Addons that need the other trigger types (proc auras,
+recipe targets) should reach into the cache directly — the spell
+slots are at `ItemStats +0x11C` (5 spell IDs) and `+0x130` (5 trigger
+codes).
+
+**Auto-warmup on cache miss.** Items not yet in the local cache
+return `nil` and silently kick off an `SMSG_ITEM_QUERY_SINGLE`
+request. A second call after `GET_ITEM_INFO_RECEIVED` lands the
+data. Same warmup pattern as `C_Item.GetItemFamily` and the rest of
+our cache-backed accessors.
 
 ### `OffhandHasWeapon()`
 
