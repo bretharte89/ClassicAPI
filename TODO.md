@@ -2523,6 +2523,110 @@ return the first one. Pure Lua-side string parsing, but easier
 to ship as a C helper for performance (called every frame by
 some addons).
 
+## 88. `PLAYER_EQUIPMENT_CHANGED(equipmentSlot, hasCurrent)` event
+
+WotLK-era event that fires every time a paperdoll slot changes
+(equip, unequip, swap). Heavily used by gear-tracking,
+tooltip-decoration, and stat-sheet addons. **The single highest-
+value event missing from vanilla** — backporting it would
+unblock dozens of addons that gate refresh logic on it.
+
+Vanilla fires `UNIT_INVENTORY_CHANGED` for the player when any
+slot changes, but doesn't say WHICH slot. Implementation: cache
+the player invMgr's GUID array for slots 0..18 at our hook
+point (likely `UNIT_INVENTORY_CHANGED` for `"player"`), diff
+against last snapshot, and fire `PLAYER_EQUIPMENT_CHANGED(slot,
+hasItem)` once per changed slot via `Event::Custom`. Hook can
+piggyback on `Frame::RegisterEvent` or be its own
+`UNIT_INVENTORY_CHANGED`-fired callback if we want lower
+latency.
+
+Bonus: same diff also feeds `EQUIPMENT_SETS_CHANGED` /
+`EQUIPMENT_SWAP_FINISHED` for our existing `C_EquipmentSet`
+module — currently those fire only on user-side mutations, not
+on inventory changes that affect a set's "equipped count".
+
+## 89. `UPDATE_INVENTORY_DURABILITY` event
+
+Fires when any equipped item's durability changes — picks up
+combat damage, repairs, item destruction. Used by Repair-O-Matic
+type addons and durability HUDs to avoid polling.
+
+Vanilla `Script_GetInventoryItemBroken` (`0x004C8590`) already
+reads `[descriptor + 0xA0]` for current durability — same field.
+Cheap path: poll the 19 equipped slots once per second on a
+timer; if any value changes, fire the event once. Cleaner path:
+hook the descriptor-write site, but that's a hot path and hooking
+risks JIT corruption with other DLLs (per memory note).
+
+Timer-based approach is probably the right tradeoff — addons
+don't need sub-second latency for durability and the engine
+itself updates the field at non-deterministic boundaries
+anyway.
+
+## 90. Revisit `BAG_UPDATE_DELAYED` (TODO #67 was REVERTED)
+
+Modern event that fires once after a storm of `BAG_UPDATE`s
+settles (typically inside a single frame). Lets addons debounce
+inventory-scan work without each one rolling its own timer.
+
+Previous attempt: see #67. Reverted because the implementation
+hooked something hot and caused issues. Re-attack with the
+hook installed at `Frame::FireEvent` (the dispatcher we already
+know) — count consecutive `BAG_UPDATE` fires per frame, and on
+the first frame that has zero, fire `BAG_UPDATE_DELAYED`.
+
+Lower risk than the previous approach since we're observing
+fires rather than hooking the update path. `Event::Custom`
+machinery is more mature now and matches what the EquipmentSet
+module already does.
+
+## 91. `UNIT_SPELLCAST_SENT(unit, target, castGUID, spellID)` event
+
+The modern per-cast notification with unit + target + spellID.
+Vanilla ships `SPELLCAST_START` for the player only, with just
+the spell *name* — modern addons want spellID and unit info.
+
+Player-only backport is feasible without wire-protocol work:
+hook `SPELLCAST_START` fires (or the underlying engine path that
+sends them), translate name→spellID via `Spell::Lookup`, pass
+through with `"player"` and the current target token. Cross-unit
+(party member casting) requires SMSG_SPELL_GO observation —
+defer that to a "Phase 2" or skip permanently.
+
+If we ship the player-only version, document the limitation
+prominently — addons that rely on `unit ~= "player"` events
+won't get them, but everything that only cares about the local
+player works.
+
+## 92. `IsItemInRange(itemID, unit)` — medium
+
+5.4.8-era addition. Range check based on the item's "range
+modifier" — long-range items (rifles, throwing weapons) report
+true when the target is in firing range. Used by hunter / rogue
+addons to gate ability use on item range.
+
+Implementation: read ItemStats range index, look up in
+SpellRange.dbc (already wired in `Spell::Info`), compute 3D
+distance to `unit`. Same machinery as TODO #85 (IsSpellInRange)
+but item-keyed instead of spell-keyed.
+
+If we wire up the unit-position read primitive for either of
+these, the other comes nearly free.
+
+## 93. `GetClassColor(classToken)` — easy
+
+5.x-era addition that wraps the FrameXML `RAID_CLASS_COLORS`
+table — returns `(r, g, b, hex)` for a class token like
+`"WARRIOR"`. Heavy addon dependency on this; backports usually
+ship their own table.
+
+Could ship from C++ as a static lookup (12 hardcoded RGB
+values + tokens — they don't change), or just expose
+`RAID_CLASS_COLORS` as a Lua global from `ChrClasses.dbc` reads.
+The latter is more faithful (custom servers can add classes and
+have them show up).
+
 ## ~~76. `C_DateAndTime.*` namespace — DONE (7 of 8)
 
 Backport of modern's date-math namespace. Six functions are pure
