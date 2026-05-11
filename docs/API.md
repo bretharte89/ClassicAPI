@@ -1664,12 +1664,6 @@ in object updates.
 UnitIsFeignDeath("target")   -- true if a feigning hunter
 ```
 
-> **Untested.** The flag-bit value is the standard vanilla emulator
-> constant; the function compiles and won't crash, but we haven't
-> confirmed the bit position against live data (no Hunter on hand).
-> If a Hunter happens to be nearby and using FD,
-> `/dump UnitIsFeignDeath("target")` is the diagnostic.
-
 Equivalent to the function of the same name introduced in 3.0.
 
 ## State

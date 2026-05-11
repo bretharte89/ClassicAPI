@@ -555,7 +555,7 @@ Same split as modern WoW. The cross-binary technique paid off again
 See [src/spell/Info.cpp](src/spell/Info.cpp) and the worked example
 in [CLAUDE.md](CLAUDE.md#cross-binary-reference--finding-112-implementations-via-newer-clients).
 
-## ~~31. Unit flag bundle: `UnitIsAFK` / `UnitIsDND` / `UnitIsFeignDeath`~~ — DONE (FeignDeath ships untested)
+## ~~31. Unit flag bundle: `UnitIsAFK` / `UnitIsDND` / `UnitIsFeignDeath`~~ — DONE
 
 All three shipped in [src/unit/Flags.cpp](src/unit/Flags.cpp):
 
@@ -566,8 +566,9 @@ All three shipped in [src/unit/Flags.cpp](src/unit/Flags.cpp):
   to avoid the crash hazard on creatures (where `+0xE68` is uninitialized
   garbage).
 - **`UnitIsFeignDeath(unit)`** — reads `UNIT_FIELD_FLAGS` bit 29
-  (`0x20000000`) at `[m_objectFields + 0xA0]`. Untested — no Hunter
-  available — but the value is the standard vanilla emulator constant.
+  (`0x20000000`) at `[m_objectFields + 0xA0]`. Verified in-game with
+  a Hunter using Feign Death — the function returns 1 while the
+  feign-death buff is active, 0 otherwise.
 
 **Where PLAYER_FLAGS lives — and the misleading first guess.** The
 field index `0x8A` (= byte offset `0x228` in m_objectFields) is the
