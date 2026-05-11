@@ -114,6 +114,13 @@ build instructions.
   - [`GetTalentIDByIndex(tabIndex, talentIndex)`](#gettalentidbyindextabindex-talentindex)
 - [Time](#time)
   - [`GetServerTime()`](#getservertime)
+  - [`C_DateAndTime` overview](#c_dateandtime-overview)
+  - [`C_DateAndTime.GetCurrentCalendarTime()`](#c_dateandtimegetcurrentcalendartime)
+  - [`C_DateAndTime.GetCalendarTimeFromEpoch(epoch)`](#c_dateandtimegetcalendartimefromepochepoch)
+  - [`C_DateAndTime.AdjustTimeByDays(date, days)` / `AdjustTimeByMinutes(date, minutes)`](#c_dateandtimeadjusttimebydaysdate-days--adjusttimebyminutesdate-minutes)
+  - [`C_DateAndTime.CompareCalendarTime(lhs, rhs)`](#c_dateandtimecomparecalendartimelhs-rhs)
+  - [`C_DateAndTime.GetServerTimeLocal()`](#c_dateandtimegetservertimelocal)
+  - [`C_DateAndTime.GetSecondsUntilDailyReset()`](#c_dateandtimegetsecondsuntildailyreset)
 - [Events](#events)
   - [`C_EventUtils.IsEventValid(eventName)`](#c_eventutilsiseventvalideventname)
 - [Globals](#globals)
@@ -2642,6 +2649,86 @@ right call for calendar / log-timestamp / cooldown-sync use cases.
 > engine's clock for as long as the session continues.
 
 Equivalent to the function of the same name introduced in 3.0.
+
+### `C_DateAndTime` overview
+
+Backport of the modern `C_DateAndTime` namespace — calendar-style
+date math built on top of `GetServerTime()`. All seven functions
+exchange `CalendarTime` tables with these fields (matching
+Blizzard's `TimeDocumentation.lua`):
+
+| Field | Range | Notes |
+|-------|-------|-------|
+| `year` | full year, e.g. 2026 | |
+| `month` | 1..12 | luaIndex (1-based) |
+| `monthDay` | 1..31 | luaIndex (1-based) |
+| `weekday` | 1..7 | luaIndex; 1 = Sunday |
+| `hour` | 0..23 | |
+| `minute` | 0..59 | |
+
+> **Daily reset semantics.** `GetSecondsUntilDailyReset` treats reset
+> as midnight in server wall-clock time. This is exactly what
+> `GetServerTime() % 86400 == 0` gives you — the engine's gametime
+> components are converted to an epoch by treating them as UTC, so
+> day boundaries in epoch math align with server-clock midnight.
+>
+> **Weekly reset not implemented.** Vanilla has no server-broadcast
+> weekly reset schedule, and Turtle WoW realm schedules vary, so
+> `C_DateAndTime.GetSecondsUntilWeeklyReset` would have to hardcode a
+> weekday/hour that's wrong on some realms. Addons that need it can
+> compute their own value from the daily reset + a CVAR.
+
+### `C_DateAndTime.GetCurrentCalendarTime()`
+
+Returns the server clock as a CalendarTime table, or nothing before
+login. Equivalent to `GetCalendarTimeFromEpoch(GetServerTime())`.
+
+```lua
+local t = C_DateAndTime.GetCurrentCalendarTime()
+-- t = { year=2026, month=5, monthDay=11, weekday=2, hour=14, minute=30 }
+```
+
+### `C_DateAndTime.GetCalendarTimeFromEpoch(epoch)`
+
+Converts a Unix epoch (seconds since 1970-01-01 UTC) to a
+CalendarTime table. Pure `gmtime`; no engine state touched.
+
+### `C_DateAndTime.AdjustTimeByDays(date, days)` / `AdjustTimeByMinutes(date, minutes)`
+
+Returns a new CalendarTime offset from the input by the given number
+of days (or minutes). Negative deltas walk backwards. Out-of-range
+inputs (`month=13`, `monthDay=32`) normalize via the underlying
+`_mkgmtime` / `gmtime` round-trip.
+
+```lua
+local today = C_DateAndTime.GetCurrentCalendarTime()
+local tomorrow = C_DateAndTime.AdjustTimeByDays(today, 1)
+local yesterday = C_DateAndTime.AdjustTimeByDays(today, -1)
+```
+
+### `C_DateAndTime.CompareCalendarTime(lhs, rhs)`
+
+Returns `-1` if `lhs < rhs`, `0` if equal, `1` if `lhs > rhs`.
+Compares by epoch conversion so denormalized inputs sort
+consistently.
+
+### `C_DateAndTime.GetServerTimeLocal()`
+
+Returns the server's wall clock re-interpreted as a Unix epoch in
+the **player's** local timezone. Useful when you want to feed a
+server-clock value into Lua's `date(format, epoch)` and have the
+formatted string show the server's apparent hour/minute. If the
+server reports 14:30 and the player is in UTC-5, this returns the
+epoch that corresponds to 14:30 in UTC-5 (which is 19:30 UTC).
+
+### `C_DateAndTime.GetSecondsUntilDailyReset()`
+
+Returns seconds until the next server midnight (00:00:00 in server
+wall-clock time). Returns 0 if called before login.
+
+> See the overview's "Daily reset semantics" note — this uses server
+> midnight, not UTC midnight (though they happen to coincide for
+> Turtle WoW since the server reports UTC-aligned components).
 
 ## Events
 

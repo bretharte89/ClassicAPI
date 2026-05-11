@@ -2446,6 +2446,25 @@ boilerplate twice. If a third caller needs it, extract to
 `Item::Inventory::WalkBagsByGUID(callback)` or similar in a shared
 header. Not worth the refactor for two callers yet.
 
+## ~~76. `C_DateAndTime.*` namespace — DONE (7 of 8)
+
+Backport of modern's date-math namespace. Six functions are pure
+`<ctime>` arithmetic over a CalendarTime table; the seventh
+(`GetSecondsUntilDailyReset`) reads `Time::Server::CurrentEpoch()`
+and returns `86400 - (epoch % 86400)`. Server midnight semantics
+work naturally because `CurrentEpoch` treats the engine's server-
+time components as UTC for the epoch conversion — day boundaries
+in epoch math align with server-clock midnight.
+
+`GetSecondsUntilWeeklyReset` deliberately omitted — vanilla has no
+server-broadcast weekly reset schedule, and Turtle realms vary, so
+any hardcoded weekday/hour would be wrong somewhere. Addons that
+need it can compute their own value (e.g. "next Tuesday at server
+midnight") via `GetCurrentCalendarTime` + `AdjustTimeByDays`.
+
+Side effect: refactored `Time::Server::CurrentEpoch()` out of
+`Script_GetServerTime` so the C++ helper is reusable.
+
 ## 71. Descriptor `+0x1320` — "last channeled spell" parking lot
 
 During the `IsAssistingRitual` investigation, the player's

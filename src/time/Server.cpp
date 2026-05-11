@@ -11,6 +11,8 @@
 // You should have received a copy of the GNU Lesser General Public License along with
 // ClassicAPI. If not, see <https://www.gnu.org/licenses/>.
 
+#include "Server.h"
+
 #include "Game.h"
 #include "Offsets.h"
 
@@ -44,22 +46,7 @@ int g_lastHour = -1;
 int g_lastMinute = -1;
 DWORD g_anchorTick = 0;
 
-} // namespace
-
-// `GetServerTime()` — returns the current server clock as a Unix epoch
-// timestamp (seconds since 1970-01-01 UTC). 1.12's stock `GetTime()` is
-// frame-relative seconds-since-login, useless for any addon that needs
-// wall-clock alignment (calendar, log timestamps, cooldown sync).
-//
-// Reads year/month/day/hour/minute from the engine's game-time struct at
-// `VAR_GAMETIME_STRUCT` (populated by SMSG_LOGIN_VERIFY_WORLD /
-// SMSG_LOGIN_SETTIMESPEED) and converts via `_mkgmtime`, with
-// `GetTickCount`-based interpolation between minute boundaries. We
-// don't reuse the engine's `0x00642320` helper because that one folds
-// in a divide-by-86400 (returning days-since-epoch, not seconds).
-//
-// Returns `nil` before login while the struct is BSS-zero.
-static int __fastcall Script_GetServerTime(void *L) {
+int64_t ComputeCurrentEpoch() {
     auto *base = reinterpret_cast<const uint8_t *>(
         static_cast<uintptr_t>(Offsets::VAR_GAMETIME_STRUCT));
 
@@ -102,7 +89,31 @@ static int __fastcall Script_GetServerTime(void *L) {
     int elapsedSec = static_cast<int>(elapsedMs / 1000);
     if (elapsedSec > 59) elapsedSec = 59; // clamp at minute end
 
-    Game::Lua::PushNumber(L, static_cast<double>(minuteStart + elapsedSec));
+    return static_cast<int64_t>(minuteStart) + elapsedSec;
+}
+
+} // namespace
+
+int64_t CurrentEpoch() { return ComputeCurrentEpoch(); }
+
+// `GetServerTime()` — returns the current server clock as a Unix epoch
+// timestamp (seconds since 1970-01-01 UTC). 1.12's stock `GetTime()` is
+// frame-relative seconds-since-login, useless for any addon that needs
+// wall-clock alignment (calendar, log timestamps, cooldown sync).
+//
+// Reads year/month/day/hour/minute from the engine's game-time struct at
+// `VAR_GAMETIME_STRUCT` (populated by SMSG_LOGIN_VERIFY_WORLD /
+// SMSG_LOGIN_SETTIMESPEED) and converts via `_mkgmtime`, with
+// `GetTickCount`-based interpolation between minute boundaries. We
+// don't reuse the engine's `0x00642320` helper because that one folds
+// in a divide-by-86400 (returning days-since-epoch, not seconds).
+//
+// Returns `nil` before login while the struct is BSS-zero.
+static int __fastcall Script_GetServerTime(void *L) {
+    const int64_t epoch = ComputeCurrentEpoch();
+    if (epoch <= 0)
+        return 0;
+    Game::Lua::PushNumber(L, static_cast<double>(epoch));
     return 1;
 }
 

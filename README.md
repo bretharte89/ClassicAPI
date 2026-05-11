@@ -33,7 +33,7 @@ Quick index:
 | Hooks     | `hooksecurefunc` |
 | Input     | `IsLeftShiftKeyDown`, `IsRightShiftKeyDown`, `IsLeftControlKeyDown`, `IsRightControlKeyDown`, `IsLeftAltKeyDown`, `IsRightAltKeyDown`, `IsModifierKeyDown` (+ `MODIFIER_STATE_CHANGED` event) |
 | Talent    | `GetTalentIDByIndex`, `GetTalentSpellID` |
-| Time      | `GetServerTime` |
+| Time      | `GetServerTime`, `C_DateAndTime.AdjustTimeByDays`, `C_DateAndTime.AdjustTimeByMinutes`, `C_DateAndTime.CompareCalendarTime`, `C_DateAndTime.GetCalendarTimeFromEpoch`, `C_DateAndTime.GetCurrentCalendarTime`, `C_DateAndTime.GetSecondsUntilDailyReset`, `C_DateAndTime.GetServerTimeLocal` |
 | Events    | `C_EventUtils.IsEventValid` |
 | Globals   | `CLASSIC_API_VERSION`, `LE_EXPANSION_LEVEL_CURRENT`, `LE_EXPANSION_CLASSIC` … `LE_EXPANSION_MIDNIGHT`, `LE_ITEM_QUALITY_POOR` … `LE_ITEM_QUALITY_WOWTOKEN`, `LE_UNIT_STAT_STRENGTH` … `LE_UNIT_STAT_SPIRIT` |
 
