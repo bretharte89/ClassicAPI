@@ -72,6 +72,8 @@ build instructions.
   - [`IsFalling()`](#isfalling)
   - [`IsSwimming()`](#isswimming)
   - [`IsAssistingRitual()`](#isassistingritual)
+- [Chat](#chat)
+  - [`GetCurrentChatGUID()`](#getcurrentchatguid)
 - [AddOns](#addons)
   - [`C_AddOns.GetAddOnName(indexOrName)`](#c_addonsgetaddonnameindexorname)
   - [`C_AddOns.GetAddOnTitle(indexOrName)`](#c_addonsgetaddontitleindexorname)
@@ -1954,6 +1956,56 @@ Local-player only — the `+0xB4` pointer lives on the CGPlayer
 object, not in the broadcast descriptor, so the function can't
 report state for `target` / `party*` / etc. Returns `false` when
 called before the player object is initialized (login screen).
+
+## Chat
+
+### `GetCurrentChatGUID()`
+
+Returns the sender's GUID for whichever `CHAT_MSG_*` event is
+currently being dispatched, or `nil` if called outside a chat
+event or for a synthetic chat with no real sender (e.g.
+`CHAT_MSG_SYSTEM`).
+
+Format matches `UnitGUID`: `"0xHHHHHHHHLLLLLLLL"` (16 hex digits,
+hi dword first).
+
+```lua
+local f = CreateFrame("Frame")
+f:RegisterEvent("CHAT_MSG_CHANNEL")
+f:RegisterEvent("CHAT_MSG_SAY")
+f:RegisterEvent("CHAT_MSG_WHISPER")
+f:SetScript("OnEvent", function()
+    local guid = GetCurrentChatGUID()
+    if guid then
+        local _, class, _, race = GetPlayerInfoByGUID(guid)
+        DEFAULT_CHAT_FRAME:AddMessage(string.format(
+            "%s: %s [%s %s]", arg2, arg1, class or "?", race or "?"))
+    end
+end)
+```
+
+Vanilla 1.12's `CHAT_MSG_*` events don't include the sender GUID
+in their payload — that was added in 3.0+ as `arg12`. Addons that
+need to identify chatters reliably (rather than by sender name,
+which is locale-fragile and ambiguous across realms) currently
+strcmp against an addon-maintained name cache. This function lets
+them skip that work.
+
+**Implementation**: hooks the engine's chat dispatcher at
+`FUN_CHAT_DISPATCH` (`0x0049A870`), which receives the sender
+GUID as args 11/12 of a 12-arg `__fastcall`. The hook stashes the
+GUID into a static global before forwarding to the original
+function; the engine then fires the appropriate `CHAT_MSG_*`
+event synchronously inside that window, so `GetCurrentChatGUID()`
+called from the addon's OnEvent sees the right GUID. The global
+is restored to its prior value (not cleared) on hook return, so
+nested chat dispatch (e.g. an addon calling `SendChatMessage`
+from its handler) doesn't lose the outer context's GUID.
+
+The function returns `nil` rather than `"0x0000000000000000"`
+for synthetic chat (system messages, login banners, etc.) where
+the GUID args are zero — matches the idiomatic
+`if GetCurrentChatGUID() then` check.
 
 ## AddOns
 

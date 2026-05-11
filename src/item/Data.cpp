@@ -225,4 +225,15 @@ static void RegisterLuaFunctions() {
 
 static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
 
+// Auto-warm the item cache on `GetItemInfo(uncached_id)` calls, so
+// subsequent calls return valid data and GET_ITEM_INFO_RECEIVED
+// fires when the response arrives — matches modern WoW (5.x+)
+// behavior. Without this, vanilla 1.12's `GetItemInfo` returns nil
+// for misses and never fires a query, forcing addons to roll their
+// own warmup hacks.
+static const Game::HookAutoRegister _hookreg{
+    Offsets::FUN_SCRIPT_GET_ITEM_INFO,
+    reinterpret_cast<void *>(&Script_GetItemInfo_h),
+    reinterpret_cast<void **>(&Script_GetItemInfo_o)};
+
 } // namespace Item::Data

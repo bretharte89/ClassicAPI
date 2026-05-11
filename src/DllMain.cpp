@@ -16,8 +16,6 @@
 #include "MinHook.h"
 #include "Offsets.h"
 #include "event/Custom.h"
-#include "faction/StandingChanged.h"
-#include "item/Data.h"
 
 static Game::FrameScript_Initialize_t FrameScript_Initialize_o = nullptr;
 static Game::LoadScriptFunctions_t LoadScriptFunctions_o = nullptr;
@@ -86,29 +84,21 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved) {
         if (MH_EnableHook(target) != MH_OK)
             return FALSE;
 
+        // Three core init hooks stay here — each runs glue logic
+        // (PrepareForReload, RunModuleRegistrations, EnableWrites,
+        // RetryClaims) that's tightly coupled to DllMain state, so
+        // a declarative HookAutoRegister wouldn't simplify them.
         HOOK_FUNCTION(Offsets::FUN_FRAME_SCRIPT_INITIALIZE, FrameScript_Initialize_h,
                       FrameScript_Initialize_o);
         HOOK_FUNCTION(Offsets::FUN_LOAD_SCRIPT_FUNCTIONS, LoadScriptFunctions_h,
                       LoadScriptFunctions_o);
         HOOK_FUNCTION(Offsets::FUN_FRAME_REGISTER_EVENT, FrameRegisterEvent_h,
                       FrameRegisterEvent_o);
-        // Auto-warm the item cache on `GetItemInfo(uncached_id)` calls, so
-        // subsequent calls return valid data and GET_ITEM_INFO_RECEIVED
-        // fires when the response arrives — matches modern WoW (5.x+)
-        // behavior. Without this, vanilla 1.12's `GetItemInfo` returns
-        // nil for misses and never fires a query, forcing addons to roll
-        // their own warmup hacks.
-        HOOK_FUNCTION(Offsets::FUN_SCRIPT_GET_ITEM_INFO, Item::Data::Script_GetItemInfo_h,
-                      Item::Data::Script_GetItemInfo_o);
-        // Fire `FACTION_STANDING_CHANGED(factionID, newStanding)` on every
-        // reputation change. Hooks the engine's per-rep-change chat
-        // notify dispatcher, which is the precise gate for "value
-        // actually changed AND notify flag set" — matches modern
-        // FACTION_STANDING_CHANGED semantics (skips initial faction
-        // sync at login).
-        HOOK_FUNCTION(Offsets::FUN_REPUTATION_FIRE_NOTIFY,
-                      Faction::StandingChanged::FireNotify_h,
-                      Faction::StandingChanged::FireNotify_o);
+
+        // All feature hooks declared via `Game::HookAutoRegister` at
+        // file scope in their respective modules.
+        if (!Game::RunHookRegistrations())
+            return FALSE;
     } else if (reason == DLL_PROCESS_DETACH) {
         MH_Uninitialize();
     }

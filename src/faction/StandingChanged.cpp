@@ -38,6 +38,7 @@
 
 #include "StandingChanged.h"
 
+#include "Game.h"
 #include "Offsets.h"
 #include "event/Custom.h"
 
@@ -78,5 +79,10 @@ void __fastcall FireNotify_h(int factionID, int delta) {
 
     Event::Custom::Fire_DDD(slot, factionID, newStanding, delta);
 }
+
+static const Game::HookAutoRegister _hookreg{
+    Offsets::FUN_REPUTATION_FIRE_NOTIFY,
+    reinterpret_cast<void *>(&FireNotify_h),
+    reinterpret_cast<void **>(&FireNotify_o)};
 
 } // namespace Faction::StandingChanged

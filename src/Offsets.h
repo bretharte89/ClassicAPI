@@ -78,6 +78,27 @@ enum Offsets {
     // for the `lua_pcall(UnitName)` workaround. For pure unit-token
     // input it's the right primitive.
     FUN_TOKEN_TO_GUID = 0x00515970,
+
+    // Chat-event dispatcher — single choke point through which all
+    // CHAT_MSG_* events fire after the SMSG_MESSAGECHAT packet handler
+    // (opcode 0x96 → FUN_0049D560) parses the wire data. Called with
+    // the sender GUID as stack args 9 and 10 (lo, hi).
+    //
+    // Calling convention: `__fastcall` with 10 args — ECX = sender
+    // name string, EDX = chat type, then 8 stack args ending in the
+    // GUID pair. Called from:
+    //   - FUN_0049D560 directly for live (non-throttled) chat
+    //   - The pending-chat queue processor (`__AUPENDINGCHAT`) for
+    //     messages buffered via FUN_0049CAE0 when the engine flag at
+    //     0x008435FC is set
+    //   - Many synthetic chat synthesizers throughout the codebase
+    //     (system notifications, arena team membership changes, etc.)
+    //     which pass 0 / NULL for the GUID args
+    //
+    // Hooked by `Chat::CurrentGUID::ChatDispatch_h` to capture the
+    // GUID into a global for `GetCurrentChatGUID()` to read during an
+    // addon's CHAT_MSG_* OnEvent.
+    FUN_CHAT_DISPATCH = 0x0049A870,
     // Per-player inventory manager lives at this offset on the player object.
     OFF_PLAYER_INVENTORY_MANAGER = 0x1D38,
     // ItemMgr::GetItemBySlot — __thiscall(this, slot) → CGItem* (NULL if empty).

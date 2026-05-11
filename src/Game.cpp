@@ -12,6 +12,7 @@
 // ClassicAPI. If not, see <https://www.gnu.org/licenses/>.
 
 #include "Game.h"
+#include "MinHook.h"
 #include "Offsets.h"
 
 #include <cstdio>
@@ -105,6 +106,7 @@ void RegisterTableFunction(const char *tableName, const char *methodName, CFunct
 
 namespace {
 ModuleAutoRegister *g_moduleHead = nullptr;
+HookAutoRegister *g_hookHead = nullptr;
 } // namespace
 
 ModuleAutoRegister::ModuleAutoRegister(Fn f) : fn(f), next(g_moduleHead) {
@@ -114,6 +116,23 @@ ModuleAutoRegister::ModuleAutoRegister(Fn f) : fn(f), next(g_moduleHead) {
 void RunModuleRegistrations() {
     for (auto *node = g_moduleHead; node != nullptr; node = node->next)
         node->fn();
+}
+
+HookAutoRegister::HookAutoRegister(uintptr_t target, void *hook, void **original)
+    : target(target), hook(hook), original(original), next(g_hookHead) {
+    g_hookHead = this;
+}
+
+bool RunHookRegistrations() {
+    for (auto *node = g_hookHead; node != nullptr; node = node->next) {
+        auto *targetPtr = reinterpret_cast<LPVOID>(node->target);
+        if (MH_CreateHook(targetPtr, node->hook,
+                          reinterpret_cast<LPVOID *>(node->original)) != MH_OK)
+            return false;
+        if (MH_EnableHook(targetPtr) != MH_OK)
+            return false;
+    }
+    return true;
 }
 
 } // namespace Game

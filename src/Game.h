@@ -137,4 +137,31 @@ struct ModuleAutoRegister {
 
 void RunModuleRegistrations();
 
+// Declarative MinHook registration. Each feature module declares a
+// file-scope `static const Game::HookAutoRegister _hookreg{target,
+// &hook_fn, reinterpret_cast<void**>(&original_fn)};` and DllMain's
+// `RunHookRegistrations` walks the list once after `MH_Initialize`,
+// installing each hook with `MH_CreateHook` + `MH_EnableHook`.
+//
+// Same lifetime rules as ModuleAutoRegister: constructors chain onto
+// a static-init list before DllMain runs, the linker keeps the OBJ
+// because the constructor has side effects, and order across TUs is
+// undefined but doesn't matter here (hooks are independent).
+//
+// Use only for feature hooks. The three core engine-init hooks in
+// DllMain (FrameScript_Initialize / LoadScriptFunctions /
+// Frame::RegisterEvent) have inline logic that interleaves with the
+// hook chain and stays in DllMain.
+struct HookAutoRegister {
+    HookAutoRegister(uintptr_t target, void *hook, void **original);
+    uintptr_t target;
+    void *hook;
+    void **original;
+    HookAutoRegister *next;
+};
+
+// Installs every registered hook. Returns `false` and stops on first
+// failure — caller (DllMain) should propagate by returning FALSE.
+bool RunHookRegistrations();
+
 } // namespace Game
