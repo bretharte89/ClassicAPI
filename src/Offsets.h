@@ -51,6 +51,33 @@ enum Offsets {
     // related (its +0xC0 has the player GUID) but is NOT the same CGPlayer_C
     // pointer the inventory routines expect.
     FUN_RESOLVE_UNIT_TOKEN = 0x00515940,
+    // `__fastcall(ecx = const char *token) → uint64_t GUID` — the
+    // inner token-to-GUID step that `FUN_RESOLVE_UNIT_TOKEN` calls
+    // before doing the active-object lookup. Returns the unit's
+    // GUID without depending on the unit being visible / loaded as
+    // a CGObject, so `partyN` / `raidN` resolve correctly even when
+    // the member is out of range or on a different continent
+    // (`Script_UnitName` uses this path too; that's why `UnitName`
+    // already works for OOR party members in vanilla).
+    //
+    // Internal dispatch:
+    //   - "player"             → `[localPlayer + 0x08]` (GUID ptr)
+    //   - "target"             → `DAT_00B4E2D8`/`DAT_00B4E2DC` globals
+    //   - "mouseover"          → `DAT_00B4E2C8`/`DAT_00B4E2CC` globals
+    //   - "partyN"             → `FUN_004E81A0(slot)` → `[VAR_PARTY_GUIDS + slot*8]`
+    //   - "raidN"              → `FUN_00491940(slot)` → raid GUID array
+    //   - "partypetN", "raidpetN" similar (pet-slot variants)
+    //   - "<arbitrary name>"   → raises "Unknown unit name: %s" via
+    //                            the engine's error helper (so this
+    //                            still errors on bad tokens — same
+    //                            semantics as the existing
+    //                            `UnitGUID` documented behavior).
+    //
+    // Don't use this from code paths that need to handle literal
+    // character names — see CLAUDE.md "Resolving input to a name"
+    // for the `lua_pcall(UnitName)` workaround. For pure unit-token
+    // input it's the right primitive.
+    FUN_TOKEN_TO_GUID = 0x00515970,
     // Per-player inventory manager lives at this offset on the player object.
     OFF_PLAYER_INVENTORY_MANAGER = 0x1D38,
     // ItemMgr::GetItemBySlot — __thiscall(this, slot) → CGItem* (NULL if empty).
@@ -542,6 +569,70 @@ enum Offsets {
     VAR_CHRCLASSES_COUNT = 0x00C0DEF8,
     OFF_CHRCLASSES_NAMES = 0x14,
     OFF_CHRCLASSES_FILENAME = 0x38,
+
+    // ChrRaces.dbc — standard 5-DWORD class shape at 0x00C0DED8,
+    // records-pointer at +0x08, count at +0x0C. 29 columns,
+    // 0x74-byte record stride. Field offsets verified by decoding
+    // `Script_UnitRace` (registration entry at 0x00850580, function at
+    // 0x00518200): the function loads `[VAR_CHRRACES_RECORDS]` →
+    // `records[raceID]` → reads `+0x44 + locale*4` for the localized
+    // race name and `+0x3C` for the non-localized file string (e.g.
+    // `"Human"`, `"NightElf"`, `"Scourge"`), pushes both as Lua
+    // returns. The two offsets are what we mirror to populate
+    // `GetPlayerInfoByGUID`'s `localizedRace` / `englishRace` slots.
+    VAR_CHRRACES_RECORDS = 0x00C0DEE0,
+    VAR_CHRRACES_COUNT = 0x00C0DEE4,
+    OFF_CHRRACES_FILENAME = 0x3C,
+    OFF_CHRRACES_NAMES = 0x44,
+
+    // Engine player-info cache — populated by the
+    // SMSG_NAME_QUERY_RESPONSE handler (opcode 0x51) at 0x005551A0,
+    // which reads (GUID, name[48], realm[256], race, sex, class) from
+    // the packet and writes them into an entry via the cache method
+    // at 0x0055F310. Used by chat, raid frames, guild events — any
+    // engine code that needs name/class/race for a GUID. NOT limited
+    // to visible objects (an earlier note in TODO #35 was wrong — the
+    // visible-only cache at 0x00CE870C is a different smaller one
+    // used for chat name resolution).
+    //
+    // Lookup primitive at `FUN_PLAYER_INFO_LOOKUP`:
+    //   `__thiscall uint8_t *(this=cache, guid_lo, guid_hi, &cookie,
+    //                          callback, userData, retryFlag)`
+    //
+    // Returns:
+    //   - `nullptr` if the GUID isn't loaded (cache miss, or pending
+    //     response from a prior request).
+    //   - Pointer to the entry's data block (= entry +0x20) if loaded.
+    //
+    // Side effect: if `callback != nullptr` AND the entry isn't yet
+    // allocated, the engine builds a CDataStore, writes the GUID, and
+    // calls `FUN_005AB630` to send CMSG_NAME_QUERY (opcode 0x50). The
+    // callback fires with `(userData, success)` when the response
+    // arrives (`__stdcall void(void *, int)`, same shape as the item
+    // cache callback).
+    //
+    // For pure cache reads (our `GetPlayerInfoByGUID`), pass
+    // `callback=nullptr, userData=nullptr, retryFlag=0` and a dummy
+    // 8-byte cookie buffer. We don't fire the request from the read
+    // path — addons that want to trigger one can layer a
+    // `C_PlayerInfo.RequestLoadPlayerByID`-style helper on top later.
+    VAR_PLAYER_NAME_CACHE = 0x00C0E228,
+    FUN_PLAYER_INFO_LOOKUP = 0x0055F080,
+
+    // Entry-data offsets. The lookup returns `entry + 0x20`, so these
+    // are relative to that pointer (not to the entry's hash-table
+    // header). Field layout verified by decoding the cache writer
+    // FUN_0055F310 at 0x0055F32D-0x0055F365:
+    //   - copy 48 bytes from packet[+0]   into entry+0x20   (name)
+    //   - copy 256 bytes from packet[+0x30] into entry+0x50 (realm)
+    //   - copy 4 bytes from packet[+0x138] into entry+0x158 (race)
+    //   - copy 4 bytes from packet[+0x13C] into entry+0x15C (sex)
+    //   - copy 4 bytes from packet[+0x140] into entry+0x160 (class)
+    OFF_PLAYER_INFO_NAME = 0x000,   // 48-byte inline C string
+    OFF_PLAYER_INFO_REALM = 0x030,  // 256-byte inline C string
+    OFF_PLAYER_INFO_RACE = 0x138,   // u32 (race ID 1..8)
+    OFF_PLAYER_INFO_SEX = 0x13C,    // u32 (0=male, 1=female on wire)
+    OFF_PLAYER_INFO_CLASS = 0x140,  // u32 (class ID 1..11)
     // Inner watched-faction setter — `__fastcall(ecx = factionID) → void`.
     // The engine's `Script_SetWatchedFactionIndex` (0x004D6B60) is a
     // thin Lua-side wrapper that takes a 1-based displayed-list index,

@@ -60,6 +60,7 @@ build instructions.
   - [`FillLocalizedClassList(table [, isFemale])`](#filllocalizedclasslisttable-isfemale)
 - [Unit](#unit)
   - [`UnitGUID(unit)`](#unitguidunit)
+  - [`GetPlayerInfoByGUID(guid)`](#getplayerinfobyguidguid)
   - [`UnitIsAFK(unit)`](#unitisafkunit)
   - [`UnitIsDND(unit)`](#unitisdndunit)
   - [`UnitIsFeignDeath(unit)`](#unitisfeigndeathunit)
@@ -1648,12 +1649,21 @@ Equivalent to the function of the same name introduced in 3.0.
 
 Returns the unit's 64-bit GUID formatted as a hex string
 `"0xHHHHHHHHLLLLLLLL"` (16 hex digits, hi dword first), or `nil` if the
-resolved unit's GUID is empty (NULL pointer or all zeroes).
+resolved unit's GUID is empty (e.g. `"target"` with nothing targeted,
+empty party/raid slot).
 
 ```lua
 local guid = UnitGUID("player")  -- "0x0000000000000777" (low IDs are local-realm characters)
 local guid = UnitGUID("target")  -- "0xF13000059A002553" (the F130... prefix tags creatures)
+local guid = UnitGUID("party1")  -- works even if party1 is on a different continent
 ```
+
+**Works for OOR party / raid members.** Earlier versions of this
+function returned nil for `"partyN"` / `"raidN"` when the member's
+CGObject wasn't currently active in the client (e.g. on another
+continent, in a different zone phase). We now read from the engine's
+parallel group-roster GUID array (populated by `SMSG_GROUP_LIST`),
+which is independent of unit visibility.
 
 > **Vanilla format, not modern.** Vanilla GUIDs are plain 64-bit
 > integers — there's no `"Player-RealmID-CharacterID"` /
@@ -1669,6 +1679,49 @@ local guid = UnitGUID("target")  -- "0xF13000059A002553" (the F130... prefix tag
 > we match the engine's existing convention here. Unit tokens that
 > resolve to "no current unit" (like `"target"` with nothing
 > targeted) return nil cleanly via the GUID = 0 check.
+
+### `GetPlayerInfoByGUID(guid)`
+
+Returns
+`localizedClass, englishClass, localizedRace, englishRace, sex, name, realm`
+for a player GUID the engine has cached, or `nil` on a cache miss.
+
+```lua
+local _, class, _, race, sex, name = GetPlayerInfoByGUID(UnitGUID("target"))
+-- e.g. "WARRIOR", "NightElf", 2, "Sylphir"
+
+GetPlayerInfoByGUID("0x0000000000000777")  -- same shape for a literal GUID
+```
+
+`guid` is the `"0xHHHHHHHHLLLLLLLL"` string returned by `UnitGUID`.
+Bare 8-hex `"0xLLLLLLLL"` (hi-dword zero) is also accepted.
+
+Returns:
+
+| 1 `localizedClass` | `"Warrior"` / `"Krieger"` etc. — from `ChrClasses.dbc` indexed by locale. |
+| 2 `englishClass`   | `"WARRIOR"` (uppercase tag, same value `UnitClass` returns as 2nd return on modern clients) — `ChrClasses.dbc` filename field. |
+| 3 `localizedRace`  | `"Human"` / `"Mensch"` / `"Humain"` etc. — from `ChrRaces.dbc` indexed by locale. |
+| 4 `englishRace`    | `"Human"`, `"Orc"`, `"Dwarf"`, `"NightElf"`, `"Scourge"` (vanilla's filename for what addons call Undead), `"Tauren"`, `"Gnome"`, `"Troll"` — from `ChrRaces.dbc` filename field. |
+| 5 `sex`            | `2` = male, `3` = female. Matches `UnitSex` convention (the cache stores `0`/`1`; we add `2`). |
+| 6 `name`           | Character name. |
+| 7 `realm`          | Realm name. Single-realm in vanilla, so usually the local realm. |
+
+**Cache coverage**: the engine populates entries from
+`SMSG_NAME_QUERY_RESPONSE`. Anything the client has already seen
+populates the cache: chat (whispers, says, party chat), raid/group
+events, guild updates, visible objects (target, party, raid in
+zone). Names of offline friends never seen in chat are *not*
+cached — `GetPlayerInfoByGUID` returns `nil` for them until the
+client does something that triggers a name query. This module
+deliberately does not trigger queries from a passive getter; a
+future `C_PlayerInfo.RequestLoadPlayerByID` would do that
+explicitly and fire a load-result event.
+
+**Implementation**: calls the engine's get-or-fetch primitive at
+`0x0055F080` with a NULL callback (pure cache read). The cache
+instance lives at `0x00C0E228`; entry layout (name, realm, race,
+sex, class) was reverse-engineered from the
+`SMSG_NAME_QUERY_RESPONSE` write path at `0x0055F310`.
 
 ### `UnitIsAFK(unit)`
 

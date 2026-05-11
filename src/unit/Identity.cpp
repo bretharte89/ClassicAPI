@@ -19,7 +19,7 @@
 
 namespace Unit::Identity {
 
-using ResolveUnitToken_t = void *(__fastcall *)(const char *token);
+using TokenToGUID_t = uint64_t(__fastcall *)(const char *token);
 
 // `UnitGUID(unit)` — returns the unit's 64-bit GUID formatted as a
 // hex string `"0xHHHHHHHHLLLLLLLL"` (16 hex digits, hi dword first).
@@ -32,9 +32,21 @@ using ResolveUnitToken_t = void *(__fastcall *)(const char *token);
 // special-cases sentinel GUID values introduced post-2.x.
 //
 // Returns `nil` if:
-//   - the unit token is invalid / not currently resolvable
-//   - the resolved unit's GUID slot is NULL or both halves are zero
-//     (matches 3.3.5's all-zero → nil at `0x0060E68C`).
+//   - the unit token resolves to a GUID of zero (e.g. `"target"`
+//     when nothing's targeted; `"partyN"` when the slot is empty).
+//
+// Works for out-of-range party / raid members. The engine maintains
+// a parallel GUID array populated by `SMSG_GROUP_LIST` that's
+// independent of whether the unit's CGObject is currently active
+// in the client. We call `FUN_TOKEN_TO_GUID` directly rather than
+// going through `FUN_RESOLVE_UNIT_TOKEN` — the latter does an extra
+// `FUN_00468460` step that returns NULL when the CGObject isn't
+// live, which is why earlier versions of `UnitGUID` returned nil
+// for `"party1"` when the member was on a different continent.
+//
+// Invalid tokens (arbitrary strings that aren't unit IDs) raise a
+// Lua error via the engine's `"Unknown unit name: %s"` path — same
+// as `Script_UnitName` and other engine unit-token consumers.
 static int __fastcall Script_UnitGUID(void *L) {
     if (!Game::Lua::IsString(L, 1)) {
         Game::Lua::Error(L, "Usage: UnitGUID(\"unit\")");
@@ -44,20 +56,13 @@ static int __fastcall Script_UnitGUID(void *L) {
     if (token == nullptr)
         return 0;
 
-    auto resolve = reinterpret_cast<ResolveUnitToken_t>(Offsets::FUN_RESOLVE_UNIT_TOKEN);
-    auto *unit = static_cast<const uint8_t *>(resolve(token));
-    if (unit == nullptr)
+    auto fn = reinterpret_cast<TokenToGUID_t>(Offsets::FUN_TOKEN_TO_GUID);
+    const uint64_t guid = fn(token);
+    if (guid == 0)
         return 0;
 
-    auto *guidPtr = *reinterpret_cast<const uint8_t *const *>(
-        unit + Offsets::OFF_UNIT_GUID_PTR);
-    if (guidPtr == nullptr)
-        return 0;
-
-    const uint32_t lo = *reinterpret_cast<const uint32_t *>(guidPtr + 0);
-    const uint32_t hi = *reinterpret_cast<const uint32_t *>(guidPtr + 4);
-    if (lo == 0 && hi == 0)
-        return 0;
+    const uint32_t lo = static_cast<uint32_t>(guid);
+    const uint32_t hi = static_cast<uint32_t>(guid >> 32);
 
     char buf[24]; // "0x" + 16 hex digits + null = 19 bytes minimum
     std::snprintf(buf, sizeof(buf), "0x%08X%08X", hi, lo);
