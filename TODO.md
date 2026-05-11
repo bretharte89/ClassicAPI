@@ -2199,35 +2199,50 @@ hot-loop hook targets the previous attempt collided on
 
 ### Revised implementation plan
 
-**Approach: hook all three fire sites + time-throttled emit.**
+**Approach: hook all three fire sites + read engine's per-frame
+counter to coalesce.**
+
+The engine maintains a monotonic frame counter at `0x00C7B2C8`,
+incremented once per world tick from `FUN_0066FD50` (the world-
+subsystem update). Only **two writers** in the binary —
+`FUN_0066F6C0` zeros it on world load, `FUN_0066FD50`
+increments it +1 per frame. Reading it tells us, exactly,
+"are we in a new frame since the last observation?"
 
 ```cpp
-DWORD g_lastDelayedFireTick = 0;
-constexpr DWORD DELAYED_COALESCE_MS = 10;  // ~one frame at 60Hz
+constexpr uintptr_t VAR_WORLD_FRAME_COUNTER = 0x00C7B2C8;
+uint32_t g_lastSeenFrame = 0;
 
-void EmitDelayedIfDue() {
-    const DWORD now = GetTickCount();
-    if (now - g_lastDelayedFireTick < DELAYED_COALESCE_MS) return;
-    g_lastDelayedFireTick = now;
+void EmitDelayedOnFrameBoundary() {
+    const uint32_t now = *reinterpret_cast<uint32_t *>(VAR_WORLD_FRAME_COUNTER);
+    if (now == g_lastSeenFrame) return;  // same frame — coalesce
+    g_lastSeenFrame = now;
     const int slot = Event::Custom::Lookup(kBagDelayedEvent);
     if (slot >= 0) Event::Custom::Fire_None(slot);
 }
 
 void __cdecl Bag_004F91A0_h() {
     g_004F91A0_orig();
-    EmitDelayedIfDue();
+    EmitDelayedOnFrameBoundary();
 }
 
-// Same wrapper pattern for FUN_004F8DB0 (cdecl-style __thiscall —
-// it takes (int slotID, GUIDlo, GUIDhi, int *cachedGUID*) per the
+// Same wrapper pattern for FUN_004F8DB0 (__thiscall taking
+// `(int slotID, GUIDlo, GUIDhi, int *cachedGUID)` per the
 // decompile) and FUN_004F9370 (cdecl `(int lo, int hi)`).
 ```
 
-Each hook just runs the original, then calls `EmitDelayedIfDue`
-which checks a `GetTickCount`-based throttle. First BAG_UPDATE
-in a frame fires DELAYED; subsequent fires within ~10ms (same
-frame at 60Hz) skip due to the throttle. Next frame's first
-fire (>16ms later) triggers DELAYED again.
+Properties:
+- **Exact frame coalescing** — multiple BAG_UPDATEs in the same
+  frame produce exactly one BAG_UPDATE_DELAYED, regardless of how
+  close they are in wall-clock time.
+- **No time math, no arbitrary threshold** — the engine's own
+  frame counter is the source of truth.
+- **No new hook on a per-frame routine** — we *read* the counter,
+  not hook the writer. Zero MinHook footprint outside the three
+  bag-subsystem targets.
+- **No glue-screen activity** — `DAT_00C7B2C8` doesn't increment
+  before the player enters world, which is fine since BAG_UPDATE
+  doesn't fire there either.
 
 **Why this avoids the previous attempt's crash:** none of these
 three targets are common hook destinations for other DLLs. The
@@ -2236,14 +2251,15 @@ trafficked by every event) and `FUN_FRAMESCRIPT_FRAME_ONUPDATE`
 (per-frame dispatcher) — both prime collision targets for
 SuperWoWhook / nampower / transmogfix. The bag subsystem
 internals at `0x004F9xxx` aren't touched by those DLLs (none of
-them care about bag-update timing).
+them care about bag-update timing), and the per-frame counter
+at `0x00C7B2C8` is a pure memory read with no hook at all.
 
-**Semantic delta vs modern:** modern coalesces at exact end-of-
-frame; we coalesce within a 10ms window. For addons doing
-"rescan inventory on BAG_UPDATE_DELAYED" the difference isn't
-observable. The throttle is conservative enough to swallow
-packet bursts (typically <1ms between fires from the same
-packet) while letting frame-spanning bursts re-trigger.
+**Semantic match vs modern:** modern coalesces at exact end-of-
+frame; we coalesce within a single world-tick frame using the
+same counter the engine itself uses to drive the framerate
+sampler. Equivalent in practice — addons doing "rescan
+inventory on BAG_UPDATE_DELAYED" see exactly one fire per frame
+in which any bag activity occurred.
 
 ### Fallback if even three quiet hooks collide
 
