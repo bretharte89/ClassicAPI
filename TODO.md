@@ -2385,6 +2385,144 @@ boilerplate twice. If a third caller needs it, extract to
 `Item::Inventory::WalkBagsByGUID(callback)` or similar in a shared
 header. Not worth the refactor for two callers yet.
 
+## 77. `IsLoggedIn()` — trivial
+
+WotLK addition (not in 1.12). Returns `true` if the player is in
+the world, `false` if at character select / login screen.
+Identical purpose to checking whether `UnitName("player")` is
+non-nil, but addons that gate side-effects on first-frame-after-
+login depend on the explicit function.
+
+Implementation: read the engine's "in world" flag. Probable
+candidates — `[VAR_CHARACTER_NAME]` byte 0 (already exposed via
+`Storage::ResolveFilePath`'s `ReadActiveCharacterName`), or the
+engine global that `PLAYER_ENTERING_WORLD` sets to 1. Trivial
+once located.
+
+## 78. `GetCVarBool(cvar)` — trivial
+
+WotLK convenience wrapper around `GetCVar` — returns the cvar's
+value coerced to a boolean (`"1"` / `"true"` / non-zero → true,
+else false). 1.12 only has `GetCVar` which returns a string.
+Two-line implementation.
+
+## 79. `IsTrialAccount()` / `IsVeteranTrialAccount()` — trivial
+
+WotLK additions. Always returns `false` on 1.12 — vanilla
+predates trial accounts (introduced 5.x). Modern addons gate
+features on these and crash without them. One-liner.
+
+## 80. `IsHelpfulSpell(spell)` / `IsHarmfulSpell(spell)` — easy
+
+Cataclysm-era globals. Read `Spell.dbc` attribute bits — bit
+`0x00000010` of `AttributesEx2` = helpful, bit `0x00000020` =
+harmful (verify in binary). Allows addons to determine whether
+a spell is offensive or defensive without parsing the tooltip.
+
+We already read `AttributesEx` for `isFunnel` in `GetSpellInfo`
+(`Spell.dbc +0x1C`); these are the same kind of bit-test against
+adjacent attribute fields.
+
+## 81. `GetItemUniqueness(item)` — easy
+
+Returns `(limitCategory, maxCount)` — used by stack-aware addons
+(BankItems, ARL) to know whether an item is "unique" (max 1 in
+inventory) or "unique-equipped" (max 1 equipped).
+
+Reads from ItemStats record's flag field. Vanilla items have a
+simpler binary "unique" flag; the modern Limit Category system
+(`ItemLimitCategory.dbc`) was added in TBC and may not exist in
+1.12. Implementation: return `(0, 1)` for items with the unique
+flag set, `(0, 0)` otherwise.
+
+## 82. `GetItemCooldown(itemID)` — medium
+
+Returns `(startTime, duration, enable)` for an item's
+on-use cooldown — the standard cooldown tuple. Different from
+`GetContainerItemCooldown` (which takes bag+slot); modern addons
+use the itemID form because they don't always know where the
+item lives.
+
+Implementation: items with on-use spells map to spell cooldowns
+via `Item::Spell::OnUseSpellIDForItemID` (already wired for
+`Hearthstone`/`GetItemSpell`). From the spellID, query the engine's
+spell-cooldown machinery — same function `Script_GetSpellCooldown`
+uses internally.
+
+## 83. `GetItemStats(itemLink, [statTable])` — medium-hard
+
+Returns a `{ ITEM_MOD_STAMINA_SHORT = 5, ITEM_MOD_STRENGTH_SHORT = 10, ... }`
+table for the item. Heavy addon dependency — Pawn, AtlasLoot,
+GearScore, and every gear-comparison TSM-style addon use it.
+
+ItemStats record carries up to 10 stat-type/stat-value pairs at
+fixed offsets. 4.3.4 implementation at `0x0044C200` parses the
+itemLink (for enchant + gem deltas) then walks those 10 slots and
+emits a table keyed by stat-type-id-string.
+
+In vanilla, enchant IDs from itemLinks need lookup via
+`SpellItemEnchantment.dbc` to add their stat deltas. Gems are N/A
+(no socket system in vanilla — drop that branch). The base
+ItemStats walk is the main work.
+
+## 84. `IsUsableItem(item)` — medium
+
+Returns `true` if the item is currently usable by the player —
+considers level requirement, class restriction, race restriction.
+Used by tooltip code and "use item" buttons to gray themselves
+out for unusable items.
+
+Vanilla itemstats has `m_requiredLevel`, `m_allowableClass`, and
+`m_allowableRace` fields. Implementation: peek the cache, check
+those three against player's level/class/race (race is in
+`UNIT_FIELD_BYTES_0`, already read in `GetPlayerInfoByGUID`).
+
+## 85. `IsSpellInRange(spell, unit)` / `SpellHasRange(spell)` — medium
+
+Range-check predicates. `SpellHasRange` is a Spell.dbc
+`RangeIndex != 1` check (range index 1 is "Self Only"). 
+`IsSpellInRange(spell, unit)` requires:
+1. Resolving spell name to spellID (lookup is already in
+   `Spell::Lookup`)
+2. Reading `RangeIndex` from Spell.dbc (already wired in
+   `Spell::Info` for the range column)
+3. Looking up `minRange`/`maxRange` from `SpellRange.dbc` (already
+   in `OFF_SPELLRANGE_*` constants per `Offsets.h`)
+4. Computing 3D distance between player and unit
+5. Returning `1` if inside range, `0` if outside, `nil` for
+   invalid unit (can't get position)
+
+Step 4 needs the engine's unit position read primitive — we have
+no offset for that yet. CGUnit has a position field at some
+descriptor offset; finding it is an hour's work.
+
+## 86. `GetMirrorTimerInfo(index)` / `GetMirrorTimerProgress(label)` — medium
+
+Mirror timers are the "BREATH" (underwater) / "FATIGUE" (out of
+map) / "EXHAUSTION" (sliding into invisible wall) bars at the
+top of the screen. WoW exposes three slots (1..3) via these two
+functions; each returns the timer's label, current value,
+maxValue, and tick rate.
+
+In vanilla, the engine already implements the timers (the
+breath bar exists in 1.12) — the question is whether the Lua
+side exposes them. Spot-check `raw_globals.txt` for
+`GetMirrorTimerInfo` — if it's there, this is already done. If
+not, the engine state behind the existing UI needs a Lua-facing
+wrapper.
+
+## 87. `GetMacroSpell(macroIndex)` — easy
+
+Reads the spell name out of a macro's body. Useful for macros
+that contain `/cast SpellName` — addons can match the contained
+spell against `IsSpellInRange` etc.
+
+Vanilla has `GetMacroInfo(slot) → name, iconTexture, body` — we
+just need to parse `body` for `/cast`/`/use` directives and
+return the first one. Pure Lua-side string parsing, but easier
+to ship as a C helper for performance (called every frame by
+some addons).
+
 ## ~~76. `C_DateAndTime.*` namespace — DONE (7 of 8)
 
 Backport of modern's date-math namespace. Six functions are pure
