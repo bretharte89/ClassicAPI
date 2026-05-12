@@ -248,6 +248,44 @@ const uint8_t *RepSlot(int repListID) {
         static_cast<uintptr_t>(repListID) * Offsets::REP_SLOT_STRIDE);
 }
 
+// `C_Reputation.GetFactionStandings()` — returns a flat
+// `{ [factionID] = currentStanding }` table covering every faction
+// in the player's reputation list (i.e. every populated rep slot).
+//
+// `currentStanding` is `base + delta` from the rep slot — same value
+// `FUN_REPUTATION_GET_STANDING` returns, same as the `barValue` /
+// `currentStanding` field in `GetFactionInfo` / `GetWatchedFactionData`.
+//
+// Unlike a displayed-list walk (`GetNumFactions` + `GetFactionInfo`),
+// this skips the header rows entirely and doesn't depend on the
+// player having opened the reputation pane recently — it reads
+// straight out of the per-faction rep-slot array, which the engine
+// keeps populated for every faction the player has rep with.
+//
+// Always returns a table (possibly empty); never nil.
+static int __fastcall Script_C_Reputation_GetFactionStandings(void *L) {
+    Game::Lua::SetTop(L, 0);
+    Game::Lua::NewTable(L);
+
+    for (int i = 0; i < Offsets::MAX_REP_SLOTS; i++) {
+        const uint8_t *slot = RepSlot(i);
+        if (slot == nullptr)
+            continue;
+        const int factionID = *reinterpret_cast<const int *>(
+            slot + Offsets::OFF_REP_SLOT_FACTION_ID);
+        if (factionID <= 0)
+            continue;
+        const int base = *reinterpret_cast<const int *>(
+            slot + Offsets::OFF_REP_SLOT_BASE_STANDING);
+        const int delta = *reinterpret_cast<const int *>(
+            slot + Offsets::OFF_REP_SLOT_DELTA_STANDING);
+        Game::Lua::PushNumber(L, static_cast<double>(factionID));
+        Game::Lua::PushNumber(L, static_cast<double>(base + delta));
+        Game::Lua::SetTable(L, -3);
+    }
+    return 1;
+}
+
 // `C_Reputation.GetWatchedFactionData()` — returns the modern-style
 // table describing the faction shown above the XP bar (or nil when no
 // faction is watched). Vanilla's `GetWatchedFactionInfo` returns the
@@ -369,6 +407,8 @@ static void RegisterLuaFunctions() {
                                      &Script_C_Reputation_SetWatchedFactionByID);
     Game::Lua::RegisterTableFunction("C_Reputation", "GetWatchedFactionData",
                                      &Script_C_Reputation_GetWatchedFactionData);
+    Game::Lua::RegisterTableFunction("C_Reputation", "GetFactionStandings",
+                                     &Script_C_Reputation_GetFactionStandings);
 }
 
 static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};

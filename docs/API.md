@@ -34,6 +34,7 @@ build instructions.
   - [`GetFactionIDByIndex(factionIndex)`](#getfactionidbyindexfactionindex)
   - [`GetFactionInfoByID(factionID)`](#getfactioninfobyidfactionid)
   - [`GetFactionParentID(factionID)`](#getfactionparentidfactionid)
+  - [`C_Reputation.GetFactionStandings()`](#c_reputationgetfactionstandings)
   - [`C_Reputation.GetWatchedFactionData()`](#c_reputationgetwatchedfactiondata)
   - [`C_Reputation.SetWatchedFactionByID(factionID)`](#c_reputationsetwatchedfactionbyidfactionid)
   - [`C_Reputation.GetLastStandingChange()`](#c_reputationgetlaststandingchange)
@@ -909,6 +910,41 @@ regardless of whether the player has rep with it.
 
 Equivalent to the function of the same name introduced in 3.0 (as
 the 13th return of `GetFactionInfoByID`).
+
+### `C_Reputation.GetFactionStandings()`
+
+Returns a flat `{ [factionID] = currentStanding }` table covering
+every faction in the player's reputation list. `currentStanding` is
+the same value `GetFactionInfo` puts in its `barValue` slot — `base
++ delta` from the rep slot, signed.
+
+Always returns a table (possibly empty); never nil.
+
+```lua
+local standings = C_Reputation.GetFactionStandings()
+for factionID, standing in pairs(standings) do
+    print(GetFactionInfoByID(factionID), standing)
+end
+```
+
+Unlike a `GetNumFactions` + `GetFactionInfo` walk, this skips header
+rows entirely and doesn't depend on the player having opened the
+reputation pane recently — it reads straight out of the per-faction
+rep-slot array, which the engine keeps populated for every faction
+the player has rep with.
+
+If you need names instead of IDs, layer `GetFactionInfoByID` on top:
+
+```lua
+local byName = {}
+for factionID, standing in pairs(C_Reputation.GetFactionStandings()) do
+    byName[GetFactionInfoByID(factionID)] = standing
+end
+```
+
+This is a ClassicAPI-only call; modern WoW's closest equivalent is
+the 11.x `C_Reputation.GetFactions()`, which returns an array of
+struct tables rather than a flat map.
 
 ### `C_Reputation.GetWatchedFactionData()`
 
