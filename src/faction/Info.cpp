@@ -194,6 +194,144 @@ static int __fastcall Script_GetFactionParentID(void *L) {
     return 1;
 }
 
+// Pushes a `key = value` pair into the table at stack[-3]. Matches
+// the helper shape used by `charlist/Cache.cpp`'s table builders.
+void SetField(void *L, const char *key, double value) {
+    Game::Lua::PushString(L, key);
+    Game::Lua::PushNumber(L, value);
+    Game::Lua::SetTable(L, -3);
+}
+
+void SetField(void *L, const char *key, const char *value) {
+    Game::Lua::PushString(L, key);
+    Game::Lua::PushString(L, value != nullptr ? value : "");
+    Game::Lua::SetTable(L, -3);
+}
+
+void SetField(void *L, const char *key, bool value) {
+    Game::Lua::PushString(L, key);
+    Game::Lua::PushBoolean(L, value ? 1 : 0);
+    Game::Lua::SetTable(L, -3);
+}
+
+// Resolves the local player's CGPlayer-side info sub-struct at
+// `[player + 0xE68]`. Returns nullptr if "player" isn't resolvable
+// or the sub-struct is uninitialized (pre-login / glue).
+const uint8_t *PlayerInfo() {
+    using ResolveUnitToken_t = void *(__fastcall *)(const char *token);
+    auto resolve = reinterpret_cast<ResolveUnitToken_t>(
+        Offsets::FUN_RESOLVE_UNIT_TOKEN);
+    auto *player = static_cast<const uint8_t *>(resolve("player"));
+    if (player == nullptr)
+        return nullptr;
+    return *reinterpret_cast<const uint8_t *const *>(
+        player + Offsets::OFF_CGPLAYER_INFO);
+}
+
+// Returns the player's RepListID for the currently-watched faction,
+// or -1 if no faction is watched. RepListID is the rep-slot index in
+// `VAR_PLAYER_REP_SLOTS`, NOT a factionID — the resolver below
+// translates it.
+int WatchedRepListID(const uint8_t *playerInfo) {
+    return *reinterpret_cast<const int *>(
+        playerInfo + Offsets::OFF_CGPLAYER_INFO_WATCHED_REP_LIST_ID);
+}
+
+// Returns the rep-slot pointer for `repListID`, or nullptr if out of
+// range. Slot layout is documented at `VAR_PLAYER_REP_SLOTS` in
+// `Offsets.h`.
+const uint8_t *RepSlot(int repListID) {
+    if (repListID < 0 || repListID >= Offsets::MAX_REP_SLOTS)
+        return nullptr;
+    return reinterpret_cast<const uint8_t *>(
+        static_cast<uintptr_t>(Offsets::VAR_PLAYER_REP_SLOTS) +
+        static_cast<uintptr_t>(repListID) * Offsets::REP_SLOT_STRIDE);
+}
+
+// `C_Reputation.GetWatchedFactionData()` — returns the modern-style
+// table describing the faction shown above the XP bar (or nil when no
+// faction is watched). Vanilla's `GetWatchedFactionInfo` returns the
+// same data as a 5-tuple without the factionID, which is the field
+// modern callers rely on most.
+//
+// Fields populated (a subset of the modern schema — only what 1.12's
+// engine actually has):
+//   factionID                 number  — Faction.dbc record ID
+//   name                      string  — locale-applied
+//   description               string  — locale-applied (may be "")
+//   reaction                  number  — 1=Hated .. 8=Exalted
+//   currentReactionThreshold  number  — band min (rep value)
+//   nextReactionThreshold     number  — band max (rep value)
+//   currentStanding           number  — base + delta
+//   atWarWith                 boolean — rep slot flags bit 1
+//   canToggleAtWar            boolean — rep slot flags bit 4
+//   isWatched                 boolean — always true (it's THE watched)
+//   isHeader                  boolean — always false (factions only)
+//
+// Fields the modern API also exposes but 1.12 has no source for
+// (isChild, isHeaderWithRep, isCollapsed, hasBonusRepGain,
+// canSetInactive, isAccountWide) are omitted rather than synthesized
+// — addons can check `data.isAccountWide ~= nil` if they ever need
+// to feature-detect.
+static int __fastcall Script_C_Reputation_GetWatchedFactionData(void *L) {
+    const uint8_t *playerInfo = PlayerInfo();
+    if (playerInfo == nullptr)
+        return 0;
+    const int repListID = WatchedRepListID(playerInfo);
+    const uint8_t *slot = RepSlot(repListID);
+    if (slot == nullptr)
+        return 0;
+    const int factionID = *reinterpret_cast<const int *>(
+        slot + Offsets::OFF_REP_SLOT_FACTION_ID);
+    if (factionID <= 0)
+        return 0;
+    const uint8_t *record = FactionRecord(factionID);
+    if (record == nullptr)
+        return 0;
+
+    // Reaction band — engine returns 0..7, Lua-side convention is 1..8.
+    using ReactionBand_t = int(__fastcall *)(int factionID);
+    auto reactionFn = reinterpret_cast<ReactionBand_t>(
+        Offsets::FUN_REPUTATION_GET_REACTION_BAND);
+    const int band = reactionFn(factionID);
+    const int reaction = band + 1;
+
+    using GetStanding_t = int(__fastcall *)(int factionID);
+    auto standingFn = reinterpret_cast<GetStanding_t>(
+        Offsets::FUN_REPUTATION_GET_STANDING);
+    const int currentStanding = standingFn(factionID);
+
+    const int barMin = *reinterpret_cast<const int *>(
+        static_cast<uintptr_t>(Offsets::VAR_REACTION_MIN_TABLE) +
+        static_cast<uintptr_t>(band) * 4);
+    const int barMax = *reinterpret_cast<const int *>(
+        static_cast<uintptr_t>(Offsets::VAR_REACTION_MAX_TABLE) +
+        static_cast<uintptr_t>(band) * 4);
+
+    const uint8_t flags = *(slot + Offsets::OFF_REP_SLOT_FLAGS);
+    const bool atWar = (flags & Offsets::REP_SLOT_FLAG_AT_WAR) != 0;
+    const bool canToggleAtWar =
+        (flags & Offsets::REP_SLOT_FLAG_CAN_TOGGLE_AT_WAR) != 0;
+
+    const char *name = LocalizedString(record, Offsets::OFF_FACTION_NAMES);
+    const char *description = LocalizedString(record, Offsets::OFF_FACTION_DESCRIPTIONS);
+
+    Game::Lua::SetTop(L, 0);
+    Game::Lua::NewTable(L);
+    SetField(L, "factionID", static_cast<double>(factionID));
+    SetField(L, "name", name);
+    SetField(L, "description", description);
+    SetField(L, "reaction", static_cast<double>(reaction));
+    SetField(L, "currentReactionThreshold", static_cast<double>(barMin));
+    SetField(L, "nextReactionThreshold", static_cast<double>(barMax));
+    SetField(L, "currentStanding", static_cast<double>(currentStanding));
+    SetField(L, "atWarWith", atWar);
+    SetField(L, "canToggleAtWar", canToggleAtWar);
+    SetField(L, "isWatched", true);
+    SetField(L, "isHeader", false);
+    return 1;
+}
+
 // `C_Reputation.SetWatchedFactionByID(factionID)` — sets the faction
 // shown above the XP bar by ID rather than by displayed-list index.
 // Modern API; vanilla 1.12 only exposes `SetWatchedFactionIndex(idx)`,
@@ -229,6 +367,8 @@ static void RegisterLuaFunctions() {
     Game::Lua::RegisterGlobalFunction("GetFactionParentID", &Script_GetFactionParentID);
     Game::Lua::RegisterTableFunction("C_Reputation", "SetWatchedFactionByID",
                                      &Script_C_Reputation_SetWatchedFactionByID);
+    Game::Lua::RegisterTableFunction("C_Reputation", "GetWatchedFactionData",
+                                     &Script_C_Reputation_GetWatchedFactionData);
 }
 
 static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};

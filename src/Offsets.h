@@ -778,6 +778,47 @@ enum Offsets {
     // after the engine's setter has written the new delta.
     FUN_REPUTATION_GET_STANDING = 0x004D6370,
 
+    // Reaction-band classifier — `__fastcall(ecx = factionID) → int`.
+    // Internally calls `FUN_REPUTATION_GET_STANDING` and maps the total
+    // through the 7-band threshold ladder (Hated..Exalted). Returns
+    // 0..7 (0=Hated, 7=Exalted); `Script_GetWatchedFactionInfo` pushes
+    // this `+ 1` to produce the 1..8 standingID Lua addons see.
+    FUN_REPUTATION_GET_REACTION_BAND = 0x004D63A0,
+
+    // Reputation-list slots — the player's 64-entry per-faction rep
+    // store. Stride `0x10`; layout per entry:
+    //   +0x00  i32  factionID (0 if slot unused)
+    //   +0x04  u8   flags (bit 1 = atWar, bit 4 = canToggleAtWar)
+    //   +0x08  i32  base standing
+    //   +0x0C  i32  delta standing
+    // Slot index = RepListID = Faction.dbc record `+0x04`. Indexed by
+    // `FUN_004D5600(factionID) → repListID`. Reverse direction is
+    // `FUN_004D5620(repListID) → factionID`.
+    VAR_PLAYER_REP_SLOTS = 0x00B73290,
+    REP_SLOT_STRIDE = 0x10,
+    OFF_REP_SLOT_FACTION_ID = 0x00,
+    OFF_REP_SLOT_FLAGS = 0x04,
+    REP_SLOT_FLAG_AT_WAR = 0x02,
+    REP_SLOT_FLAG_CAN_TOGGLE_AT_WAR = 0x10,
+    MAX_REP_SLOTS = 64,
+
+    // Static reaction-band threshold tables, indexed by reaction band
+    // 0..7 (returned by `FUN_REPUTATION_GET_REACTION_BAND`). The pair
+    // gives the `[min, max)` standing range that defines each band —
+    // currentReactionThreshold / nextReactionThreshold for modern
+    // `C_Reputation.GetWatchedFactionData`-style table fields.
+    VAR_REACTION_MIN_TABLE = 0x0080928C,
+    VAR_REACTION_MAX_TABLE = 0x00809290,
+
+    // `[player +0xE68] + 0x10C4` — the RepListID (rep-slot index) of
+    // the faction currently being watched (the one shown above the XP
+    // bar). Written by `FUN_PLAYER_SET_WATCHED_FACTION` after
+    // translating the user-supplied factionID via
+    // `FUN_004D5600 → RepListID`. Negative or out-of-range means "no
+    // watched faction", which `Script_GetWatchedFactionInfo` checks
+    // against `FUN_004D5620(slot)`'s return.
+    OFF_CGPLAYER_INFO_WATCHED_REP_LIST_ID = 0x10C4,
+
     // `__fastcall(ecx = factionID, edx = signedDelta)`. This is the
     // engine's "reputation changed, fire the chat event" notify
     // helper — it formats the localized chat message and dispatches

@@ -52,32 +52,57 @@ constexpr const char *kEventName = "FACTION_STANDING_CHANGED";
 
 const Event::Custom::AutoReserve _reserve{kEventName};
 
+// In-flight snapshot of the current rep change. Set on hook entry,
+// cleared on hook exit. WoW's main thread is the only one that runs
+// the rep-update SMSG handler and Lua callbacks, so a plain file
+// static is sufficient — no TLS needed.
+LastChange g_last{};
+
+int __fastcall Script_C_Reputation_GetLastStandingChange(void *L) {
+    if (!g_last.valid)
+        return 0;
+    Game::Lua::PushNumber(L, static_cast<double>(g_last.factionID));
+    Game::Lua::PushNumber(L, static_cast<double>(g_last.newStanding));
+    Game::Lua::PushNumber(L, static_cast<double>(g_last.delta));
+    return 3;
+}
+
+void RegisterLuaFunctions() {
+    Game::Lua::RegisterTableFunction("C_Reputation", "GetLastStandingChange",
+                                     &Script_C_Reputation_GetLastStandingChange);
+}
+
+const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
+
 } // namespace
 
 FireNotify_t FireNotify_o = nullptr;
 
+const LastChange &Last() { return g_last; }
+
 void __fastcall FireNotify_h(int factionID, int delta) {
-    // Forward to the engine first so the chat event fires before our
-    // custom event observers can react — same order as if we weren't
-    // here. Also ensures the standing value is fully settled (the
-    // setter at 0x004D6330 wrote it before reaching the call site, but
-    // following original-first keeps observer ordering predictable
-    // even if a future engine change introduces post-write fixup).
-    FireNotify_o(factionID, delta);
-
-    const int slot = Event::Custom::Lookup(kEventName);
-    if (slot < 0)
-        return;
-
-    // Live total = base + currentDelta from the per-slot rep storage.
-    // The helper returns 0 for factionIDs not in the player's rep list
-    // — but we shouldn't see those here, since the engine only calls
-    // this notify after a successful per-slot update.
+    // The engine's setter at 0x004D6330 has already written the new
+    // standing into the per-slot storage by the time we get here, so
+    // `FUN_REPUTATION_GET_STANDING` returns the post-change total. We
+    // capture it before forwarding so anything reading
+    // `g_last` from inside the engine's chat dispatch (and from our
+    // own `FACTION_STANDING_CHANGED` observers below) sees a
+    // consistent snapshot.
     auto getStanding = reinterpret_cast<GetStanding_t>(
         Offsets::FUN_REPUTATION_GET_STANDING);
     const int newStanding = getStanding(factionID);
+    g_last = {true, factionID, newStanding, delta};
 
-    Event::Custom::Fire_DDD(slot, factionID, newStanding, delta);
+    // Forward to the engine first so its CHAT_MSG_COMBAT_FACTION_CHANGE
+    // fires before our FACTION_STANDING_CHANGED — preserves ordering
+    // any addon relying on the chat event firing first would expect.
+    FireNotify_o(factionID, delta);
+
+    const int slot = Event::Custom::Lookup(kEventName);
+    if (slot >= 0)
+        Event::Custom::Fire_DDD(slot, factionID, newStanding, delta);
+
+    g_last = {};
 }
 
 static const Game::HookAutoRegister _hookreg{

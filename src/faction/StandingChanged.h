@@ -27,4 +27,19 @@ using FireNotify_t = void(__fastcall *)(int factionID, int delta);
 extern FireNotify_t FireNotify_o;
 void __fastcall FireNotify_h(int factionID, int delta);
 
+// Snapshot of the currently-firing rep change, valid only during the
+// call stack rooted at `FireNotify_h`. `C_Reputation.GetLastStandingChange`
+// reads this — observers of the engine's CHAT_MSG_COMBAT_FACTION_CHANGE
+// (fired by `FireNotify_o`) and of our own `FACTION_STANDING_CHANGED`
+// (fired immediately after) see `valid == true`; everything outside
+// that window sees `valid == false` and the Lua getter returns nil.
+struct LastChange {
+    bool valid;
+    int factionID;
+    int newStanding;
+    int delta;
+};
+
+const LastChange &Last();
+
 } // namespace Faction::StandingChanged
