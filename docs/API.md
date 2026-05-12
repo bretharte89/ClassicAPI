@@ -22,6 +22,10 @@ build instructions.
   - [`IsUsableSpell(spell)` / `IsUsableSpell(slot, bookType)`](#isusablespellspell--isusablespellslot-booktype)
   - [`C_Spell.IsSpellUsable(spellID)`](#c_spellisspellusablespellid)
   - [`GetSpellSchool(spellID)`](#getspellschoolspellid)
+  - [`CastAutoRepeatSpell(name | spellID)`](#castautorepeatspellname--spellid)
+- [Macros](#macros)
+  - [Numeric spellIDs in `/cast` and `CastSpellByName`](#numeric-spellids-in-cast-and-castspellbyname)
+  - [`CastAutoRepeatSpell` as a macro cast line](#castautorepeatspell-as-a-macro-cast-line)
 - [GameTooltip](#gametooltip)
   - [`GameTooltip:SetSpellByID(spellID)`](#gametooltipsetspellbyidspellid)
   - [`GameTooltip:SetTalentByID(talentID)`](#gametooltipsettalentbyidtalentid)
@@ -581,6 +585,133 @@ Useful for combat-log breakdown addons, dispel-eligibility checks,
 resistance-aware aura libraries, and damage-meter school tagging.
 Previously addons either maintained hardcoded `spellID → school`
 tables or scanned tooltips for the first-line color tag.
+
+### `CastAutoRepeatSpell(name | spellID)`
+
+Spammable variant of `CastSpellByName` for auto-repeat spells
+(Shoot/Wand/Auto-Shot). Only calls into the engine's cast path when
+no auto-repeat is currently active, so a held keybind doesn't toggle
+the same spell back off the way `CastSpellByName` does.
+
+| Engine state               | Behavior            | Return  |
+|----------------------------|---------------------|---------|
+| Nothing auto-repeating     | Starts the cast     | `true` if the spell is now auto-repeating, else `false` (e.g. you passed a non-auto-repeat spell) |
+| Already casting *this* spell | No-op             | `true`  |
+| Already casting *other* spell | No-op            | `false` |
+
+Replaces the action-bar loop workaround:
+
+```lua
+-- Before
+for i = 1, 120 do
+    if IsAutoRepeatAction(i) then return end
+end
+CastSpellByName("Shoot")
+
+-- After
+CastAutoRepeatSpell("Shoot")
+```
+
+```lua
+CastAutoRepeatSpell("Shoot")     -- by name (matches what CastSpellByName accepts)
+CastAutoRepeatSpell(75)          -- by spellID (Auto Shot rank 1)
+```
+
+String input matches the active spell's `Spell.dbc` name case-
+insensitively and tolerates a trailing `(Rank N)` suffix the same
+way `CastSpellByName` itself does — `"Shoot"` and `"Shoot(Rank 1)"`
+both compare equal to a Shoot that's already auto-repeating.
+
+Reads `[VAR_ACTIVE_AUTO_REPEAT_SPELL]` (`0x00CEAC30`) — the same
+dword `IsAutoRepeatAction`'s inner helper at `0x004E55B0` consults.
+Delegates to `Script_CastSpellByName` (`0x004B4AB0`) for the cast
+itself, so resolution semantics (which rank, target rules, etc.)
+are identical to the engine's own global.
+
+Using this from inside a macro action slot? See
+[`CastAutoRepeatSpell` as a macro cast line](#castautorepeatspell-as-a-macro-cast-line) below for the additional
+parser support that makes the slot tag correctly for action-bar UIs.
+
+## Macros
+
+Engine-level extensions to how macros are parsed and dispatched. These
+don't add new Lua functions — they teach the engine to recognize input
+forms it didn't accept in stock 1.12. Macro authors get them for free
+once `ClassicAPI.dll` is loaded.
+
+Vanilla 1.12 doesn't support `[target=...]`-style macro conditionals
+natively; we don't add those. If you have a separate DLL/addon that
+does (nampower's conditional macros, SuperWoWhook, etc.), the
+extensions below compose with it — that layer strips the bracket
+clause and forwards the cleaned tail to `CastSpellByName`, which then
+flows through our additions.
+
+### Numeric spellIDs in `/cast` and `CastSpellByName`
+
+Pure-numeric input is now accepted anywhere a spell name would be:
+
+```
+/cast 5019                     -- in a macro line; casts Shoot if known
+CastSpellByName("5019")        -- same effect from Lua / /run / chat
+```
+
+The spellID is resolved through `Spell.dbc` to the locale-resolved
+name, then handed to the engine's existing name resolver — so all the
+normal downstream behavior applies: the spellbook lookup gates on
+"player knows this spell," action-bar UI sees the cast as if it had
+been named, macros containing `/cast 5019` get tagged with the right
+spellID in the engine's spell-state cache (so `IsCurrentAction(slot)`
+and `IsAutoRepeatAction(slot)` work for the macro slot).
+
+| Input        | Outcome                                                |
+|--------------|--------------------------------------------------------|
+| `/cast 5019` | Casts Shoot if you know it (any rank, highest known)   |
+| `/cast 1234` | Falls through as "unknown spell," same as `/cast Foo`  |
+| `/cast Shoot`| Unchanged from vanilla — names still work              |
+| `/cast 5019(Rank 1)` | Falls through — rank suffix with a numeric stem isn't supported (use the name form if you need a specific rank) |
+
+Implemented as a single hook on the engine's name → spellbook-slot
+resolver at `0x004B3950` — covers `/cast`, `/castsequence` aliases,
+`CastSpellByName`, the macro parser's tagging path, and anywhere
+else the engine resolves a spell name. Numeric input with garbage
+trailing characters falls through unchanged.
+
+### `CastAutoRepeatSpell` as a macro cast line
+
+Putting `CastAutoRepeatSpell("Shoot")` in a macro body now tags the
+macro with Shoot's spellID the same way `/cast Shoot` or
+`CastSpellByName("Shoot")` would. Without this, the macro casts
+correctly but vanilla's macro parser doesn't know to associate the
+slot with any spell — so action-bar UIs that call
+`IsCurrentAction(slot)` / `IsAutoRepeatAction(slot)` (pfUI's
+actionbar, ShaguTweaks, etc.) never light up the slot.
+
+Recognized forms in a macro body:
+
+```
+CastAutoRepeatSpell("Shoot")    -- by name (string)
+CastAutoRepeatSpell(5019)       -- not yet — macro parser only recognizes the string form
+```
+
+The numeric form **works for the cast itself** (via the function's
+runtime resolution), but the macro parser only scans for the string
+form when tagging. To get the slot to highlight when using the
+spellID, write `CastAutoRepeatSpell("Shoot")` instead.
+
+The engine's first-match-wins rule still applies — if your macro is:
+
+```
+/cast Wand
+CastAutoRepeatSpell("Shoot")
+```
+
+…the macro is tagged with Wand (the engine recognized `/cast Wand`
+on line 1; our additional pattern is only consulted when the engine
+didn't find any of its own patterns).
+
+Macro tagging happens at macro edit/save time. Existing macros need
+to be opened in the Macro UI and re-saved once after dropping in the
+new DLL to pick up the new parser behavior.
 
 ## GameTooltip
 

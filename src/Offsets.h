@@ -1018,6 +1018,75 @@ enum Offsets {
     //   );
     FUN_FORMAT_SPELL_DESCRIPTION = 0x005075F0,
 
+    // The currently-auto-repeating spellID (0 when nothing is
+    // auto-repeating). Same dword backs Shoot/Wand/Auto-Shot — no
+    // per-class branching. Written by the cast-start path at
+    // `FUN_006E54F0` (line `DAT_00ceac30 = *piVar5;` where `piVar5` is
+    // the Spell.dbc record) and cleared on logout/world unload. Read by
+    // `Script_IsAutoRepeatAction`'s inner helper at `0x004E55B0` and
+    // exposed as a 1-line getter at `0x006E9FD0`.
+    VAR_ACTIVE_AUTO_REPEAT_SPELL = 0x00CEAC30,
+
+    // `Script_CastSpellByName` — engine's Lua wrapper for the
+    // `CastSpellByName(name [, onSelf])` global. `int __fastcall(void *L)`
+    // — standard Lua C function ABI. Reads `name` from stack[1] (string)
+    // and `onSelf` from stack[2] (boolean), resolves the name (with
+    // optional `(Rank N)` suffix) through `FUN_004B3950`, then dispatches
+    // to the engine's cast path at `FUN_004B3300`. Returns 0 (no Lua
+    // results). Callable directly from C++ — push args on stack, call.
+    FUN_SCRIPT_CAST_SPELL_BY_NAME = 0x004B4AB0,
+
+    // Macro "primary spell" parser — `__fastcall(MacroEntry *entry)`.
+    // Walks the macro body (stored at `entry + OFF_MACRO_BODY`) line
+    // by line, looking for `/cast <name>`, `/castsequence <name>`,
+    // etc. (via the engine's `SLASH_CAST%d` registry) and the
+    // `CastSpellByName("<name>")` Lua pattern. On first hit, resolves
+    // the name to a spellID via `FUN_004B3BC0` and writes it to
+    // `entry + OFF_MACRO_PRIMARY_SPELL`. Writes `0xFFFFFFFF` when a
+    // pattern matched but the name didn't resolve (unknown spell);
+    // writes `0` when no line matched any pattern. Called from macro
+    // create/edit/refresh paths.
+    //
+    // Hooked by `Spell::AutoRepeat` to teach the engine to recognize
+    // `CastAutoRepeatSpell("<name>")` as a primary-spell pattern, so
+    // macros using it get tagged in the spell-state cache the same
+    // way `CastSpellByName` macros do. Without this, `IsAutoRepeatAction`
+    // returns false for macro slots whose only cast is via our function
+    // (the engine's parser doesn't know to look for our identifier),
+    // breaking action-bar highlighting in pfUI etc.
+    FUN_MACRO_PARSE_PRIMARY_SPELL = 0x004EFE00,
+
+    // Engine's "spell name → spellbook-resolved spellID" helper.
+    // `__fastcall(const char *name, int *outIsPet)`. Internally calls
+    // `FUN_004B3950` (the rank-stripping name-with-`(Rank N)` parser)
+    // to get a spellbook slot, then returns
+    // `[VAR_PLAYER_SPELLBOOK][slot]` (or `[VAR_PET_SPELLBOOK][slot]`
+    // when `*outIsPet` is set on entry). Returns 0 if the name doesn't
+    // resolve to a known spellbook entry. This is the resolver the
+    // engine's macro parser uses — name → spellID lookup that respects
+    // the player's known spell list.
+    FUN_RESOLVE_SPELL_NAME_TO_BOOK_ID = 0x004B3BC0,
+
+    // The single name → spellbook-slot resolver underneath everything
+    // spell-cast related. `__fastcall(const char *name, void *out) ->
+    // int slot` (or `-1`). Strips a trailing `(Rank N)` suffix, then
+    // calls `FUN_004B3A10` for the actual lookup. Called by
+    // `Script_CastSpellByName` (every Lua cast) AND by
+    // `FUN_RESOLVE_SPELL_NAME_TO_BOOK_ID` (which the macro parser
+    // uses). Hooking here makes one change to both the runtime cast
+    // path AND the macro-tagging path — useful for accepting numeric
+    // spellID input as if it were a name (the `Spell::CastByID`
+    // module does this to enable `/cast 5019`-style macros).
+    FUN_RESOLVE_SPELL_NAME_TO_SLOT = 0x004B3950,
+
+    // MacroEntry struct offsets (verified by tracing FUN_004EFE00).
+    // The macro body is an inline null-terminated string at `+0x164`;
+    // line breaks are `\n`. The primary-spell cache (what
+    // `IsAutoRepeatAction` ultimately reads via the spell-state hash
+    // lookup at `[0x00C0E2A0]`) is at `+0x564`.
+    OFF_MACRO_BODY = 0x164,
+    OFF_MACRO_PRIMARY_SPELL = 0x564,
+
     // Spell.dbc and friends. Pointer-to-records-array + record-count pairs.
     // Used by Script_GetSpellName/Texture and BuildSpellTooltip.
     VAR_SPELL_RECORDS = 0x00C0D788,            // SpellRecord *records[spellID]

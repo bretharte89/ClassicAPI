@@ -32,11 +32,23 @@ Full per-function reference: **[docs/API.md](docs/API.md)**.
 | Input | `IsLeftAltKeyDown`, `IsLeftControlKeyDown`, `IsLeftShiftKeyDown`, `IsModifierKeyDown`, `IsRightAltKeyDown`, `IsRightControlKeyDown`, `IsRightShiftKeyDown` |
 | Item | `C_Item.EquipItemByName`, `C_Item.GetItemCount`, `C_Item.GetItemFamily`, `C_Item.GetItemIcon`, `C_Item.GetItemIconByID`, `C_Item.GetItemID`, `C_Item.GetItemInfoInstant`, `C_Item.GetItemSpell`, `C_Item.IsBound`, `C_Item.IsEquippableItem`, `C_Item.IsEquippedItem`, `C_Item.IsItemDataCached`, `C_Item.IsItemDataCachedByID`, `C_Item.RequestLoadItemData`, `C_Item.RequestLoadItemDataByID`, `GetInventoryItemDurability`, `GetInventoryItemID`, `GetItemIcon`, `OffhandHasWeapon` |
 | Quest | `C_QuestLog.GetTitleForQuestID`, `C_QuestLog.RequestLoadQuestByID`, `GetQuestIDFromLogIndex` |
-| Spell | `C_Spell.GetSpellDescription`, `C_Spell.GetSpellInfo`, `C_Spell.GetSpellLink`, `C_Spell.GetSpellName`, `C_Spell.GetSpellTexture`, `C_Spell.IsSpellPassive`, `C_Spell.IsSpellUsable`, `FindSpellBookSlotByID`, `GetSpellInfo`, `GetSpellLink`, `GetSpellSchool`, `IsPassiveSpell`, `IsPlayerSpell`, `IsSpellKnown`, `IsUsableSpell` |
+| Spell | `C_Spell.GetSpellDescription`, `C_Spell.GetSpellInfo`, `C_Spell.GetSpellLink`, `C_Spell.GetSpellName`, `C_Spell.GetSpellTexture`, `C_Spell.IsSpellPassive`, `C_Spell.IsSpellUsable`, `CastAutoRepeatSpell`, `FindSpellBookSlotByID`, `GetSpellInfo`, `GetSpellLink`, `GetSpellSchool`, `IsPassiveSpell`, `IsPlayerSpell`, `IsSpellKnown`, `IsUsableSpell` |
 | State | `IsAssistingRitual`, `IsFalling`, `IsMounted`, `IsStealthed`, `IsSwimming` |
 | Talent | `GetTalentIDByIndex`, `GetTalentSpellID` |
 | Time | `C_DateAndTime.AdjustTimeByDays`, `C_DateAndTime.AdjustTimeByMinutes`, `C_DateAndTime.CompareCalendarTime`, `C_DateAndTime.GetCalendarTimeFromEpoch`, `C_DateAndTime.GetCurrentCalendarTime`, `C_DateAndTime.GetSecondsUntilDailyReset`, `C_DateAndTime.GetServerTimeLocal`, `GetServerTime` |
 | Unit | `C_PlayerInfo.RememberPlayer`, `ClassicAPI.GetPersistentNameCacheEnabled`, `ClassicAPI.SetPersistentNameCacheEnabled`, `GetPlayerInfoByGUID`, `UnitGUID`, `UnitIsAFK`, `UnitIsDND`, `UnitIsFeignDeath`, `UnitIsInMyGuild`, `UnitIsPossessed` |
+
+### Macros
+
+Engine-level extensions to macro parsing and dispatch — no new Lua
+functions, just behavior the stock 1.12 engine didn't have. See the
+[Macros section in the Lua reference](docs/API.md#macros) for details.
+
+| Form | What it does |
+|------|--------------|
+| `/cast <spellID>` | `/cast 5019` casts Shoot if known; macro slot tags correctly for action-bar UI |
+| `CastSpellByName("<spellID>")` | Same — numeric strings resolve through the engine's name resolver |
+| `CastAutoRepeatSpell("<name>")` in a macro | Engine's macro parser now recognizes it as a primary-spell line, so the macro slot highlights when its spell is auto-repeating |
 
 ### Events
 
