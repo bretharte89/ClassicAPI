@@ -54,4 +54,11 @@ void Remember(uint64_t guid, const char *name, uint32_t classID);
 bool IsEnabled();
 void SetEnabled(bool enabled);
 
+// Writes any dirty in-memory state to disk. No-op if the cache is
+// disabled, isn't dirty, or the file path can't be resolved yet
+// (pre-realm). Called from DllMain's reload + detach hooks; safe to
+// call any time. Bounded by GetTickCount-based throttling internally,
+// so calling repeatedly in tight succession is cheap.
+void Flush();
+
 } // namespace Player::NameCache

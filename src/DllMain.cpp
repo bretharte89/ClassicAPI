@@ -16,6 +16,7 @@
 #include "MinHook.h"
 #include "Offsets.h"
 #include "event/Custom.h"
+#include "player/NameCache.h"
 
 static Game::FrameScript_Initialize_t FrameScript_Initialize_o = nullptr;
 static Game::LoadScriptFunctions_t LoadScriptFunctions_o = nullptr;
@@ -34,6 +35,12 @@ static bool __fastcall FrameScript_Initialize_h() {
     // FrameScript_Initialize), invalidate our cached slot indices. The
     // table is rebuilt at a fresh allocation; the old slots are stale.
     Event::Custom::PrepareForReload();
+
+    // Persist the name cache before the engine starts tearing down.
+    // This hook fires on both `/reload` and `/logout` (the engine
+    // re-initializes Lua state in both cases), giving us a clean
+    // deterministic save point for the common lifecycle events.
+    Player::NameCache::Flush();
 
     FrameScript_Initialize_o();
     // Set the `CLASSIC_API_VERSION` global directly via the Lua C API
@@ -100,6 +107,14 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved) {
         if (!Game::RunHookRegistrations())
             return FALSE;
     } else if (reason == DLL_PROCESS_DETACH) {
+        // Clean /quit path. Flush before MH_Uninitialize — the cache's
+        // file I/O uses Win32 directly (no MinHook involvement), so
+        // either order works in practice, but flushing first lets us
+        // bail early if the hook teardown ever grows side effects.
+        // Hard process termination (task manager kill) bypasses this
+        // path; that's an inherent OS limitation, and the 5-minute
+        // backstop flush in Remember() covers the worst case there.
+        Player::NameCache::Flush();
         MH_Uninitialize();
     }
     return TRUE;

@@ -64,13 +64,17 @@ namespace Player::NameCache {
 
 namespace {
 
-// Flush throttling. Per-entry I/O would thrash on first-login when
-// the engine queries hundreds of names from guild/raid rosters in a
-// burst; we coalesce within the window so we write at most every
-// `kFlushIntervalMs`. The flush itself runs from the engine
-// NameCache write hook (no separate worker thread), so the dirty
-// flag is just checked on each subsequent write.
-constexpr DWORD kFlushIntervalMs = 30000;
+// Backstop flush interval — explicit `Flush()` calls from DllMain's
+// `FrameScript_Initialize` hook (covers /reload and /logout) and
+// `DLL_PROCESS_DETACH` (clean /quit) are the primary save path. The
+// in-`Remember` `MaybeFlush` runs only as a defensive measure for
+// long sessions that never reload AND end via hard process kill
+// (task manager, OS crash) — in that case we bound data loss to
+// roughly this interval. 5 minutes was chosen as a compromise:
+// long enough that routine play has zero in-flight I/O, short
+// enough that a rare bad-shutdown loses at most ~5 min of new
+// entries.
+constexpr DWORD kFlushIntervalMs = 5 * 60 * 1000;
 
 // ChrClasses.dbc max ID. Anything above this is a corrupt input.
 constexpr uint32_t kMaxClassID = 16;
@@ -541,6 +545,14 @@ void SetEnabled(bool enabled) {
         LoadCacheIfNeeded();
     else if (g_dirty)
         SaveCache();
+}
+
+void Flush() {
+    if (!g_enabled || !g_dirty)
+        return;
+    // SaveCache resolves the path itself — returns silently if realm
+    // name isn't available yet (pre-login).
+    SaveCache();
 }
 
 } // namespace Player::NameCache
