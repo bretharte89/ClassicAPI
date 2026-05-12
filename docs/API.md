@@ -991,6 +991,40 @@ Implementation calls the engine's inner watched-faction setter
 directly, bypassing `Script_SetWatchedFactionIndex`'s
 displayed-index round-trip.
 
+### `C_Reputation.GetLastStandingChange()`
+
+Returns `factionID, newStanding, repGained` for the rep change
+currently being fired, or `nil` if called outside that window.
+
+Companion to [`FACTION_STANDING_CHANGED`](#faction_standing_changed-event).
+The triple is the same payload as the event's `arg1, arg2, arg3`, but
+the getter is also live during the engine's
+`CHAT_MSG_COMBAT_FACTION_CHANGE` dispatch on the same hook — useful
+for addons that want to enrich the chat line with the factionID
+(which vanilla's chat-event payload doesn't carry) without
+double-registering for `FACTION_STANDING_CHANGED`:
+
+```lua
+local f = CreateFrame("Frame")
+f:RegisterEvent("CHAT_MSG_COMBAT_FACTION_CHANGE")
+f:SetScript("OnEvent", function()
+    local factionID, newStanding, repGained = C_Reputation.GetLastStandingChange()
+    if factionID then
+        -- factionID is the real ID, not a parsed-out name string
+        print(factionID, newStanding, repGained)
+    end
+end)
+```
+
+Outside the in-flight `FireNotify` hook stack (i.e. anywhere except
+inside a `CHAT_MSG_COMBAT_FACTION_CHANGE` or `FACTION_STANDING_CHANGED`
+handler), returns nothing. There is no "last change" memory — the
+state is cleared as soon as the dispatch returns.
+
+This is a ClassicAPI-only call; modern WoW has no equivalent (modern
+addons get the factionID from `FACTION_STANDING_CHANGED` directly, so
+they don't need a separate getter).
+
 ### `FACTION_STANDING_CHANGED` event
 
 Fires once per reputation change with `(factionID, newStanding, repGained)`:
@@ -1036,9 +1070,13 @@ into the per-slot storage by the time the hook fires, so we read the
 total back via `FUN_REPUTATION_GET_STANDING(factionID)` (`0x004D6370`)
 to produce the `newStanding` payload.
 
-The hook calls the original first so the engine's
-`CHAT_MSG_COMBAT_FACTION_CHANGE` event still fires normally — no
-behavior change for addons that depended on the chat text.
+The hook calls the original before firing our event so the engine's
+`CHAT_MSG_COMBAT_FACTION_CHANGE` still fires first — no behavior
+change for addons that depended on the chat text. A per-call
+snapshot of `(factionID, newStanding, repGained)` is captured before
+forwarding, which [`C_Reputation.GetLastStandingChange`](#c_reputationgetlaststandingchange)
+exposes — so addons can read the structured payload from inside the
+chat event without re-parsing the localized string.
 
 ## Item
 
