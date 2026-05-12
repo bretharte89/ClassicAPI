@@ -720,6 +720,27 @@ enum Offsets {
     VAR_PLAYER_NAME_CACHE = 0x00C0E228,
     FUN_PLAYER_INFO_LOOKUP = 0x0055F080,
 
+    // NameCache write entry — `__thiscall(this = cache, packetData,
+    // guidLo, guidHi)` at 0x0055F310. Called once per
+    // SMSG_NAME_QUERY_RESPONSE after the engine's opcode handler
+    // builds a `packetData` buffer with the layout:
+    //   +0x000  name[48]
+    //   +0x030  realm[256]
+    //   +0x130  unknown[8]   (probably (charGuidLo, charGuidHi))
+    //   +0x138  race  (u32)
+    //   +0x13C  sex   (u32, 0/1 wire)
+    //   +0x140  class (u32)
+    // Writes that data into the cache entry and dispatches any
+    // pending callbacks. Decoded by Ghidra; field offsets verified
+    // against the `*(uint*)(param_2 + N)` reads in the function body.
+    //
+    // Hooking here gives us a single chokepoint covering every name-
+    // query response the engine processes — chat, group/raid sync,
+    // guild roster, visible-object resolution. The hook runs after
+    // the engine has settled the entry, so reading from the cache
+    // post-hook is safe.
+    FUN_PLAYER_INFO_CACHE_WRITE = 0x0055F310,
+
     // Entry-data offsets. The lookup returns `entry + 0x20`, so these
     // are relative to that pointer (not to the entry's hash-table
     // header). Field layout verified by decoding the cache writer
@@ -768,6 +789,35 @@ enum Offsets {
     OFF_FACTION_PARENT_ID = 0x48,
     OFF_FACTION_NAMES = 0x4C,
     OFF_FACTION_DESCRIPTIONS = 0x70,
+
+    // Who-query (the /who system).
+    //
+    // `Script_SendWho` (0x005AD3B0) is a 32-byte wrapper:
+    //   - validate arg1 is a string via lua_isstring
+    //   - load WhoSystem singleton from `[VAR_WHO_SYSTEM]`
+    //   - if non-NULL, lua_tostring(L, 1) for the query string
+    //   - tail-call `FUN_WHO_SYSTEM_SEND_QUERY` with
+    //     `__thiscall(this = WhoSystem, queryStr)`
+    //
+    // The query string follows the engine's standard /who filter syntax
+    // (`"n-Bob"`, `"r-Alliance"`, `"c-Warlock"`, etc.); the inner
+    // function at `FUN_WHO_SYSTEM_SEND_QUERY` (~1.5KB) does the
+    // parse + CMSG_WHO build + network send.
+    //
+    // `Script_SetWhoToUI` (0x005AD870) is even smaller — 13 bytes that
+    // store arg1 (as int, default 0) to `[VAR_WHO_TO_UI_FLAG]`. The
+    // SMSG_WHO response handler at ~0x005ADF80 reads the flag at
+    // `0x005ADF9C` to decide whether the results buffer into the
+    // engine's WhoList (flag != 0 → list path, friends-frame fires
+    // WHO_LIST_UPDATE; flag == 0 → results go to chat as
+    // `"Found N players matching..."`).
+    //
+    // Server-side cooldown for CMSG_WHO is ~5 seconds — a faster
+    // client gets silent-dropped, so any client-side gating just
+    // matches that.
+    VAR_WHO_SYSTEM = 0x00C28168,
+    VAR_WHO_TO_UI_FLAG = 0x00C2A12C,
+    FUN_WHO_SYSTEM_SEND_QUERY = 0x005AEBB0,
 
     // Per-faction current standing — `__fastcall(ecx = factionID) → int`.
     // Returns `base + delta` where the two values are stored at

@@ -1,0 +1,57 @@
+// This file is part of ClassicAPI.
+//
+// ClassicAPI is free software: you can redistribute it and/or modify it under the terms
+// of the GNU Lesser General Public License as published by the Free Software Foundation, either
+// version 3 of the License, or (at your option) any later version.
+//
+// ClassicAPI is distributed in the hope that it will be useful, but WITHOUT ANY
+// WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+// PURPOSE. See the GNU Lesser General Public License for more details.
+//
+// You should have received a copy of the GNU Lesser General Public License along with
+// ClassicAPI. If not, see <https://www.gnu.org/licenses/>.
+
+#pragma once
+
+#include <cstdint>
+#include <string>
+
+// Opt-in persistent name cache, keyed by GUID. When enabled, every
+// SMSG_NAME_QUERY_RESPONSE the engine processes — plus anything fed
+// in via `C_PlayerInfo.RememberPlayer` from Lua — is persisted to
+// `WTF\Account\<acct>\<realm>\ClassicAPI_NameCache.txt` and survives
+// across sessions on the same realm. Shared across all characters
+// on that account+realm, so a 50-character bank alt's cache is
+// available to the player's main without duplication.
+//
+// Use case: addons like pfUI's libunitscan currently keep their own
+// per-character SVPC name DB to color chat names by class. With this
+// enabled, `GetPlayerInfoByGUID` falls back to the persistent cache
+// on engine miss, so chat coloring Just Works after a /reload — and
+// the data isn't duplicated 50 times.
+
+namespace Player::NameCache {
+
+struct Entry {
+    uint64_t guid;       // full 64-bit GUID (hi << 32 | lo)
+    std::string name;    // ASCII, <= 12 chars (vanilla cap)
+    uint32_t classID;    // ChrClasses.dbc record ID (1..9), 0 if unknown
+};
+
+// Returns a pointer to the cached entry, or nullptr if not cached.
+// The pointer is stable until the next `Remember` for the same GUID
+// (which may relocate via map rehash). Treat as transient.
+const Entry *Lookup(uint64_t guid);
+
+// Adds or updates an entry. classID==0 leaves the existing classID
+// alone (so a name-only sighting doesn't erase prior class data).
+// Marks the cache dirty for the next persistence flush.
+void Remember(uint64_t guid, const char *name, uint32_t classID);
+
+// Opt-in toggle. State persists to `WTF\Account\<acct>\ClassicAPI.txt`.
+// Enabling triggers a load from disk; disabling stops further writes
+// but leaves the file in place (re-enabling restores prior state).
+bool IsEnabled();
+void SetEnabled(bool enabled);
+
+} // namespace Player::NameCache

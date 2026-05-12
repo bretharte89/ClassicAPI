@@ -39,6 +39,9 @@ build instructions.
   - [`C_Reputation.SetWatchedFactionByID(factionID)`](#c_reputationsetwatchedfactionbyidfactionid)
   - [`C_Reputation.GetLastStandingChange()`](#c_reputationgetlaststandingchange)
   - [`FACTION_STANDING_CHANGED` event](#faction_standing_changed-event)
+- [FriendList](#friendlist)
+  - [`C_FriendList.SendWhoQueryByName(name)`](#c_friendlistsendwhoquerybynamename)
+  - [`C_FriendList.IsWhoQueryPending()`](#c_friendlistiswhoquerypending)
 - [Item](#item)
   - [`C_Item.IsBound(itemLocation)`](#c_itemisbounditemlocation)
   - [`C_Item.GetItemID(itemLocation)`](#c_itemgetitemiditemlocation)
@@ -86,6 +89,9 @@ build instructions.
 - [Unit](#unit)
   - [`UnitGUID(unit)`](#unitguidunit)
   - [`GetPlayerInfoByGUID(guid)`](#getplayerinfobyguidguid)
+  - [`C_PlayerInfo.RememberPlayer(guid, name, classToken)`](#c_playerinforememberplayerguid-name-classtoken)
+  - [`ClassicAPI.SetPersistentNameCacheEnabled(enabled)`](#classicapisetpersistentnamecacheenabledenabled)
+  - [`ClassicAPI.GetPersistentNameCacheEnabled()`](#classicapigetpersistentnamecacheenabled)
   - [`UnitIsAFK(unit)`](#unitisafkunit)
   - [`UnitIsDND(unit)`](#unitisdndunit)
   - [`UnitIsFeignDeath(unit)`](#unitisfeigndeathunit)
@@ -1113,6 +1119,90 @@ snapshot of `(factionID, newStanding, repGained)` is captured before
 forwarding, which [`C_Reputation.GetLastStandingChange`](#c_reputationgetlaststandingchange)
 exposes — so addons can read the structured payload from inside the
 chat event without re-parsing the localized string.
+
+## FriendList
+
+### `C_FriendList.SendWhoQueryByName(name)`
+
+Issues a /who name-filter query for a specific player. Results
+buffer into the engine's WhoList so a normal `WHO_LIST_UPDATE` +
+`GetWhoInfo(i)` flow can read them — no chat output, no
+`"Found N players matching..."` system message.
+
+Vanilla 1.12 exposes `SendWho(query)` and `SetWhoToUI(flag)` only as
+separate primitives, so addons that want to silently look up a
+single player's class/level/zone (e.g. to color an unknown name in
+chat) have to manage state, cooldown timing, and friends-panel
+suppression themselves. This collapses the invocation half of that
+dance to one call with a clean true/false return.
+
+Returns `true` if the query was sent, `false` if any of:
+
+- the name was empty / nil
+- the call is within the 5-second cooldown of a previous send
+- the engine's WhoSystem isn't initialized yet (pre-login)
+
+A `false` return is a no-op — the engine state isn't touched, no
+pending flag is set, and the cooldown isn't extended. Safe to call
+on every chat line that mentions an unknown player; the call will
+naturally rate-limit.
+
+The cooldown matches the server's: vanilla's CMSG_WHO is silent-
+dropped server-side at roughly 5-second granularity, so a faster
+client just wastes queries that won't get a response.
+
+```lua
+if C_FriendList.SendWhoQueryByName("Bob") then
+    -- query sent; result will arrive via WHO_LIST_UPDATE within ~1s
+end
+```
+
+This call alone does **not** suppress the friends-panel popup on
+response — for that, wrap `FriendsFrame_OnEvent` and gate on
+[`C_FriendList.IsWhoQueryPending()`](#c_friendlistiswhoquerypending):
+
+```lua
+local original = FriendsFrame_OnEvent
+_G.FriendsFrame_OnEvent = function()
+    if event == "WHO_LIST_UPDATE" and C_FriendList.IsWhoQueryPending() then
+        return
+    end
+    return original()
+end
+```
+
+(Auto-suppressing the popup from C++ would require hooking the
+engine's `FrameScript_SignalEvent` or the SMSG_WHO opcode handler —
+both high-traffic / high-risk sites. The wrap above is reliable and
+takes 5 lines, so it stays addon-side for now.)
+
+Implementation reads the WhoSystem singleton from `0x00C28168` and
+calls the inner sender at `0x005AEBB0`
+(`__thiscall(this = WhoSystem, queryStr)`), the same chokepoint
+`Script_SendWho` tail-calls. The `whoToUI` flag at `0x00C2A12C` is
+flipped to `1` first so the SMSG_WHO handler routes results into the
+list (`WHO_LIST_UPDATE` path) instead of printing to chat.
+
+### `C_FriendList.IsWhoQueryPending()`
+
+Returns `true` within ~5 seconds of the most recent
+[`SendWhoQueryByName`](#c_friendlistsendwhoquerybynamename) that
+returned `true`; otherwise `false`. Time-based — the engine doesn't
+expose a "response arrived" hook to C++ yet, so the window is a
+conservative upper bound on the response RTT, which in practice
+lands within a few hundred ms.
+
+The intended use is gating an addon-side `FriendsFrame_OnEvent`
+wrap so the user-issued `/who` window still works while addon-
+issued silent queries don't pop the panel — see the example under
+`SendWhoQueryByName`.
+
+Concurrent callers see a shared pending flag — if pfUI and another
+addon both call `SendWhoQueryByName` close in time, both queries
+contribute to the same pending window. This is acceptable for the
+"suppress popup for any in-flight DLL-issued query" use case;
+addons that need per-call tracking should manage their own ticket
+state on top.
 
 ## Item
 
@@ -2204,11 +2294,116 @@ deliberately does not trigger queries from a passive getter; a
 future `C_PlayerInfo.RequestLoadPlayerByID` would do that
 explicitly and fire a load-result event.
 
+**Persistent fallback**: when
+[`ClassicAPI.SetPersistentNameCacheEnabled(true)`](#classicapisetpersistentnamecacheenabledenabled)
+has been opted into, a per-realm on-disk cache extends coverage
+across sessions. On engine cache miss, `GetPlayerInfoByGUID` falls
+back to the persistent cache and returns the cached `name` and
+class (with `realm` as `""` and race/sex slots zeroed — only the
+two stored fields are recoverable, but for the common chat-coloring
+use case that's enough). Returns `nil` only when both the engine
+and persistent caches miss.
+
 **Implementation**: calls the engine's get-or-fetch primitive at
 `0x0055F080` with a NULL callback (pure cache read). The cache
 instance lives at `0x00C0E228`; entry layout (name, realm, race,
 sex, class) was reverse-engineered from the
 `SMSG_NAME_QUERY_RESPONSE` write path at `0x0055F310`.
+
+### `C_PlayerInfo.RememberPlayer(guid, name, classToken)`
+
+Adds a `(guid → name, classID)` entry to the persistent name cache.
+For the engine-driven coverage (chat / group / guild / visible
+objects), no addon-side feeding is needed — those flow into the
+cache automatically through the engine's `SMSG_NAME_QUERY_RESPONSE`
+write path. This call exists for the *other* sources libunitscan-
+style addons harvest from but the engine NameCache doesn't see
+directly: `/who` results, mouseover, target snapshots, etc.
+
+Returns `true` on success, `false` if the persistent cache isn't
+enabled or the args are malformed.
+
+- `guid` — `"0xHHHHHHHHLLLLLLLL"` string (same format `UnitGUID`
+  returns). 8-hex `"0xLLLLLLLL"` is also accepted (hi-dword zero).
+- `name` — 1–12 ASCII chars (vanilla character-name range). Tabs,
+  newlines, and high bytes are stripped.
+- `classToken` — uppercase token like `"WARRIOR"`, `"MAGE"`. Looked
+  up against `ChrClasses.dbc` filename field, case-insensitive.
+  Passing an unknown token keeps the entry's prior class (so a
+  name-only sighting doesn't erase good class data).
+
+```lua
+-- Harvest /who results into the persistent cache
+local function OnWhoUpdate()
+    for i = 1, GetNumWhoResults() do
+        local name, _, _, _, class = GetWhoInfo(i)  -- class is localized
+        -- pfUI has L["class"][class] for localized→token mapping
+        local token = L["class"][class]
+        if token then
+            -- GetWhoInfo doesn't expose GUID; addons can pair this
+            -- with GetCurrentChatGUID() at the call site that
+            -- triggered the query, or skip RememberPlayer for /who
+            -- and rely on the engine populating from chat instead.
+        end
+    end
+end
+```
+
+`name`-only updates (no classID) **do not overwrite** an existing
+classID — useful for "I saw this name in a guild login system msg"
+sightings that don't have class info but want to refresh the name.
+
+The "deleted character recreated with same name, different class"
+collision case that name-keyed caches suffer from doesn't apply
+here: GUIDs are permanent for the life of a vanilla character, so
+the new character has a different GUID and gets a different cache
+entry.
+
+### `ClassicAPI.SetPersistentNameCacheEnabled(enabled)`
+
+Opts into (or out of) the persistent name cache. `enabled` is a
+boolean (numeric `0`/`1` also accepted). Persists to
+`WTF\Account\<account>\ClassicAPI.txt` as
+`PersistentNameCacheEnabled=1`/`0`, so the choice survives
+client restarts.
+
+When enabled:
+
+- Every `SMSG_NAME_QUERY_RESPONSE` the engine processes is also
+  written to `WTF\Account\<account>\<realm>\ClassicAPI_NameCache.txt`.
+- Lua-side `C_PlayerInfo.RememberPlayer` calls become effective
+  (they're no-ops when the cache is disabled).
+- `GetPlayerInfoByGUID` gains the cross-session fallback path
+  documented above.
+
+When disabled, the on-disk file is left in place (re-enabling later
+restores the prior contents); future writes are simply suppressed.
+
+The cache file is shared across all characters on the same
+account+realm — a 50-character bank alt's chat-scraping doesn't
+double the storage cost. Format is tab-separated text
+(`guidHi  guidLo  classID  name` per line), about 30 bytes per
+entry, hand-editable if you ever need to.
+
+```lua
+ClassicAPI.SetPersistentNameCacheEnabled(true)
+```
+
+Returns nothing.
+
+### `ClassicAPI.GetPersistentNameCacheEnabled()`
+
+Returns the current state of the persistent name cache as a
+boolean. `false` until
+[`SetPersistentNameCacheEnabled`](#classicapisetpersistentnamecacheenabledenabled)
+has been called (or its prior call survived in the on-disk settings
+file).
+
+```lua
+if ClassicAPI.GetPersistentNameCacheEnabled() then
+    -- persistent fallback is active for GetPlayerInfoByGUID
+end
+```
 
 ### `UnitIsAFK(unit)`
 

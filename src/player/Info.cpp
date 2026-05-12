@@ -35,6 +35,7 @@
 // them, or they appear in guild login spam), they will be.
 
 #include "Game.h"
+#include "NameCache.h"
 #include "Offsets.h"
 
 #include <cstdint>
@@ -145,19 +146,38 @@ int __fastcall Script_GetPlayerInfoByGUID(void *L) {
     const uint8_t *entry = fn(cache, lo, hi, &cookie,
                               nullptr /*callback*/, nullptr /*userData*/,
                               0 /*retryFlag*/);
-    if (entry == nullptr)
-        return 0; // cache miss / pending → nil
 
-    const char *name = reinterpret_cast<const char *>(
-        entry + Offsets::OFF_PLAYER_INFO_NAME);
-    const char *realm = reinterpret_cast<const char *>(
-        entry + Offsets::OFF_PLAYER_INFO_REALM);
-    const uint32_t race = *reinterpret_cast<const uint32_t *>(
-        entry + Offsets::OFF_PLAYER_INFO_RACE);
-    const uint32_t sex = *reinterpret_cast<const uint32_t *>(
-        entry + Offsets::OFF_PLAYER_INFO_SEX);
-    const uint32_t classID = *reinterpret_cast<const uint32_t *>(
-        entry + Offsets::OFF_PLAYER_INFO_CLASS);
+    const char *name = nullptr;
+    const char *realm = nullptr;
+    uint32_t race = 0;
+    uint32_t sex = 0;
+    uint32_t classID = 0;
+
+    if (entry != nullptr) {
+        name = reinterpret_cast<const char *>(
+            entry + Offsets::OFF_PLAYER_INFO_NAME);
+        realm = reinterpret_cast<const char *>(
+            entry + Offsets::OFF_PLAYER_INFO_REALM);
+        race = *reinterpret_cast<const uint32_t *>(
+            entry + Offsets::OFF_PLAYER_INFO_RACE);
+        sex = *reinterpret_cast<const uint32_t *>(
+            entry + Offsets::OFF_PLAYER_INFO_SEX);
+        classID = *reinterpret_cast<const uint32_t *>(
+            entry + Offsets::OFF_PLAYER_INFO_CLASS);
+    } else {
+        // Engine miss — fall back to the persistent name cache (if
+        // enabled). Only `name` and `classID` are stored there; the
+        // other slots stay zero so race/sex come back nil-ish and
+        // realm comes back "" (matching what the engine reports for
+        // partially-populated entries).
+        const NameCache::Entry *cached = NameCache::Lookup(
+            (static_cast<uint64_t>(hi) << 32) | lo);
+        if (cached == nullptr || cached->name.empty())
+            return 0;
+        name = cached->name.c_str();
+        classID = cached->classID;
+        realm = "";
+    }
 
     const char *englishClass = DBCStringField(
         Offsets::VAR_CHRCLASSES_RECORDS, Offsets::VAR_CHRCLASSES_COUNT,
