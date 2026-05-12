@@ -94,6 +94,9 @@ build instructions.
   - [`IsFalling()`](#isfalling)
   - [`IsSwimming()`](#isswimming)
   - [`IsAssistingRitual()`](#isassistingritual)
+- [CharacterList](#characterlist)
+  - [`C_CharacterList.GetNumCharacters()` / `GetCharacterInfo(index)`](#c_characterlistgetnumcharacters--getcharacterinfoindex)
+  - [`C_CharacterList.GetCharacters()`](#c_characterlistgetcharacters)
 - [Chat](#chat)
   - [`GetCurrentChatGUID()`](#getcurrentchatguid)
 - [AddOns](#addons)
@@ -2311,6 +2314,67 @@ Local-player only — the `+0xB4` pointer lives on the CGPlayer
 object, not in the broadcast descriptor, so the function can't
 report state for `target` / `party*` / etc. Returns `false` when
 called before the player object is initialized (login screen).
+
+## CharacterList
+
+### `C_CharacterList.GetNumCharacters()` / `GetCharacterInfo(index)`
+
+Exposes the realm's character list (name, class, race, level, area,
+sex, ghost flag) from anywhere in the game — vanilla's stock
+`GetNumCharacters` / `GetCharacterInfo` are **glue-only** (registered
+on the character-select FrameScript engine; the underlying data is
+freed when the player enters the world).
+
+`GetCharacterInfo` returns an 8-tuple: `name, localizedRace,
+localizedClass, level, areaName, englishRace, sex, guid`.
+`areaName` is `nil` if the character's last-known area isn't in
+`AreaTable.dbc`. `guid` is the 64-bit character GUID formatted as
+a 16-hex-digit string (`"0x" + hi + lo`), same format as
+`UnitGUID` returns.
+
+```lua
+for i = 1, C_CharacterList.GetNumCharacters() do
+    local name, _, class, level, area = C_CharacterList.GetCharacterInfo(i)
+    print(name, class, "Lv", level, "in", area or "?")
+end
+```
+
+### `C_CharacterList.GetCharacters()`
+
+Returns a numeric-keyed array of CharacterInfo tables — same data
+as `GetCharacterInfo` but as struct-style tables with named fields.
+Easier to consume when iterating the whole list.
+
+Each entry has:
+- `name` — character name
+- `localizedRace`, `englishRace`
+- `localizedClass`
+- `level`
+- `areaName` (only present if the character's last-known area is
+  in `AreaTable.dbc`)
+- `sex` (`0` or `1`)
+- `guid` (16-hex-digit string, same format as `UnitGUID`)
+
+```lua
+for _, c in ipairs(C_CharacterList.GetCharacters()) do
+    print(c.name, c.localizedClass, "Lv", c.level, c.guid)
+end
+```
+
+> **How it works.** We hook the engine's char-list teardown function
+> (`FUN_00472090`) and snapshot the array contents into our own
+> cache before the engine frees them. Every time the player visits
+> character-select (including the implicit visit at every game
+> launch), the cache refreshes. Memory-only — no filesystem
+> persistence — so deleted characters disappear from the cache on
+> the next char-select visit, and there's no stale data across game
+> restarts (every launch hits char-select before world-enter).
+>
+> **First-launch edge case.** If the DLL is loaded mid-session
+> somehow (e.g. injected after world-enter), the cache will be
+> empty until the player goes back to character-select. Under
+> normal use (DLL loaded at game start via VanillaFixes) the cache
+> is populated before any addon Lua runs.
 
 ## Chat
 
