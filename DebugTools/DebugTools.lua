@@ -10,7 +10,7 @@
 --    used instead.
 --  * No UIPanelDialogTemplate, no parentKey, no clampedToScreen, no
 --    OnSizeChanged in vanilla -- frames have fixed dimensions.
---  * No debuglocals -- shimmed to "" by Compat.lua.
+--  * No debuglocals
 ------------------------------------------------------------------------------
 
 EVENT_TRACE_EVENT_HEIGHT = 16;

@@ -391,7 +391,6 @@ function DevTools_Dump(value, startKey)
 end
 
 function DevTools_DumpCommand(msg)
-    forceinsecure();
     if (msg == nil) then msg = ""; end
     if (string_find(msg, "^[A-Za-z_][A-Za-z0-9_]*$")) then
         WriteMessage("Dump: " .. msg);

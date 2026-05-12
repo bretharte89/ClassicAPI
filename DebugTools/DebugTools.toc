@@ -4,8 +4,6 @@
 ## Author: Blizzard Entertainment, backported
 ## Special Thanks: Iriel, Kirov, Esamynn
 ## Version: 1.0
-Compat.lua
-Print.lua
 Dump.lua
 DebugTools.lua
 DebugTools.xml
