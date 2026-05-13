@@ -2631,17 +2631,124 @@ Fires when any equipped item's durability changes — picks up
 combat damage, repairs, item destruction. Used by Repair-O-Matic
 type addons and durability HUDs to avoid polling.
 
-Vanilla `Script_GetInventoryItemBroken` (`0x004C8590`) already
-reads `[descriptor + 0xA0]` for current durability — same field.
-Cheap path: poll the 19 equipped slots once per second on a
-timer; if any value changes, fire the event once. Cleaner path:
-hook the descriptor-write site, but that's a hot path and hooking
-risks JIT corruption with other DLLs (per memory note).
+### Field layout (verified)
 
-Timer-based approach is probably the right tradeoff — addons
-don't need sub-second latency for durability and the engine
-itself updates the field at non-deterministic boundaries
-anyway.
+CGItem descriptor `[item + 0x114]` has:
+- `+0xA0` — `ITEM_FIELD_DURABILITY` (field index `0x28`)
+- `+0xA4` — `ITEM_FIELD_MAXDURABILITY` (field index `0x29`)
+
+Both already read by `Script_GetInventoryItemBroken`
+(`0x004C8590`) and by ClassicAPI's existing
+`Script_GetInventoryItemDurability` in
+[src/item/Durability.cpp](src/item/Durability.cpp) — so the
+**read path** is mature; only the **change-detection path**
+remains.
+
+Field name strings `"ITEM_FIELD_DURABILITY"` (`0x0083D9FC`) and
+`"ITEM_FIELD_MAXDURABILITY"` (`0x0083D9E0`) each have exactly
+one xref — into a metadata table at `0x0083A414` (see below).
+
+### 4.3.4 firing mechanism (won't transfer directly)
+
+Confirmed by reading the 4.3.4 binary: there is **exactly one**
+firing site for `UPDATE_INVENTORY_DURABILITY` (eventID `0x1BA`)
+in Cataclysm, and it's purely server-driven:
+
+```c
+// FUN_00551580 — SMSG packet handler:
+read_u32(&ctx);
+read_u32(&selector);
+if (ctx == 0) {
+    switch (selector) {
+        case 1: dispatch(0x1BA);  // UPDATE_INVENTORY_DURABILITY
+        case 2: dispatch(0x1BB);  // UPDATE_TRADESKILL_RECAST
+        case 3: dispatch(0x1BC);  // OPEN_MASTER_LOOT_LIST
+        case 4: dispatch(0x1BD);  // UPDATE_MASTER_LOOT_LIST
+    }
+}
+```
+
+The 1.12 server doesn't send this opcode, so we can't mirror
+it. The event's semantics are just "refresh durability UI" with
+no payload — addons handle it by iterating equipment slots and
+calling `GetInventoryItemDurability`. So we don't need to know
+*which* item changed; we just have to fire when *any* equipped
+item's durability changes.
+
+### How 1.12 fires similar per-field events (open question)
+
+`ITEM_LOCK_CHANGED` (eventID 188, slot `0xBE1488` in the input
+names array) is the closest model — it fires when
+`ITEM_FIELD_FLAGS` changes. Searched the binary for both `push
+188 (imm8)` and `push 188 (imm32)` followed by call to the
+event dispatcher at `0x00703F50` — **zero hits**. Confirms
+1.12 has a generic per-field event-fire mechanism that doesn't
+push the eventID as a literal.
+
+The per-field metadata table at `0x0083A414` looks like the
+right structure:
+
+| Field           | Idx    | Leading dword | Other bytes |
+|-----------------|-------:|--------------:|------------:|
+| `ITEM_FIELD_DURABILITY`     | `0x28` | `0x04` | `1, 1`      |
+| `ITEM_FIELD_MAXDURABILITY`  | `0x29` | `0x14` | `1, 1`      |
+| (idx `0x27`)                | `0x27` | `0x04` | `1, 1`      |
+| (idx `0x26`)                | `0x26` | `0x01` | `1, 1`      |
+| (idx `0x25`)                | `0x25` | `0x01` | `1, 1`      |
+
+Entry layout: `{leading_dword, name_ptr, field_idx, ?, ?}`
+(stride `0x14` = 20 bytes). The leading dword varies per
+entry — could be an event-fire flag, broadcast scope, or
+network-stream type code. Need to find the consumer function
+(table base `0x0083A414` has zero direct VA refs, so it's
+consumed via base+index relative to a CGItem `m_objectFields`
+metadata pointer somewhere — we don't have that pointer's
+addr yet).
+
+### Three implementation paths
+
+1. **Per-frame snapshot polling.** Hook a per-frame engine
+   tick, walk 19 equipped slots each frame, hash durability,
+   compare, fire on change. Modest cost (19×2 reads/frame).
+   Hardest part: finding a clean per-frame hook point that's
+   not in the JIT-collision-risk class. Candidate: hook the
+   network packet-flush boundary (one-off per game tick,
+   cheaper than per-render-frame).
+
+2. **`SMSG_UPDATE_OBJECT` handler hook.** Hook the packet
+   handler that applies UpdateField changes to objects.
+   Snapshot durabilities before, check after; fire when
+   different. More targeted than (1) — only fires when there's
+   a network reason for state to have changed. Needs the
+   opcode handler VA; not yet pinned down.
+
+3. **Decode the per-field metadata table.** Reverse-engineer
+   the `0x0083A414` table layout to understand what the
+   leading dword means. If it's the event-fire mechanism the
+   engine already uses for `ITEM_LOCK_CHANGED` / `UNIT_HEALTH`
+   etc., we patch the `ITEM_FIELD_DURABILITY` /
+   `ITEM_FIELD_MAXDURABILITY` entries to fire our reserved
+   `UPDATE_INVENTORY_DURABILITY` slot. Cleanest end state,
+   deepest spelunking — may hit a dead end if the table's
+   consumer isn't where we expect.
+
+The MinHook collision-risk memory note ("hooking high-traffic
+engine functions risks JIT/trampoline corruption from
+SuperWoWhook/nampower/etc.") argues against (2) since
+`SMSG_UPDATE_OBJECT` is one of the hottest opcode handlers.
+That pushes us toward (1) or (3). Of those, (3) is the right
+end state — no per-frame overhead, fires exactly when the
+engine sees a field change — but (1) is a defensible ship-
+now answer with a clear migration path to (3) later.
+
+### Cross-binary reference
+
+When picking this back up, the 5.4.8 client (`C:\WoW\World of
+Warcraft 5.4.8\Wow.exe`) is the cleanest reference — it has
+the same client-side detection (UpdateField → event) but with
+post-vanilla code structure. The 4.3.4 packet-driven path is
+a Cataclysm-specific oddity and won't reflect what 1.15.x or
+modern does.
 
 ## 90. Revisit `BAG_UPDATE_DELAYED` (TODO #67 was REVERTED)
 
