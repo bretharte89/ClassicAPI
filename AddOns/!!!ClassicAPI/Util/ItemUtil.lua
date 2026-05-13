@@ -15,14 +15,9 @@
 --   - 1.12 has no concept of an item GUID and no public item-lock API,
 --     so those return nil / no-op.
 
-C_Item = C_Item or {}
-
-if not C_Item.GetItemInfo then
-    C_Item.GetItemInfo = GetItemInfo
-end
-
-if not C_Item.LockItem   then function C_Item.LockItem()   end end
-if not C_Item.UnlockItem then function C_Item.UnlockItem() end end
+C_Item.GetItemInfo = GetItemInfo
+C_Item.LockItem = function() end
+C_Item.UnlockItem = function() end
 
 ----------------------------------------------------------------------
 
