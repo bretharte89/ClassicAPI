@@ -38,6 +38,7 @@ Full per-function reference: **[docs/API.md](docs/API.md)**.
 | Table | `table.wipe` |
 | Talent | `GetTalentIDByIndex`, `GetTalentSpellID` |
 | Time | `C_DateAndTime.AdjustTimeByDays`, `C_DateAndTime.AdjustTimeByMinutes`, `C_DateAndTime.CompareCalendarTime`, `C_DateAndTime.GetCalendarTimeFromEpoch`, `C_DateAndTime.GetCurrentCalendarTime`, `C_DateAndTime.GetSecondsUntilDailyReset`, `C_DateAndTime.GetServerTimeLocal`, `GetServerTime` |
+| UIColor | `C_UIColor.GetColors` (backports `GlobalColor.dbc`; companion addon wraps each row with `ColorMixin` and assigns `_G[baseTag]` + `_G[baseTag.."_CODE"]`) |
 | Unit | `UnitGUID`, `UnitIsAFK`, `UnitIsDND`, `UnitIsFeignDeath`, `UnitIsInMyGuild`, `UnitIsPossessed` |
 
 ### Macros

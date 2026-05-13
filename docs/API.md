@@ -154,6 +154,8 @@ build instructions.
   - [`C_DateAndTime.CompareCalendarTime(lhs, rhs)`](#c_dateandtimecomparecalendartimelhs-rhs)
   - [`C_DateAndTime.GetServerTimeLocal()`](#c_dateandtimegetservertimelocal)
   - [`C_DateAndTime.GetSecondsUntilDailyReset()`](#c_dateandtimegetsecondsuntildailyreset)
+- [UIColor](#uicolor)
+  - [`C_UIColor.GetColors()`](#c_uicolorgetcolors)
 - [Events](#events)
   - [`C_EventUtils.IsEventValid(eventName)`](#c_eventutilsiseventvalideventname)
   - [`BAG_UPDATE_DELAYED` event](#bag_update_delayed-event)
@@ -3669,6 +3671,57 @@ wall-clock time). Returns 0 if called before login.
 > See the overview's "Daily reset semantics" note — this uses server
 > midnight, not UTC midnight (though they happen to coincide for
 > Turtle WoW since the server reports UTC-aligned components).
+
+## UIColor
+
+### `C_UIColor.GetColors()`
+
+Returns an array of rows, each shaped
+`{ baseTag = "FOO_COLOR", color = ColorMixin }`, mirroring the modern
+function of the same name. The `color` field is a real `ColorMixin`
+instance (carries `GetRGB`, `GenerateHexColorMarkup`, etc.) — the DLL
+calls back into Lua's `CreateColor(r,g,b,a)` per row to construct it,
+so `ColorMixin` and `CreateColor` must already be defined when
+`GetColors` is called.
+
+The companion addon `!!!ClassicAPI/Util/Color.lua` does both: it
+defines `ColorMixin`/`CreateColor` first, then loops the result the
+same way `Blizzard_SharedXMLBase/Color.lua` does on modern WoW —
+assigning each row as a global under its `baseTag` plus a `_CODE`
+variant holding the `|c`-prefixed hex markup:
+
+```lua
+for _, dbColor in ipairs(C_UIColor.GetColors()) do
+    local color = CreateColor(dbColor.color.r, dbColor.color.g, dbColor.color.b, dbColor.color.a)
+    _G[dbColor.baseTag] = color
+    _G[dbColor.baseTag.."_CODE"] = color:GenerateHexColorMarkup()
+end
+```
+
+After that runs, addons can use the standard modern color globals
+directly:
+
+```lua
+/dump ACHIEVEMENT_COLOR:GetRGB()       -- 1, 1, 0
+/dump ITEM_EPIC_COLOR:GenerateHexColor()
+ITEM_EPIC_COLOR_CODE .. "Legendary" .. "|r"
+```
+
+The data comes from a snapshot of `GlobalColor.dbc` taken from BC
+Classic 2.5.5 (build 67323) — vanilla 1.12 has no `GlobalColor.dbc`,
+so the rows are embedded in the DLL (see [`src/ui/ColorData.h`](../src/ui/ColorData.h)).
+Duplicate `baseTag`s in the source DBC (`PURE_RED_COLOR`,
+`INVASION_*`, etc.) are deduplicated keeping the higher-ID entry,
+matching what `ipairs(DBColors)` ends up assigning on modern. Colors
+introduced after BC (Death Knight runes, Mythic+ medals, healing
+absorbs, glyphs, objective tracker) aren't in the snapshot and so
+aren't surfaced — none have a use case in 1.12 anyway.
+
+If `CreateColor` happens not to be defined when `GetColors` is called
+(e.g. another DLL or addon manages to call us before `!!!ClassicAPI`
+loads), each `color` field falls back to a plain `{r,g,b,a}` table.
+The loop above tolerates both shapes — `dbColor.color.r` reads the
+same way either way — so consumers shouldn't notice.
 
 ## Events
 
