@@ -51,6 +51,7 @@ build instructions.
   - [`C_Item.GetItemID(itemLocation)`](#c_itemgetitemiditemlocation)
   - [`GetInventoryItemID(unit, slot)`](#getinventoryitemidunit-slot)
   - [`GetInventoryItemDurability(invSlot)`](#getinventoryitemdurabilityinvslot)
+  - [`GetInventoryItemRepairCost(invSlot)`](#getinventoryitemrepaircostinvslot)
   - [`C_Item.GetItemFamily(item)`](#c_itemgetitemfamilyitem)
   - [`C_Item.GetItemCount(itemInfo, [includeBank], [includeUses])`](#c_itemgetitemcountiteminfo-includebank-includeuses)
   - [`GetItemIcon(itemID)` / `C_Item.GetItemIcon(itemLocation)` / `C_Item.GetItemIconByID(item)`](#getitemiconitemid--c_itemgetitemiconitemlocation--c_itemgetitemiconbyiditem)
@@ -73,6 +74,7 @@ build instructions.
 - [Container](#container)
   - [`C_Container.GetContainerItemID(bagIndex, slotIndex)`](#c_containergetcontaineritemidbagindex-slotindex)
   - [`C_Container.GetContainerItemDurability(containerIndex, slotIndex)`](#c_containergetcontaineritemdurabilitycontainerindex-slotindex)
+  - [`C_Container.GetContainerItemRepairCost(containerIndex, slotIndex)`](#c_containergetcontaineritemrepaircostcontainerindex-slotindex)
   - [`C_Container.GetContainerNumFreeSlots(bagID)`](#c_containergetcontainernumfreeslotsbagid)
   - [`C_Container.PlayerHasHearthstone()`](#c_containerplayerhashearthstone)
   - [`C_Container.UseHearthstone()`](#c_containerusehearthstone)
@@ -1458,6 +1460,62 @@ FLAGS from. No DBC indirection.
 
 Equivalent to the function of the same name introduced in 3.0.
 
+### `GetInventoryItemRepairCost(invSlot)`
+
+Returns the cost in copper to repair the player's equipped item at
+`invSlot`. Same value `GameTooltip:SetInventoryItem` returns as its
+third out-parameter.
+
+```
+copperCost = GetInventoryItemRepairCost(invSlot)
+```
+
+```lua
+local cost = GetInventoryItemRepairCost(INVSLOT_CHEST)
+if cost > 0 then
+    -- e.g. cost == 12345
+end
+```
+
+Returns `0` for slots that are empty, items without a durability
+concept, fully-repaired items, or items whose stats aren't cached yet
+(rare — happens briefly after login before SMSG_ITEM_QUERY_RESPONSE
+arrives for newly-seen items). The "no return" path is reserved for
+invalid input (non-numeric slot).
+
+> **Player-only**, same constraint as
+> [`GetInventoryItemDurability`](#getinventoryitemdurabilityinvslot)
+> — other units' durability isn't broadcast in 1.12.
+
+> **Discount is vendor-context-dependent.** The faction-rep + PvP
+> rank discount is only applied when the player has a merchant
+> window open (i.e. has received `SMSG_LIST_INVENTORY`). Called from
+> anywhere else, you get the raw, undiscounted base cost.
+>
+> The engine tracks the current merchant via globals
+> `DAT_00BDDFA0/A4` (the merchant's GUID), set when the merchant
+> frame opens and zeroed when it closes. The helper short-circuits
+> the discount path when those globals are zero.
+>
+> For consistent "what will I pay" semantics inside addons, only
+> trust this value when `MerchantFrame:IsShown()` is true — or call
+> it once per merchant-visit and cache.
+
+Calls the engine's own per-item repair-cost helper at `0x004FAF30`,
+which is the same function `Script_GameTooltip_SetInventoryItem`
+calls for its repairCost return. The raw cost comes from
+`DurabilityCosts.dbc` (indexed by item subclass and slot type) ×
+`DurabilityQuality.dbc` (indexed by item quality); the discount —
+when applicable — stacks faction reputation with the merchant
+(Friendly+ unlocks a base 5%) and PvP rank (Sergeant Major+ adds
+another 5%, Knight-Lieutenant+ stacks one more).
+
+This is a ClassicAPI addition — modern WoW has no standalone Lua
+function for per-item repair cost; the only way to read it there is
+the tooltip's third return value. We expose it directly because the
+underlying calculation is already in the engine and a Lua function
+is the natural surface.
+
 ### `C_Item.GetItemFamily(item)`
 
 Returns the BagFamily bitmask for an item — i.e., what kind of
@@ -2112,6 +2170,34 @@ uses (engine's `PackBagSlot` → `GetItemBySlot`), then reads the same
 durability fields off the descriptor.
 
 Equivalent to the function of the same name introduced in 10.0.
+
+### `C_Container.GetContainerItemRepairCost(containerIndex, slotIndex)`
+
+Bag/bank variant of
+[`GetInventoryItemRepairCost`](#getinventoryitemrepaircostinvslot).
+Same `copperCost` single-int return and the same "0 for nothing to
+repair" semantics.
+
+```
+copperCost = C_Container.GetContainerItemRepairCost(containerIndex, slotIndex)
+```
+
+`containerIndex` accepts the same values as
+[`C_Container.GetContainerItemDurability`](#c_containergetcontaineritemdurabilitycontainerindex-slotindex)
+(`0` = backpack, `1..4` = equipped bags, `-1`/`5..11` = bank, etc.).
+
+```lua
+for slot = 1, GetContainerNumSlots(0) do
+    local cost = C_Container.GetContainerItemRepairCost(0, slot)
+    if cost > 0 then
+        -- broken/damaged item sitting in the backpack
+    end
+end
+```
+
+Useful for "repair only items above N copper" smart-repair logic
+without scanning tooltips. ClassicAPI addition; modern WoW has no
+direct equivalent.
 
 ### `C_Container.GetContainerNumFreeSlots(bagID)`
 

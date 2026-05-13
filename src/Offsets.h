@@ -445,6 +445,44 @@ enum Offsets {
     OFF_DESCRIPTOR_DURABILITY = 0xA0,
     OFF_DESCRIPTOR_MAX_DURABILITY = 0xA4,
 
+    // Per-item repair-cost helper used by Script_GameTooltip_SetInventoryItem
+    // (3rd return value). __fastcall(ecx = CGItem *) -> int copperCost.
+    // Returns 0 for null/broken/no-durability/fully-repaired items, otherwise
+    // the cost in copper, with the merchant discount applied IFF a merchant
+    // window is currently open.
+    //
+    // Internals: FUN_005DA330 is the raw calculator; FUN_004FAF30 is the
+    // discount wrapper that calls it. The raw side:
+    //   1. Look up the item's ItemStats record via DBCache_ItemStats_C_GetRecord
+    //      (callback=NULL → returns NULL for uncached items).
+    //   2. Index DurabilityCosts.dbc by `subClass` to get the per-class row.
+    //   3. Branch on inventoryType: weapon (2) uses cols at row+4..row+0x54,
+    //      armor (4) uses cols at row+0x58..row+0x78.
+    //   4. Multiply by DurabilityQuality.dbc's quality multiplier (indexed
+    //      by `quality * 2 + 1`).
+    //   5. Round to nearest int; clamp 0 → 1 if there was any cost at all.
+    //
+    // The discount wrapper:
+    //   - Resolves the local player object via FUN_00468550 (returns the
+    //     player's GUID from [0x00B41414 + 0xC0]).
+    //   - Resolves the current-merchant object via the GUID stored in
+    //     DAT_00BDDFA0 / DAT_00BDDFA4. Those globals are set by
+    //     FUN_004FACF0 on SMSG_LIST_INVENTORY (merchant frame opens) and
+    //     zeroed by FUN_004FAC50 when the merchant frame closes.
+    //   - If both lookups succeed, calls FUN_00612B80(merchant, player)
+    //     to compute (factionDiscount + pvpRankDiscount). Faction
+    //     contribution: 0% below Friendly, +base% (5%) at Friendly and
+    //     above. PvP rank contribution: +5% for PvP rank > 5
+    //     (Sergeant Major+), another +5% for rank > 7
+    //     (Knight-Lieutenant+).
+    //   - Otherwise (no merchant context) the multiplier stays at 1.0
+    //     and the raw cost is returned undiscounted.
+    //
+    // So this helper produces the merchant's displayed cost ONLY when
+    // the player has a vendor open; called from anywhere else (HUD
+    // refresh, idle check) it returns the raw base cost.
+    FUN_ITEM_REPAIR_COST = 0x004FAF30,
+
     // CGItem has TWO descriptor-like pointers and they hold different things:
     //   +0x114 = m_objectFields (the UpdateField array we read FLAGS from at
     //            +0x3C). For item instances, OBJECT_FIELD_ENTRY in this array
