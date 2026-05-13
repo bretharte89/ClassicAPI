@@ -1153,6 +1153,11 @@ enum Offsets {
     LUA_SET_TOP = 0x6F3080,
     LUA_CALL = 0x6F4180,
     LUA_PCALL = 0x6F41A0,
+    // `lua_next(L, idx)` — pops a key, pushes (newKey, value) for the
+    // next pair in the table at `idx`. Returns 0 when iteration is
+    // done. Documented in `docs/LuaCAPI.md`; calls `luaH_next` at
+    // `0x006FA2A0` internally.
+    LUA_NEXT = 0x6F4450,
     LUA_ERROR = 0x6F4940,
 
     // Global `lua_State *`. The engine keeps one main thread state here; we

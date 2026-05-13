@@ -129,6 +129,8 @@ build instructions.
   - [`C_AddOns.DoesAddOnExist(indexOrName)`](#c_addonsdoesaddonexistindexorname)
 - [Combat](#combat)
   - [`InCombatLockdown()`](#incombatlockdown)
+- [Table](#table)
+  - [`table.wipe(t)`](#tablewipet)
 - [Input](#input)
   - [`IsLeftShiftKeyDown()` / `IsRightShiftKeyDown()`](#isleftshiftkeydown--isrightshiftkeydown)
   - [`IsLeftControlKeyDown()` / `IsRightControlKeyDown()`](#isleftcontrolkeydown--isrightcontrolkeydown)
@@ -3187,6 +3189,29 @@ Errors via `lua_error` on:
 - Non-function `callback`
 - `target[name]` not resolvable to a function (covers typos and
   hooking unknown frame methods)
+
+## Table
+
+### `table.wipe(t)`
+
+Removes every key from `t`, leaving it empty but preserving its
+internal hash and array capacity. Returns `t` for chaining.
+
+```lua
+local cache = {}
+-- ... fill it up ...
+table.wipe(cache)              -- cache is now {}
+local also_t = table.wipe(t2)  -- also_t === t2 after wipe
+```
+
+Port of Blizzard's 3.3.5 implementation at VA `0x00852180` — same
+pattern, just using 1.12's Lua 5.0 entry points instead of 5.1's.
+Both Lua versions' `lua_next` walks the hash node array linearly,
+so the canonical `lua_next` + `rawset(k, nil)` "during-iteration
+removal" pattern works in practice even though it's technically
+undefined per the Lua reference manual.
+
+Errors on non-table input.
 
 ## Input
 

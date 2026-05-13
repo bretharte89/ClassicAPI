@@ -63,6 +63,7 @@ using lua_gettop_t = int(__fastcall *)(void *L);
 using lua_settop_t = void(__fastcall *)(void *L, int idx);
 using lua_call_t = void(__fastcall *)(void *L, int nargs, int nresults);
 using lua_pcall_t = int(__fastcall *)(void *L, int nargs, int nresults, int errfunc);
+using lua_next_t = int(__fastcall *)(void *L, int idx);
 using lua_type_t = int(__fastcall *)(void *L, int index);
 using lua_error_t = void(__cdecl *)(void *L, const char *);
 
@@ -88,6 +89,7 @@ extern const lua_gettop_t GetTop;
 extern const lua_settop_t SetTop;
 extern const lua_call_t Call;
 extern const lua_pcall_t PCall;
+extern const lua_next_t Next;
 extern const lua_type_t Type;
 extern const lua_error_t Error;
 
