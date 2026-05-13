@@ -130,22 +130,6 @@ function GetAchievementInfoFromHyperlink(link)
 	end
 end
 
-function GetURLIndexAndLoadURL(self, link)
-	local linkType, index = string.split(":", link);
-	if ( linkType == LinkTypes.URLIndex ) then
-		LoadURLIndex(tonumber(index));
-		return true;
-	else
-		return false;
-	end
-end
-
-function GetURLIndexAndLoadURLWithSound(self, link)
-	if ( GetURLIndexAndLoadURL(self, link) ) then 
-		PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON);
-	end
-end
-
 function GetPlayerLink(characterName, linkDisplayText, lineID, chatType, chatTarget)
 	-- Use simplified link if possible
 	if lineID or chatType or chatTarget then
@@ -153,10 +137,6 @@ function GetPlayerLink(characterName, linkDisplayText, lineID, chatType, chatTar
 	else
 		return LinkUtil.FormatLink(LinkTypes.Player, linkDisplayText, characterName);
 	end
-end
-
-function GetBNPlayerLink(name, linkDisplayText, bnetIDAccount, lineID, chatType, chatTarget)
-	return LinkUtil.FormatLink(LinkTypes.BNPlayer, linkDisplayText, name, bnetIDAccount, lineID or 0, chatType, chatTarget);
 end
 
 do
