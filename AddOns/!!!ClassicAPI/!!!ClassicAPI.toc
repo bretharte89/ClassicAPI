@@ -1,0 +1,20 @@
+## Interface: 11200
+## Title: !!!ClassicAPI
+## Notes: Library to emulate aspects of the modern WoW API on 1.12.1 / Lua 5.0.
+## Version: 1.0
+## Author: Brues
+
+Compat.lua
+Util\Print.lua
+Util\Constants.lua
+Util\String.lua
+Util\Mixin.lua
+Util\TableUtil.lua
+Util\MathUtil.lua
+Util\CallbackRegistry.lua
+Util\GlobalCallbackRegistry.lua
+Util\Color.lua
+Util\ColorUtil.lua
+Util\ItemLocation.lua
+Util\EventUtil.lua
+Util\ItemUtil.lua
