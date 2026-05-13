@@ -10,7 +10,6 @@
 
 local tRemove, tInsert, tWipe = table.remove, table.insert, table.wipe
 local tGetN = table.getn
-local INF = 1 / 0
 
 TableUtil = TableUtil or {}
 
@@ -34,7 +33,7 @@ end
 
 function CreateTableEnumerator(tbl, minIndex, maxIndex)
     minIndex = minIndex and (minIndex - 1) or 0
-    maxIndex = maxIndex or INF
+    maxIndex = maxIndex or math.huge
 
     local function Enumerator(tbl, index)
         index = index + 1
@@ -195,7 +194,7 @@ function tUnorderedRemove(tbl, index)
     tRemove(tbl)
 end
 
-function C_CopyTable(settings, shallow)
+function CopyTable(settings, shallow)
     local copy = {}
     for k, v in pairs(settings) do
         if type(v) == "table" and not shallow then
@@ -207,6 +206,14 @@ function C_CopyTable(settings, shallow)
     return copy
 end
 
+function CopyTableSafe(settings, shallow)
+	if not settings then
+		return nil;
+	end
+
+	return CopyTable(settings, shallow);
+end
+
 function MergeTable(destination, source)
     for k, v in pairs(source) do
         destination[k] = v
@@ -216,6 +223,14 @@ end
 function SetTablePairsToTable(destination, source)
     tWipe(destination)
     MergeTable(destination, source)
+end
+
+function CountTable(tbl)
+	local count = 0;
+	for k, v in pairs(tbl) do
+		count = count + 1;
+	end
+	return count;
 end
 
 function Accumulate(tbl)
@@ -240,6 +255,12 @@ function TableUtil.Execute(tbl, op)
     end
 end
 
+function TableUtil.ExecuteOnKeys(tbl, op)
+    for k in pairs(tbl) do
+        op(k)
+    end
+end
+
 function TableUtil.ExecuteUntil(tbl, op)
     for k, v in pairs(tbl) do
         local operationResult = op(v)
@@ -259,6 +280,36 @@ function TableUtil.Transform(tbl, op)
     end
 end
 
+-- Returns the value in a table deemed smallest by evaluating each value returned by the op function parameter.
+-- The return of the op function must return a number.
+function TableUtil.FindMin(tbl, op)
+	local result = nil;
+	local min = math.huge;
+	for k, v in pairs(tbl) do
+		local value = op(v);
+		if value < min then
+			min = value;
+			result = v;
+		end
+	end
+	return result;
+end
+
+-- Returns the value in a table deemed largest by evaluating each value returned by the op function parameter.
+-- The return of the op function must return a number.
+function TableUtil.FindMax(tbl, op)
+	local result = nil;
+	local max = -math.huge;
+	for k, v in pairs(tbl) do
+		local value = op(v);
+		if value > max then
+			max = value;
+			result = v;
+		end
+	end
+	return result;
+end
+
 function ContainsIf(tbl, pred)
     for k, v in pairs(tbl) do
         if pred(v) then
@@ -267,6 +318,16 @@ function ContainsIf(tbl, pred)
     end
 
     return false
+end
+
+function FindInTable(tbl, value)
+	for k, v in pairs(tbl) do
+		if v == value then
+			return k, v;
+		end
+	end
+
+	return nil;
 end
 
 function FindInTableIf(tbl, pred)
@@ -352,6 +413,22 @@ function SafeUnpack(tbl)
     return unpack(tbl, 1, tbl.n)
 end
 
+-- Returns the length of a table, accounting for the possibility of a table constructed using SafePack.
+function SafeLength(tbl)
+	if not tbl then
+		return 0;
+	end
+
+	local operatorCount = tGetN(tbl);
+	local safePackCount = tbl.n;
+
+	if safePackCount and operatorCount ~= safePackCount then
+		return safePackCount;
+	end
+
+	return operatorCount;
+end
+
 function GetOrCreateTableEntry(table, key, defaultValue)
     local currentValue = table[key]
     local isNewValue = (currentValue == nil)
@@ -376,6 +453,17 @@ function GetOrCreateTableEntryByCallback(table, key, callback)
     end
 
     return currentValue, isNewValue
+end
+
+function GetOrCreateTableEntryByMethod(table, key, method, owner)
+	local currentValue = table[key];
+	local isNewValue = (currentValue == nil);
+	if isNewValue then
+		currentValue = method(owner, key);
+		table[key] = currentValue;
+	end
+
+	return currentValue, isNewValue;
 end
 
 function GetRandomArrayEntry(array)
@@ -428,10 +516,14 @@ function SwapTableEntries(lhsTable, rhsTable, key)
     rhsTable[key] = lhsValue
 end
 
-function TableUtil.OperateOnKeys(tbl, operation)
-    for key, value in pairs(tbl) do
-        operation(key)
-    end
+function GetKeysArraySortedByValue(tbl)
+	local keysArray = GetKeysArray(tbl);
+
+	table.sort(keysArray, function(a, b)
+		return tbl[a] < tbl[b];
+	end);
+
+	return keysArray;
 end
 
 function TableUtil.GetTableValueListFromEnumeration(tableKey, ...)
@@ -441,6 +533,16 @@ function TableUtil.GetTableValueListFromEnumeration(tableKey, ...)
     end
 
     return values
+end
+
+function TableUtil.GetHighestNumericalValueInTable(table)
+	local highestValue = nil;
+	for key, value in pairs(table) do
+		if type(value) == "number" and (not highestValue or value > highestValue) then
+			highestValue = value;
+		end
+	end
+	return highestValue;
 end
 
 --[[
