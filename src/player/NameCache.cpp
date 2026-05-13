@@ -38,6 +38,13 @@
 //      Lua — lets addons feed in sources the engine cache doesn't
 //      touch directly (e.g. /who results parsed via GetWhoInfo,
 //      mouseover, target).
+//   3. **Visible-object sweep** (opt-in via `NameCacheScanEnabled`):
+//      walks the engine's live visible-object list every ~10s on
+//      the existing `Frame::RegisterEvent` hook. Picks up every
+//      player in render range whether or not the engine has issued
+//      a SMSG_NAME_QUERY for them. Same primitive
+//      VanillaMinimapTracking uses for its blip rendering, so we
+//      know the path is safe and cheap.
 //
 // Lookups are GUID-keyed, so the "deleted character recreated with
 // same name, different class" failure mode of name-keyed caches
@@ -79,12 +86,19 @@ constexpr DWORD kFlushIntervalMs = 5 * 60 * 1000;
 // ChrClasses.dbc max ID. Anything above this is a corrupt input.
 constexpr uint32_t kMaxClassID = 16;
 
+// Visible-object scan throttle. 10s is short enough that walking
+// through a city populates entries quickly, long enough that idle
+// players in a static zone do basically nothing.
+constexpr DWORD kScanIntervalMs = 10 * 1000;
+
 std::unordered_map<uint64_t, Entry> g_entries;
 bool g_enabled = false;
+bool g_scanEnabled = false;
 bool g_settingsLoaded = false;
 bool g_cacheLoaded = false;
 bool g_dirty = false;
 DWORD g_lastSaveTick = 0;
+DWORD g_lastScanTick = 0;
 
 // ----- engine globals helpers (mirrors EquipmentSet::Storage) -----
 
@@ -156,6 +170,8 @@ void LoadSettingsIfNeeded() {
         const std::string value = line.substr(eq + 1);
         if (key == "PersistentNameCacheEnabled")
             g_enabled = (value == "1" || value == "true");
+        else if (key == "NameCacheScanEnabled")
+            g_scanEnabled = (value == "1" || value == "true");
     }
 }
 
@@ -170,6 +186,7 @@ void SaveSettings() {
             return;
         out << "# ClassicAPI account-level settings\n";
         out << "PersistentNameCacheEnabled=" << (g_enabled ? 1 : 0) << "\n";
+        out << "NameCacheScanEnabled=" << (g_scanEnabled ? 1 : 0) << "\n";
         if (!out)
             return;
     }
@@ -345,6 +362,117 @@ static const Game::HookAutoRegister _hookreg{
     reinterpret_cast<void *>(&CacheWrite_h),
     reinterpret_cast<void **>(&CacheWrite_o)};
 
+// ----- visible-object scan -----
+
+// Engine iterator over the live visible-object list. Internally walks
+// the linked list at [playerObj + 0xAC] and calls our callback once
+// per object with (ECX = context, [stack] = uint64_t guid).
+// Returning 0 from the callback stops iteration; 1 continues.
+using EnumVisibleObjects_t = bool(__fastcall *)(void *callback, void *context);
+using EnumVisibleObjectsCallback_t = int(__fastcall *)(void *context, void *edx,
+                                                      uint64_t guid);
+
+// GUID → CGObject pointer resolver with type-mask filter. Returns
+// NULL if the GUID isn't loaded or its object type doesn't match the
+// mask. We pass TYPEMASK_PLAYER for our player-only sweep.
+using ObjectPtr_t = void *(__fastcall *)(uint32_t typeMask, void *unused,
+                                         uint64_t guid, int unused2);
+
+// CGObject vftable's GetName slot. Slot 22 = byte offset 22 * 4 = 0x58.
+// VanillaMinimapTracking calls obj->vftable->GetName(obj) the same way
+// in its NameLookupCallback; verified working against the 1.12 binary.
+constexpr size_t kVftableGetNameSlot = 22;
+
+// Reads `obj->vftable[slot]` as a __thiscall function pointer and
+// invokes it on `obj`. Lets us call GetName without committing to a
+// full vftable struct definition.
+const char *CallGetName(void *obj) {
+    using GetName_t = const char *(__thiscall *)(void *self);
+    auto *vftable = *reinterpret_cast<void *const *const *>(obj);
+    auto getName = reinterpret_cast<GetName_t>(vftable[kVftableGetNameSlot]);
+    return getName(obj);
+}
+
+// Reads the class byte from a CGUnit_C's m_objectFields descriptor.
+// Field path matches Script_UnitClass's general-token branch.
+uint32_t ReadClassByte(void *unit) {
+    auto *descriptor = *reinterpret_cast<const uint8_t *const *>(
+        reinterpret_cast<const uint8_t *>(unit)
+        + Offsets::OFF_CGUNIT_OBJECT_FIELDS);
+    if (descriptor == nullptr)
+        return 0;
+    return descriptor[Offsets::OFF_UNIT_DESCRIPTOR_CLASS_BYTE];
+}
+
+// Reads the local player's GUID from the engine's CGPlayer_C global
+// at [0x00B41414 + 0xC0]. Used to skip "scan yourself" — the local
+// player's CGObject is the head of the visible-object list, and its
+// vftable's GetName slot empirically returns a sentinel pointer (0x1)
+// rather than a real string in 1.12.1. Either slot 22 isn't GetName
+// on the local CGPlayer_C type, or it is but returns 0x1 to mean
+// "no remote name; ask the local source." Either way we don't need
+// to cache ourselves — we have the data via every other path.
+uint64_t LocalPlayerGUID() {
+    auto *player = *reinterpret_cast<uint8_t *const *>(
+        static_cast<uintptr_t>(Offsets::VAR_LOCAL_PLAYER_PTR));
+    if (player == nullptr)
+        return 0;
+    return *reinterpret_cast<const uint64_t *>(
+        player + Offsets::OFF_LOCAL_PLAYER_GUID);
+}
+
+// Pointer sanity check before dereferencing. The CGObject vftable
+// GetName slot has at least one known case where it returns 0x1
+// instead of a real `const char *` (see LocalPlayerGUID note). Any
+// "pointer" below 0x10000 is invalid for a 32-bit user-space
+// address, so a cheap lower-bound check catches the sentinel case
+// without needing per-object-type vftable awareness.
+bool LooksLikeStringPointer(const void *p) {
+    return reinterpret_cast<uintptr_t>(p) >= 0x10000;
+}
+
+// Callback invoked once per visible object during a scan. Filters to
+// players (NPCs and pets have ephemeral, reusable GUIDs — caching
+// them is worse than useless) and feeds name + class into Remember().
+int __fastcall ScanCallback(void * /*context*/, void * /*edx*/, uint64_t guid) {
+    if (guid == 0)
+        return 1;
+    // Skip ourselves — see LocalPlayerGUID comment for the crash
+    // we hit when calling GetName on the local CGPlayer's vftable.
+    if (guid == LocalPlayerGUID())
+        return 1;
+    auto resolver = reinterpret_cast<ObjectPtr_t>(
+        static_cast<uintptr_t>(Offsets::FUN_CLNT_OBJ_MGR_OBJECT_PTR));
+    void *obj = resolver(Offsets::TYPEMASK_PLAYER, nullptr, guid, 0);
+    if (obj == nullptr)
+        return 1; // not a player (or not currently loaded)
+    const char *name = CallGetName(obj);
+    if (!LooksLikeStringPointer(name) || name[0] == '\0')
+        return 1;
+    const uint32_t classID = ReadClassByte(obj);
+    if (classID == 0 || classID > kMaxClassID)
+        return 1;
+    Remember(guid, name, classID);
+    return 1; // keep walking
+}
+
+void ScanVisibleObjects() {
+    auto enumerate = reinterpret_cast<EnumVisibleObjects_t>(
+        static_cast<uintptr_t>(Offsets::FUN_CLNT_OBJ_MGR_ENUM_VISIBLE_OBJECTS));
+    enumerate(reinterpret_cast<void *>(&ScanCallback), nullptr);
+}
+
+void MaybeScan() {
+    if (!g_enabled || !g_scanEnabled)
+        return;
+    const DWORD now = GetTickCount();
+    if ((now - g_lastScanTick) < kScanIntervalMs && g_lastScanTick != 0)
+        return;
+    g_lastScanTick = now;
+    LoadCacheIfNeeded();
+    ScanVisibleObjects();
+}
+
 // ----- Lua surface -----
 
 // Parses `"0xHHHHHHHHLLLLLLLL"` (16-digit) or `"0xLLLLLLLL"` (8-digit
@@ -478,6 +606,31 @@ int __fastcall Script_ClassicAPI_GetPersistentNameCacheEnabled(void *L) {
     return 1;
 }
 
+// `ClassicAPI.SetNameCacheScanEnabled(bool)` — opt-in toggle for the
+// visible-object sweep. Independent of the cache toggle: turning this
+// on without `SetPersistentNameCacheEnabled(true)` does nothing
+// (scan results would have nowhere to go). Persists to the same
+// account-level settings file.
+int __fastcall Script_ClassicAPI_SetNameCacheScanEnabled(void *L) {
+    LoadSettingsIfNeeded();
+    bool desired = false;
+    if (Game::Lua::IsNumber(L, 1))
+        desired = Game::Lua::ToNumber(L, 1) != 0;
+    else
+        desired = Game::Lua::ToBoolean(L, 1) != 0;
+    if (g_scanEnabled != desired) {
+        g_scanEnabled = desired;
+        SaveSettings();
+    }
+    return 0;
+}
+
+int __fastcall Script_ClassicAPI_GetNameCacheScanEnabled(void *L) {
+    LoadSettingsIfNeeded();
+    Game::Lua::PushBoolean(L, g_scanEnabled ? 1 : 0);
+    return 1;
+}
+
 void RegisterLuaFunctions() {
     Game::Lua::RegisterTableFunction("C_PlayerInfo", "RememberPlayer",
                                      &Script_C_PlayerInfo_RememberPlayer);
@@ -485,6 +638,10 @@ void RegisterLuaFunctions() {
                                      &Script_ClassicAPI_SetPersistentNameCacheEnabled);
     Game::Lua::RegisterTableFunction("ClassicAPI", "GetPersistentNameCacheEnabled",
                                      &Script_ClassicAPI_GetPersistentNameCacheEnabled);
+    Game::Lua::RegisterTableFunction("ClassicAPI", "SetNameCacheScanEnabled",
+                                     &Script_ClassicAPI_SetNameCacheScanEnabled);
+    Game::Lua::RegisterTableFunction("ClassicAPI", "GetNameCacheScanEnabled",
+                                     &Script_ClassicAPI_GetNameCacheScanEnabled);
 }
 
 const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
@@ -553,6 +710,10 @@ void Flush() {
     // SaveCache resolves the path itself — returns silently if realm
     // name isn't available yet (pre-login).
     SaveCache();
+}
+
+void Tick() {
+    MaybeScan();
 }
 
 } // namespace Player::NameCache

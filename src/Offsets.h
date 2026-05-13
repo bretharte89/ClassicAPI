@@ -51,6 +51,16 @@ enum Offsets {
     // related (its +0xC0 has the player GUID) but is NOT the same CGPlayer_C
     // pointer the inventory routines expect.
     FUN_RESOLVE_UNIT_TOKEN = 0x00515940,
+
+    // Local-player CGObject-like global. Not the same pointer as
+    // ResolveUnitToken("player") returns — that one's the canonical
+    // CGPlayer_C used by inventory etc. This pointer's +0xC0 field
+    // holds the local player's 64-bit GUID, and the visible-object
+    // iterator at FUN_CLNT_OBJ_MGR_ENUM_VISIBLE_OBJECTS walks its
+    // +0xAC list. Useful for "is this GUID me?" checks without
+    // round-tripping through Lua.
+    VAR_LOCAL_PLAYER_PTR = 0x00B41414,
+    OFF_LOCAL_PLAYER_GUID = 0xC0,
     // `__fastcall(ecx = const char *token) → uint64_t GUID` — the
     // inner token-to-GUID step that `FUN_RESOLVE_UNIT_TOKEN` calls
     // before doing the active-object lookup. Returns the unit's
@@ -805,6 +815,44 @@ enum Offsets {
     OFF_PLAYER_INFO_RACE = 0x138,   // u32 (race ID 1..8)
     OFF_PLAYER_INFO_SEX = 0x13C,    // u32 (0=male, 1=female on wire)
     OFF_PLAYER_INFO_CLASS = 0x140,  // u32 (class ID 1..11)
+
+    // Visible-object iterator. Walks the engine's linked list of
+    // currently-in-range CGObjects (the same list the minimap blip
+    // renderer uses). __fastcall(ecx = callback, edx = context).
+    // Callback signature: __fastcall(ecx = context, edx unused, [stack] = uint64_t guid).
+    // Callback returns 0 to stop iteration, 1 to continue.
+    // Verified by disassembling the iterator body at 0x00468380 —
+    // ECX/EDX preserved into ESI/EDI, ECX restored to context before
+    // each callback invocation, guidLo/guidHi pushed as 8 stack bytes.
+    FUN_CLNT_OBJ_MGR_ENUM_VISIBLE_OBJECTS = 0x00468380,
+
+    // GUID → CGObject resolver. __fastcall with this signature:
+    //   CGObject *(__fastcall *)(uint32_t typeMask, void *unused,
+    //                            uint64_t guid, int unused2);
+    // typeMask filters to specific object types; returns NULL if the
+    // GUID isn't loaded or its type doesn't match the mask.
+    FUN_CLNT_OBJ_MGR_OBJECT_PTR = 0x00468460,
+
+    // Type-mask flags accepted by FUN_CLNT_OBJ_MGR_OBJECT_PTR. Single-bit
+    // flags can be OR'd together.
+    TYPEMASK_OBJECT        = 0x01,
+    TYPEMASK_ITEM          = 0x02,
+    TYPEMASK_CONTAINER     = 0x04,
+    TYPEMASK_UNIT          = 0x08,
+    TYPEMASK_PLAYER        = 0x10,
+    TYPEMASK_GAMEOBJECT    = 0x20,
+    TYPEMASK_DYNAMICOBJECT = 0x40,
+    TYPEMASK_CORPSE        = 0x80,
+
+    // CGUnit_C.m_objectFields slot. Different from CGItem's +0x114 —
+    // sibling classes use class-specific descriptor offsets. Inside the
+    // descriptor at +0x79 lives the class byte (UNIT_FIELD_BYTES_0
+    // field's second byte). Verified at 0x005183FE-0x00518404 in
+    // Script_UnitClass's general-unit-token path:
+    //   mov edx, [eax + 0x110]      ; descriptor
+    //   movzx eax, byte [edx + 0x79] ; class
+    OFF_CGUNIT_OBJECT_FIELDS = 0x110,
+    OFF_UNIT_DESCRIPTOR_CLASS_BYTE = 0x79,
     // Inner watched-faction setter — `__fastcall(ecx = factionID) → void`.
     // The engine's `Script_SetWatchedFactionIndex` (0x004D6B60) is a
     // thin Lua-side wrapper that takes a 1-based displayed-list index,

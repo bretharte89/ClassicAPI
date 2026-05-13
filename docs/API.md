@@ -102,15 +102,18 @@ build instructions.
   - [`FillLocalizedClassList(table [, isFemale])`](#filllocalizedclasslisttable-isfemale)
 - [Unit](#unit)
   - [`UnitGUID(unit)`](#unitguidunit)
-  - [`GetPlayerInfoByGUID(guid)`](#getplayerinfobyguidguid)
-  - [`C_PlayerInfo.RememberPlayer(guid, name, classToken)`](#c_playerinforememberplayerguid-name-classtoken)
-  - [`ClassicAPI.SetPersistentNameCacheEnabled(enabled)`](#classicapisetpersistentnamecacheenabledenabled)
-  - [`ClassicAPI.GetPersistentNameCacheEnabled()`](#classicapigetpersistentnamecacheenabled)
   - [`UnitIsAFK(unit)`](#unitisafkunit)
   - [`UnitIsDND(unit)`](#unitisdndunit)
   - [`UnitIsFeignDeath(unit)`](#unitisfeigndeathunit)
   - [`UnitIsInMyGuild(unitOrName)`](#unitisinmyguildunitorname)
   - [`UnitIsPossessed(unit)`](#unitispossessedunit)
+- [NameCache](#namecache)
+  - [`GetPlayerInfoByGUID(guid)`](#getplayerinfobyguidguid)
+  - [`C_PlayerInfo.RememberPlayer(guid, name, classToken)`](#c_playerinforememberplayerguid-name-classtoken)
+  - [`ClassicAPI.SetPersistentNameCacheEnabled(enabled)`](#classicapisetpersistentnamecacheenabledenabled)
+  - [`ClassicAPI.GetPersistentNameCacheEnabled()`](#classicapigetpersistentnamecacheenabled)
+  - [`ClassicAPI.SetNameCacheScanEnabled(enabled)`](#classicapisetnamecachescanenabledenabled)
+  - [`ClassicAPI.GetNameCacheScanEnabled()`](#classicapigetnamecachescanenabled)
 - [State](#state)
   - [`IsMounted()`](#ismounted)
   - [`IsStealthed()`](#isstealthed)
@@ -2638,6 +2641,159 @@ which is independent of unit visibility.
 > resolve to "no current unit" (like `"target"` with nothing
 > targeted) return nil cleanly via the GUID = 0 check.
 
+### `UnitIsAFK(unit)`
+
+Returns `true` if the unit is currently AFK (toggled via `/afk` or
+auto-set after idle timeout). Works for any player-controlled unit
+— local self, target, party*, raid*, inspect targets. NPCs always
+return `false`.
+
+```lua
+UnitIsAFK("player")   -- true if you've /afk'd
+UnitIsAFK("target")   -- true if the targeted player is AFK
+UnitIsAFK("party1")   -- true if party member 1 is AFK
+UnitIsAFK("npc")      -- always false
+```
+
+> **How it works under the hood.** Vanilla 1.12 doesn't broadcast
+> PLAYER_FLAGS as a UpdateField (modern WoW does — that field was
+> added 3.0+), but every nearby player's CGPlayer-side info struct
+> at `[unit + 0xE68]` carries it at byte +0x08. Same struct the
+> engine reads when rendering the `<AFK>` prefix above a player's
+> head. Verified against the in-game nameplate behavior.
+
+Equivalent to the function of the same name introduced in 3.0.
+
+### `UnitIsDND(unit)`
+
+Returns `true` if the unit is currently in DND mode ("Do Not Disturb",
+toggled via `/dnd`). Same unit-coverage as `UnitIsAFK` — any
+player-controlled unit, false for NPCs.
+
+```lua
+UnitIsDND("player")
+UnitIsDND("target")
+```
+
+Equivalent to the function of the same name introduced in 3.0.
+
+### `UnitIsFeignDeath(unit)`
+
+Returns `true` if the unit is feigning death (Hunter's `Feign Death`).
+Reads `UNIT_FIELD_FLAGS` bit 29 (`0x20000000`) from the broadcast
+descriptor — works for any unit since UNIT_FIELD_FLAGS is broadcast
+in object updates.
+
+```lua
+UnitIsFeignDeath("target")   -- true if a feigning hunter
+```
+
+Equivalent to the function of the same name introduced in 3.0.
+
+### `UnitIsInMyGuild(unitOrName)`
+
+Returns `1` if the unit/character shares the player's guild, `nil`
+otherwise. Accepts either a unit token (`"player"`, `"target"`,
+`"party1"`, etc.) or a literal character name (`"Bob"`), matching
+3.3.5's `Script_UnitIsInMyGuild` (`0x0060C4B0` in the Frostmourne
+client).
+
+```lua
+UnitIsInMyGuild("player")    -- 1 if you're in any guild
+UnitIsInMyGuild("target")    -- 1 if your target is a guildmate
+UnitIsInMyGuild("party1")    -- 1 if party member 1 is a guildmate
+UnitIsInMyGuild("Bob")       -- 1 if there's a guildmate named Bob
+```
+
+Resolution strategy:
+
+1. Calls `UnitName(input)` via `lua_pcall` to canonicalize the input.
+   Tokens resolve cleanly; literal names hit the engine's "Unknown
+   unit name" error which `pcall` swallows.
+2. For valid tokens, attempts a fast direct comparison against the
+   player's guild-key field at `[unit + 0xE68 + 0x0C]` — same field
+   `GetGuildInfo` reads, populated immediately on guild join for the
+   local player and for any synced player-controlled unit. No roster
+   fetch needed for nearby/loaded units.
+3. Falls back to walking the engine's guild roster array (same
+   backing storage `GetGuildRosterInfo` reads) by name. Required for
+   out-of-range party members, distant raid members, and literal
+   name input — needs `GuildRoster()` to have been called and the
+   server's response to have arrived.
+
+Return convention matches 3.3.5: `1.0` / `nil`, not boolean. Both
+work for `if UnitIsInMyGuild(x) then` checks.
+
+The slow path reads the engine's full roster count
+(`[0x00B73118]`, the same value `GetNumGuildMembers(true)` returns),
+not the online-only count, so offline guildmates resolve too — the
+"show offline" toggle doesn't affect lookup. The only requirement
+is that `GuildRoster()` has been called and the server's
+SMSG_GUILD_ROSTER response has arrived.
+
+### `UnitIsPossessed(unit)`
+
+Returns `true` if the unit is currently possessed (priest's `Mind
+Control`, warlock's `Subjugate Demon`). Reads `UNIT_FIELD_FLAGS` bit
+24 (`0x01000000`) — the standard vanilla `UNIT_FLAG_POSSESSED` per
+emulator sources — directly off the unit's m_objectFields descriptor.
+Works for any unit token since UNIT_FIELD_FLAGS is broadcast in
+object updates.
+
+```lua
+UnitIsPossessed("target")   -- true if mind-controlled
+```
+
+Distinct from `UnitIsCharmed`: charm covers any charm-type effect
+(including pets summoned via mob-charm spells), possess is the
+specific spell-driven take-over effect modern WoW splits out.
+
+## NameCache
+
+GUID-keyed cache of player names and classes. The engine itself
+maintains an in-memory `NameCache` at `0x00C0E228`, populated by
+`SMSG_NAME_QUERY_RESPONSE` — but vanilla doesn't expose it to Lua,
+and it doesn't survive `/reload`. This module surfaces it as
+`GetPlayerInfoByGUID`, adds an opt-in **persistent** layer that
+survives `/reload` and full client restarts, and (separately
+toggleable) sweeps the engine's visible-object list to populate
+entries the SMSG path would never reach on its own.
+
+Two toggles, each independent:
+
+- **`SetPersistentNameCacheEnabled`** — turn on the on-disk cache.
+  Off by default. Without this, the module is read-only against
+  the engine's transient in-memory cache.
+- **`SetNameCacheScanEnabled`** — turn on the visible-object
+  sweep. Off by default. Requires the on-disk cache to be enabled
+  to have any effect.
+
+Three population sources feed the cache when fully enabled:
+
+1. **`SMSG_NAME_QUERY_RESPONSE` hook** (always active when the
+   on-disk cache is on). Every name-query response the engine
+   processes is mirrored to disk. Covers chat, group/raid sync,
+   guild updates, visible-object resolution — anything the engine
+   itself issues a name query for.
+2. **`C_PlayerInfo.RememberPlayer`** (always available, no-op
+   when the cache is off). Lets addons feed in sources the engine
+   never sees: `/who` results, etc.
+3. **Visible-object sweep** (active when both toggles are on).
+   Walks the engine's live visible-object list every ~10 seconds
+   on the `Frame::RegisterEvent` hook, resolving each player and
+   feeding name + class. Picks up nearby players whether or not
+   the engine ever queried them.
+
+Storage:
+
+- `WTF\Account\<account>\ClassicAPI.txt` — account-level settings
+  (`PersistentNameCacheEnabled`, `NameCacheScanEnabled`).
+- `WTF\Account\<account>\<realm>\ClassicAPI_NameCache.txt` —
+  per-realm cache. Tab-separated text, ~30 bytes/entry,
+  hand-editable. Shared across all characters on the same
+  account+realm (a 50-character bank alt's chat scraping doesn't
+  double the storage cost).
+
 ### `GetPlayerInfoByGUID(guid)`
 
 Returns
@@ -2756,15 +2912,11 @@ When enabled:
   (they're no-ops when the cache is disabled).
 - `GetPlayerInfoByGUID` gains the cross-session fallback path
   documented above.
+- [`SetNameCacheScanEnabled`](#classicapisetnamecachescanenabledenabled)
+  becomes effective if also turned on.
 
 When disabled, the on-disk file is left in place (re-enabling later
 restores the prior contents); future writes are simply suppressed.
-
-The cache file is shared across all characters on the same
-account+realm — a 50-character bank alt's chat-scraping doesn't
-double the storage cost. Format is tab-separated text
-(`guidHi  guidLo  classID  name` per line), about 30 bytes per
-entry, hand-editable if you ever need to.
 
 ```lua
 ClassicAPI.SetPersistentNameCacheEnabled(true)
@@ -2786,112 +2938,58 @@ if ClassicAPI.GetPersistentNameCacheEnabled() then
 end
 ```
 
-### `UnitIsAFK(unit)`
+### `ClassicAPI.SetNameCacheScanEnabled(enabled)`
 
-Returns `true` if the unit is currently AFK (toggled via `/afk` or
-auto-set after idle timeout). Works for any player-controlled unit
-— local self, target, party*, raid*, inspect targets. NPCs always
-return `false`.
+Opts into the **visible-object sweep**: an opportunistic walk of
+the engine's live visible-object list that feeds every player in
+render range (whose object is currently loaded by the client) into
+the persistent name cache. Throttled to once per ~10 seconds, on
+the existing `Frame::RegisterEvent` hook — no per-frame overhead,
+no extra hooks installed.
 
-```lua
-UnitIsAFK("player")   -- true if you've /afk'd
-UnitIsAFK("target")   -- true if the targeted player is AFK
-UnitIsAFK("party1")   -- true if party member 1 is AFK
-UnitIsAFK("npc")      -- always false
-```
-
-> **How it works under the hood.** Vanilla 1.12 doesn't broadcast
-> PLAYER_FLAGS as a UpdateField (modern WoW does — that field was
-> added 3.0+), but every nearby player's CGPlayer-side info struct
-> at `[unit + 0xE68]` carries it at byte +0x08. Same struct the
-> engine reads when rendering the `<AFK>` prefix above a player's
-> head. Verified against the in-game nameplate behavior.
-
-Equivalent to the function of the same name introduced in 3.0.
-
-### `UnitIsDND(unit)`
-
-Returns `true` if the unit is currently in DND mode ("Do Not Disturb",
-toggled via `/dnd`). Same unit-coverage as `UnitIsAFK` — any
-player-controlled unit, false for NPCs.
+`enabled` is a boolean (numeric `0`/`1` also accepted). Persists to
+`WTF\Account\<account>\ClassicAPI.txt` as
+`NameCacheScanEnabled=1`/`0`.
 
 ```lua
-UnitIsDND("player")
-UnitIsDND("target")
+ClassicAPI.SetPersistentNameCacheEnabled(true)   -- prerequisite
+ClassicAPI.SetNameCacheScanEnabled(true)
+-- Now: standing in Stormwind for a minute pre-populates the cache
+-- with every visible player's name and class.
 ```
 
-Equivalent to the function of the same name introduced in 3.0.
+**Independent of the cache toggle.** Turning this on alone has no
+effect — the sweep relies on `Remember()` which silently no-ops
+when the on-disk cache is disabled. Turning the cache off (without
+also turning the scan off) preserves the scan setting for the next
+time you re-enable the cache.
 
-### `UnitIsFeignDeath(unit)`
+**Players only.** NPCs and pets aren't cached — their GUIDs are
+ephemeral and can get reused across sessions, so caching them is
+worse than useless.
 
-Returns `true` if the unit is feigning death (Hunter's `Feign Death`).
-Reads `UNIT_FIELD_FLAGS` bit 29 (`0x20000000`) from the broadcast
-descriptor — works for any unit since UNIT_FIELD_FLAGS is broadcast
-in object updates.
+**Implementation**: walks `ClntObjMgrEnumVisibleObjects`
+(`0x00468380`) — the same engine iterator
+[VanillaMinimapTracking](https://github.com/Brues/VanillaMinimapTracking)
+uses for blip rendering — filtering each GUID through
+`ClntObjMgrObjectPtr` (`0x00468460`) with `TYPEMASK_PLAYER`. Name
+comes from the CGObject vftable's `GetName` slot; class is the
+byte at `[m_objectFields + 0x79]` (UNIT_FIELD_BYTES_0 byte 1, same
+field `Script_UnitClass` reads).
+
+### `ClassicAPI.GetNameCacheScanEnabled()`
+
+Returns the current visible-object scan setting as a boolean.
+Independent of the cache toggle — this only reflects the scan-
+specific setting, not whether the scan is *effectively* running
+(which also requires the cache to be on).
 
 ```lua
-UnitIsFeignDeath("target")   -- true if a feigning hunter
+if ClassicAPI.GetNameCacheScanEnabled()
+    and ClassicAPI.GetPersistentNameCacheEnabled() then
+    -- visible-object sweeps are running every ~10s
+end
 ```
-
-Equivalent to the function of the same name introduced in 3.0.
-
-### `UnitIsInMyGuild(unitOrName)`
-
-Returns `1` if the unit/character shares the player's guild, `nil`
-otherwise. Accepts either a unit token (`"player"`, `"target"`,
-`"party1"`, etc.) or a literal character name (`"Bob"`), matching
-3.3.5's `Script_UnitIsInMyGuild` (`0x0060C4B0` in the Frostmourne
-client).
-
-```lua
-UnitIsInMyGuild("player")    -- 1 if you're in any guild
-UnitIsInMyGuild("target")    -- 1 if your target is a guildmate
-UnitIsInMyGuild("party1")    -- 1 if party member 1 is a guildmate
-UnitIsInMyGuild("Bob")       -- 1 if there's a guildmate named Bob
-```
-
-Resolution strategy:
-
-1. Calls `UnitName(input)` via `lua_pcall` to canonicalize the input.
-   Tokens resolve cleanly; literal names hit the engine's "Unknown
-   unit name" error which `pcall` swallows.
-2. For valid tokens, attempts a fast direct comparison against the
-   player's guild-key field at `[unit + 0xE68 + 0x0C]` — same field
-   `GetGuildInfo` reads, populated immediately on guild join for the
-   local player and for any synced player-controlled unit. No roster
-   fetch needed for nearby/loaded units.
-3. Falls back to walking the engine's guild roster array (same
-   backing storage `GetGuildRosterInfo` reads) by name. Required for
-   out-of-range party members, distant raid members, and literal
-   name input — needs `GuildRoster()` to have been called and the
-   server's response to have arrived.
-
-Return convention matches 3.3.5: `1.0` / `nil`, not boolean. Both
-work for `if UnitIsInMyGuild(x) then` checks.
-
-The slow path reads the engine's full roster count
-(`[0x00B73118]`, the same value `GetNumGuildMembers(true)` returns),
-not the online-only count, so offline guildmates resolve too — the
-"show offline" toggle doesn't affect lookup. The only requirement
-is that `GuildRoster()` has been called and the server's
-SMSG_GUILD_ROSTER response has arrived.
-
-### `UnitIsPossessed(unit)`
-
-Returns `true` if the unit is currently possessed (priest's `Mind
-Control`, warlock's `Subjugate Demon`). Reads `UNIT_FIELD_FLAGS` bit
-24 (`0x01000000`) — the standard vanilla `UNIT_FLAG_POSSESSED` per
-emulator sources — directly off the unit's m_objectFields descriptor.
-Works for any unit token since UNIT_FIELD_FLAGS is broadcast in
-object updates.
-
-```lua
-UnitIsPossessed("target")   -- true if mind-controlled
-```
-
-Distinct from `UnitIsCharmed`: charm covers any charm-type effect
-(including pets summoned via mob-charm spells), possess is the
-specific spell-driven take-over effect modern WoW splits out.
 
 ## State
 

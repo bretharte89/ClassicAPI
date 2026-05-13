@@ -61,4 +61,12 @@ void SetEnabled(bool enabled);
 // so calling repeatedly in tight succession is cheap.
 void Flush();
 
+// Opportunistic per-event tick. Called from the engine's
+// `Frame::RegisterEvent` hook (which fires whenever any addon
+// registers a Lua event handler). Internally throttled — only
+// actually runs the visible-object scan once per `kScanIntervalMs`,
+// and only when both the cache and the visible-scan toggle are
+// enabled. Safe to call any time; cheap on the no-op path.
+void Tick();
+
 } // namespace Player::NameCache

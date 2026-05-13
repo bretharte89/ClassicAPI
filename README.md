@@ -31,13 +31,14 @@ Full per-function reference: **[docs/API.md](docs/API.md)**.
 | Hooks | `hooksecurefunc` |
 | Input | `IsLeftAltKeyDown`, `IsLeftControlKeyDown`, `IsLeftShiftKeyDown`, `IsModifierKeyDown`, `IsRightAltKeyDown`, `IsRightControlKeyDown`, `IsRightShiftKeyDown` |
 | Item | `C_Item.DoesItemExist`, `C_Item.DoesItemExistByID`, `C_Item.EquipItemByName`, `C_Item.GetCurrentItemLevel`, `C_Item.GetDetailedItemLevelInfo`, `C_Item.GetItemCount`, `C_Item.GetItemFamily`, `C_Item.GetItemGUID`, `C_Item.GetItemIcon`, `C_Item.GetItemIconByID`, `C_Item.GetItemID`, `C_Item.GetItemInfoInstant`, `C_Item.GetItemInventoryType`, `C_Item.GetItemInventoryTypeByID`, `C_Item.GetItemLink`, `C_Item.GetItemName`, `C_Item.GetItemNameByID`, `C_Item.GetItemQuality`, `C_Item.GetItemQualityByID`, `C_Item.GetItemSpell`, `C_Item.IsBound`, `C_Item.IsEquippableItem`, `C_Item.IsEquippedItem`, `C_Item.IsItemDataCached`, `C_Item.IsItemDataCachedByID`, `C_Item.IsLocked`, `C_Item.RequestLoadItemData`, `C_Item.RequestLoadItemDataByID`, `GetInventoryItemDurability`, `GetInventoryItemID`, `GetInventoryItemRepairCost`, `GetItemIcon`, `OffhandHasWeapon` |
+| NameCache | `C_PlayerInfo.RememberPlayer`, `ClassicAPI.GetNameCacheScanEnabled`, `ClassicAPI.GetPersistentNameCacheEnabled`, `ClassicAPI.SetNameCacheScanEnabled`, `ClassicAPI.SetPersistentNameCacheEnabled`, `GetPlayerInfoByGUID` |
 | Quest | `C_QuestLog.GetTitleForQuestID`, `C_QuestLog.RequestLoadQuestByID`, `GetQuestIDFromLogIndex` |
 | Spell | `C_Spell.GetSpellDescription`, `C_Spell.GetSpellInfo`, `C_Spell.GetSpellLink`, `C_Spell.GetSpellName`, `C_Spell.GetSpellTexture`, `C_Spell.IsSpellPassive`, `C_Spell.IsSpellUsable`, `CastAutoRepeatSpell`, `FindSpellBookSlotByID`, `GetSpellInfo`, `GetSpellLink`, `GetSpellSchool`, `IsPassiveSpell`, `IsPlayerSpell`, `IsSpellKnown`, `IsUsableSpell` |
 | State | `IsAssistingRitual`, `IsFalling`, `IsMounted`, `IsStealthed`, `IsSwimming` |
 | Table | `table.wipe` |
 | Talent | `GetTalentIDByIndex`, `GetTalentSpellID` |
 | Time | `C_DateAndTime.AdjustTimeByDays`, `C_DateAndTime.AdjustTimeByMinutes`, `C_DateAndTime.CompareCalendarTime`, `C_DateAndTime.GetCalendarTimeFromEpoch`, `C_DateAndTime.GetCurrentCalendarTime`, `C_DateAndTime.GetSecondsUntilDailyReset`, `C_DateAndTime.GetServerTimeLocal`, `GetServerTime` |
-| Unit | `C_PlayerInfo.RememberPlayer`, `ClassicAPI.GetPersistentNameCacheEnabled`, `ClassicAPI.SetPersistentNameCacheEnabled`, `GetPlayerInfoByGUID`, `UnitGUID`, `UnitIsAFK`, `UnitIsDND`, `UnitIsFeignDeath`, `UnitIsInMyGuild`, `UnitIsPossessed` |
+| Unit | `UnitGUID`, `UnitIsAFK`, `UnitIsDND`, `UnitIsFeignDeath`, `UnitIsInMyGuild`, `UnitIsPossessed` |
 
 ### Macros
 
