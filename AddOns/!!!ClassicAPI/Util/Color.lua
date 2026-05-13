@@ -45,9 +45,6 @@ function ColorMixin:SetRGB(r, g, b)
 end
 
 function ColorMixin:GenerateHexColor()
-    -- string.format(s, ...) rather than (s):format(...): WoW 1.12 / Lua 5.0
-    -- doesn't install a string metatable, so method-call syntax on a
-    -- string literal errors with "attempt to index a string value".
     return string.format("ff%.2x%.2x%.2x", self:GetRGBAsBytes())
 end
 

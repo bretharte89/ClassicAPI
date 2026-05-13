@@ -1,21 +1,16 @@
-local RAID_CLASS_COLORS = RAID_CLASS_COLORS
-local CreateColor = CreateColor
-local ColorMixin = ColorMixin
-local UnitClass = UnitClass
-local Mixin = Mixin
-
-for _, classColor in pairs(RAID_CLASS_COLORS) do
-	Mixin(classColor, ColorMixin);
-	classColor.colorStr = classColor:GenerateHexColor();
+do
+	local ColorMixin = ColorMixin
+	for _, classColor in pairs(RAID_CLASS_COLORS) do
+		Mixin(classColor, ColorMixin)
+		classColor.colorStr = classColor:GenerateHexColor();
+	end
 end
 
 function ExtractColorValueFromHex(str, index)
-	-- string.sub(str, ...) rather than str:sub(...): see note in Color.lua.
 	return tonumber(string.sub(str, index, index + 1), 16) / 255;
 end
 
 function CreateColorFromHexString(hexColor)
-	-- Lua 5.0 has no `#` operator on strings; use string.len.
 	if string.len(hexColor) == 8 then
 		local a, r, g, b = ExtractColorValueFromHex(hexColor, 1), ExtractColorValueFromHex(hexColor, 3), ExtractColorValueFromHex(hexColor, 5), ExtractColorValueFromHex(hexColor, 7);
 		return CreateColor(r, g, b, a);

@@ -4,18 +4,16 @@
 --   - Lua 5.0 has no select(); inside a vararg function the args are
 --     gathered into an implicit `arg` table (`arg.n` for the count).
 
-if not Mixin then
-    function Mixin(object, ...)
-        for i = 1, arg.n do
-            local mixin = arg[i]
-            if mixin then
-                for k, v in pairs(mixin) do
-                    object[k] = v
-                end
+function Mixin(object, ...)
+    for i = 1, arg.n do
+        local mixin = arg[i]
+        if mixin then
+            for k, v in pairs(mixin) do
+                object[k] = v
             end
         end
-        return object
     end
+    return object
 end
 
 function CreateFromMixins(...)
