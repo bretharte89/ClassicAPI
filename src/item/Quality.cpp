@@ -12,10 +12,42 @@
 // ClassicAPI. If not, see <https://www.gnu.org/licenses/>.
 
 #include "Game.h"
+#include "Offsets.h"
+#include "item/Arg.h"
+#include "item/Data.h"
+#include "item/ID.h"
+#include "item/Location.h"
+
+#include <cstdint>
 
 namespace Item::Quality {
 
 namespace {
+
+using GetItemRecord_t = const uint8_t *(__thiscall *)(void *cache, uint32_t itemID,
+                                                      const uint64_t *guid, void *callback,
+                                                      void *userData, int unused);
+
+const uint8_t *PeekItemRecord(uint32_t itemID) {
+    auto fn = reinterpret_cast<GetItemRecord_t>(Offsets::FUN_DBCACHE_ITEMSTATS_GET_RECORD);
+    auto *cache = reinterpret_cast<void *>(Offsets::VAR_ITEMDB_CACHE);
+    const uint64_t zeroGuid = 0;
+    return fn(cache, itemID, &zeroGuid, nullptr, nullptr, 0);
+}
+
+int PushQualityForItemID(void *L, int itemID) {
+    if (itemID <= 0)
+        return 0;
+    const uint8_t *record = PeekItemRecord(static_cast<uint32_t>(itemID));
+    if (record == nullptr) {
+        Item::Data::WarmCache(static_cast<uint32_t>(itemID));
+        return 0;
+    }
+    const uint32_t quality = *reinterpret_cast<const uint32_t *>(
+        record + Offsets::OFF_ITEMSTATS_QUALITY);
+    Game::Lua::PushNumber(L, static_cast<double>(quality));
+    return 1;
+}
 
 // Item-quality enum values from `Enum.ItemQuality` (modern WoW). These
 // are the integer codes returned in the 4th slot of `GetItemInfo` /
@@ -48,6 +80,25 @@ constexpr QualityConstant kQualityConstants[] = {
 
 } // namespace
 
+// `C_Item.GetItemQuality(itemLocation)` — direct cache read for the
+// equipped/bagged item's quality, no `GetItemInfo` chaining. Returns
+// nil on empty / uncached / invalid input.
+static int __fastcall Script_C_Item_GetItemQuality(void *L) {
+    if (Game::Lua::Type(L, 1) != Game::Lua::TYPE_TABLE) {
+        Game::Lua::Error(L, "Usage: C_Item.GetItemQuality(itemLocation)");
+        return 0;
+    }
+    return PushQualityForItemID(L, Item::ID::FromCGItem(Item::Location::Resolve(L, 1)));
+}
+
+// `C_Item.GetItemQualityByID(itemInfo)` — same as the above but takes
+// the itemID (or `"item:NNN..."` string) directly. Returns nil for
+// uncached items, firing a background cache fill so a follow-up call
+// after `GET_ITEM_INFO_RECEIVED` returns the value.
+static int __fastcall Script_C_Item_GetItemQualityByID(void *L) {
+    return PushQualityForItemID(L, Item::Arg::ResolveItemID(L, 1));
+}
+
 static void RegisterLuaFunctions() {
     void *L = Game::Lua::State();
     if (L == nullptr)
@@ -57,6 +108,9 @@ static void RegisterLuaFunctions() {
         Game::Lua::PushNumber(L, static_cast<double>(c.value));
         Game::Lua::SetTable(L, Game::Lua::GLOBALS_INDEX);
     }
+    Game::Lua::RegisterTableFunction("C_Item", "GetItemQuality", &Script_C_Item_GetItemQuality);
+    Game::Lua::RegisterTableFunction("C_Item", "GetItemQualityByID",
+                                     &Script_C_Item_GetItemQualityByID);
 }
 
 static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};

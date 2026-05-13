@@ -62,6 +62,14 @@ build instructions.
   - [`C_Item.IsEquippableItem(item)`](#c_itemisequippableitemitem)
   - [`C_Item.IsEquippedItem(item)`](#c_itemisequippeditemitem)
   - [`C_Item.EquipItemByName(itemInfo [, dstSlot])`](#c_itemequipitembynameiteminfo--dstslot)
+  - [`C_Item.DoesItemExist(itemLocation)` / `C_Item.DoesItemExistByID(item)`](#c_itemdoesitemexititemlocation--c_itemdoesitemexistbyiditem)
+  - [`C_Item.GetItemName(itemLocation)` / `C_Item.GetItemNameByID(item)`](#c_itemgetitemnameitemlocation--c_itemgetitemnamebyiditem)
+  - [`C_Item.GetItemQuality(itemLocation)` / `C_Item.GetItemQualityByID(item)`](#c_itemgetitemqualityitemlocation--c_itemgetitemqualitybyiditem)
+  - [`C_Item.GetCurrentItemLevel(itemLocation)` / `C_Item.GetDetailedItemLevelInfo(item)`](#c_itemgetcurrentitemlevelitemlocation--c_itemgetdetaileditemlevelinfoitem)
+  - [`C_Item.GetItemLink(itemLocation)`](#c_itemgetitemlinkitemlocation)
+  - [`C_Item.GetItemInventoryType(itemLocation)` / `C_Item.GetItemInventoryTypeByID(item)`](#c_itemgetiteminventorytypeitemlocation--c_itemgetiteminventorytypebyiditem)
+  - [`C_Item.IsLocked(itemLocation)`](#c_itemislockeditemlocation)
+  - [`C_Item.GetItemGUID(itemLocation)`](#c_itemgetitemguiditemlocation)
 - [Container](#container)
   - [`C_Container.GetContainerItemID(bagIndex, slotIndex)`](#c_containergetcontaineritemidbagindex-slotindex)
   - [`C_Container.GetContainerItemDurability(containerIndex, slotIndex)`](#c_containergetcontaineritemdurabilitycontainerindex-slotindex)
@@ -1891,6 +1899,161 @@ C_Item.EquipItemByName(itemLink)
 Equivalent to the function of the same name (as a global) introduced
 in 3.x. The `C_Item.` namespace placement matches Dragonflight-era
 addon conventions.
+
+### `C_Item.DoesItemExist(itemLocation)` / `C_Item.DoesItemExistByID(item)`
+
+Existence checks straight off the engine's inventory manager (location
+form) and item cache (ID form). No `GetItemInfo` chaining — both
+functions read directly from the structures they need.
+
+- `C_Item.DoesItemExist(itemLocation)` — `true` iff the equipment-slot
+  or `(bagID, slotIndex)` location resolves to a populated inventory
+  slot on the active player. Empty slots, missing bags, or malformed
+  tables return `false`.
+- `C_Item.DoesItemExistByID(item)` — `true` iff the cache currently
+  has data for `item`. Cache miss returns `false` and kicks off the
+  network query in the background; a follow-up call after
+  [`GET_ITEM_INFO_RECEIVED`](#c_itemrequestloaditemdatabyiditem--c_itemrequestloaditemdataitemlocation)
+  will succeed. Accepts a numeric `itemID`, a bare `"item:NNN..."`
+  string, or a full chat link.
+
+```lua
+if C_Item.DoesItemExist({equipmentSlotIndex = INVSLOT_HEAD}) then ... end
+if C_Item.DoesItemExistByID(6948) then ... end
+```
+
+### `C_Item.GetItemName(itemLocation)` / `C_Item.GetItemNameByID(item)`
+
+Returns the cached display name as a string, or `nil` for empty /
+uncached / invalid inputs. Reads `m_name[0]` straight off the
+`ItemStats_C` cache record (`+0x08`) — no `GetItemInfo` round-trip.
+
+Cache miss on the `ByID` form returns `nil` and fires the cache fill
+so the next call (after `GET_ITEM_INFO_RECEIVED`) succeeds.
+
+```lua
+local name = C_Item.GetItemName({bagID = 0, slotIndex = 1})
+local name = C_Item.GetItemNameByID(6948)   -- "Hearthstone"
+```
+
+### `C_Item.GetItemQuality(itemLocation)` / `C_Item.GetItemQualityByID(item)`
+
+Returns the item's quality as an integer (0=Poor, 1=Common, 2=Uncommon,
+3=Rare, 4=Epic, 5=Legendary), matching the `LE_ITEM_QUALITY_*`
+constants. Single `uint32` read at cache record `+0x1C`.
+
+```lua
+if C_Item.GetItemQualityByID(itemID) >= LE_ITEM_QUALITY_RARE then
+    -- highlight rare-or-better drop
+end
+```
+
+### `C_Item.GetCurrentItemLevel(itemLocation)` / `C_Item.GetDetailedItemLevelInfo(item)`
+
+Returns the item's base ilvl from `m_itemLevel` (cache record `+0x38`).
+Vanilla 1.12 has no per-instance scaling (no upgrades, no warforging),
+so "current" and "base" item level are always identical — both APIs
+return the same single value. Modern `GetDetailedItemLevelInfo` is
+spec'd to return `(current, isPreview, base)`; we push only the
+current level, callers that care about the extra returns will see
+`nil` for them.
+
+```lua
+local ilvl = C_Item.GetCurrentItemLevel({equipmentSlotIndex = INVSLOT_HEAD})
+```
+
+### `C_Item.GetItemLink(itemLocation)`
+
+Returns the fully-decorated per-instance hyperlink for the item at
+the location — same string `GetContainerItemLink(bag, slot)` or
+`GetInventoryItemLink("player", slot)` would return for the same
+slot. Enchant ID, random-suffix, and any other per-instance data
+attached to the CGItem are preserved.
+
+```lua
+local link = C_Item.GetItemLink({bagID = 0, slotIndex = 1})
+-- "|cffa335ee|Hitem:16539:911:::::::70::::::::::|h[General's Silk Boots]|h|r"
+--                          ^^^ — enchant ID (Speed +15%) preserved
+```
+
+Implemented by reading the location table's fields and tail-calling
+the engine's link script function (`Script_GetContainerItemLink` at
+`0x004F9930` for bag locations, `Script_GetInventoryItemLink` at
+`0x004C8C10` for equipment slots). The link string is built by the
+engine off the live CGItem, so it always matches what other
+addons see via the older positional-arg APIs.
+
+### `C_Item.GetItemInventoryType(itemLocation)` / `C_Item.GetItemInventoryTypeByID(item)`
+
+Returns the numeric `Enum.InventoryType` straight off the cache
+record's `m_inventoryType` field (`+0x2C`) — the integer sibling of
+`GetItemInfoInstant`'s 4th return (which gives the `INVTYPE_*` string).
+
+| Value | Constant              | Slot                        |
+|------:|-----------------------|-----------------------------|
+| 0     | `INVTYPE_NON_EQUIP_IGNORE` | non-equippable        |
+| 1     | `INVTYPE_HEAD`        | head                         |
+| 2     | `INVTYPE_NECK`        | neck                         |
+| …     | …                     | …                            |
+| 20    | `INVTYPE_ROBE`        | chest (full-body robes)      |
+| 26    | `INVTYPE_RANGEDRIGHT` | ranged                       |
+| 27    | `INVTYPE_QUIVER`      | quiver/ammo pouch            |
+
+Vanilla items only produce values `0..28`; the higher modern
+constants (`INVTYPE_PROFESSION_*`, `INVTYPE_EQUIPABLESPELL_*`, etc.)
+were introduced post-vanilla and are never returned. Modern
+backport code that compares against the higher enum values still
+resolves correctly because vanilla items just don't carry those
+types.
+
+```lua
+local t = C_Item.GetItemInventoryTypeByID(19019)  -- Thunderfury: 17 = INVTYPE_2HWEAPON
+if t == 1 then -- head
+    ...
+end
+```
+
+### `C_Item.IsLocked(itemLocation)`
+
+Returns `true` if the equipped/bagged item is in a server-side locked
+state — mid-trade, mid-mail-attach, picked up onto the cursor, etc.
+Direct descriptor read: CGItem → `m_objectFields` (`+0x114`) →
+`ITEM_FIELD_FLAGS` (`+0x3C`) → bit 2 (`0x04`).
+
+```lua
+if C_Item.IsLocked({bagID = 0, slotIndex = 1}) then
+    -- skip the action; slot is mid-transaction
+end
+```
+
+**No `LockItem` / `UnlockItem` companion.** Vanilla 1.12 doesn't
+provide a public Lua API for setting the lock flag — it's
+exclusively server-driven via the `SMSG_ITEM_TIME_UPDATE` /
+`SMSG_ITEM_PUSH_RESULT` packet family in response to actions like
+`PickupContainerItem`. Modern backport code that calls
+`C_Item.LockItem` / `UnlockItem` will hit the
+`!!!ClassicAPI/Util/ItemUtil.lua` no-op shim and silently continue
+— there's nothing useful we can do on the C side without a fake
+state machine that wouldn't match server behavior.
+
+### `C_Item.GetItemGUID(itemLocation)`
+
+Returns the per-instance 64-bit GUID of the item at the location,
+formatted as `"0xHHHHHHHHLLLLLLLL"` (16 hex digits, hi dword first).
+Same format `UnitGUID` uses — 1.12 GUIDs are plain qwords with no
+`"Item-Server-..."`-style prefix scheme (modern's prefix format
+arrived in 6.x). Returns `nil` for empty / invalid locations.
+
+```lua
+local guid = C_Item.GetItemGUID({equipmentSlotIndex = INVSLOT_HEAD})
+-- "0x40000000000DEFCA"
+```
+
+Reads CGItem instance block at `+0x08` → GUID qword at `+0x00`.
+The GUID is stable per-character-session and survives moves between
+bags / character pane, so it's the right identifier for "this exact
+item instance" — equipment-set tracking, soulbind matching, or any
+addon code that needs to follow a single item across slot moves.
 
 ## Container
 

@@ -1,0 +1,85 @@
+// This file is part of ClassicAPI.
+//
+// ClassicAPI is free software: you can redistribute it and/or modify it under the terms
+// of the GNU Lesser General Public License as published by the Free Software Foundation, either
+// version 3 of the License, or (at your option) any later version.
+//
+// ClassicAPI is distributed in the hope that it will be useful, but WITHOUT ANY
+// WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+// PURPOSE. See the GNU Lesser General Public License for more details.
+//
+// You should have received a copy of the GNU Lesser General Public License along with
+// ClassicAPI. If not, see <https://www.gnu.org/licenses/>.
+
+#include "Game.h"
+#include "Offsets.h"
+#include "item/Arg.h"
+#include "item/Data.h"
+#include "item/ID.h"
+#include "item/Location.h"
+
+#include <cstdint>
+
+namespace Item::Level {
+
+namespace {
+
+using GetItemRecord_t = const uint8_t *(__thiscall *)(void *cache, uint32_t itemID,
+                                                      const uint64_t *guid, void *callback,
+                                                      void *userData, int unused);
+
+const uint8_t *PeekItemRecord(uint32_t itemID) {
+    auto fn = reinterpret_cast<GetItemRecord_t>(Offsets::FUN_DBCACHE_ITEMSTATS_GET_RECORD);
+    auto *cache = reinterpret_cast<void *>(Offsets::VAR_ITEMDB_CACHE);
+    const uint64_t zeroGuid = 0;
+    return fn(cache, itemID, &zeroGuid, nullptr, nullptr, 0);
+}
+
+int PushItemLevelForItemID(void *L, int itemID) {
+    if (itemID <= 0)
+        return 0;
+    const uint8_t *record = PeekItemRecord(static_cast<uint32_t>(itemID));
+    if (record == nullptr) {
+        Item::Data::WarmCache(static_cast<uint32_t>(itemID));
+        return 0;
+    }
+    const uint32_t ilvl = *reinterpret_cast<const uint32_t *>(
+        record + Offsets::OFF_ITEMSTATS_ITEM_LEVEL);
+    Game::Lua::PushNumber(L, static_cast<double>(ilvl));
+    return 1;
+}
+
+} // namespace
+
+// `C_Item.GetCurrentItemLevel(itemLocation)` — base ilvl of the
+// equipped/bagged item from the cache. Vanilla 1.12 has no per-instance
+// scaling (no upgrades, no warforging), so "current" and "base" item
+// level are the same value. Direct `m_itemLevel` read, no `GetItemInfo`
+// chaining.
+static int __fastcall Script_C_Item_GetCurrentItemLevel(void *L) {
+    if (Game::Lua::Type(L, 1) != Game::Lua::TYPE_TABLE) {
+        Game::Lua::Error(L, "Usage: C_Item.GetCurrentItemLevel(itemLocation)");
+        return 0;
+    }
+    return PushItemLevelForItemID(L, Item::ID::FromCGItem(Item::Location::Resolve(L, 1)));
+}
+
+// `C_Item.GetDetailedItemLevelInfo(itemInfo)` — modern returns
+// `(currentLevel, isPreview, baseLevel)`. In vanilla all three values
+// are identical (no upgrade/preview system), so we push the base ilvl
+// as `currentLevel` and let callers ignore the missing extra returns.
+// Accepts numeric itemID or `"item:NNN..."` string; nil for uncached.
+static int __fastcall Script_C_Item_GetDetailedItemLevelInfo(void *L) {
+    return PushItemLevelForItemID(L, Item::Arg::ResolveItemID(L, 1));
+}
+
+static void RegisterLuaFunctions() {
+    Game::Lua::RegisterTableFunction("C_Item", "GetCurrentItemLevel",
+                                     &Script_C_Item_GetCurrentItemLevel);
+    Game::Lua::RegisterTableFunction("C_Item", "GetDetailedItemLevelInfo",
+                                     &Script_C_Item_GetDetailedItemLevelInfo);
+}
+
+static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
+
+} // namespace Item::Level

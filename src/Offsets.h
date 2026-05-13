@@ -360,6 +360,16 @@ enum Offsets {
     // 1..4, or 0 if no bag is equipped at the slot — engine handles the
     // edge cases for us. Errors on out-of-range bagIDs.
     FUN_SCRIPT_GET_CONTAINER_NUM_SLOTS = 0x004F9560,
+    // Engine's Lua C functions for the per-instance item link of a bag
+    // or character-pane slot. Reads (bagID, slotIndex) from stack[1]/[2]
+    // for the container form, or (unit, slot) from stack[1]/[2] for the
+    // inventory form. Pushes a fully-decorated `|cffXXXXXX|Hitem:…|h…`
+    // hyperlink with the actual enchant / random-suffix data baked in
+    // from the per-instance CGItem (not the base cache record). Used by
+    // `C_Item.GetItemLink` to match modern semantics where the location
+    // form returns the dressed link.
+    FUN_SCRIPT_GET_CONTAINER_ITEM_LINK = 0x004F9930,
+    FUN_SCRIPT_GET_INVENTORY_ITEM_LINK = 0x004C8C10,
     // `Script_UseContainerItem` Lua C function — `__fastcall(void *L)`.
     // Reads bagID at Lua stack[1] and slot at stack[2], dispatches to the
     // engine's item-use machinery (same path the secure
@@ -483,7 +493,9 @@ enum Offsets {
     // name-string match form.
     OFF_ITEMSTATS_NAME = 0x08,
     OFF_ITEMSTATS_DISPLAY_INFO_ID = 0x18,
+    OFF_ITEMSTATS_QUALITY = 0x1C,    // u32 — 0=Poor … 5=Legendary
     OFF_ITEMSTATS_INVENTORY_TYPE = 0x2C,
+    OFF_ITEMSTATS_ITEM_LEVEL = 0x38, // u32 — base ilvl from ItemSparse
     // Bag-only fields. `m_containerSlots` (slot count) and `m_bagFamily`
     // (the BagFamily bitfield — quiver=1, ammo pouch=2, soul bag=4 in
     // vanilla) live deep in the record. Offsets derived from
