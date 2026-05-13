@@ -504,9 +504,8 @@ Equivalent to the function of the same name introduced in 3.0.
 Returns `(usable, noMana)` for a spell, matching the modern
 3.0+ signature. Returns `(1, nil)` when the spell is castable,
 `(nil, 1)` when only mana is preventing it, `(nil, nil)` for any
-other reason (unknown spell, dead, etc.). Matches the 1.12-style
-`1`/`nil` return convention used by the existing
-`Script_IsUsableAction`.
+other reason (unknown spell, dead, etc.). Matches the `1`/`nil`
+return convention of the existing `Script_IsUsableAction`.
 
 Two arg shapes accepted:
 

@@ -74,11 +74,14 @@ const char *LocalizedString(const uint8_t *record, int offset) {
     return strings[locale];
 }
 
-// Pushes a 1.12-style Lua "boolean": number 1.0 for true, nil for false.
-// Mirrors what Script_GetFactionInfo does for atWar/canToggleAtWar/etc.
-// (engine pushes lua_pushnumber(1.0) or lua_pushnil at 0x004D65F2 /
-// 0x004D6600 etc.) — we match so encountered and unencountered factions
-// have identical return shapes.
+// Pushes 1.0 for true and nil for false — the convention
+// Script_GetFactionInfo uses for atWar/canToggleAtWar/etc. (engine
+// pushes lua_pushnumber(1.0) or lua_pushnil at 0x004D65F2 /
+// 0x004D6600 etc.). The engine has lua_pushboolean (we use it via
+// Game::Lua::PushBoolean for C_* namespace functions); we match
+// the number-or-nil shape here so encountered and unencountered
+// factions return identically and addons can use a single
+// comparison path.
 void PushFlag(void *L, bool value) {
     if (value)
         Game::Lua::PushNumber(L, 1.0);
