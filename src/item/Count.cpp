@@ -173,24 +173,44 @@ int CountInBankBags(int targetItemID) {
     return total;
 }
 
+// Walks the player's 19 equipment slots and accumulates stack counts
+// for items matching `targetItemID`. Equipped items are part of the
+// player's total inventory in the modern API — `GetItemCount` of a
+// currently-equipped trinket returns 1, not 0.
+int CountEquipped(int targetItemID) {
+    int total = 0;
+    for (int slot = 1; slot <= 19; slot++) {
+        const uint8_t *item = Item::Location::ResolveEquipmentSlot(slot);
+        if (item == nullptr)
+            continue;
+        if (Item::ID::FromCGItem(item) != targetItemID)
+            continue;
+        total += GetStackCount(item);
+    }
+    return total;
+}
+
 // `C_Item.GetItemCount(itemInfo [, includeBank [, includeUses]])` —
-// returns the player's total count of `itemInfo` across bags
-// (and optionally bank). `itemInfo` is a number or `"item:NNN"`
-// string. Item names are NOT accepted (vanilla itself has no
-// name → ID resolver).
+// returns the player's total count of `itemInfo` across equipped
+// items + bags (and optionally bank). `itemInfo` is a number or
+// `"item:NNN"` string. Item names are NOT accepted (vanilla itself
+// has no name → ID resolver).
 //
-// Bag walks:
-//   - bags 0..4 always (backpack + 4 equipped bag slots) — live walk
-//     via `Item::Location::ResolveBag`.
-//   - if `includeBank=true`: main bank (linear slots 39..62 in player
-//     invMgr) + each equipped bank bag's contents (slots 63..68 in
-//     player invMgr). Bank walks **bypass `GetItemBySlot`** by reading
-//     the GUID array at `invMgr+0x04` directly and resolving via
-//     `FUN_OBJECT_RESOLVE_BY_GUID`. This works without the bank window
-//     ever being opened — the GUIDs are populated from server data at
-//     login. The engine gates `GetItemBySlot` for bank slots via a
-//     banker-GUID check at `VAR_BANK_GATE_GUID`, but the underlying
-//     data is always present.
+// What's counted:
+//   - **Equipped items** (slots 1..19) — always. Matches modern
+//     behavior: a currently-equipped trinket returns 1.
+//   - **Bags 0..4** (backpack + 4 equipped bag slots) — always.
+//     Live walk via `Item::Location::ResolveBag`.
+//   - **Bank** (if `includeBank=true`): main bank (linear slots
+//     39..62 in player invMgr) + each equipped bank bag's contents
+//     (slots 63..68 in player invMgr). Bank walks **bypass
+//     `GetItemBySlot`** by reading the GUID array at `invMgr+0x04`
+//     directly and resolving via `FUN_OBJECT_RESOLVE_BY_GUID`. This
+//     works without the bank window ever being opened — the GUIDs
+//     are populated from server data at login. The engine gates
+//     `GetItemBySlot` for bank slots via a banker-GUID check at
+//     `VAR_BANK_GATE_GUID`, but the underlying data is always
+//     present.
 //
 // `includeUses` (charges-multiplier mode) is **accepted but currently
 // ignored**. Modern semantics: when true, multiplies each match by
@@ -199,10 +219,6 @@ int CountInBankBags(int targetItemID) {
 // descriptor offset, which hasn't been verified empirically yet.
 // Most callers don't use this flag; for now, both `true` and `false`
 // produce identical results (stack counts only).
-//
-// Equipped items are NOT counted, matching modern API behavior.
-// Anyone equipping a wand to count its charges should use
-// `GetInventoryItemID` + a separate charges read.
 int __fastcall Script_C_Item_GetItemCount(void *L) {
     const int itemID = Item::Arg::ResolveItemID(L, 1);
     if (itemID <= 0) {
@@ -214,7 +230,7 @@ int __fastcall Script_C_Item_GetItemCount(void *L) {
     // clobbers the Lua stack via SetTop(0) inside ResolveBag.
     const bool includeBank = Game::Lua::ToBoolean(L, 2) != 0;
 
-    int total = 0;
+    int total = CountEquipped(itemID);
     for (int bag = 0; bag <= 4; bag++)
         total += CountInBag(L, bag, itemID);
     if (includeBank) {

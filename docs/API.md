@@ -1590,8 +1590,8 @@ modern `C_Item.GetItemFamily` introduced in 10.x.
 
 ### `C_Item.GetItemCount(itemInfo, [includeBank], [includeUses])`
 
-Returns the player's total count of `itemInfo` across bags (and
-optionally bank slots).
+Returns the player's total count of `itemInfo` — equipped items +
+bags, and optionally bank.
 
 ```
 count = C_Item.GetItemCount(itemInfo [, includeBank [, includeUses]])
@@ -1607,9 +1607,13 @@ count = C_Item.GetItemCount(itemInfo [, includeBank [, includeUses]])
   See note below.
 
 ```lua
-local n = C_Item.GetItemCount(2589)               -- Linen Cloth in bags
-local n = C_Item.GetItemCount(2589, true)         -- bags + bank
+local n = C_Item.GetItemCount(2589)               -- Linen Cloth in bags + equipped
+local n = C_Item.GetItemCount(2589, true)         -- + bank
 local n = C_Item.GetItemCount("item:2589")        -- string form works too
+
+-- Equipped items count toward the total:
+local trinketID = GetInventoryItemID("player", INVSLOT_TRINKET1)
+C_Item.GetItemCount(trinketID)                    -- 1
 ```
 
 > **`includeUses` not yet supported.** Modern semantics: when `true`,
@@ -1621,10 +1625,6 @@ local n = C_Item.GetItemCount("item:2589")        -- string form works too
 > `false` produce the same number (sum of stack counts). Track
 > [TODO #28] for charges support.
 
-> **Equipped items don't count.** Matches modern API. A wand in your
-> ranged slot won't be counted; only items in bags and (optionally)
-> bank.
-
 > **Bank works cold — no banker visit required.** The 1.12 server
 > sends bank inventory at login alongside the rest of the player's
 > data; only the engine's own `GetItemBySlot` gates bank slots until
@@ -1634,7 +1634,9 @@ local n = C_Item.GetItemCount("item:2589")        -- string form works too
 > internally if the gate let us through. Counts are correct from
 > session start.
 
-Walks via the same `Item::Location::ResolveBag` chain
+Walks the 19 equipment slots via
+`Item::Location::ResolveEquipmentSlot`, then bags via the same
+`Item::Location::ResolveBag` chain
 [`C_Container.GetContainerItemID`](#c_containergetcontaineritemidbagindex-slotindex)
 uses. Slot counts come from the engine's `Script_GetContainerNumSlots`
 so custom server bag sizes work transparently. Stack counts read
