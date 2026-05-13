@@ -12,7 +12,6 @@
 // ClassicAPI. If not, see <https://www.gnu.org/licenses/>.
 
 #include "Game.h"
-#include "Offsets.h"
 #include "event/Custom.h"
 #include "quest/Cache.h"
 

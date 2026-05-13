@@ -19,7 +19,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
-#include <sstream>
 
 namespace EquipmentSet::Storage {
 

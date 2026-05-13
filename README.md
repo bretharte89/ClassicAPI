@@ -61,6 +61,8 @@ functions, just behavior the stock 1.12 engine didn't have. See the
 | `EQUIPMENT_SETS_CHANGED` | *(none)* |
 | `EQUIPMENT_SWAP_PENDING` | `setID` |
 | `EQUIPMENT_SWAP_FINISHED` | `success, setID` |
+| `PLAYER_STARTED_MOVING` | *(none)* |
+| `PLAYER_STOPPED_MOVING` | *(none)* |
 | `FACTION_STANDING_CHANGED` | `factionID, newStanding, repGained` |
 | `ITEM_DATA_LOAD_RESULT` | `itemID, success` |
 | `MODIFIER_STATE_CHANGED` | `keyName, down` |

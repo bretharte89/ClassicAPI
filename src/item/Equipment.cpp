@@ -18,7 +18,7 @@
 #include "item/Location.h"
 
 #include <cstdint>
-#include <cstring>
+#include <string.h>
 
 namespace Item::Equipment {
 

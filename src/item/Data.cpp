@@ -19,8 +19,6 @@
 #include "item/Location.h"
 
 #include <cstdint>
-#include <cstdio>
-#include <cstring>
 
 namespace Item::Data {
 

@@ -15,8 +15,6 @@
 #include "MinHook.h"
 #include "Offsets.h"
 
-#include <cstdio>
-
 namespace Game {
 
 namespace Lua {

@@ -159,6 +159,7 @@ build instructions.
 - [Events](#events)
   - [`C_EventUtils.IsEventValid(eventName)`](#c_eventutilsiseventvalideventname)
   - [`BAG_UPDATE_DELAYED` event](#bag_update_delayed-event)
+  - [`PLAYER_STARTED_MOVING` / `PLAYER_STOPPED_MOVING` events](#player_started_moving--player_stopped_moving-events)
 - [Globals](#globals)
   - [`CLASSIC_API_VERSION`](#classic_api_version)
   - [`LE_EXPANSION_*`](#le_expansion_)
@@ -3781,6 +3782,40 @@ event handlers.
 > `__thiscall` with an awkward register-arg shape. Keyring updates
 > currently won't trigger `BAG_UPDATE_DELAYED`. Player bag (0..4)
 > and bank (5..10) updates work normally — the 95% case.
+
+### `PLAYER_STARTED_MOVING` / `PLAYER_STOPPED_MOVING` events
+
+Fires (with no payload) on the transition where the player begins or
+ends translational movement, matching the modern events of the same
+name. Vanilla 1.12 doesn't expose any movement-state event — addons
+that need to know "is the player moving" otherwise poll
+`GetUnitSpeed("player")` or `IsFalling` on every `OnUpdate`.
+
+```lua
+local f = CreateFrame("Frame")
+f:RegisterEvent("PLAYER_STARTED_MOVING")
+f:RegisterEvent("PLAYER_STOPPED_MOVING")
+f:SetScript("OnEvent", function()
+    if event == "PLAYER_STARTED_MOVING" then ... end
+end)
+```
+
+What counts as "moving" matches modern's behavior:
+
+| Bit | Counts? | Note |
+|-----|---------|------|
+| `FORWARD` / `BACKWARD` / `STRAFE_LEFT` / `STRAFE_RIGHT` | yes | W/S/A/D press, mouse-click move |
+| `JUMPING` / `FALLING` / `FALLING_FAR` | yes | spacebar, walking off a ledge |
+| `TURN_LEFT` / `TURN_RIGHT` (turn-in-place) | no | matches modern (turning isn't moving) |
+| `WALK_MODE` (toggle), `ONTRANSPORT`, `LEVITATING`, `SWIMMING` alone | no | protocol-level flags, not active motion |
+
+Implementation: subscribes to the shared `Tick::WorldTick` per-frame
+registry (single `MinHook` on `FUN_0066FD50` shared with
+`BAG_UPDATE_DELAYED`) and edge-detects on the moving-bits subset of
+the player's movement-flags word at `CGPlayer + 0x9E8`. State resets
+between zones — if the player pointer is unresolvable (loading
+screen, character select), the next valid tick won't fire a stale
+`STOPPED_MOVING`.
 
 ## Globals
 

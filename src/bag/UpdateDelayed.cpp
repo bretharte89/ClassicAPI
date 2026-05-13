@@ -18,14 +18,16 @@
 //
 // See TODO #67 for the full investigation history.
 //
-// Architecture: three hooks total.
+// Architecture: two MinHooks plus one tick subscription.
 //
 //   1. `FUN_004F91A0` — bag-slot diff loop. Hook just sets the
 //      `g_pending` flag.
 //   2. `FUN_004F9370` — item→bag resolver (most common path). Hook
 //      just sets the `g_pending` flag.
-//   3. `FUN_0066FD50` — engine's per-frame world-subsystem update.
-//      Hook drains `g_pending` and fires DELAYED if set.
+//   3. `Tick::WorldTick::AutoSubscribe` — shared per-frame
+//      subscription (the engine's world-subsystem update at
+//      `FUN_0066FD50`, single-hooked in `src/tick/WorldTick.cpp`).
+//      Our callback drains `g_pending` and fires DELAYED if set.
 //
 // All three targets are quiet (≤2 callers each, in code regions
 // other DLLs don't touch). The previous attempt at this feature
@@ -52,6 +54,7 @@
 #include "Game.h"
 #include "Offsets.h"
 #include "event/Custom.h"
+#include "tick/WorldTick.h"
 
 namespace Bag::UpdateDelayed {
 
@@ -86,14 +89,12 @@ void __stdcall BagItemToBag_h(int guidLo, int guidHi) {
     g_pending = true;
 }
 
-// `FUN_0066FD50` — `__fastcall(int, int, int)` per-frame world tick.
-// We hook the TAIL: run the original first (so all of this frame's
-// world-tick work completes), then drain the pending flag and fire
-// DELAYED if any BAG_UPDATE happened this frame.
-using WorldTick_t = void(__fastcall *)(int arg1, int arg2, int arg3);
-WorldTick_t WorldTick_o = nullptr;
-void __fastcall WorldTick_h(int arg1, int arg2, int arg3) {
-    WorldTick_o(arg1, arg2, arg3);
+// Per-frame drain. Runs at the tail of each world tick (subscribed
+// through `Tick::WorldTick`, which owns the single hook on
+// `FUN_0066FD50`). All this frame's BAG_UPDATEs have already fired
+// by the time we run; we just consume the pending flag and emit one
+// DELAYED if set.
+void OnWorldTick() {
     if (!g_pending)
         return;
     g_pending = false;
@@ -112,9 +113,6 @@ static const Game::HookAutoRegister _hookItemToBag{
     reinterpret_cast<void *>(&BagItemToBag_h),
     reinterpret_cast<void **>(&BagItemToBag_o)};
 
-static const Game::HookAutoRegister _hookWorldTick{
-    Offsets::FUN_WORLD_TICK,
-    reinterpret_cast<void *>(&WorldTick_h),
-    reinterpret_cast<void **>(&WorldTick_o)};
+static const Tick::WorldTick::AutoSubscribe _tickSub{&OnWorldTick};
 
 } // namespace Bag::UpdateDelayed

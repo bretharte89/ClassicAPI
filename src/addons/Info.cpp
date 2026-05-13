@@ -25,7 +25,6 @@
 #include "Game.h"
 #include "Offsets.h"
 
-#include <cstdint>
 #include <cstring>
 
 namespace AddOns::Info {

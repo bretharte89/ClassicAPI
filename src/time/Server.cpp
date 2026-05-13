@@ -17,7 +17,6 @@
 #include "Offsets.h"
 
 #include <cstdint>
-#include <cstring>
 #include <ctime>
 
 #include <windows.h>

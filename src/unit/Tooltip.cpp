@@ -14,9 +14,6 @@
 #include "Game.h"
 #include "Offsets.h"
 
-#include <cstdint>
-#include <cstring>
-
 namespace Unit::Tooltip {
 
 // `GameTooltip:SetUnitAura(unit, index, [filter])` — modern unified-aura

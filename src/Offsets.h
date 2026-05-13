@@ -1526,6 +1526,14 @@ enum Offsets {
     //   0x1000000 FLYING (no flying mounts in vanilla, but the bit
     //                     exists for druid Flight Form etc.)
     OFF_PLAYER_MOVEMENT_FLAGS = 0x9E8,
+    MOVEFLAG_FORWARD = 0x1,
+    MOVEFLAG_BACKWARD = 0x2,
+    MOVEFLAG_STRAFE_LEFT = 0x4,
+    MOVEFLAG_STRAFE_RIGHT = 0x8,
+    // 0x10 / 0x20 are TURN_LEFT / TURN_RIGHT — turn-in-place, not
+    // translational movement. Excluded from "moving" semantics
+    // because modern `PLAYER_STARTED_MOVING` doesn't fire for them.
+    MOVEFLAG_JUMPING = 0x1000,
     MOVEFLAG_FALLING = 0x2000,
     MOVEFLAG_FALLING_FAR = 0x4000,
     MOVEFLAG_SWIMMING = 0x200000,
