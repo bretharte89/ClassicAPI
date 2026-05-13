@@ -36,6 +36,8 @@ struct Entry {
     uint64_t guid;       // full 64-bit GUID (hi << 32 | lo)
     std::string name;    // ASCII, <= 12 chars (vanilla cap)
     uint32_t classID;    // ChrClasses.dbc record ID (1..9), 0 if unknown
+    uint32_t raceID;     // ChrRaces.dbc record ID (1..8), 0 if unknown
+    uint32_t sex;        // 0 = male, 1 = female (wire convention), 0 if unknown
 };
 
 // Returns a pointer to the cached entry, or nullptr if not cached.
@@ -43,10 +45,12 @@ struct Entry {
 // (which may relocate via map rehash). Treat as transient.
 const Entry *Lookup(uint64_t guid);
 
-// Adds or updates an entry. classID==0 leaves the existing classID
-// alone (so a name-only sighting doesn't erase prior class data).
+// Adds or updates an entry. Zero values for classID/raceID/sex are
+// treated as "caller doesn't know" and don't overwrite existing
+// real data — only present (non-zero) fields replace prior values.
 // Marks the cache dirty for the next persistence flush.
-void Remember(uint64_t guid, const char *name, uint32_t classID);
+void Remember(uint64_t guid, const char *name, uint32_t classID,
+              uint32_t raceID, uint32_t sex);
 
 // Opt-in toggle. State persists to `WTF\Account\<acct>\ClassicAPI.txt`.
 // Enabling triggers a load from disk; disabling stops further writes

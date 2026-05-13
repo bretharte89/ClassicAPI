@@ -22,8 +22,8 @@
 //       populated by the engine's login flow). Hand-edits survive.
 //
 //   `WTF\Account\<acct>\<realm>\ClassicAPI_NameCache.txt`
-//       Per-realm cache contents. One entry per line:
-//           `guidHi  guidLo  classID  name`
+//       Per-realm cache contents. v2 format. One entry per line:
+//           `guidHi  guidLo  classID  raceID  sex  name`
 //       (fields tab-separated). Loaded once the realm name is
 //       available post-login. Saved when (a) a recent write hasn't
 //       been flushed AND (b) at least 30 seconds have elapsed since
@@ -85,6 +85,11 @@ constexpr DWORD kFlushIntervalMs = 5 * 60 * 1000;
 
 // ChrClasses.dbc max ID. Anything above this is a corrupt input.
 constexpr uint32_t kMaxClassID = 16;
+// ChrRaces.dbc max ID. Vanilla has 8 (Human..Troll); allow some
+// headroom for private-server custom races.
+constexpr uint32_t kMaxRaceID = 16;
+// Wire sex values are 0/1. Any higher value is corrupt input.
+constexpr uint32_t kMaxSex = 1;
 
 // Visible-object scan throttle. 10s is short enough that walking
 // through a city populates entries quickly, long enough that idle
@@ -231,10 +236,10 @@ void LoadCacheIfNeeded() {
         if (line.empty() || line[0] == '#')
             continue;
 
-        // tab-separated: hi  lo  classID  name
+        // tab-separated: hi  lo  classID  raceID  sex  name
         std::istringstream is(line);
-        std::string hiStr, loStr, classStr, name;
-        if (!(is >> hiStr >> loStr >> classStr))
+        std::string hiStr, loStr, classStr, raceStr, sexStr, name;
+        if (!(is >> hiStr >> loStr >> classStr >> raceStr >> sexStr))
             continue;
         // Consume the single tab/space, then read remaining name
         // as-is (no spaces in vanilla names but tolerate them).
@@ -247,15 +252,19 @@ void LoadCacheIfNeeded() {
         const uint32_t hi = static_cast<uint32_t>(std::strtoul(hiStr.c_str(), nullptr, 16));
         const uint32_t lo = static_cast<uint32_t>(std::strtoul(loStr.c_str(), nullptr, 16));
         const uint32_t classID = static_cast<uint32_t>(std::strtoul(classStr.c_str(), nullptr, 10));
+        const uint32_t raceID = static_cast<uint32_t>(std::strtoul(raceStr.c_str(), nullptr, 10));
+        const uint32_t sex = static_cast<uint32_t>(std::strtoul(sexStr.c_str(), nullptr, 10));
         if (lo == 0 && hi == 0)
             continue;
-        if (classID > kMaxClassID)
+        if (classID > kMaxClassID || raceID > kMaxRaceID || sex > kMaxSex)
             continue;
         const uint64_t guid = (static_cast<uint64_t>(hi) << 32) | lo;
         Entry e;
         e.guid = guid;
         e.name = SanitizeName(name.c_str());
         e.classID = classID;
+        e.raceID = raceID;
+        e.sex = sex;
         if (!e.name.empty())
             g_entries[guid] = std::move(e);
     }
@@ -270,15 +279,15 @@ void SaveCache() {
         std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
         if (!out.is_open())
             return;
-        out << "# ClassicAPI name cache v1 (per-realm)\n";
-        out << "# guidHi\tguidLo\tclassID\tname\n";
+        out << "# ClassicAPI name cache v2 (per-realm)\n";
+        out << "# guidHi\tguidLo\tclassID\traceID\tsex\tname\n";
         for (const auto &kv : g_entries) {
             const Entry &e = kv.second;
-            char buf[64];
-            std::snprintf(buf, sizeof(buf), "%08X\t%08X\t%u\t",
+            char buf[80];
+            std::snprintf(buf, sizeof(buf), "%08X\t%08X\t%u\t%u\t%u\t",
                           static_cast<uint32_t>(e.guid >> 32),
                           static_cast<uint32_t>(e.guid),
-                          e.classID);
+                          e.classID, e.raceID, e.sex);
             out << buf << e.name << "\n";
         }
         if (!out)
@@ -330,6 +339,10 @@ void __fastcall CacheWrite_h(void *self, void *edx, const uint8_t *packet,
         packet + Offsets::OFF_PLAYER_INFO_NAME);
     const uint32_t classID = *reinterpret_cast<const uint32_t *>(
         packet + Offsets::OFF_PLAYER_INFO_CLASS);
+    const uint32_t raceID = *reinterpret_cast<const uint32_t *>(
+        packet + Offsets::OFF_PLAYER_INFO_RACE);
+    const uint32_t sex = *reinterpret_cast<const uint32_t *>(
+        packet + Offsets::OFF_PLAYER_INFO_SEX);
     if (name[0] == '\0')
         return;
     if (classID == 0 || classID > kMaxClassID)
@@ -349,6 +362,17 @@ void __fastcall CacheWrite_h(void *self, void *edx, const uint8_t *packet,
     }
     if (e.classID != classID) {
         e.classID = classID;
+        changed = true;
+    }
+    // Race/sex sanity-check against the same maxes Load enforces.
+    // Out-of-range values mean the packet didn't carry them (some
+    // entry types skip these fields); preserve any prior real data.
+    if (raceID != 0 && raceID <= kMaxRaceID && e.raceID != raceID) {
+        e.raceID = raceID;
+        changed = true;
+    }
+    if (sex <= kMaxSex && e.sex != sex) {
+        e.sex = sex;
         changed = true;
     }
     if (changed) {
@@ -393,15 +417,27 @@ const char *CallGetName(void *obj) {
     return getName(obj);
 }
 
-// Reads the class byte from a CGUnit_C's m_objectFields descriptor.
+// Reads race/class/sex bytes off a CGUnit_C's m_objectFields
+// descriptor (`UNIT_FIELD_BYTES_0` packs them at +0x78..+0x7A).
 // Field path matches Script_UnitClass's general-token branch.
-uint32_t ReadClassByte(void *unit) {
+// Returns all zeros if the descriptor pointer is null.
+struct UnitBytes0 {
+    uint32_t raceID;
+    uint32_t classID;
+    uint32_t sex;
+};
+
+UnitBytes0 ReadBytes0(void *unit) {
+    UnitBytes0 out{0, 0, 0};
     auto *descriptor = *reinterpret_cast<const uint8_t *const *>(
         reinterpret_cast<const uint8_t *>(unit)
         + Offsets::OFF_CGUNIT_OBJECT_FIELDS);
     if (descriptor == nullptr)
-        return 0;
-    return descriptor[Offsets::OFF_UNIT_DESCRIPTOR_CLASS_BYTE];
+        return out;
+    out.raceID = descriptor[Offsets::OFF_UNIT_DESCRIPTOR_RACE_BYTE];
+    out.classID = descriptor[Offsets::OFF_UNIT_DESCRIPTOR_CLASS_BYTE];
+    out.sex = descriptor[Offsets::OFF_UNIT_DESCRIPTOR_SEX_BYTE];
+    return out;
 }
 
 // Reads the local player's GUID from the engine's CGPlayer_C global
@@ -449,10 +485,10 @@ int __fastcall ScanCallback(void * /*context*/, void * /*edx*/, uint64_t guid) {
     const char *name = CallGetName(obj);
     if (!LooksLikeStringPointer(name) || name[0] == '\0')
         return 1;
-    const uint32_t classID = ReadClassByte(obj);
-    if (classID == 0 || classID > kMaxClassID)
+    const UnitBytes0 bytes0 = ReadBytes0(obj);
+    if (bytes0.classID == 0 || bytes0.classID > kMaxClassID)
         return 1;
-    Remember(guid, name, classID);
+    Remember(guid, name, bytes0.classID, bytes0.raceID, bytes0.sex);
     return 1; // keep walking
 }
 
@@ -540,11 +576,48 @@ uint32_t ResolveClassToken(const char *token) {
     return 0;
 }
 
-// `C_PlayerInfo.RememberPlayer(guid, name, classToken)` — stores the
-// triple in the persistent cache. `classToken` is the uppercase
-// engine token (`"WARRIOR"`, `"MAGE"`, ...). Returns `true` on
-// successful insert/update, `false` if the cache is disabled or the
-// args are malformed.
+// Same shape as ResolveClassToken but walks ChrRaces.dbc.
+uint32_t ResolveRaceToken(const char *token) {
+    if (token == nullptr || *token == '\0')
+        return 0;
+    const int count = *reinterpret_cast<const int *>(
+        static_cast<uintptr_t>(Offsets::VAR_CHRRACES_COUNT));
+    const uint8_t *const *records = *reinterpret_cast<const uint8_t *const *const *>(
+        static_cast<uintptr_t>(Offsets::VAR_CHRRACES_RECORDS));
+    if (records == nullptr)
+        return 0;
+    for (int i = 1; i <= count; ++i) {
+        const uint8_t *rec = records[i];
+        if (rec == nullptr)
+            continue;
+        const char *filename = *reinterpret_cast<const char *const *>(
+            rec + Offsets::OFF_CHRRACES_FILENAME);
+        if (filename == nullptr)
+            continue;
+        const char *a = filename;
+        const char *b = token;
+        bool match = true;
+        while (*a && *b) {
+            char ca = *a, cb = *b;
+            if (ca >= 'a' && ca <= 'z') ca -= 32;
+            if (cb >= 'a' && cb <= 'z') cb -= 32;
+            if (ca != cb) { match = false; break; }
+            ++a; ++b;
+        }
+        if (match && *a == '\0' && *b == '\0')
+            return static_cast<uint32_t>(i);
+    }
+    return 0;
+}
+
+// `C_PlayerInfo.RememberPlayer(guid, name, classToken [, raceToken
+// [, sex]])` — stores the entry in the persistent cache. Class and
+// race tokens are uppercase engine tokens (`"WARRIOR"`, `"NIGHTELF"`,
+// etc.); sex is `0` (male) or `1` (female), matching the wire-format
+// convention the engine cache stores. Trailing args are optional —
+// passing only the first three preserves the old 3-arg signature.
+// Returns `true` on success, `false` if the cache is disabled or the
+// required args are malformed.
 int __fastcall Script_C_PlayerInfo_RememberPlayer(void *L) {
     if (!IsEnabled()) {
         Game::Lua::PushBoolean(L, 0);
@@ -553,7 +626,7 @@ int __fastcall Script_C_PlayerInfo_RememberPlayer(void *L) {
     if (!Game::Lua::IsString(L, 1) || !Game::Lua::IsString(L, 2)
             || !Game::Lua::IsString(L, 3)) {
         Game::Lua::Error(L,
-            "Usage: C_PlayerInfo.RememberPlayer(guid, name, classToken)");
+            "Usage: C_PlayerInfo.RememberPlayer(guid, name, classToken [, raceToken [, sex]])");
         return 0;
     }
     uint64_t guid;
@@ -568,10 +641,24 @@ int __fastcall Script_C_PlayerInfo_RememberPlayer(void *L) {
     }
     const char *classToken = Game::Lua::ToString(L, 3);
     const uint32_t classID = ResolveClassToken(classToken);
-    // classID == 0 is acceptable (caller passed an unknown token);
-    // we keep the prior class if any. This mirrors what Remember()
-    // does when called with classID==0 elsewhere.
-    Remember(guid, name, classID);
+    // Optional race + sex. Missing / non-string / unknown values
+    // resolve to 0, which Remember() treats as "leave existing value
+    // alone" — so a 3-arg call preserves any prior race/sex data.
+    uint32_t raceID = 0;
+    if (Game::Lua::IsString(L, 4))
+        raceID = ResolveRaceToken(Game::Lua::ToString(L, 4));
+    uint32_t sex = 0;
+    if (Game::Lua::IsNumber(L, 5)) {
+        const double raw = Game::Lua::ToNumber(L, 5);
+        if (raw >= 0 && raw <= static_cast<double>(kMaxSex))
+            sex = static_cast<uint32_t>(raw);
+    }
+    // Remember treats sex==0 as "leave alone" since male and "unknown"
+    // share the same wire value. To flip a wrongly-cached female back
+    // to male, the SMSG hook path (which does direct assignment) is
+    // the route — RememberPlayer is for additive updates from addon
+    // sources that may or may not know sex.
+    Remember(guid, name, classID, raceID, sex);
     Game::Lua::PushBoolean(L, 1);
     return 1;
 }
@@ -658,12 +745,17 @@ const Entry *Lookup(uint64_t guid) {
     return &it->second;
 }
 
-void Remember(uint64_t guid, const char *name, uint32_t classID) {
+void Remember(uint64_t guid, const char *name, uint32_t classID,
+              uint32_t raceID, uint32_t sex) {
     if (!g_enabled || guid == 0 || name == nullptr || name[0] == '\0')
         return;
     LoadCacheIfNeeded();
     if (classID > kMaxClassID)
         classID = 0;
+    if (raceID > kMaxRaceID)
+        raceID = 0;
+    if (sex > kMaxSex)
+        sex = 0;
     Entry &e = g_entries[guid];
     const std::string sanitized = SanitizeName(name);
     bool changed = false;
@@ -675,10 +767,22 @@ void Remember(uint64_t guid, const char *name, uint32_t classID) {
         e.name = sanitized;
         changed = true;
     }
-    // classID==0 means "caller doesn't know"; don't overwrite a
-    // real classID with unknown. Only update on real → real change.
+    // 0 means "caller doesn't know"; don't overwrite real data with
+    // unknown. Only update on real → real change.
     if (classID != 0 && e.classID != classID) {
         e.classID = classID;
+        changed = true;
+    }
+    if (raceID != 0 && e.raceID != raceID) {
+        e.raceID = raceID;
+        changed = true;
+    }
+    // sex == 0 is ambiguous (male AND "unknown"); we only treat
+    // non-zero (1 = female) as authoritative. Means we can't flip
+    // a wrongly-cached female back to male via Remember — but the
+    // SMSG hook path uses direct assignment so it self-corrects.
+    if (sex != 0 && e.sex != sex) {
+        e.sex = sex;
         changed = true;
     }
     if (changed) {

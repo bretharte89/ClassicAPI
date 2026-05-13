@@ -852,7 +852,11 @@ enum Offsets {
     //   mov edx, [eax + 0x110]      ; descriptor
     //   movzx eax, byte [edx + 0x79] ; class
     OFF_CGUNIT_OBJECT_FIELDS = 0x110,
+    // UNIT_FIELD_BYTES_0 packs race/class/sex/powerType into one dword
+    // at descriptor +0x78. Individual bytes:
+    OFF_UNIT_DESCRIPTOR_RACE_BYTE = 0x78,
     OFF_UNIT_DESCRIPTOR_CLASS_BYTE = 0x79,
+    OFF_UNIT_DESCRIPTOR_SEX_BYTE = 0x7A,
     // Inner watched-faction setter — `__fastcall(ecx = factionID) → void`.
     // The engine's `Script_SetWatchedFactionIndex` (0x004D6B60) is a
     // thin Lua-side wrapper that takes a 1-based displayed-list index,

@@ -166,16 +166,17 @@ int __fastcall Script_GetPlayerInfoByGUID(void *L) {
             entry + Offsets::OFF_PLAYER_INFO_CLASS);
     } else {
         // Engine miss — fall back to the persistent name cache (if
-        // enabled). Only `name` and `classID` are stored there; the
-        // other slots stay zero so race/sex come back nil-ish and
-        // realm comes back "" (matching what the engine reports for
-        // partially-populated entries).
+        // enabled). Name + class + race + sex round-trip from disk;
+        // realm comes back "" since vanilla is single-realm and we
+        // never see the realm name as a per-player attribute.
         const NameCache::Entry *cached = NameCache::Lookup(
             (static_cast<uint64_t>(hi) << 32) | lo);
         if (cached == nullptr || cached->name.empty())
             return 0;
         name = cached->name.c_str();
         classID = cached->classID;
+        race = cached->raceID;
+        sex = cached->sex;
         realm = "";
     }
 

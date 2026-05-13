@@ -2837,11 +2837,10 @@ explicitly and fire a load-result event.
 [`ClassicAPI.SetPersistentNameCacheEnabled(true)`](#classicapisetpersistentnamecacheenabledenabled)
 has been opted into, a per-realm on-disk cache extends coverage
 across sessions. On engine cache miss, `GetPlayerInfoByGUID` falls
-back to the persistent cache and returns the cached `name` and
-class (with `realm` as `""` and race/sex slots zeroed — only the
-two stored fields are recoverable, but for the common chat-coloring
-use case that's enough). Returns `nil` only when both the engine
-and persistent caches miss.
+back to the persistent cache and returns `name`, `class`, `race`,
+and `sex` from storage (`realm` comes back as `""` since vanilla
+is single-realm and we don't carry per-player realm names).
+Returns `nil` only when both the engine and persistent caches miss.
 
 **Implementation**: calls the engine's get-or-fetch primitive at
 `0x0055F080` with a NULL callback (pure cache read). The cache
@@ -2851,16 +2850,21 @@ sex, class) was reverse-engineered from the
 
 ### `C_PlayerInfo.RememberPlayer(guid, name, classToken)`
 
-Adds a `(guid → name, classID)` entry to the persistent name cache.
-For the engine-driven coverage (chat / group / guild / visible
-objects), no addon-side feeding is needed — those flow into the
-cache automatically through the engine's `SMSG_NAME_QUERY_RESPONSE`
-write path. This call exists for the *other* sources libunitscan-
-style addons harvest from but the engine NameCache doesn't see
-directly: `/who` results, mouseover, target snapshots, etc.
+Adds a `(guid → name, classID, raceID, sex)` entry to the persistent
+name cache. For the engine-driven coverage (chat / group / guild /
+visible objects), no addon-side feeding is needed — those flow into
+the cache automatically through the engine's
+`SMSG_NAME_QUERY_RESPONSE` write path. This call exists for the
+*other* sources libunitscan-style addons harvest from but the engine
+NameCache doesn't see directly: `/who` results, mouseover, target
+snapshots, etc.
+
+```
+C_PlayerInfo.RememberPlayer(guid, name, classToken [, raceToken [, sex]])
+```
 
 Returns `true` on success, `false` if the persistent cache isn't
-enabled or the args are malformed.
+enabled or the required args are malformed.
 
 - `guid` — `"0xHHHHHHHHLLLLLLLL"` string (same format `UnitGUID`
   returns). 8-hex `"0xLLLLLLLL"` is also accepted (hi-dword zero).
@@ -2870,27 +2874,34 @@ enabled or the args are malformed.
   up against `ChrClasses.dbc` filename field, case-insensitive.
   Passing an unknown token keeps the entry's prior class (so a
   name-only sighting doesn't erase good class data).
+- `raceToken` *(optional)* — uppercase token like `"NIGHTELF"`,
+  `"SCOURGE"` (vanilla's filename for Undead). Same resolution as
+  classToken, against `ChrRaces.dbc`. Omitted/unknown → leaves
+  prior race alone.
+- `sex` *(optional)* — `0` (male) or `1` (female), matching the
+  wire-format convention the engine cache stores. Modern WoW's
+  `UnitSex` uses `2`/`3`; pass `UnitSex - 2` if you're forwarding
+  that value. Omitted/`0` → leaves prior sex alone (so this call
+  can't be used to flip a stored value back to male; the
+  `SMSG_NAME_QUERY_RESPONSE` hook handles direct assignment).
 
 ```lua
 -- Harvest /who results into the persistent cache
 local function OnWhoUpdate()
     for i = 1, GetNumWhoResults() do
-        local name, _, _, _, class = GetWhoInfo(i)  -- class is localized
-        -- pfUI has L["class"][class] for localized→token mapping
-        local token = L["class"][class]
-        if token then
-            -- GetWhoInfo doesn't expose GUID; addons can pair this
-            -- with GetCurrentChatGUID() at the call site that
-            -- triggered the query, or skip RememberPlayer for /who
-            -- and rely on the engine populating from chat instead.
-        end
+        local name, _, _, _, class, _, _, _, _, _, _, sex = GetWhoInfo(i)
+        -- class/race come back localized from GetWhoInfo; the
+        -- locale-token tables in pfUI/AceLocale handle the
+        -- inverse mapping. RememberPlayer expects engine tokens
+        -- ("WARRIOR" etc.).
     end
 end
 ```
 
-`name`-only updates (no classID) **do not overwrite** an existing
-classID — useful for "I saw this name in a guild login system msg"
-sightings that don't have class info but want to refresh the name.
+Each non-zero field is updated on the existing entry; zeros are
+treated as "caller doesn't know" and preserve prior real data. A
+`name`-only update (classToken passed but unknown) refreshes the
+name without erasing class.
 
 The "deleted character recreated with same name, different class"
 collision case that name-keyed caches suffer from doesn't apply
