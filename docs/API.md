@@ -71,6 +71,7 @@ build instructions.
   - [`C_Item.GetItemInventoryType(itemLocation)` / `C_Item.GetItemInventoryTypeByID(item)`](#c_itemgetiteminventorytypeitemlocation--c_itemgetiteminventorytypebyiditem)
   - [`C_Item.IsLocked(itemLocation)`](#c_itemislockeditemlocation)
   - [`C_Item.GetItemGUID(itemLocation)`](#c_itemgetitemguiditemlocation)
+  - [`Get*ItemID` — companions to the engine's `Get*ItemLink` family](#getitemid--companions-to-the-engines-getitemlink-family)
 - [Container](#container)
   - [`C_Container.GetContainerItemID(bagIndex, slotIndex)`](#c_containergetcontaineritemidbagindex-slotindex)
   - [`C_Container.GetContainerItemDurability(containerIndex, slotIndex)`](#c_containergetcontaineritemdurabilitycontainerindex-slotindex)
@@ -2128,6 +2129,70 @@ The GUID is stable per-character-session and survives moves between
 bags / character pane, so it's the right identifier for "this exact
 item instance" — equipment-set tracking, soulbind matching, or any
 addon code that needs to follow a single item across slot moves.
+
+### `Get*ItemID` — companions to the engine's `Get*ItemLink` family
+
+The 1.12 engine ships ~14 `Get*ItemLink` functions covering every
+frame that lets you mouse over an item (loot, merchant, quests,
+auction, trade, mail, tradeskill, craft). To get the itemID, the
+standard pattern is to call the `Link` function and scrape the
+number out of the returned string with `gsub` / `match`. Modern
+WoW only has direct-ID accessors for a handful of these
+(`GetLootSlotItemID`, `GetInboxItemID`, `GetQuestItemID`,
+`GetMerchantItemID`, …), and the rest of the addon ecosystem still
+scrapes the link.
+
+These backport the modern ones where they exist and fill in the
+gaps for the rest, so the whole `Get*ItemLink` family has a
+1-to-1 ID companion. Each reads the same itemID the engine reads
+when building the link, with no string parsing required.
+
+All return `nil` for an empty slot, an out-of-range index, or when
+the relevant UI frame isn't open.
+
+| Function | Companion to | Notes |
+|----------|--------------|-------|
+| `GetLootRollItemID(rollID)` | `GetLootRollItemLink` | Group-loot roll ID (from `START_LOOT_ROLL`). Walks the engine's in-progress roll list. |
+| `GetLootSlotItemID(slot)` | `GetLootSlotLink` | 1-based slot. Returns `nil` for coin slots. |
+| `GetMerchantItemID(index)` | `GetMerchantItemLink` | 1-based; the active merchant's inventory. |
+| `GetQuestItemID(type, index)` | `GetQuestItemLink` | `type` is `"reward"` or `"choice"`; active quest-offer / completion UI. |
+| `GetQuestLogItemID(type, index)` | `GetQuestLogItemLink` | Same args; reads the currently selected quest-log entry. |
+| `GetTradePlayerItemID(slot)` | `GetTradePlayerItemLink` | 1..7; your side of the trade window. |
+| `GetTradeTargetItemID(slot)` | `GetTradeTargetItemLink` | 1..7; the other player's side. |
+| `GetAuctionItemID(type, index)` | `GetAuctionItemLink` | `type` is `"list"`, `"owner"`, or `"bidder"`. |
+| `GetAuctionSellItemID()` | `GetAuctionSellItemInfo` | The item currently in the sell slot. No args. |
+| `GetInboxItemID(mailID)` | `GetInboxItem` | 1-based mail index; nil for gold-only mail. |
+| `GetTradeSkillItemID(index)` | `GetTradeSkillItemLink` | The recipe's *created item* itemID. |
+| `GetTradeSkillReagentItemID(index, reagentIndex)` | `GetTradeSkillReagentItemLink` | reagentIndex is 1-based; reagents are densely packed (no skipping empty slots). |
+| `GetCraftReagentItemID(craftIndex, reagentIndex)` | `GetCraftReagentItemLink` | Craft frame (enchanting / beast training) — same shape as tradeskill reagents. |
+| `GetCraftSpellID(craftIndex)` | `GetCraftItemLink` | The craft frame's link is `Hspell:`, not `Hitem:` — so the companion is a **spellID**, not an itemID. Addons scraping for itemID get nil today; this returns the actual identifier. |
+
+```lua
+-- Drop-in for the typical scrape:
+--   local id = tonumber((GetLootRollItemLink(rollID)):match("item:(%d+)"))
+local id = GetLootRollItemID(rollID)
+
+-- Plays nice with the existing data APIs:
+if id then
+    local _, _, _, _, _, classID = C_Item.GetItemInfoInstant(id)
+    -- ...
+end
+```
+
+> **Quest UI distinction.** `GetQuestItemID` reads the *active quest
+> offer* (the QuestFrame you see when accepting/turning in a quest);
+> `GetQuestLogItemID` reads the currently-selected entry in the
+> *quest log*. The two cover different states intentionally — modern
+> WoW does the same split with `GetQuestItemLink` /
+> `GetQuestLogItemLink`.
+
+> **`GetTradeSkillItemID` vs `GetCraftSpellID`.** Vanilla splits
+> recipes across two UI frames: TradeSkill (smithing / alchemy /
+> tailoring / etc., which always produce a finished item) and Craft
+> (enchanting formulas / beast-training tomes, where the spell IS
+> the deliverable). `GetTradeSkillItemID` returns the produced
+> itemID; `GetCraftSpellID` returns the recipe spellID — because
+> there's no produced item to point at.
 
 ## Container
 

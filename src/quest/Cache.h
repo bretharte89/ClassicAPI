@@ -41,5 +41,13 @@ inline const uint8_t *Peek(uint32_t questID) {
 
 // Field offsets within the data block returned by `Lookup`.
 constexpr int OFF_TITLE = 0x9C;
+// Reward and choice item arrays — up to 4 reward and 6 choice
+// itemIDs stored inline (4 bytes each). 0 in any slot means
+// "no item in this slot". Used by `GetQuestLogItemLink` /
+// `GetQuestLogItemID`.
+constexpr int OFF_REWARD_ITEMS = 0x3C;
+constexpr int OFF_CHOICE_ITEMS = 0x5C;
+constexpr int REWARD_COUNT = 4;
+constexpr int CHOICE_COUNT = 6;
 
 } // namespace Quest::Cache

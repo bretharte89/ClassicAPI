@@ -1720,4 +1720,121 @@ enum Offsets {
     VAR_CHARACTER_NAME = 0x00C27D88,
     VAR_REALM_INFO_PTR = 0x00C28130,
     OFF_REALM_INFO_NAME = 0x20,
+
+    // ------------------------------------------------------------------
+    // Get*ItemID companions to the engine's Get*ItemLink functions.
+    // Each offset block is the data path the corresponding
+    // `Script_Get*ItemLink` reads from before calling
+    // `FUN_DBCACHE_ITEMSTATS_GET_RECORD` — same source, just stop at
+    // the itemID instead of building the link string.
+    // ------------------------------------------------------------------
+
+    // Loot rolls: an intrusive linked list of in-progress group loot
+    // rolls. `FUN_LOOT_ROLL_FROM_ID(rollID) → entry *` walks it.
+    // `Script_GetLootRollItemLink` reads the itemID at `entry+0x1C`.
+    FUN_LOOT_ROLL_FROM_ID = 0x0061B2E0,
+    OFF_LOOT_ROLL_ITEM_ID = 0x1C,
+
+    // Loot slots: flat array indexed by `slot-1`, 0x1C-byte stride.
+    // `LOOTABLE_FLAG` mirrors the engine's `[VAR_LOOT_LOOTABLE]` test
+    // that drives whether slot indices are 1-based or 0-based; we
+    // match the engine's `dec` behavior. itemID is at `entry+0`.
+    VAR_LOOT_SLOTS = 0x00B7196C,
+    VAR_LOOT_GUID_LO = 0x00B71B48,
+    VAR_LOOT_GUID_HI = 0x00B71B4C,
+    VAR_LOOT_LOOTABLE = 0x00B71BA0,
+    LOOT_SLOT_STRIDE = 0x1C,
+    LOOT_MAX_SLOTS = 0x10,
+
+    // Merchant inventory: flat array at `0xBDD118`, stride 0x1C,
+    // itemID at `entry+4`. Two flag globals must both be non-zero
+    // (engine's `OR; JZ` gate — set when a merchant interaction is
+    // active).
+    VAR_MERCHANT_ITEMS = 0x00BDD118,
+    VAR_MERCHANT_FLAG_A = 0x00BDDFA0,
+    VAR_MERCHANT_FLAG_B = 0x00BDDFA4,
+    VAR_MERCHANT_COUNT = 0x00BDDFA8,
+    MERCHANT_STRIDE = 0x1C,
+    OFF_MERCHANT_ITEM_ID = 0x04,
+
+    // Quest item resolver — used by `GetQuestItem`. Walks the active
+    // quest-offer "reward"/"choice" arrays. Returns itemID directly
+    // (no follow-up cache lookup needed by the caller).
+    // `__fastcall(ECX = const char *type, EDX = int index0) → itemID`.
+    // Returns 0 on bad type, OOR index, or empty slot.
+    FUN_QUEST_ITEM_RESOLVER = 0x00501920,
+
+    // Quest log record fields (within the data block returned by
+    // `Quest::Cache::Lookup`). Reward and choice arrays each hold up
+    // to N inline itemIDs (4 bytes per entry).
+    OFF_QUEST_RECORD_REWARD_ITEMS = 0x3C,    // 4 entries (0..3)
+    OFF_QUEST_RECORD_CHOICE_ITEMS = 0x5C,    // 6 entries (0..5)
+    QUEST_RECORD_REWARD_COUNT = 4,
+    QUEST_RECORD_CHOICE_COUNT = 6,
+
+    // Trade window — local "player" side and remote "target" side.
+    // Player side is a flat int32 array (just itemIDs). Target side
+    // is a flat `{?, itemID}` array (8-byte stride). Both cap at 7
+    // slots (vanilla's 6 trade slots + 1 non-tradeable slot).
+    VAR_TRADE_PLAYER_SLOTS = 0x00B714F4,
+    VAR_TRADE_TARGET_SLOTS = 0x00B716D0,
+    TRADE_TARGET_STRIDE = 0x08,
+    OFF_TRADE_TARGET_ITEM_ID = 0x04,
+    TRADE_MAX_SLOTS = 7,
+
+    // Auction house — three independent arrays of entry-pointers
+    // covering the three views (list / owner / bidder). Each entry
+    // carries the itemID at `+0x08`.
+    VAR_AUCTION_LIST_ENTRIES = 0x00B72278,
+    VAR_AUCTION_LIST_COUNT = 0x00B7261C,
+    VAR_AUCTION_OWNER_ENTRIES = 0x00B72340,
+    VAR_AUCTION_OWNER_COUNT = 0x00B72624,
+    VAR_AUCTION_BIDDER_ENTRIES = 0x00B72470,
+    VAR_AUCTION_BIDDER_COUNT = 0x00B7262C,
+    OFF_AUCTION_ENTRY_ITEM_ID = 0x08,
+
+    // Auction sell slot — holds a single CGItem GUID for the item
+    // currently sitting in the "sell" frame. Engine resolves it via
+    // a typed object lookup; pass `OBJECT_TYPE_ITEM` and the GUID.
+    VAR_AUCTION_SELL_GUID_LO = 0x00B72608,
+    VAR_AUCTION_SELL_GUID_HI = 0x00B7260C,
+    // `__fastcall(ECX = typeCode, EDX = unused, [stack] = guidLo,
+    //             [stack] = guidHi, [stack] = anyInt) → CGObject *`.
+    // Returns NULL when no object matches or the type doesn't match.
+    // The third stack arg (originally a `__FILE__/__LINE__` debug
+    // hint) is read by debug paths only — anything works at runtime.
+    FUN_GET_OBJECT_BY_GUID = 0x00468460,
+    OBJECT_TYPE_ITEM = 2,
+
+    // Inbox — array of mail-entry pointers behind a slot indirection.
+    // The address itself holds a heap pointer (`MOV ECX, [imm32]` in
+    // the engine), so reading the array requires one extra deref
+    // beyond plain `(uint8_t **)`. itemID inline on each entry at
+    // `+0x120`. (The engine's `Script_GetInboxItem` passes a per-
+    // entry completion callback at `0x004AF0A0` to GetRecord; for
+    // ID-only retrieval we skip the callback.)
+    VAR_INBOX_ENTRIES = 0x00B6EF54,
+    VAR_INBOX_COUNT = 0x00B6EFC0,
+    OFF_INBOX_ENTRY_ITEM_ID = 0x120,
+
+    // Craft window (engineering, alchemy, etc. before the "trade
+    // skill" overhaul). Same slot-indirection shape as inbox: the
+    // address holds a pointer to the heap-allocated entry-pointer
+    // array, NOT the array itself. Each entry's `+0x00` is a
+    // spellID (the recipe spell); the recipe's reagent list lives
+    // on the spell record at `+0xA8`.
+    VAR_CRAFT_ENTRIES = 0x00BDCF78,
+    VAR_CRAFT_COUNT = 0x00BDCFC0,
+    OFF_CRAFT_ENTRY_SPELL_ID = 0x00,
+
+    // Trade skill window — different storage from craft, same shape
+    // (slot-indirected entry-ptr array with a spellID inside). The
+    // recipe's created item lives on the spell record at `+0x19C`
+    // (the "produced item" field), and reagents at `+0xA8` (shared
+    // with craft).
+    VAR_TRADESKILL_ENTRIES = 0x00BDDFC0,
+    VAR_TRADESKILL_COUNT = 0x00BDE04C,
+    OFF_SPELL_RECORD_REAGENTS = 0xA8,        // int32 itemID[8]
+    OFF_SPELL_RECORD_CREATED_ITEM = 0x19C,
+    SPELL_RECIPE_MAX_REAGENTS = 8,
 };
