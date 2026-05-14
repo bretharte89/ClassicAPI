@@ -68,6 +68,8 @@ functions, just behavior the stock 1.12 engine didn't have. See the
 | `PLAYER_STOPPED_LOOKING` | *(none)* |
 | `PLAYER_STARTED_TURNING` | *(none)* |
 | `PLAYER_STOPPED_TURNING` | *(none)* |
+| `GLOBAL_MOUSE_DOWN` | `button` |
+| `GLOBAL_MOUSE_UP` | `button` |
 | `FACTION_STANDING_CHANGED` | `factionID, newStanding, repGained` |
 | `ITEM_DATA_LOAD_RESULT` | `itemID, success` |
 | `MODIFIER_STATE_CHANGED` | `keyName, down` |

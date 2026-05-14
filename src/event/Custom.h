@@ -70,6 +70,11 @@ void Fire_DDD(int eventID, int arg1, int arg2, int arg3);
 // literals this is automatic.
 void Fire_SD(int eventID, const char *arg1, int arg2);
 
+// Single string arg (format `"%s"`). Same lifetime caveat as
+// `Fire_SD` — used by `GLOBAL_MOUSE_DOWN` / `GLOBAL_MOUSE_UP` for
+// `(button)` payloads.
+void Fire_S(int eventID, const char *arg1);
+
 // Internal: try to claim a slot for every reservation that's still
 // unclaimed (`slot < 0`). Called from the `Frame::RegisterEvent` hook
 // in DllMain — every time Lua calls `frame:RegisterEvent(...)`, we

@@ -1727,6 +1727,15 @@ enum Offsets {
     VAR_REALM_INFO_PTR = 0x00C28130,
     OFF_REALM_INFO_NAME = 0x20,
 
+    // Player body yaw (orientation in radians, 0..2π) — the
+    // character's facing direction in the world. Inline float on
+    // CGPlayer; mirrored at `+0x9F8` (current vs last-broadcast).
+    // Verified empirically: a clean 180° RMB-drag swings this by
+    // ~π rad, and LMB-only camera orbits leave it untouched.
+    // Used by `PLAYER_STARTED_TURNING` to detect actual character
+    // rotation (vs the mouselook button merely being held).
+    OFF_PLAYER_BODY_YAW = 0x9C4,
+
     // UI input controller — heap-allocated struct holding the
     // engine's master input-state bitfield (mouselook / free-look /
     // turn-key / autorun / strafe-modifier / etc.). The slot at
@@ -1746,6 +1755,25 @@ enum Offsets {
     // Bit 1 — set when the user is in free-look mode (LMB-drag).
     // Camera-only rotation; character doesn't turn.
     INPUT_FLAG_FREE_LOOK = 0x02,
+    // Bits 4-7 — WASD movement-key state. Each `MoveForwardStart`
+    // / `StrafeLeftStart` / etc. pushes one of these as the bit
+    // mask into the engine's button-press handler. Bit `0x1000` is
+    // the autorun-active flag (set by `ToggleAutoRun` and the
+    // both-mouse-buttons combo). `INPUT_FLAGS_MOVING_ANY` is the
+    // engine's own "is the user currently inputting translational
+    // movement" mask, used to drive `PLAYER_STARTED_MOVING` —
+    // matches modern's "STOPPED fires on key release, even
+    // mid-air" semantics because no physics/airborne bit is
+    // involved.
+    INPUT_FLAG_MOVE_FORWARD = 0x10,
+    INPUT_FLAG_MOVE_BACKWARD = 0x20,
+    INPUT_FLAG_STRAFE_LEFT = 0x40,
+    INPUT_FLAG_STRAFE_RIGHT = 0x80,
+    INPUT_FLAG_AUTORUN = 0x1000,
+    INPUT_FLAGS_MOVING_ANY =
+        INPUT_FLAG_MOVE_FORWARD | INPUT_FLAG_MOVE_BACKWARD |
+        INPUT_FLAG_STRAFE_LEFT | INPUT_FLAG_STRAFE_RIGHT |
+        INPUT_FLAG_AUTORUN,
 
     // CGUnit -> MovementInfo pointer. Holds the unit's per-instance
     // position / orientation / movement-flags / per-direction-speed

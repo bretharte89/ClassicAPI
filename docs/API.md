@@ -174,9 +174,8 @@ build instructions.
 - [Events](#events)
   - [`C_EventUtils.IsEventValid(eventName)`](#c_eventutilsiseventvalideventname)
   - [`BAG_UPDATE_DELAYED` event](#bag_update_delayed-event)
-  - [`PLAYER_STARTED_MOVING` / `PLAYER_STOPPED_MOVING` events](#player_started_moving--player_stopped_moving-events)
-  - [`PLAYER_STARTED_LOOKING` / `PLAYER_STOPPED_LOOKING` events](#player_started_looking--player_stopped_looking-events)
-  - [`PLAYER_STARTED_TURNING` / `PLAYER_STOPPED_TURNING` events](#player_started_turning--player_stopped_turning-events)
+  - [Player input-state events (`PLAYER_STARTED_MOVING` / `LOOKING` / `TURNING` + `STOPPED_*`)](#player-input-state-events)
+  - [`GLOBAL_MOUSE_DOWN` / `GLOBAL_MOUSE_UP` events](#global_mouse_down--global_mouse_up-events)
 - [Globals](#globals)
   - [`CLASSIC_API_VERSION`](#classic_api_version)
   - [`LE_EXPANSION_*`](#le_expansion_)
@@ -4176,75 +4175,92 @@ event handlers.
 > currently won't trigger `BAG_UPDATE_DELAYED`. Player bag (0..4)
 > and bank (5..10) updates work normally — the 95% case.
 
-### `PLAYER_STARTED_MOVING` / `PLAYER_STOPPED_MOVING` events
+### Player input-state events
 
-Fires (with no payload) on the transition where the player begins or
-ends translational movement, matching the modern events of the same
-name. Vanilla 1.12 doesn't expose any movement-state event — addons
-that need to know "is the player moving" otherwise poll
-`GetUnitSpeed("player")` or `IsFalling` on every `OnUpdate`.
+Three pairs of zero-payload events, all driven off the same
+UI-input controller flag word (`*0x00BE1148 + 0x04`) — the master
+input bitfield the engine updates on every mouse-button / movement-
+key press and release. One per-frame `Tick::WorldTick` callback
+reads the word once and fires whichever pairs transitioned.
 
-```lua
-local f = CreateFrame("Frame")
-f:RegisterEvent("PLAYER_STARTED_MOVING")
-f:RegisterEvent("PLAYER_STOPPED_MOVING")
-f:SetScript("OnEvent", function()
-    if event == "PLAYER_STARTED_MOVING" then ... end
-end)
-```
-
-What counts as "moving" matches modern's behavior:
-
-| Bit | Counts? | Note |
-|-----|---------|------|
-| `FORWARD` / `BACKWARD` / `STRAFE_LEFT` / `STRAFE_RIGHT` | yes | W/S/A/D press, mouse-click move |
-| `JUMPING` / `FALLING` / `FALLING_FAR` | yes | spacebar, walking off a ledge |
-| `TURN_LEFT` / `TURN_RIGHT` (turn-in-place) | no | matches modern (turning isn't moving) |
-| `WALK_MODE` (toggle), `ONTRANSPORT`, `LEVITATING`, `SWIMMING` alone | no | protocol-level flags, not active motion |
-
-Implementation: subscribes to the shared `Tick::WorldTick` per-frame
-registry (single `MinHook` on `FUN_0066FD50` shared with
-`BAG_UPDATE_DELAYED`) and edge-detects on the moving-bits subset of
-the player's movement-flags word at `CGPlayer + 0x9E8`. State resets
-between zones — if the player pointer is unresolvable (loading
-screen, character select), the next valid tick won't fire a stale
-`STOPPED_MOVING`.
-
-### `PLAYER_STARTED_LOOKING` / `PLAYER_STOPPED_LOOKING` events
-
-Fires when free-look mode (LMB-held mouse drag) starts and stops.
-Free-look rotates the camera around the character without turning
-the character's body — the same mode mouse-look addons use for
-"look around without moving".
-
-### `PLAYER_STARTED_TURNING` / `PLAYER_STOPPED_TURNING` events
-
-Fires when mouselook mode (RMB-held mouse drag, or programmatic
-`MouselookStart`) starts and stops. Mouselook turns the character
-to face whatever direction the mouse is dragged toward — the camera
-follows the character's facing.
+| Event | Fires on | Source |
+|-------|----------|--------|
+| `PLAYER_STARTED_MOVING` / `PLAYER_STOPPED_MOVING` | WASD or autorun toggle | UI-input controller flags (`0x10` W \| `0x20` S \| `0x40` A \| `0x80` D \| `0x1000` autorun) |
+| `PLAYER_STARTED_TURNING` / `PLAYER_STOPPED_TURNING` | Character body actually rotating (RMB-drag, `MouselookStart`, etc.) | Per-frame delta on `CGPlayer + 0x9C4` (body yaw, radians) |
+| `PLAYER_STARTED_LOOKING` / `PLAYER_STOPPED_LOOKING` | LMB free-look bit (camera-only rotation) | UI-input controller bit `0x02` |
 
 ```lua
 local f = CreateFrame("Frame")
-for _, ev in ipairs({"PLAYER_STARTED_LOOKING", "PLAYER_STOPPED_LOOKING",
-                     "PLAYER_STARTED_TURNING", "PLAYER_STOPPED_TURNING"}) do
+for _, ev in ipairs({
+    "PLAYER_STARTED_MOVING", "PLAYER_STOPPED_MOVING",
+    "PLAYER_STARTED_LOOKING", "PLAYER_STOPPED_LOOKING",
+    "PLAYER_STARTED_TURNING", "PLAYER_STOPPED_TURNING",
+}) do
     f:RegisterEvent(ev)
 end
-f:SetScript("OnEvent", function(_, event)
-    print(event)
+f:SetScript("OnEvent", function(_, event) print(event) end)
+```
+
+**Key-state semantics for MOVING**: `STOPPED_MOVING` fires the
+instant the movement keys release, even if the character is still
+airborne from a jump. Matches retail (verified empirically). For
+an "is the character actually displacing this frame" signal, use
+`GetUnitSpeed("player")` and watch the first return.
+
+**TURNING fires on actual rotation** (per-frame delta on the
+body-yaw float at `CGPlayer + 0x9C4`), not merely on the
+mouselook bit being held — matches retail. The mouselook bit
+stays set the whole time RMB is held even without drag; gating on
+it alone would over-fire on bare clicks.
+
+**LOOKING is still bit-based** — fires on LMB press, not on actual
+camera-yaw change. Known divergence from retail. The camera-yaw
+global lives outside CGPlayer; finding it is a TODO. Addons that
+want the raw click signal should use `GLOBAL_MOUSE_DOWN` /
+`GLOBAL_MOUSE_UP` below.
+
+Implementation: single subscriber on the shared `Tick::WorldTick`
+registry (same `MinHook` on `FUN_0066FD50` shared with
+`BAG_UPDATE_DELAYED`). When the player or input controller is
+unresolvable (pre-login, loading screen, character select), all
+states reset so the next valid tick doesn't fire spurious STOPPED
+transitions.
+
+### `GLOBAL_MOUSE_DOWN` / `GLOBAL_MOUSE_UP` events
+
+Fires on every raw mouse-button press or release while WoW has
+focus. Payload is the button identifier string — matches modern
+WoW's signature exactly.
+
+```lua
+local f = CreateFrame("Frame")
+f:RegisterEvent("GLOBAL_MOUSE_DOWN")
+f:RegisterEvent("GLOBAL_MOUSE_UP")
+f:SetScript("OnEvent", function(_, event, button)
+    print(event, button)  -- "GLOBAL_MOUSE_DOWN", "LeftButton"
 end)
 ```
 
-Both pairs are edge-detected per-frame off the same UI-input
-controller (`*0x00BE1148 + 0x04`) that `Script_IsMouselooking`
-reads — bit `0x01` is mouselook (`TURNING`), bit `0x02` is free-look
-(`LOOKING`). Same `Tick::WorldTick` subscription as
-`PLAYER_STARTED_MOVING`; no extra hook overhead.
+| Payload | Source |
+|---------|--------|
+| `"LeftButton"` | `VK_LBUTTON` |
+| `"RightButton"` | `VK_RBUTTON` |
+| `"MiddleButton"` | `VK_MBUTTON` |
+| `"Button4"` | `VK_XBUTTON1` |
+| `"Button5"` | `VK_XBUTTON2` |
 
-**Mouse-only**, matching modern WoW. Keyboard turn-in-place
-(`TurnLeftStart` / `TurnRightStart`, bits 8-9 of the same flag
-word) does NOT fire `TURNING` on retail — verified empirically —
-so we don't either.
+Distinct from per-frame `OnMouseDown` scripts — these fire even
+when the click misses every UI frame (clicks in the world / on
+nothing). Distinct from `PLAYER_STARTED_LOOKING` /
+`PLAYER_STARTED_TURNING` — those are camera-rotation events;
+these are raw input events.
+
+**Focus-gated.** Polls Win32 `GetAsyncKeyState` per frame on the
+shared `Tick::WorldTick` registry. DOWN transitions are only
+honored when WoW is the foreground window — clicking in another
+app while alt-tabbed doesn't fire. UP transitions always fire,
+even if the user alt-tabbed mid-click, so an addon never gets
+left in a "button is held" state.
 
 ## Globals
 
