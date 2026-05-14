@@ -18,7 +18,7 @@
 
 // Opt-in persistent name cache, keyed by GUID. When enabled, every
 // SMSG_NAME_QUERY_RESPONSE the engine processes — plus anything fed
-// in via `C_PlayerInfo.RememberPlayer` from Lua — is persisted to
+// in via `C_PlayerCache.RememberPlayer` from Lua — is persisted to
 // `WTF\Account\<acct>\<realm>\ClassicAPI_NameCache.txt` and survives
 // across sessions on the same realm. Shared across all characters
 // on that account+realm, so a 50-character bank alt's cache is

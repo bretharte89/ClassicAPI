@@ -34,11 +34,11 @@
 //      — every SMSG_NAME_QUERY_RESPONSE the engine processes flows
 //      through here. Covers chat, group/raid sync, guild roster
 //      updates, visible-object resolution.
-//   2. `C_PlayerInfo.RememberPlayer(guid, name, classToken)` from
+//   2. `C_PlayerCache.RememberPlayer(guid, name, classToken)` from
 //      Lua — lets addons feed in sources the engine cache doesn't
 //      touch directly (e.g. /who results parsed via GetWhoInfo,
 //      mouseover, target).
-//   3. **Visible-object sweep** (opt-in via `NameCacheScanEnabled`):
+//   3. **Visible-object sweep** (opt-in via `C_PlayerCache.SetScanEnabled`):
 //      walks the engine's live visible-object list every ~10s on
 //      the existing `Frame::RegisterEvent` hook. Picks up every
 //      player in render range whether or not the engine has issued
@@ -592,7 +592,7 @@ uint32_t ResolveRaceToken(const char *token) {
     return 0;
 }
 
-// `C_PlayerInfo.RememberPlayer(guid, name, classToken [, raceToken
+// `C_PlayerCache.RememberPlayer(guid, name, classToken [, raceToken
 // [, sex]])` — stores the entry in the persistent cache. Class and
 // race tokens are uppercase engine tokens (`"WARRIOR"`, `"NIGHTELF"`,
 // etc.); sex is `0` (male) or `1` (female), matching the wire-format
@@ -600,7 +600,7 @@ uint32_t ResolveRaceToken(const char *token) {
 // passing only the first three preserves the old 3-arg signature.
 // Returns `true` on success, `false` if the cache is disabled or the
 // required args are malformed.
-int __fastcall Script_C_PlayerInfo_RememberPlayer(void *L) {
+int __fastcall Script_C_PlayerCache_RememberPlayer(void *L) {
     if (!IsEnabled()) {
         Game::Lua::PushBoolean(L, 0);
         return 1;
@@ -608,7 +608,7 @@ int __fastcall Script_C_PlayerInfo_RememberPlayer(void *L) {
     if (!Game::Lua::IsString(L, 1) || !Game::Lua::IsString(L, 2)
             || !Game::Lua::IsString(L, 3)) {
         Game::Lua::Error(L,
-            "Usage: C_PlayerInfo.RememberPlayer(guid, name, classToken [, raceToken [, sex]])");
+            "Usage: C_PlayerCache.RememberPlayer(guid, name, classToken [, raceToken [, sex]])");
         return 0;
     }
     uint64_t guid;
@@ -645,10 +645,11 @@ int __fastcall Script_C_PlayerInfo_RememberPlayer(void *L) {
     return 1;
 }
 
-// `ClassicAPI.SetPersistentNameCacheEnabled(bool)` — opt-in toggle.
-// Persists to the account-level settings file. Enabling triggers a
-// lazy load of any prior cache contents for the current realm.
-int __fastcall Script_ClassicAPI_SetPersistentNameCacheEnabled(void *L) {
+// `C_PlayerCache.SetEnabled(bool)` — opt-in toggle for the persistent
+// name cache. Persists to the account-level settings file. Enabling
+// triggers a lazy load of any prior cache contents for the current
+// realm.
+int __fastcall Script_C_PlayerCache_SetEnabled(void *L) {
     LoadSettingsIfNeeded();
     bool desired = false;
     if (Game::Lua::IsNumber(L, 1))
@@ -669,18 +670,18 @@ int __fastcall Script_ClassicAPI_SetPersistentNameCacheEnabled(void *L) {
     return 0;
 }
 
-int __fastcall Script_ClassicAPI_GetPersistentNameCacheEnabled(void *L) {
+int __fastcall Script_C_PlayerCache_IsEnabled(void *L) {
     LoadSettingsIfNeeded();
     Game::Lua::PushBoolean(L, g_enabled ? 1 : 0);
     return 1;
 }
 
-// `ClassicAPI.SetNameCacheScanEnabled(bool)` — opt-in toggle for the
-// visible-object sweep. Independent of the cache toggle: turning this
-// on without `SetPersistentNameCacheEnabled(true)` does nothing
+// `C_PlayerCache.SetScanEnabled(bool)` — opt-in toggle for the
+// visible-object sweep. Independent of the cache toggle: turning
+// this on without `C_PlayerCache.SetEnabled(true)` does nothing
 // (scan results would have nowhere to go). Persists to the same
 // account-level settings file.
-int __fastcall Script_ClassicAPI_SetNameCacheScanEnabled(void *L) {
+int __fastcall Script_C_PlayerCache_SetScanEnabled(void *L) {
     LoadSettingsIfNeeded();
     bool desired = false;
     if (Game::Lua::IsNumber(L, 1))
@@ -694,23 +695,23 @@ int __fastcall Script_ClassicAPI_SetNameCacheScanEnabled(void *L) {
     return 0;
 }
 
-int __fastcall Script_ClassicAPI_GetNameCacheScanEnabled(void *L) {
+int __fastcall Script_C_PlayerCache_IsScanEnabled(void *L) {
     LoadSettingsIfNeeded();
     Game::Lua::PushBoolean(L, g_scanEnabled ? 1 : 0);
     return 1;
 }
 
 void RegisterLuaFunctions() {
-    Game::Lua::RegisterTableFunction("C_PlayerInfo", "RememberPlayer",
-                                     &Script_C_PlayerInfo_RememberPlayer);
-    Game::Lua::RegisterTableFunction("ClassicAPI", "SetPersistentNameCacheEnabled",
-                                     &Script_ClassicAPI_SetPersistentNameCacheEnabled);
-    Game::Lua::RegisterTableFunction("ClassicAPI", "GetPersistentNameCacheEnabled",
-                                     &Script_ClassicAPI_GetPersistentNameCacheEnabled);
-    Game::Lua::RegisterTableFunction("ClassicAPI", "SetNameCacheScanEnabled",
-                                     &Script_ClassicAPI_SetNameCacheScanEnabled);
-    Game::Lua::RegisterTableFunction("ClassicAPI", "GetNameCacheScanEnabled",
-                                     &Script_ClassicAPI_GetNameCacheScanEnabled);
+    Game::Lua::RegisterTableFunction("C_PlayerCache", "RememberPlayer",
+                                     &Script_C_PlayerCache_RememberPlayer);
+    Game::Lua::RegisterTableFunction("C_PlayerCache", "SetEnabled",
+                                     &Script_C_PlayerCache_SetEnabled);
+    Game::Lua::RegisterTableFunction("C_PlayerCache", "IsEnabled",
+                                     &Script_C_PlayerCache_IsEnabled);
+    Game::Lua::RegisterTableFunction("C_PlayerCache", "SetScanEnabled",
+                                     &Script_C_PlayerCache_SetScanEnabled);
+    Game::Lua::RegisterTableFunction("C_PlayerCache", "IsScanEnabled",
+                                     &Script_C_PlayerCache_IsScanEnabled);
 }
 
 const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};

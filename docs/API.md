@@ -119,12 +119,12 @@ build instructions.
   - [`C_UnitAuras.GetAuraDispelTypeColor(dispelName)`](#c_unitaurasgetauradispeltypecolordispelname)
 - [NameCache](#namecache)
   - [`GetPlayerInfoByGUID(guid)`](#getplayerinfobyguidguid)
-  - [`C_PlayerInfo.RememberPlayer(guid, name, classToken)`](#c_playerinforememberplayerguid-name-classtoken)
   - [`C_PlayerInfo.GUIDIsPlayer(guid)` / `GUIDIsCreature` / `GUIDIsPet` / `GUIDIsGameObject`](#c_playerinfoguidisplayerguid--guidiscreature--guidispet--guidisgameobject)
-  - [`ClassicAPI.SetPersistentNameCacheEnabled(enabled)`](#classicapisetpersistentnamecacheenabledenabled)
-  - [`ClassicAPI.GetPersistentNameCacheEnabled()`](#classicapigetpersistentnamecacheenabled)
-  - [`ClassicAPI.SetNameCacheScanEnabled(enabled)`](#classicapisetnamecachescanenabledenabled)
-  - [`ClassicAPI.GetNameCacheScanEnabled()`](#classicapigetnamecachescanenabled)
+  - [`C_PlayerCache.RememberPlayer(guid, name, classToken)`](#c_playercacherememberplayerguid-name-classtoken)
+  - [`C_PlayerCache.SetEnabled(enabled)`](#c_playercachesetenabledenabled)
+  - [`C_PlayerCache.IsEnabled()`](#c_playercacheisenabled)
+  - [`C_PlayerCache.SetScanEnabled(enabled)`](#c_playercachesetscanenabledenabled)
+  - [`C_PlayerCache.IsScanEnabled()`](#c_playercacheisscanenabled)
 - [State](#state)
   - [`IsMounted()`](#ismounted)
   - [`IsStealthed()`](#isstealthed)
@@ -3019,10 +3019,10 @@ entries the SMSG path would never reach on its own.
 
 Two toggles, each independent:
 
-- **`SetPersistentNameCacheEnabled`** — turn on the on-disk cache.
+- **`C_PlayerCache.SetEnabled`** — turn on the on-disk cache.
   Off by default. Without this, the module is read-only against
   the engine's transient in-memory cache.
-- **`SetNameCacheScanEnabled`** — turn on the visible-object
+- **`C_PlayerCache.SetScanEnabled`** — turn on the visible-object
   sweep. Off by default. Requires the on-disk cache to be enabled
   to have any effect.
 
@@ -3033,7 +3033,7 @@ Three population sources feed the cache when fully enabled:
    processes is mirrored to disk. Covers chat, group/raid sync,
    guild updates, visible-object resolution — anything the engine
    itself issues a name query for.
-2. **`C_PlayerInfo.RememberPlayer`** (always available, no-op
+2. **`C_PlayerCache.RememberPlayer`** (always available, no-op
    when the cache is off). Lets addons feed in sources the engine
    never sees: `/who` results, etc.
 3. **Visible-object sweep** (active when both toggles are on).
@@ -3090,7 +3090,7 @@ future `C_PlayerInfo.RequestLoadPlayerByID` would do that
 explicitly and fire a load-result event.
 
 **Persistent fallback**: when
-[`ClassicAPI.SetPersistentNameCacheEnabled(true)`](#classicapisetpersistentnamecacheenabledenabled)
+[`C_PlayerCache.SetEnabled(true)`](#c_playercachesetenabledenabled)
 has been opted into, a per-realm on-disk cache extends coverage
 across sessions. On engine cache miss, `GetPlayerInfoByGUID` falls
 back to the persistent cache and returns `name`, `class`, `race`,
@@ -3104,7 +3104,7 @@ instance lives at `0x00C0E228`; entry layout (name, realm, race,
 sex, class) was reverse-engineered from the
 `SMSG_NAME_QUERY_RESPONSE` write path at `0x0055F310`.
 
-### `C_PlayerInfo.RememberPlayer(guid, name, classToken)`
+### `C_PlayerCache.RememberPlayer(guid, name, classToken)`
 
 Adds a `(guid → name, classID, raceID, sex)` entry to the persistent
 name cache. For the engine-driven coverage (chat / group / guild /
@@ -3116,7 +3116,7 @@ NameCache doesn't see directly: `/who` results, mouseover, target
 snapshots, etc.
 
 ```
-C_PlayerInfo.RememberPlayer(guid, name, classToken [, raceToken [, sex]])
+C_PlayerCache.RememberPlayer(guid, name, classToken [, raceToken [, sex]])
 ```
 
 Returns `true` on success, `false` if the persistent cache isn't
@@ -3199,7 +3199,7 @@ Accepts either the 16-digit `"0xHHHHHHHHLLLLLLLL"` form or the
 Malformed input returns `false` rather than raising — matching
 modern's tolerance for stale GUIDs from addon-side caches.
 
-### `ClassicAPI.SetPersistentNameCacheEnabled(enabled)`
+### `C_PlayerCache.SetEnabled(enabled)`
 
 Opts into (or out of) the persistent name cache. `enabled` is a
 boolean (numeric `0`/`1` also accepted). Persists to
@@ -3211,37 +3211,37 @@ When enabled:
 
 - Every `SMSG_NAME_QUERY_RESPONSE` the engine processes is also
   written to `WTF\Account\<account>\<realm>\ClassicAPI_NameCache.txt`.
-- Lua-side `C_PlayerInfo.RememberPlayer` calls become effective
+- Lua-side `C_PlayerCache.RememberPlayer` calls become effective
   (they're no-ops when the cache is disabled).
 - `GetPlayerInfoByGUID` gains the cross-session fallback path
   documented above.
-- [`SetNameCacheScanEnabled`](#classicapisetnamecachescanenabledenabled)
+- [`SetScanEnabled`](#c_playercachesetscanenabledenabled)
   becomes effective if also turned on.
 
 When disabled, the on-disk file is left in place (re-enabling later
 restores the prior contents); future writes are simply suppressed.
 
 ```lua
-ClassicAPI.SetPersistentNameCacheEnabled(true)
+C_PlayerCache.SetEnabled(true)
 ```
 
 Returns nothing.
 
-### `ClassicAPI.GetPersistentNameCacheEnabled()`
+### `C_PlayerCache.IsEnabled()`
 
 Returns the current state of the persistent name cache as a
 boolean. `false` until
-[`SetPersistentNameCacheEnabled`](#classicapisetpersistentnamecacheenabledenabled)
+[`SetEnabled`](#c_playercachesetenabledenabled)
 has been called (or its prior call survived in the on-disk settings
 file).
 
 ```lua
-if ClassicAPI.GetPersistentNameCacheEnabled() then
+if C_PlayerCache.IsEnabled() then
     -- persistent fallback is active for GetPlayerInfoByGUID
 end
 ```
 
-### `ClassicAPI.SetNameCacheScanEnabled(enabled)`
+### `C_PlayerCache.SetScanEnabled(enabled)`
 
 Opts into the **visible-object sweep**: an opportunistic walk of
 the engine's live visible-object list that feeds every player in
@@ -3255,8 +3255,8 @@ no extra hooks installed.
 `NameCacheScanEnabled=1`/`0`.
 
 ```lua
-ClassicAPI.SetPersistentNameCacheEnabled(true)   -- prerequisite
-ClassicAPI.SetNameCacheScanEnabled(true)
+C_PlayerCache.SetEnabled(true)        -- prerequisite
+C_PlayerCache.SetScanEnabled(true)
 -- Now: standing in Stormwind for a minute pre-populates the cache
 -- with every visible player's name and class.
 ```
@@ -3280,7 +3280,7 @@ comes from the CGObject vftable's `GetName` slot; class is the
 byte at `[m_objectFields + 0x79]` (UNIT_FIELD_BYTES_0 byte 1, same
 field `Script_UnitClass` reads).
 
-### `ClassicAPI.GetNameCacheScanEnabled()`
+### `C_PlayerCache.IsScanEnabled()`
 
 Returns the current visible-object scan setting as a boolean.
 Independent of the cache toggle — this only reflects the scan-
@@ -3288,8 +3288,8 @@ specific setting, not whether the scan is *effectively* running
 (which also requires the cache to be on).
 
 ```lua
-if ClassicAPI.GetNameCacheScanEnabled()
-    and ClassicAPI.GetPersistentNameCacheEnabled() then
+if C_PlayerCache.IsScanEnabled()
+    and C_PlayerCache.IsEnabled() then
     -- visible-object sweeps are running every ~10s
 end
 ```
