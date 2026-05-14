@@ -13,6 +13,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 namespace Guid {
@@ -74,5 +75,16 @@ inline bool IsPet(uint64_t guid)           { return Classify(guid) == Type::Pet;
 inline bool IsGameObject(uint64_t guid)    { return Classify(guid) == Type::GameObject; }
 inline bool IsDynamicObject(uint64_t guid) { return Classify(guid) == Type::DynamicObject; }
 inline bool IsCorpse(uint64_t guid)        { return Classify(guid) == Type::Corpse; }
+
+// Minimum buffer size for `FormatAsString`'s output — 16 hex digits +
+// the `"0x"` prefix + a NUL terminator.
+constexpr std::size_t STRING_SIZE = 19;
+
+// Formats `guid` as `"0xHHHHHHHHLLLLLLLL"` (high dword then low,
+// matching what `UnitGUID` and `C_Item.GetItemGUID` return). Writes
+// into `buf`; `cap` must be at least `STRING_SIZE` bytes. Returns the
+// buffer pointer for chaining (e.g.
+// `PushString(L, Guid::FormatAsString(g, buf, sizeof buf))`).
+const char *FormatAsString(uint64_t guid, char *buf, std::size_t cap);
 
 } // namespace Guid

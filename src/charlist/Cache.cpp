@@ -39,9 +39,10 @@
 
 #include "Game.h"
 #include "Offsets.h"
+#include "dbc/Lookup.h"
+#include "guid/Guid.h"
 
 #include <cstdint>
-#include <cstdio>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -63,52 +64,6 @@ struct Snapshot {
 // Replaced wholesale on every teardown — we always reflect the most
 // recently-observed char-select state. Read by the Lua bindings.
 std::vector<Snapshot> g_chars;
-
-int CurrentLocale() {
-    return *reinterpret_cast<const int *>(
-        static_cast<uintptr_t>(Offsets::VAR_LOCALE_INDEX));
-}
-
-// Looks up a localized name from a DBC's records-pointer + count
-// globals, with a per-record offset to the locale-array. Returns
-// nullptr on out-of-range index or missing record.
-const char *LookupDBCName(uintptr_t recordsVar, uintptr_t countVar,
-                          int id, int nameOffset) {
-    if (id < 0)
-        return nullptr;
-    const int count = *reinterpret_cast<const int *>(countVar);
-    if (id > count)
-        return nullptr;
-    const uint8_t *const *records =
-        *reinterpret_cast<const uint8_t *const *const *>(recordsVar);
-    if (records == nullptr)
-        return nullptr;
-    const uint8_t *record = records[id];
-    if (record == nullptr)
-        return nullptr;
-    const char *name = *reinterpret_cast<const char *const *>(
-        record + nameOffset + CurrentLocale() * 4);
-    return (name != nullptr && name[0] != '\0') ? name : nullptr;
-}
-
-// Reads the englishRace / class-file-token field from a DBC
-// record (single-string, not locale-array).
-const char *LookupDBCField(uintptr_t recordsVar, uintptr_t countVar,
-                           int id, int fieldOffset) {
-    if (id < 0)
-        return nullptr;
-    const int count = *reinterpret_cast<const int *>(countVar);
-    if (id > count)
-        return nullptr;
-    const uint8_t *const *records =
-        *reinterpret_cast<const uint8_t *const *const *>(recordsVar);
-    if (records == nullptr)
-        return nullptr;
-    const uint8_t *record = records[id];
-    if (record == nullptr)
-        return nullptr;
-    return *reinterpret_cast<const char *const *>(record + fieldOffset);
-}
 
 void TakeSnapshot() {
     g_chars.clear();
@@ -165,13 +120,13 @@ int __fastcall Script_GetCharacterInfo(void *L) {
 
     Game::Lua::PushString(L, s.name.c_str());
 
-    const char *localRace = LookupDBCName(
+    const char *localRace = DBC::LocalizedField(
         Offsets::VAR_CHRRACES_RECORDS, Offsets::VAR_CHRRACES_COUNT,
         s.raceID, Offsets::OFF_CHRRACES_NAMES);
     if (localRace != nullptr) Game::Lua::PushString(L, localRace);
     else Game::Lua::PushString(L, "");
 
-    const char *localClass = LookupDBCName(
+    const char *localClass = DBC::LocalizedField(
         Offsets::VAR_CHRCLASSES_RECORDS, Offsets::VAR_CHRCLASSES_COUNT,
         s.classID, Offsets::OFF_CHRCLASSES_NAMES);
     if (localClass != nullptr) Game::Lua::PushString(L, localClass);
@@ -179,13 +134,13 @@ int __fastcall Script_GetCharacterInfo(void *L) {
 
     Game::Lua::PushNumber(L, static_cast<double>(s.level));
 
-    const char *area = LookupDBCName(
+    const char *area = DBC::LocalizedField(
         Offsets::VAR_AREATABLE_RECORDS, Offsets::VAR_AREATABLE_COUNT,
         static_cast<int>(s.areaID), Offsets::OFF_AREATABLE_NAMES);
     if (area != nullptr) Game::Lua::PushString(L, area);
     else Game::Lua::PushNil(L);
 
-    const char *englishRace = LookupDBCField(
+    const char *englishRace = DBC::StringField(
         Offsets::VAR_CHRRACES_RECORDS, Offsets::VAR_CHRRACES_COUNT,
         s.raceID, Offsets::OFF_CHRRACES_FILENAME);
     Game::Lua::PushString(L, englishRace != nullptr ? englishRace : "");
@@ -196,11 +151,8 @@ int __fastcall Script_GetCharacterInfo(void *L) {
     // past 2^53. Format as `0x` + 16-hex-digit string (hi then lo,
     // matching `UnitGUID`'s convention) so addons can use it as a
     // stable string identifier.
-    char buf[24];
-    std::snprintf(buf, sizeof(buf), "0x%08X%08X",
-                  static_cast<uint32_t>(s.guid >> 32),
-                  static_cast<uint32_t>(s.guid));
-    Game::Lua::PushString(L, buf);
+    char buf[Guid::STRING_SIZE];
+    Game::Lua::PushString(L, Guid::FormatAsString(s.guid, buf, sizeof buf));
 
     return 8;
 }
@@ -228,21 +180,21 @@ int __fastcall Script_GetCharacters(void *L) {
 
         Game::Lua::SetFieldString(L, "name", s.name.c_str());
 
-        Game::Lua::SetFieldString(L, "localizedRace", LookupDBCName(
+        Game::Lua::SetFieldString(L, "localizedRace", DBC::LocalizedField(
             Offsets::VAR_CHRRACES_RECORDS, Offsets::VAR_CHRRACES_COUNT,
             s.raceID, Offsets::OFF_CHRRACES_NAMES));
 
-        Game::Lua::SetFieldString(L, "englishRace", LookupDBCField(
+        Game::Lua::SetFieldString(L, "englishRace", DBC::StringField(
             Offsets::VAR_CHRRACES_RECORDS, Offsets::VAR_CHRRACES_COUNT,
             s.raceID, Offsets::OFF_CHRRACES_FILENAME));
 
-        Game::Lua::SetFieldString(L, "localizedClass", LookupDBCName(
+        Game::Lua::SetFieldString(L, "localizedClass", DBC::LocalizedField(
             Offsets::VAR_CHRCLASSES_RECORDS, Offsets::VAR_CHRCLASSES_COUNT,
             s.classID, Offsets::OFF_CHRCLASSES_NAMES));
 
         Game::Lua::SetFieldNumber(L, "level", static_cast<double>(s.level));
 
-        const char *area = LookupDBCName(
+        const char *area = DBC::LocalizedField(
             Offsets::VAR_AREATABLE_RECORDS, Offsets::VAR_AREATABLE_COUNT,
             static_cast<int>(s.areaID), Offsets::OFF_AREATABLE_NAMES);
         if (area != nullptr)
@@ -250,11 +202,9 @@ int __fastcall Script_GetCharacters(void *L) {
 
         Game::Lua::SetFieldNumber(L, "sex", static_cast<double>(s.sex));
 
-        char buf[24];
-        std::snprintf(buf, sizeof(buf), "0x%08X%08X",
-                      static_cast<uint32_t>(s.guid >> 32),
-                      static_cast<uint32_t>(s.guid));
-        Game::Lua::SetFieldString(L, "guid", buf);
+        char buf[Guid::STRING_SIZE];
+        Game::Lua::SetFieldString(L, "guid",
+            Guid::FormatAsString(s.guid, buf, sizeof buf));
 
         // Insert inner-table into outer-table at numeric key.
         Game::Lua::SetTable(L, -3);

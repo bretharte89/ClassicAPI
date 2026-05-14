@@ -15,6 +15,7 @@
 
 #include "Game.h"
 #include "Offsets.h"
+#include "dbc/Lookup.h"
 
 #include <cstdint>
 
@@ -37,17 +38,8 @@ const uint8_t *Descriptor(const uint8_t *unit) {
 }
 
 const uint8_t *SpellRecord(uint32_t spellID) {
-    if (spellID == 0)
-        return nullptr;
-    const int count = *reinterpret_cast<const int *>(
-        static_cast<uintptr_t>(Offsets::VAR_SPELL_RECORD_COUNT));
-    if (static_cast<int>(spellID) > count)
-        return nullptr;
-    auto *records = *reinterpret_cast<const uint8_t *const *const *>(
-        static_cast<uintptr_t>(Offsets::VAR_SPELL_RECORDS));
-    if (records == nullptr)
-        return nullptr;
-    return records[spellID];
+    return DBC::Record(Offsets::VAR_SPELL_RECORDS,
+                       Offsets::VAR_SPELL_RECORD_COUNT, spellID);
 }
 
 int LocaleIndex() {
@@ -71,19 +63,10 @@ const char *SpellIconPath(const uint8_t *spellRecord) {
         spellRecord + OFF_SPELL_ICON_ID);
     if (iconID <= 0)
         return nullptr;
-    const int iconCount = *reinterpret_cast<const int *>(
-        static_cast<uintptr_t>(Offsets::VAR_SPELL_ICON_COUNT));
-    if (iconID > iconCount)
-        return nullptr;
-    auto *iconRecords = *reinterpret_cast<const uint8_t *const *const *>(
-        static_cast<uintptr_t>(Offsets::VAR_SPELL_ICON_RECORDS));
-    if (iconRecords == nullptr)
-        return nullptr;
-    const uint8_t *iconRecord = iconRecords[iconID];
-    if (iconRecord == nullptr)
-        return nullptr;
-    return *reinterpret_cast<const char *const *>(
-        iconRecord + OFF_SPELLICON_PATH);
+    return DBC::StringField(Offsets::VAR_SPELL_ICON_RECORDS,
+                            Offsets::VAR_SPELL_ICON_COUNT,
+                            static_cast<uint32_t>(iconID),
+                            OFF_SPELLICON_PATH);
 }
 
 } // namespace

@@ -13,10 +13,10 @@
 
 #include "Game.h"
 #include "Offsets.h"
+#include "guid/Guid.h"
 #include "item/Location.h"
 
 #include <cstdint>
-#include <cstdio>
 
 namespace Item::GUID {
 
@@ -50,12 +50,8 @@ static int __fastcall Script_C_Item_GetItemGUID(void *L) {
     if (guid == 0)
         return 0;
 
-    const uint32_t lo = static_cast<uint32_t>(guid);
-    const uint32_t hi = static_cast<uint32_t>(guid >> 32);
-
-    char buf[24]; // "0x" + 16 hex digits + null
-    std::snprintf(buf, sizeof(buf), "0x%08X%08X", hi, lo);
-    Game::Lua::PushString(L, buf);
+    char buf[Guid::STRING_SIZE];
+    Game::Lua::PushString(L, Guid::FormatAsString(guid, buf, sizeof buf));
     return 1;
 }
 

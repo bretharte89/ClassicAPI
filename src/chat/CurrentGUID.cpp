@@ -41,9 +41,9 @@
 
 #include "Game.h"
 #include "Offsets.h"
+#include "guid/Guid.h"
 
 #include <cstdint>
-#include <cstdio>
 
 namespace Chat::CurrentGUID {
 
@@ -55,10 +55,10 @@ uint32_t g_currentGuidHi = 0;
 int __fastcall Script_GetCurrentChatGUID(void *L) {
     if (g_currentGuidLo == 0 && g_currentGuidHi == 0)
         return 0;
-    char buf[24];
-    std::snprintf(buf, sizeof(buf), "0x%08X%08X",
-                  g_currentGuidHi, g_currentGuidLo);
-    Game::Lua::PushString(L, buf);
+    const uint64_t guid =
+        (static_cast<uint64_t>(g_currentGuidHi) << 32) | g_currentGuidLo;
+    char buf[Guid::STRING_SIZE];
+    Game::Lua::PushString(L, Guid::FormatAsString(guid, buf, sizeof buf));
     return 1;
 }
 

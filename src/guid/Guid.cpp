@@ -14,6 +14,7 @@
 #include "Guid.h"
 
 #include <cstddef>
+#include <cstdio>
 #include <cstring>
 
 namespace Guid {
@@ -39,6 +40,15 @@ bool Parse(const char *str, uint64_t *out) {
     }
     *out = value;
     return true;
+}
+
+const char *FormatAsString(uint64_t guid, char *buf, std::size_t cap) {
+    if (buf == nullptr || cap < STRING_SIZE)
+        return "";
+    std::snprintf(buf, cap, "0x%08X%08X",
+                  static_cast<uint32_t>(guid >> 32),
+                  static_cast<uint32_t>(guid));
+    return buf;
 }
 
 Type Classify(uint64_t guid) {

@@ -37,6 +37,7 @@
 #include "Game.h"
 #include "NameCache.h"
 #include "Offsets.h"
+#include "dbc/Lookup.h"
 #include "guid/Guid.h"
 
 #include <cstdint>
@@ -55,41 +56,6 @@ using LookupOrFetch_t = const uint8_t *(__thiscall *)(
     void *callback,
     void *userData,
     int retryFlag);
-
-// Reads a localized-or-filename string field out of a DBC record.
-// `recordsVar`, `countVar` are the engine globals holding the
-// records pointer / count for the DBC. `offset` is one of:
-//   - the filename field (single string ptr) — pass
-//     `indexByLocale=false`
-//   - the names array (9 locale string ptrs, indexed by
-//     [VAR_LOCALE_INDEX]) — pass `indexByLocale=true`
-// Returns nullptr if `id` is out of range, the slot is empty, or
-// the field is null/empty.
-const char *DBCStringField(uintptr_t recordsVar, uintptr_t countVar,
-                           uint32_t id, int offset, bool indexByLocale) {
-    if (id == 0)
-        return nullptr;
-    const int count = *reinterpret_cast<const int *>(countVar);
-    if (static_cast<int>(id) > count)
-        return nullptr;
-    const uint8_t *const *records =
-        *reinterpret_cast<const uint8_t *const *const *>(recordsVar);
-    if (records == nullptr)
-        return nullptr;
-    const uint8_t *record = records[id];
-    if (record == nullptr)
-        return nullptr;
-    const char *result;
-    if (indexByLocale) {
-        const int locale = *reinterpret_cast<const int *>(
-            static_cast<uintptr_t>(Offsets::VAR_LOCALE_INDEX));
-        const char *const *names = reinterpret_cast<const char *const *>(record + offset);
-        result = names[locale];
-    } else {
-        result = *reinterpret_cast<const char *const *>(record + offset);
-    }
-    return (result == nullptr || *result == '\0') ? nullptr : result;
-}
 
 // Thin shim: parses a GUID string and splits to hi/lo dwords for the
 // engine's `__thiscall` cache lookup, which takes them as separate
@@ -157,18 +123,18 @@ int __fastcall Script_GetPlayerInfoByGUID(void *L) {
         realm = "";
     }
 
-    const char *englishClass = DBCStringField(
+    const char *englishClass = DBC::StringField(
         Offsets::VAR_CHRCLASSES_RECORDS, Offsets::VAR_CHRCLASSES_COUNT,
-        classID, Offsets::OFF_CHRCLASSES_FILENAME, /*indexByLocale=*/false);
-    const char *localizedClass = DBCStringField(
+        classID, Offsets::OFF_CHRCLASSES_FILENAME);
+    const char *localizedClass = DBC::LocalizedField(
         Offsets::VAR_CHRCLASSES_RECORDS, Offsets::VAR_CHRCLASSES_COUNT,
-        classID, Offsets::OFF_CHRCLASSES_NAMES, /*indexByLocale=*/true);
-    const char *englishRace = DBCStringField(
+        classID, Offsets::OFF_CHRCLASSES_NAMES);
+    const char *englishRace = DBC::StringField(
         Offsets::VAR_CHRRACES_RECORDS, Offsets::VAR_CHRRACES_COUNT,
-        race, Offsets::OFF_CHRRACES_FILENAME, /*indexByLocale=*/false);
-    const char *localizedRace = DBCStringField(
+        race, Offsets::OFF_CHRRACES_FILENAME);
+    const char *localizedRace = DBC::LocalizedField(
         Offsets::VAR_CHRRACES_RECORDS, Offsets::VAR_CHRRACES_COUNT,
-        race, Offsets::OFF_CHRRACES_NAMES, /*indexByLocale=*/true);
+        race, Offsets::OFF_CHRRACES_NAMES);
 
     Game::Lua::PushString(L, localizedClass ? localizedClass : "");
     Game::Lua::PushString(L, englishClass ? englishClass : "");

@@ -13,6 +13,7 @@
 
 #include "Game.h"
 #include "Offsets.h"
+#include "dbc/Lookup.h"
 #include "spell/Tooltip.h"
 
 #include <cstdint>
@@ -64,15 +65,9 @@ static bool FindTalentByID(uint32_t talentID, int *outTab, int *outIdx) {
 // DBC class shape (`+0x08` of class instance), indexed directly by
 // talentID; sparse — many slots are NULL across classes.
 static uint32_t LookupTalentRank1Spell(uint32_t talentID) {
-    const int maxID = *reinterpret_cast<const int *>(
-        static_cast<uintptr_t>(Offsets::VAR_TALENT_DBC_COUNT));
-    if (talentID == 0 || static_cast<int>(talentID) > maxID)
-        return 0;
-    auto *records = *reinterpret_cast<const uint8_t *const *const *>(
-        static_cast<uintptr_t>(Offsets::VAR_TALENT_DBC_RECORDS));
-    if (records == nullptr)
-        return 0;
-    const uint8_t *rec = records[talentID];
+    const uint8_t *rec = DBC::Record(
+        Offsets::VAR_TALENT_DBC_RECORDS, Offsets::VAR_TALENT_DBC_COUNT,
+        talentID);
     if (rec == nullptr)
         return 0;
     return *reinterpret_cast<const uint32_t *>(rec + Offsets::OFF_TALENT_SPELL_RANK);
