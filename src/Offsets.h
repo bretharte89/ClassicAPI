@@ -580,6 +580,12 @@ enum Offsets {
     OFF_ITEMSTATS_QUALITY = 0x1C,    // u32 — 0=Poor … 5=Legendary
     OFF_ITEMSTATS_INVENTORY_TYPE = 0x2C,
     OFF_ITEMSTATS_ITEM_LEVEL = 0x38, // u32 — base ilvl from ItemSparse
+    // `m_stackable` — max stack size for this item type (1 for non-
+    // stackable; 5/20/200/etc. for stackable). The instance-level
+    // current stack count is a different field (`OFF_DESCRIPTOR_STACK_COUNT`
+    // at +0x20 on the CGItem's m_objectFields descriptor — see
+    // `Item::Count.cpp`).
+    OFF_ITEMSTATS_STACKABLE = 0x60,
     // Bag-only fields. `m_containerSlots` (slot count) and `m_bagFamily`
     // (the BagFamily bitfield — quiver=1, ammo pouch=2, soul bag=4 in
     // vanilla) live deep in the record. Offsets derived from

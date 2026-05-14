@@ -215,6 +215,22 @@ function ItemMixin:GetItemQualityColorRGB() -- requires item data to be loaded
 	return colorTbl.color:GetRGB()
 end
 
+function ItemMixin:GetItemMaxStackSize() -- requires item data to be loaded
+	if self:GetStaticBackingItem() then
+		return C_Item.GetItemMaxStackSizeByID(self:GetStaticBackingItem());
+	end
+
+	if not self:IsItemEmpty() then
+		return C_Item.GetItemMaxStackSize(self:GetItemLocation());
+	end
+	return nil;
+end
+
+function ItemMixin:IsStackable() -- requires item data to be loaded
+	local maxStackSize = self:GetItemMaxStackSize();
+	return maxStackSize and maxStackSize > 1;
+end
+
 function ItemMixin:GetInventoryType()
     if self:GetStaticBackingItem() then
         return C_Item.GetItemInventoryTypeByID(self:GetStaticBackingItem())

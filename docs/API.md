@@ -67,6 +67,7 @@ build instructions.
   - [`C_Item.GetItemName(itemLocation)` / `C_Item.GetItemNameByID(item)`](#c_itemgetitemnameitemlocation--c_itemgetitemnamebyiditem)
   - [`C_Item.GetItemQuality(itemLocation)` / `C_Item.GetItemQualityByID(item)`](#c_itemgetitemqualityitemlocation--c_itemgetitemqualitybyiditem)
   - [`C_Item.GetCurrentItemLevel(itemLocation)` / `C_Item.GetDetailedItemLevelInfo(item)`](#c_itemgetcurrentitemlevelitemlocation--c_itemgetdetaileditemlevelinfoitem)
+  - [`C_Item.GetItemMaxStackSize(itemLocation)` / `C_Item.GetItemMaxStackSizeByID(item)`](#c_itemgetitemmaxstacksizeitemlocation--c_itemgetitemmaxstacksizebyiditem)
   - [`C_Item.GetItemLink(itemLocation)`](#c_itemgetitemlinkitemlocation)
   - [`C_Item.GetItemInventoryType(itemLocation)` / `C_Item.GetItemInventoryTypeByID(item)`](#c_itemgetiteminventorytypeitemlocation--c_itemgetiteminventorytypebyiditem)
   - [`C_Item.IsLocked(itemLocation)`](#c_itemislockeditemlocation)
@@ -2036,6 +2037,22 @@ current level, callers that care about the extra returns will see
 ```lua
 local ilvl = C_Item.GetCurrentItemLevel({equipmentSlotIndex = INVSLOT_HEAD})
 ```
+
+### `C_Item.GetItemMaxStackSize(itemLocation)` / `C_Item.GetItemMaxStackSizeByID(item)`
+
+Returns the item type's max stack size — what you'd find as the 8th
+return of `GetItemInfo(item)`. `1` for non-stackable items; `5`, `20`,
+`200`, etc. for stackables. Different from `C_Item.GetStackCount` /
+the engine's `GetContainerItemInfo`, which return the **current**
+count in a specific slot.
+
+```lua
+local cap = C_Item.GetItemMaxStackSizeByID(2589)  -- Linen Cloth → 20
+```
+
+Single `uint32` read at cache record `+0x60` (`m_stackable`). By-ID
+form fires a background cache fill on miss and returns nil; re-call
+after `GET_ITEM_INFO_RECEIVED`.
 
 ### `C_Item.GetItemLink(itemLocation)`
 
