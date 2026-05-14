@@ -34,6 +34,16 @@ build instructions.
   - [`GetQuestIDFromLogIndex(index)`](#getquestidfromlogindexindex)
   - [`C_QuestLog.RequestLoadQuestByID(questID)`](#c_questlogrequestloadquestbyidquestid)
   - [`C_QuestLog.GetTitleForQuestID(questID)`](#c_questloggettitleforquestidquestid)
+- [Gossip](#gossip)
+  - [`C_GossipInfo.GetText()`](#c_gossipinfogettext)
+  - [`C_GossipInfo.GetOptions()`](#c_gossipinfogetoptions)
+  - [`C_GossipInfo.GetAvailableQuests()`](#c_gossipinfogetavailablequests)
+  - [`C_GossipInfo.GetActiveQuests()`](#c_gossipinfogetactivequests)
+  - [`C_GossipInfo.GetNumOptions()` / `GetNumAvailableQuests()` / `GetNumActiveQuests()`](#c_gossipinfogetnumoptions--getnumavailablequests--getnumactivequests)
+  - [`C_GossipInfo.SelectOption(gossipOptionID)` / `SelectOptionByIndex(orderIndex)`](#c_gossipinfoselectoptiongossipoptionid--selectoptionbyindexorderindex)
+  - [`C_GossipInfo.SelectAvailableQuest(questID)`](#c_gossipinfoselectavailablequestquestid)
+  - [`C_GossipInfo.SelectActiveQuest(questID)`](#c_gossipinfoselectactivequestquestid)
+  - [`C_GossipInfo.CloseGossip()`](#c_gossipinfoclosegossip)
 - [Faction](#faction)
   - [`GetFactionIDByIndex(factionIndex)`](#getfactionidbyindexfactionindex)
   - [`GetFactionInfoByID(factionID)`](#getfactioninfobyidfactionid)
@@ -994,6 +1004,133 @@ C_QuestLog.RequestLoadQuestByID(215)
 ```
 
 Equivalent to the function of the same name introduced in 5.0.
+
+## Gossip
+
+Retail-shaped wrappers around vanilla's flat `GetGossipText` /
+`GetGossipOptions` / `GetGossipAvailableQuests` / `GetGossipActiveQuests`
+/ `SelectGossipOption` / `SelectGossipAvailableQuest` /
+`SelectGossipActiveQuest` / `CloseGossip` surface. The data is the
+same — these calls just read the engine's two gossip-state arrays
+(`0x00BBBE90` for options, `0x00BB74C0` for quests, both filled by the
+SMSG_GOSSIP_MESSAGE handler at `0x004E26E0`) and shape it into the
+modern struct-tables that addons ported from retail expect.
+
+**Fields the 1.12 server simply doesn't send** — and therefore aren't
+in any of the returned tables — include `rewards` and `spellID` (added
+after the post-vanilla quest/spell system rework), per-option
+`status` (Available / Unavailable / Locked / AlreadyComplete — vanilla
+servers don't compute this), and modern UX hints like `overrideIconID`
+and `selectOptionWhenOnlyOption`.
+
+The `icon` field is the raw icon-type byte from SMSG_GOSSIP_MESSAGE
+(server-extensible — pservers can add custom NPC types past the
+Blizzard 0..10 range). Default Blizzard types resolve to
+`Interface\GossipFrame\<Type>GossipIcon`:
+
+| Value | Type | Value | Type |
+|------:|:-----|------:|:-----|
+| `0` | Gossip       | `6`  | Banker       |
+| `1` | Vendor       | `7`  | Petition     |
+| `2` | Taxi         | `8`  | Tabard       |
+| `3` | Trainer      | `9`  | BattleMaster |
+| `4` | Healer       | `10` | Auctioneer   |
+| `5` | Binder (innkeeper) | | |
+
+### `C_GossipInfo.GetText()`
+
+Returns the gossip greeting string the engine resolved from the NPC's
+referenced `NPC_TEXT.dbc` row. Same value `GetGossipText()` returns;
+provided so addons that prefer the `C_GossipInfo` namespace don't have
+to mix the two surfaces.
+
+```lua
+print(C_GossipInfo.GetText())
+```
+
+### `C_GossipInfo.GetOptions()`
+
+Returns an array of gossip-option tables in display order. Each entry
+contains:
+
+| Field            | Type    | Notes |
+|------------------|---------|-------|
+| `gossipOptionID` | number  | Vanilla `optionIndex`. The same value `C_GossipInfo.SelectOption` expects; arbitrary integer assigned by the server. |
+| `name`           | string  | Option text (locale-applied by the server). |
+| `icon`           | number  | Raw icon-type byte from SMSG_GOSSIP_MESSAGE — passed through unmapped so pserver-added types (anything past the default `0..10` range) survive. See the type table above for the default Blizzard categories and the `Interface\GossipFrame\<Type>GossipIcon` path each one resolves to. |
+| `flags`          | number  | Bit 0 set = `boxCoded` (the option asks for confirmation text — `Are you sure?` boxes). |
+| `orderIndex`     | number  | 1-based position in the emitted list. Matches the index `SelectGossipOption` (legacy) expects. |
+
+```lua
+for _, opt in ipairs(C_GossipInfo.GetOptions()) do
+    print(opt.gossipOptionID, opt.name, "icon", opt.icon)
+end
+```
+
+### `C_GossipInfo.GetAvailableQuests()`
+
+Returns an array of deliverable-quest tables (quests the giver is
+offering to start), in display order. Filter mirrors vanilla's
+`GetGossipAvailableQuests` — status field at `+0x008` not in `{3, 4}`.
+
+| Field        | Type   | Notes |
+|--------------|--------|-------|
+| `questID`    | number | Quest.dbc row ID. |
+| `title`      | string | Localized quest title. |
+| `questLevel` | number | Quest level. |
+
+### `C_GossipInfo.GetActiveQuests()`
+
+Returns an array of active-quest tables (quests the giver wants you
+to turn in, in-progress or complete). Status field at `+0x008` in
+`{3, 4}`.
+
+| Field        | Type    | Notes |
+|--------------|---------|-------|
+| `questID`    | number  | Quest.dbc row ID. |
+| `title`      | string  | Localized quest title. |
+| `questLevel` | number  | Quest level. |
+| `isComplete` | boolean | `true` when the engine's status byte is `4` (ready to turn in); `false` when it's `3` (still in progress). |
+
+### `C_GossipInfo.GetNumOptions()` / `GetNumAvailableQuests()` / `GetNumActiveQuests()`
+
+Convenience counters — return the length of each of the three lists
+above without building the table.
+
+### `C_GossipInfo.SelectOption(gossipOptionID)` / `SelectOptionByIndex(orderIndex)`
+
+Picks a gossip option. `SelectOption` resolves the modern
+`gossipOptionID` to vanilla's 1-based slot, then tail-calls the
+engine's native `SelectGossipOption`. `SelectOptionByIndex` is a thin
+passthrough for callers that already have the slot index (e.g. from
+`opt.orderIndex` on a `GetOptions()` entry, or from a UI button bound
+directly to the slot).
+
+Both end in the same CMSG; the option-ID variant exists so addons can
+drive selections off the modern `gossipOptionID` key without keeping
+their own slot mapping. Returns nothing.
+
+Vanilla's `SelectGossipOption` doesn't accept a confirmation-text
+argument, so for `boxCoded` options the engine's own confirm dialog
+runs as usual — there is no way to send the password from the script.
+
+### `C_GossipInfo.SelectAvailableQuest(questID)`
+
+Picks a deliverable quest by `questID`. Walks the active-vs-available
+filter the same way `GetAvailableQuests` does, locates the matching
+1-based slot, and tail-calls the engine's `SelectGossipAvailableQuest`.
+Returns nothing.
+
+### `C_GossipInfo.SelectActiveQuest(questID)`
+
+Picks an in-progress quest by `questID`. Same shape as
+`SelectAvailableQuest` but walks the active filter and tail-calls
+`SelectGossipActiveQuest`. Returns nothing.
+
+### `C_GossipInfo.CloseGossip()`
+
+Closes the gossip window. Direct passthrough to the engine's
+`CloseGossip`. Returns nothing.
 
 ## Faction
 

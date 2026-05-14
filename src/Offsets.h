@@ -1936,4 +1936,41 @@ enum Offsets {
     OFF_SPELL_RECORD_REAGENTS = 0xA8,        // int32 itemID[8]
     OFF_SPELL_RECORD_CREATED_ITEM = 0x19C,
     SPELL_RECIPE_MAX_REAGENTS = 8,
+
+    // Gossip menu data. Populated by the SMSG_GOSSIP_MESSAGE packet
+    // handler at 0x004E26E0 and reset by FUN_004E26A0 each time a new
+    // gossip window opens. Two parallel storage arrays:
+    //   Options: 16 slots, stride 0x80C, sentinel = signed `index` == -1.
+    //   Quests:  32 slots, stride 0x20C, sentinel = u32 `questID` == 0.
+    //            Available vs. active is partitioned by the +0x008
+    //            `status` field — values 3 or 4 mark an active-quest
+    //            row, anything else is a deliverable.
+    VAR_GOSSIP_OPTIONS = 0x00BBBE90,
+    GOSSIP_OPTIONS_STRIDE = 0x80C,
+    GOSSIP_OPTIONS_MAX = 16,
+    OFF_GOSSIP_OPTION_TEXT = 0x000,          // char[0x800] inline
+    OFF_GOSSIP_OPTION_INDEX = 0x800,         // int32; -1 = unused slot
+    OFF_GOSSIP_OPTION_BOX_CODED = 0x804,     // u8 (1 = needs password)
+    OFF_GOSSIP_OPTION_ICON = 0x808,          // u8 icon type (0..10)
+
+    VAR_GOSSIP_QUESTS = 0x00BB74C0,
+    GOSSIP_QUESTS_STRIDE = 0x20C,
+    GOSSIP_QUESTS_MAX = 32,
+    OFF_GOSSIP_QUEST_ID = 0x000,             // u32 questID; 0 = unused slot
+    OFF_GOSSIP_QUEST_LEVEL = 0x004,          // i32 questLevel
+    OFF_GOSSIP_QUEST_STATUS = 0x008,         // u32 status; 3|4 = active
+    OFF_GOSSIP_QUEST_TITLE = 0x00C,          // char[0x200] inline
+
+    // Inline greeting buffer pushed by Script_GetGossipText. Populated
+    // by the engine after the NPC_TEXT.dbc query for the gossip giver
+    // resolves the textID embedded in SMSG_GOSSIP_MESSAGE.
+    VAR_GOSSIP_GREETING_TEXT = 0x00BBB678,
+
+    // Engine Lua C functions for the selector half of the gossip
+    // surface. We translate modern (gossipOptionID/questID) into the
+    // engine's 1-based-index Lua arg and tail-call these directly.
+    FUN_SCRIPT_SELECT_GOSSIP_OPTION = 0x004E2A30,
+    FUN_SCRIPT_SELECT_GOSSIP_AVAILABLE_QUEST = 0x004E2AA0,
+    FUN_SCRIPT_SELECT_GOSSIP_ACTIVE_QUEST = 0x004E2AE0,
+    FUN_SCRIPT_CLOSE_GOSSIP = 0x004E2B20,
 };
