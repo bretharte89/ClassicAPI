@@ -72,6 +72,7 @@ build instructions.
   - [`C_Item.GetItemInventoryType(itemLocation)` / `C_Item.GetItemInventoryTypeByID(item)`](#c_itemgetiteminventorytypeitemlocation--c_itemgetiteminventorytypebyiditem)
   - [`C_Item.IsLocked(itemLocation)`](#c_itemislockeditemlocation)
   - [`C_Item.GetItemGUID(itemLocation)`](#c_itemgetitemguiditemlocation)
+  - [`C_Item.GetItemLocation(itemGUID)`](#c_itemgetitemlocationitemguid)
   - [`Get*ItemID` — companions to the engine's `Get*ItemLink` family](#getitemid--companions-to-the-engines-getitemlink-family)
 - [Container](#container)
   - [`C_Container.GetContainerItemID(bagIndex, slotIndex)`](#c_containergetcontaineritemidbagindex-slotindex)
@@ -2146,6 +2147,40 @@ The GUID is stable per-character-session and survives moves between
 bags / character pane, so it's the right identifier for "this exact
 item instance" — equipment-set tracking, soulbind matching, or any
 addon code that needs to follow a single item across slot moves.
+
+### `C_Item.GetItemLocation(itemGUID)`
+
+Reverse lookup from a GUID string (the format `C_Item.GetItemGUID`
+returns) to an `itemLocation` table identifying the slot currently
+holding that item. Returns `nil` if the GUID isn't resident in the
+walked scope.
+
+```lua
+local guid = C_Item.GetItemGUID({equipmentSlotIndex = INVSLOT_HEAD})
+-- player moves item to bag, drops it, etc. — guid stays valid across
+-- bag/equipment rearrangements until the item leaves the session
+local loc = C_Item.GetItemLocation(guid)
+-- loc might now be { bagID = 1, slotIndex = 4 }, or nil if sold
+```
+
+Modern WoW returns an `ItemLocation` mixin object; we return a plain
+table with the same field shape every other `C_Item.*` API in
+ClassicAPI accepts as input (`{equipmentSlotIndex=N}` or
+`{bagID=B, slotIndex=S}`), so the result pipes straight into
+`C_Item.GetItemQuality(loc)`, `C_Item.GetItemLink(loc)`, etc.
+
+**Walked scope.** Character-pane equipment (slots 1..19) + backpack
+(bagID 0) + the four equipped bags (bagIDs 1..4). Bank and keyring
+are NOT walked — same scope as the rest of the `C_Container.*`
+family. Worst case is ~80 slot lookups; fine for sporadic use, not
+appropriate for per-frame polling.
+
+**Implementation.** We don't go through the engine's typed
+object-by-GUID helper at `0x00468460` (the one used for the auction-
+sell slot) because that path asserts on bad input — stale GUIDs
+from addon-side caching would crash the client. Instead we walk
+equipment + bag slots, read each CGItem's GUID, and compare. Misses
+return nil; hits never need a fallback.
 
 ### `Get*ItemID` — companions to the engine's `Get*ItemLink` family
 

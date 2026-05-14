@@ -71,6 +71,41 @@ end
     return item
 end
 
+--[[static]] function Item:CreateFromItemGUID(itemGUID)
+	if type(itemGUID) ~= "string" then
+		error("Usage: Item:CreateFromItemGUID(itemGUIDString)", 2);
+	end
+	local item = CreateFromMixins(ItemMixin);
+	item:SetItemGUID(itemGUID);
+	return item;
+end
+
+--[[static]] function Item:DoItemsMatch(item1, item2)
+	if not item1 or not item2 then
+		return false;
+	end
+
+	return item1:Matches(item2);
+end
+
+function ItemMixin:Matches(item)
+	if not item then
+		return false;
+	end
+
+	local itemID = item:GetItemID();
+	if (itemID ~= nil) and (self:GetItemID() == itemID) then
+		return true;
+	end
+
+	local itemLocation = item:GetItemLocation();
+	if (itemLocation ~= nil) and itemLocation:IsEqualTo(self:GetItemLocation()) then
+		return true;
+	end
+
+	return false;
+end
+
 function ItemMixin:SetItemLocation(itemLocation)
     self:Clear()
     self.itemLocation = itemLocation
@@ -86,8 +121,20 @@ function ItemMixin:SetItemID(itemID)
     self.itemID = itemID
 end
 
+function ItemMixin:SetItemGUID(itemGUID)
+	self:Clear();
+	self.itemGUID = itemGUID;
+end
+
 function ItemMixin:GetItemLocation()
-    return self.itemLocation
+	if self.itemLocation then
+		return self.itemLocation;
+	end
+
+	if self.itemGUID then
+		return C_Item.GetItemLocation(self.itemGUID);
+	end
+	return nil;
 end
 
 function ItemMixin:HasItemLocation()
@@ -98,6 +145,7 @@ function ItemMixin:Clear()
     self.itemLocation = nil
     self.itemLink = nil
     self.itemID = nil
+	self.itemGUID = nil
 end
 
 function ItemMixin:IsItemEmpty()
