@@ -4177,17 +4177,15 @@ event handlers.
 
 ### Player input-state events
 
-Three pairs of zero-payload events, all driven off the same
-UI-input controller flag word (`*0x00BE1148 + 0x04`) — the master
-input bitfield the engine updates on every mouse-button / movement-
-key press and release. One per-frame `Tick::WorldTick` callback
-reads the word once and fires whichever pairs transitioned.
+Three pairs of zero-payload events fired from a single per-frame
+`Tick::WorldTick` callback that reads input state once and edge-
+detects each pair.
 
 | Event | Fires on | Source |
 |-------|----------|--------|
-| `PLAYER_STARTED_MOVING` / `PLAYER_STOPPED_MOVING` | WASD or autorun toggle | UI-input controller flags (`0x10` W \| `0x20` S \| `0x40` A \| `0x80` D \| `0x1000` autorun) |
-| `PLAYER_STARTED_TURNING` / `PLAYER_STOPPED_TURNING` | Character body actually rotating (RMB-drag, `MouselookStart`, etc.) | Per-frame delta on `CGPlayer + 0x9C4` (body yaw, radians) |
-| `PLAYER_STARTED_LOOKING` / `PLAYER_STOPPED_LOOKING` | LMB free-look bit (camera-only rotation) | UI-input controller bit `0x02` |
+| `PLAYER_STARTED_MOVING` / `PLAYER_STOPPED_MOVING` | WASD or autorun toggle | UI-input controller flags at `*0x00BE1148 + 0x04` (`0x10` W \| `0x20` S \| `0x40` A \| `0x80` D \| `0x1000` autorun) |
+| `PLAYER_STARTED_TURNING` / `PLAYER_STOPPED_TURNING` | Mouselook bit held AND character body yaw is changing | Mouselook bit `0x01` + per-frame delta on `CGPlayer + 0x9C4` (body yaw, radians) |
+| `PLAYER_STARTED_LOOKING` / `PLAYER_STOPPED_LOOKING` | Free-look bit held AND camera-relative yaw is changing | Free-look bit `0x02` + per-frame delta on `[*0x00B4B2BC + 0x65B8] + 0xF0` (camera yaw, radians) |
 
 ```lua
 local f = CreateFrame("Frame")
@@ -4207,24 +4205,25 @@ airborne from a jump. Matches retail (verified empirically). For
 an "is the character actually displacing this frame" signal, use
 `GetUnitSpeed("player")` and watch the first return.
 
-**TURNING fires on actual rotation** (per-frame delta on the
-body-yaw float at `CGPlayer + 0x9C4`), not merely on the
-mouselook bit being held — matches retail. The mouselook bit
-stays set the whole time RMB is held even without drag; gating on
-it alone would over-fire on bare clicks.
+**Latched semantics for TURNING and LOOKING**: each pair fires
+exactly once per RMB / LMB hold. STARTED waits until both the
+mouse-button bit is held AND the relevant yaw has actually
+changed (matches retail's "camera has moved" semantics — clicking
+without dragging doesn't fire). STOPPED fires when the button bit
+clears (RMB / LMB release). The latch stays on through any drag-
+stop-drag motion within a single hold; no spurious flapping.
 
-**LOOKING is still bit-based** — fires on LMB press, not on actual
-camera-yaw change. Known divergence from retail. The camera-yaw
-global lives outside CGPlayer; finding it is a TODO. Addons that
-want the raw click signal should use `GLOBAL_MOUSE_DOWN` /
-`GLOBAL_MOUSE_UP` below.
+The camera-relative yaw at `[camera + 0xF0]` stays at 0 during
+RMB-mouselook (camera rotates *with* the character, so its offset
+from the character doesn't change), so TURNING and LOOKING are
+cleanly separable: RMB only fires TURNING, LMB only fires LOOKING.
 
 Implementation: single subscriber on the shared `Tick::WorldTick`
 registry (same `MinHook` on `FUN_0066FD50` shared with
-`BAG_UPDATE_DELAYED`). When the player or input controller is
-unresolvable (pre-login, loading screen, character select), all
-states reset so the next valid tick doesn't fire spurious STOPPED
-transitions.
+`BAG_UPDATE_DELAYED`). When any of the input controller / player /
+camera pointers is null (pre-login, loading screen, character
+select), all states reset so the next valid tick doesn't fire
+spurious STOPPED transitions.
 
 ### `GLOBAL_MOUSE_DOWN` / `GLOBAL_MOUSE_UP` events
 
