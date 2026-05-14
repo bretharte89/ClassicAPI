@@ -14,21 +14,16 @@
 #include "Lookup.h"
 
 #include "Offsets.h"
+#include "dbc/Lookup.h"
 
 namespace Spell::Lookup {
 
 const uint8_t *RecordForID(int spellID) {
     if (spellID <= 0)
         return nullptr;
-    const int count = *reinterpret_cast<const int *>(
-        static_cast<uintptr_t>(Offsets::VAR_SPELL_RECORD_COUNT));
-    if (spellID > count)
-        return nullptr;
-    auto *const *records = *reinterpret_cast<const uint8_t *const *const *>(
-        static_cast<uintptr_t>(Offsets::VAR_SPELL_RECORDS));
-    if (records == nullptr)
-        return nullptr;
-    return records[spellID];
+    return DBC::Record(Offsets::VAR_SPELL_RECORDS,
+                       Offsets::VAR_SPELL_RECORD_COUNT,
+                       static_cast<uint32_t>(spellID));
 }
 
 int SpellbookSlotToID(int slot1Based, int bookType) {
@@ -39,6 +34,39 @@ int SpellbookSlotToID(int slot1Based, int bookType) {
                                       : Offsets::VAR_PLAYER_SPELLBOOK;
     auto *array = reinterpret_cast<const int *>(static_cast<uintptr_t>(base));
     return array[slot];
+}
+
+int RecipeSlotSpellID(uintptr_t entriesVar, uintptr_t countVar, int slotIndex0) {
+    if (slotIndex0 < 0)
+        return 0;
+    const int count = static_cast<int>(
+        *reinterpret_cast<const uint32_t *>(countVar));
+    if (slotIndex0 >= count)
+        return 0;
+    auto **entries = *reinterpret_cast<const uint8_t ***>(entriesVar);
+    if (entries == nullptr)
+        return 0;
+    auto *entry = entries[slotIndex0];
+    if (entry == nullptr)
+        return 0;
+    return static_cast<int>(*reinterpret_cast<const uint32_t *>(
+        entry + Offsets::OFF_CRAFT_ENTRY_SPELL_ID));
+}
+
+int NthRecipeReagentItemID(const uint8_t *spellRecord, int reagentIndex1) {
+    if (spellRecord == nullptr || reagentIndex1 < 1)
+        return 0;
+    auto *reagents = reinterpret_cast<const uint32_t *>(
+        spellRecord + Offsets::OFF_SPELL_RECORD_REAGENTS);
+    int found = 0;
+    for (int i = 0; i < Offsets::SPELL_RECIPE_MAX_REAGENTS; ++i) {
+        const int itemID = static_cast<int>(reagents[i]);
+        if (itemID == 0)
+            return 0;
+        if (++found == reagentIndex1)
+            return itemID;
+    }
+    return 0;
 }
 
 int FindSpellbookSlot(int spellID, int *outBookType) {

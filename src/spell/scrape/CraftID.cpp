@@ -13,10 +13,11 @@
 
 #include "Game.h"
 #include "Offsets.h"
-
-#include <cstdint>
+#include "spell/Lookup.h"
 
 namespace Spell::CraftID {
+
+namespace {
 
 // `GetCraftSpellID(craftIndex)` — companion to the engine's
 // `GetCraftItemLink`, which despite its name returns an `Hspell:`
@@ -29,30 +30,15 @@ namespace Spell::CraftID {
 // them the actual identifier the engine uses for the entry.
 //
 // nil when the craft UI is closed or `craftIndex` is OOR.
-static int __fastcall Script_GetCraftSpellID(void *L) {
+int __fastcall Script_GetCraftSpellID(void *L) {
     if (!Game::Lua::IsNumber(L, 1)) {
         Game::Lua::Error(L, "Usage: GetCraftSpellID(craftIndex)");
         return 0;
     }
     const int craftIndex = static_cast<int>(Game::Lua::ToNumber(L, 1)) - 1;
-    if (craftIndex < 0)
-        return 0;
 
-    const int count = static_cast<int>(*reinterpret_cast<const uint32_t *>(
-        Offsets::VAR_CRAFT_COUNT));
-    if (craftIndex >= count)
-        return 0;
-
-    // `VAR_CRAFT_ENTRIES` is a pointer slot, not the array — the
-    // engine reads it via `MOV ECX, [imm32]; MOV EAX, [ECX + idx*4]`.
-    auto **entries = *reinterpret_cast<const uint8_t ***>(Offsets::VAR_CRAFT_ENTRIES);
-    if (entries == nullptr)
-        return 0;
-    auto *entry = entries[craftIndex];
-    if (entry == nullptr)
-        return 0;
-
-    const int spellID = static_cast<int>(*reinterpret_cast<const uint32_t *>(entry));
+    const int spellID = Spell::Lookup::RecipeSlotSpellID(
+        Offsets::VAR_CRAFT_ENTRIES, Offsets::VAR_CRAFT_COUNT, craftIndex);
     if (spellID <= 0)
         return 0;
 
@@ -60,10 +46,12 @@ static int __fastcall Script_GetCraftSpellID(void *L) {
     return 1;
 }
 
-static void RegisterLuaFunctions() {
+void RegisterLuaFunctions() {
     Game::Lua::RegisterGlobalFunction("GetCraftSpellID", &Script_GetCraftSpellID);
 }
 
-static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
+const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
+
+} // namespace
 
 } // namespace Spell::CraftID

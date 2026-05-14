@@ -13,6 +13,7 @@
 
 #include "Game.h"
 #include "Offsets.h"
+#include "dbc/Lookup.h"
 #include "item/Arg.h"
 #include "item/Data.h"
 #include "item/ID.h"
@@ -40,19 +41,9 @@ static const uint8_t *FetchItemRecord(uint32_t itemID) {
 }
 
 static const char *LookupItemClassName(uint32_t classID) {
-    const int count = *reinterpret_cast<int *>(Offsets::VAR_ITEMCLASS_COUNT);
-    if (static_cast<int>(classID) < 0 || static_cast<int>(classID) > count)
-        return "";
-    const uint8_t *const *records =
-        *reinterpret_cast<const uint8_t *const *const *>(Offsets::VAR_ITEMCLASS_RECORDS);
-    if (records == nullptr)
-        return "";
-    const uint8_t *record = records[classID];
-    if (record == nullptr)
-        return "";
-    const char *name = *reinterpret_cast<const char *const *>(
-        record + Offsets::OFF_ITEMCLASS_NAMES + CurrentLocaleIndex() * 4);
-    return PushedOrEmpty(name);
+    return PushedOrEmpty(DBC::LocalizedField(
+        Offsets::VAR_ITEMCLASS_RECORDS, Offsets::VAR_ITEMCLASS_COUNT,
+        classID, Offsets::OFF_ITEMCLASS_NAMES));
 }
 
 static const char *LookupItemSubClassName(uint32_t classID, uint32_t subClassID) {
@@ -93,19 +84,10 @@ static bool BuildIconPath(uint32_t displayInfoID, char *out, size_t outSize) {
     if (out == nullptr || outSize == 0)
         return false;
     out[0] = 0;
-    const int count = *reinterpret_cast<int *>(Offsets::VAR_ITEMDISPLAYINFO_COUNT);
-    if (static_cast<int>(displayInfoID) <= 0 || static_cast<int>(displayInfoID) > count)
-        return false;
-    const uint8_t *const *records =
-        *reinterpret_cast<const uint8_t *const *const *>(Offsets::VAR_ITEMDISPLAYINFO_RECORDS);
-    if (records == nullptr)
-        return false;
-    const uint8_t *record = records[displayInfoID];
-    if (record == nullptr)
-        return false;
-    const char *iconName =
-        *reinterpret_cast<const char *const *>(record + Offsets::OFF_ITEMDISPLAYINFO_ICON);
-    if (iconName == nullptr || iconName[0] == 0)
+    const char *iconName = DBC::StringField(
+        Offsets::VAR_ITEMDISPLAYINFO_RECORDS, Offsets::VAR_ITEMDISPLAYINFO_COUNT,
+        displayInfoID, Offsets::OFF_ITEMDISPLAYINFO_ICON);
+    if (iconName == nullptr)
         return false;
     snprintf(out, outSize, "Interface\\Icons\\%s", iconName);
     return true;

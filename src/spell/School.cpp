@@ -13,6 +13,7 @@
 
 #include "Game.h"
 #include "Offsets.h"
+#include "spell/Lookup.h"
 
 #include <cstdint>
 
@@ -33,17 +34,7 @@ const char *const kSchoolNames[Offsets::SPELL_SCHOOL_COUNT] = {
 };
 
 const uint8_t *GetSpellRecord(int spellID) {
-    if (spellID <= 0)
-        return nullptr;
-    const int maxID = *reinterpret_cast<const int *>(
-        static_cast<uintptr_t>(Offsets::VAR_SPELL_RECORD_COUNT));
-    if (spellID > maxID)
-        return nullptr;
-    auto *records = *reinterpret_cast<const uint8_t *const *const *>(
-        static_cast<uintptr_t>(Offsets::VAR_SPELL_RECORDS));
-    if (records == nullptr)
-        return nullptr;
-    return records[spellID];
+    return Spell::Lookup::RecordForID(spellID);
 }
 
 // `GetSpellSchool(spellID)` — returns `(schoolID, schoolName)` for

@@ -13,48 +13,11 @@
 
 #include "Game.h"
 #include "Offsets.h"
-
-#include <cstdint>
+#include "spell/Lookup.h"
 
 namespace Item::TradeSkillID {
 
 namespace {
-
-// Resolves a tradeskill index to its spell record in Spell.dbc.
-// Returns nullptr when index is OOR, the entry pointer is null, or
-// the entry's spellID is out of range / unmapped. Shared with the
-// reagent companion.
-const uint8_t *ResolveSpellRecord(int tradeSkillIndex0) {
-    const int count = static_cast<int>(*reinterpret_cast<const uint32_t *>(
-        Offsets::VAR_TRADESKILL_COUNT));
-    if (tradeSkillIndex0 < 0 || tradeSkillIndex0 >= count)
-        return nullptr;
-
-    // `VAR_TRADESKILL_ENTRIES` is a pointer slot (`MOV ECX, [imm32]`
-    // in the engine), not the array — the entry-pointer array is
-    // heap-allocated and re-pointed each time the tradeskill window
-    // opens.
-    auto **entries = *reinterpret_cast<const uint8_t ***>(Offsets::VAR_TRADESKILL_ENTRIES);
-    if (entries == nullptr)
-        return nullptr;
-    auto *entry = entries[tradeSkillIndex0];
-    if (entry == nullptr)
-        return nullptr;
-
-    const int spellID = static_cast<int>(*reinterpret_cast<const uint32_t *>(entry));
-    if (spellID <= 0)
-        return nullptr;
-
-    const int spellCount = static_cast<int>(*reinterpret_cast<const uint32_t *>(
-        Offsets::VAR_SPELL_RECORD_COUNT));
-    if (spellID > spellCount)
-        return nullptr;
-
-    auto *records = *reinterpret_cast<const uint8_t *const *const *>(Offsets::VAR_SPELL_RECORDS);
-    return records[spellID];
-}
-
-} // namespace
 
 // `GetTradeSkillItemID(index)` — itemID companion to
 // `GetTradeSkillItemLink`. Returns the recipe's produced-item itemID
@@ -62,14 +25,16 @@ const uint8_t *ResolveSpellRecord(int tradeSkillIndex0) {
 // tradeskill UI is closed, the index is OOR, or the recipe doesn't
 // produce a finished item (e.g. enchanting scrolls have a 0 here in
 // vanilla — their effect targets equipment directly).
-static int __fastcall Script_GetTradeSkillItemID(void *L) {
+int __fastcall Script_GetTradeSkillItemID(void *L) {
     if (!Game::Lua::IsNumber(L, 1)) {
         Game::Lua::Error(L, "Usage: GetTradeSkillItemID(index)");
         return 0;
     }
     const int index = static_cast<int>(Game::Lua::ToNumber(L, 1)) - 1;
 
-    auto *record = ResolveSpellRecord(index);
+    const int spellID = Spell::Lookup::RecipeSlotSpellID(
+        Offsets::VAR_TRADESKILL_ENTRIES, Offsets::VAR_TRADESKILL_COUNT, index);
+    const uint8_t *record = Spell::Lookup::RecordForID(spellID);
     if (record == nullptr)
         return 0;
 
@@ -82,10 +47,12 @@ static int __fastcall Script_GetTradeSkillItemID(void *L) {
     return 1;
 }
 
-static void RegisterLuaFunctions() {
+void RegisterLuaFunctions() {
     Game::Lua::RegisterGlobalFunction("GetTradeSkillItemID", &Script_GetTradeSkillItemID);
 }
 
-static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
+const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
+
+} // namespace
 
 } // namespace Item::TradeSkillID

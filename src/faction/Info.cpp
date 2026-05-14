@@ -13,6 +13,7 @@
 
 #include "Game.h"
 #include "Offsets.h"
+#include "dbc/Lookup.h"
 
 #include <cstdint>
 
@@ -50,20 +51,13 @@ int FindDisplayedIndex(int factionID) {
 }
 
 // Returns the Faction.dbc record pointer for `factionID`, or nullptr if
-// the ID is out of range or the slot is empty. Records are 1-based
-// (records[0] is unused).
+// the ID is out of range or the slot is empty.
 const uint8_t *FactionRecord(int factionID) {
     if (factionID <= 0)
         return nullptr;
-    const int count = *reinterpret_cast<const int *>(
-        static_cast<uintptr_t>(Offsets::VAR_FACTION_DBC_COUNT));
-    if (factionID > count)
-        return nullptr;
-    auto *records = *reinterpret_cast<const uint8_t *const *const *>(
-        static_cast<uintptr_t>(Offsets::VAR_FACTION_DBC_RECORDS));
-    if (records == nullptr)
-        return nullptr;
-    return records[factionID];
+    return DBC::Record(Offsets::VAR_FACTION_DBC_RECORDS,
+                       Offsets::VAR_FACTION_DBC_COUNT,
+                       static_cast<uint32_t>(factionID));
 }
 
 // Reads `record[offset + locale*4]` as a localized C string pointer.

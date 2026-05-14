@@ -42,4 +42,23 @@ int SpellbookSlotToID(int slot1Based, int bookType);
 // in either book.
 int FindSpellbookSlot(int spellID, int *outBookType);
 
+// Resolves a 0-based UI slot into the recipe's spellID. Used by both
+// tradeskill and craft scrapers — they share the same storage shape:
+// `[entriesVar]` is a pointer to a heap-allocated array of recipe-
+// entry pointers, with the entry's first u32 holding the spellID.
+//
+// Pass `entriesVar` + `countVar` matching the UI surface
+// (`VAR_TRADESKILL_*` or `VAR_CRAFT_*`). Returns 0 if the UI is
+// closed, the index is OOR, the entry slot is null, or the entry's
+// spellID is 0.
+int RecipeSlotSpellID(uintptr_t entriesVar, uintptr_t countVar, int slotIndex0);
+
+// Walks the recipe's reagent itemID array at
+// `spellRecord + OFF_SPELL_RECORD_REAGENTS` and returns the itemID
+// of the Nth (1-based) non-zero reagent. Returns 0 if the spell
+// record is null, the reagent index is < 1, or we hit a 0 slot
+// before reaching N — matching the engine's
+// `Script_GetTradeSkillReagentItemLink` bail behavior.
+int NthRecipeReagentItemID(const uint8_t *spellRecord, int reagentIndex1);
+
 } // namespace Spell::Lookup
