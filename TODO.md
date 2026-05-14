@@ -945,35 +945,88 @@ See [src/unit/Tooltip.cpp](src/unit/Tooltip.cpp) and the
 `FUN_SCRIPT_GAMETOOLTIP_SET_UNIT_*` block in
 [src/Offsets.h](src/Offsets.h).
 
-## 46. `GameTooltip:SetFrameStack([showHidden])` — medium-large, deferred
+## 46. `GameTooltip:SetFrameStack([showHidden])` — deferred (Lua-side fix in place)
 
 Renders a tooltip listing the chain of frames at the mouse cursor,
 sorted by strata + level. The 3.0+ debug-tooling primitive used by
 Blizzard's `Blizzard_DebugTools` and every layout-debugging addon.
 
-Our bundled `DebugTools/` backport already implements its own walk
-over `EnumerateFrames()` (see the comment in
-[DebugTools/DebugTools.lua](DebugTools/DebugTools.lua):
-"No GameTooltip:SetFrameStack -- a basic walk over global frames is
-used instead"). The Lua version works but is slow (thousands of
-frames each call) and misses anonymous frames the engine sees but
-doesn't expose to globals.
+### Current state in this project
 
-A C implementation would walk the engine's internal frame list
-directly (faster, complete) and use the engine's hit-testing to
-filter to frames actually at the cursor. Significant scope:
+Our bundled `DebugTools/` backport ships its own `FrameStackTooltip`
+in [DebugTools/DebugTools.lua](DebugTools/DebugTools.lua), driven
+by `_CollectFramesUnderMouse`. As of the EnumerateFrames switch,
+the iterator walks the engine's own frame list — fast (typically
+~hundreds of entries) and includes anonymous frames the engine
+sees but a `_G` walk would miss.
 
-- Locate the engine's frame list (`CSimpleFrame::s_frameList` or
-  similar) — not yet identified.
-- Find the cursor hit-test path — engine has one for the click
-  dispatcher, but locating it needs disassembly time.
-- Strata/level sort.
-- Format and feed into `GameTooltip:AddLine` — we don't currently
-  call AddLine from our DLL, would need to add that path.
+What's still missing relative to the real engine `SetFrameStack`:
 
-Skip until either the DebugTools backport's slowness becomes a real
-pain point, or we end up doing frame-list disassembly for another
-reason (e.g. exposing a `GetMouseFocus()` polyfill).
+- **Anonymous-frame display name.** We currently show
+  `<anonymous>` for frames where `frame:GetName()` returns nil.
+  The engine's method shows the frame's pointer + the Lua-side
+  registry-table address. To get there we'd need a Lua-callable
+  shim that exposes a numeric handle per frame (vftable + Lua-ref
+  lookup), which is non-trivial.
+- **Single-tooltip semantics.** Modern addons can call
+  `GameTooltip:SetFrameStack(...)` directly on any tooltip;
+  ours requires the `FrameStackTooltip` we ship in `DebugTools/`.
+  Most consumers (`Blizzard_DebugTools` ports, layout addons via
+  `/framestack`) don't care, but a strict polyfill would.
+
+### C++ port from 3.3.5 — kept as a research note
+
+What `Script_GameTooltip_SetFrameStack`
+actually does in 3.3.5 (Frostmourne client, registration entry at
+VA 0x00AD2CF0 → function VA 0x00626560 → inner builder
+`FUN_006230d0`):
+
+- Pulls cursor (in frame space) via `FUN_0047BFF0` from a render-
+  state global at `[DAT_00B499A8 + 0x1224 / +0x1228]`.
+- Walks an intrusive linked list at `[DAT_00B499A8 + 0xCD4]`. Each
+  frame node reads:
+  - `[+0x00]` — vftable; `vftable[+0x10]` = "is the frame visible
+    enough to hit-test" predicate.
+  - `[+0x0E0]` (`node[0x38]`) = strata; gates `(strata != 0 ||
+    showHidden)`.
+  - `[+0x0D0]..[+0x0DC]` (`node[0x34..0x37]`) = frame rect for
+    hit-test.
+  - `[+0x0D8]` (`node[0x36]`) flags, bit 2 → visible.
+  - `[+0x288]` (`node[0xA2]`) = next pointer.
+- Per-frame name via `vftable[+0x04]` (a `GetDebugName()`-style
+  virtual). If the frame is Lua-side (`vftable[+0x10]` returns
+  type code 5), an extra `lua_rawgeti(L, REGISTRY, frame->luaRef)`
+  pulls the Lua-table reference for the `"%s: %p (%s)"` format;
+  otherwise it's `"%s: %p"`.
+- Builds into a scratch sort array at `DAT_00C5D370` (entry stride
+  `0x410`), `qsort` against comparator `FUN_0061A5B0`.
+- Header line via `FUN_00819D40("DEBUG_FRAMESTACK", ...)` (Lua
+  `GetGlobalString`) then per-entry `FUN_0061FEC0` (tooltip
+  `AddLine` equivalent, takes color codes from a 4-byte-stride
+  table at `0xAD2DC0` / `0xAD2DB8` / `0xAD2DB0` for
+  visible/hidden/special states).
+
+For a 1.12 port we'd need to derive:
+
+- The frame-manager global (3.3.5's `DAT_00B499A8` — different VA
+  in 1.12, different field offsets likely).
+- Frame struct offsets for rect, strata, flags, next, name vftable
+  slot — the layout shifted between 1.12 and 3.3.5 (same way unit
+  field offsets did, per the `OFF_UNIT_FIELD_HEALTH` discovery in
+  CLAUDE.md).
+- AddTooltipLine engine address (1.12 has it — every
+  `GameTooltip:SetX` method calls it internally).
+- Lua-side reference lookup helper (whatever 1.12 uses to map
+  frame → Lua table; the `FrameScript_GetObject` chain at
+  `0x6F3740` is part of this).
+
+### Recommendation
+
+The Lua-side iterator switch is done. The C++ port stays deferred
+unless we need the engine frame list for something else
+(`GetMouseFocus` polyfill, anonymous-frame inspector with extra
+fields beyond what Lua exposes, single-tooltip strict polyfill,
+etc.) that would amortize the RE cost.
 
 ## ~~47. `IsPlayerSpell(spellID)`~~ — DONE
 

@@ -6,8 +6,10 @@
 --    explicit (this, event, arg1..arg9) parameters from XML inline scripts.
 --  * RegisterAllEvents is used when available; the curated default list is
 --    a fallback if the client doesn't expose it.
---  * No GameTooltip:SetFrameStack -- a basic walk over global frames is
---    used instead.
+--  * No GameTooltip:SetFrameStack -- /framestack walks the engine's
+--    frame list via EnumerateFrames(prev) and renders into our own
+--    FrameStackTooltip instead. Catches anonymous frames the modern
+--    engine method shows but a _G walk would miss.
 --  * No UIPanelDialogTemplate, no parentKey, no clampedToScreen, no
 --    OnSizeChanged in vanilla -- frames have fixed dimensions.
 --  * No debuglocals
@@ -628,32 +630,30 @@ function DebugTooltip_OnLoad(self)
     end
 end
 
-local function _IsFrameLike(v)
-    if (type(v) ~= "table") then return false; end
-    if (type(v.IsObjectType) ~= "function") then return false; end
-    if (type(v.GetFrameLevel) ~= "function") then return false; end
-    if (type(v.GetLeft) ~= "function") then return false; end
-    return true;
-end
-
 local _STRATA_RANK = {
     BACKGROUND = 1, LOW = 2, MEDIUM = 3, HIGH = 4,
     DIALOG = 5, FULLSCREEN = 6, FULLSCREEN_DIALOG = 7, TOOLTIP = 8,
 };
 
+-- Walks every frame the engine knows about via EnumerateFrames (the
+-- engine-internal frame iterator). Beats a getfenv(0) walk on two
+-- counts: faster (the engine list is much shorter than _G), and
+-- includes anonymous frames that never appear in globals (parented
+-- templates, runtime `CreateFrame` with no `name` arg, etc.). The
+-- iteration order itself is engine-implementation detail; we re-
+-- sort by strata + level below either way.
 local function _CollectFramesUnderMouse(showHidden)
     local matches = {};
-    for k, v in pairs(getfenv(0)) do
-        if (_IsFrameLike(v)) then
-            local ok, isFrame = pcall(v.IsObjectType, v, "Frame");
-            if (ok and isFrame) then
-                local visOK, visible = pcall(v.IsVisible, v);
-                local mouseOver = DebugTools_IsMouseOver(v);
-                if (mouseOver and (showHidden or (visOK and visible))) then
-                    table.insert(matches, { name = k, frame = v });
-                end
-            end
+    local frame = EnumerateFrames(nil);
+    while (frame) do
+        local visOK, visible = pcall(frame.IsVisible, frame);
+        local mouseOver = DebugTools_IsMouseOver(frame);
+        if (mouseOver and (showHidden or (visOK and visible))) then
+            local nameOK, name = pcall(frame.GetName, frame);
+            if (not nameOK or not name) then name = "<anonymous>"; end
+            table.insert(matches, { name = name, frame = frame });
         end
+        frame = EnumerateFrames(frame);
     end
     table.sort(matches, function(a, b)
         local sa = _STRATA_RANK[a.frame:GetFrameStrata()] or 0;
