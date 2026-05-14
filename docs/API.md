@@ -175,6 +175,8 @@ build instructions.
   - [`C_EventUtils.IsEventValid(eventName)`](#c_eventutilsiseventvalideventname)
   - [`BAG_UPDATE_DELAYED` event](#bag_update_delayed-event)
   - [`PLAYER_STARTED_MOVING` / `PLAYER_STOPPED_MOVING` events](#player_started_moving--player_stopped_moving-events)
+  - [`PLAYER_STARTED_LOOKING` / `PLAYER_STOPPED_LOOKING` events](#player_started_looking--player_stopped_looking-events)
+  - [`PLAYER_STARTED_TURNING` / `PLAYER_STOPPED_TURNING` events](#player_started_turning--player_stopped_turning-events)
 - [Globals](#globals)
   - [`CLASSIC_API_VERSION`](#classic_api_version)
   - [`LE_EXPANSION_*`](#le_expansion_)
@@ -4207,6 +4209,42 @@ the player's movement-flags word at `CGPlayer + 0x9E8`. State resets
 between zones — if the player pointer is unresolvable (loading
 screen, character select), the next valid tick won't fire a stale
 `STOPPED_MOVING`.
+
+### `PLAYER_STARTED_LOOKING` / `PLAYER_STOPPED_LOOKING` events
+
+Fires when free-look mode (LMB-held mouse drag) starts and stops.
+Free-look rotates the camera around the character without turning
+the character's body — the same mode mouse-look addons use for
+"look around without moving".
+
+### `PLAYER_STARTED_TURNING` / `PLAYER_STOPPED_TURNING` events
+
+Fires when mouselook mode (RMB-held mouse drag, or programmatic
+`MouselookStart`) starts and stops. Mouselook turns the character
+to face whatever direction the mouse is dragged toward — the camera
+follows the character's facing.
+
+```lua
+local f = CreateFrame("Frame")
+for _, ev in ipairs({"PLAYER_STARTED_LOOKING", "PLAYER_STOPPED_LOOKING",
+                     "PLAYER_STARTED_TURNING", "PLAYER_STOPPED_TURNING"}) do
+    f:RegisterEvent(ev)
+end
+f:SetScript("OnEvent", function(_, event)
+    print(event)
+end)
+```
+
+Both pairs are edge-detected per-frame off the same UI-input
+controller (`*0x00BE1148 + 0x04`) that `Script_IsMouselooking`
+reads — bit `0x01` is mouselook (`TURNING`), bit `0x02` is free-look
+(`LOOKING`). Same `Tick::WorldTick` subscription as
+`PLAYER_STARTED_MOVING`; no extra hook overhead.
+
+**Mouse-only**, matching modern WoW. Keyboard turn-in-place
+(`TurnLeftStart` / `TurnRightStart`, bits 8-9 of the same flag
+word) does NOT fire `TURNING` on retail — verified empirically —
+so we don't either.
 
 ## Globals
 

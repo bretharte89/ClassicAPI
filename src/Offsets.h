@@ -1727,6 +1727,26 @@ enum Offsets {
     VAR_REALM_INFO_PTR = 0x00C28130,
     OFF_REALM_INFO_NAME = 0x20,
 
+    // UI input controller — heap-allocated struct holding the
+    // engine's master input-state bitfield (mouselook / free-look /
+    // turn-key / autorun / strafe-modifier / etc.). The slot at
+    // `0x00BE1148` is a pointer; deref it to reach the controller,
+    // which lives until the client tears down (rare in practice).
+    // NULL during pre-login.
+    VAR_UI_INPUT_CONTROLLER = 0x00BE1148,
+    // Master input flags. Single u32 at `+0x04` of the controller,
+    // touched by the engine's button-press/release handlers
+    // (`FUN_00514840` / `FUN_00514B70`) on every mouse-button or
+    // input-key transition.
+    OFF_UI_INPUT_FLAGS = 0x04,
+    // Bit 0 — `Script_IsMouselooking` checks this. Set when the
+    // user is in mouselook mode (RMB-drag, or `MouselookStart`
+    // called from Lua). Turning the character follows mouselook.
+    INPUT_FLAG_MOUSELOOK = 0x01,
+    // Bit 1 — set when the user is in free-look mode (LMB-drag).
+    // Camera-only rotation; character doesn't turn.
+    INPUT_FLAG_FREE_LOOK = 0x02,
+
     // CGUnit -> MovementInfo pointer. Holds the unit's per-instance
     // position / orientation / movement-flags / per-direction-speed
     // block. Both the local player and synced remote units carry
