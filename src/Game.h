@@ -25,6 +25,10 @@ using CFunction = int(__fastcall *)(void *L);
 
 // Lua 5.0 pseudo-index used to read/write entries on the globals table.
 constexpr int GLOBALS_INDEX = -10001;
+// Lua 5.0 pseudo-index for the registry table — a Lua-state-local
+// table protected from script code, used by C modules to anchor
+// values across calls (e.g. timer callbacks pinned against GC).
+constexpr int REGISTRY_INDEX = -10000;
 // LUA_UPVALUEINDEX(i) — pseudo-index for accessing the i-th upvalue
 // of a C closure. Lua 5.0 layout: `LUA_GLOBALSINDEX - i`.
 constexpr int UpvalueIndex(int i) { return GLOBALS_INDEX - i; }

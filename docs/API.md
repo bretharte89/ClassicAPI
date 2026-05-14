@@ -159,6 +159,9 @@ build instructions.
   - [`GetTalentIDByIndex(tabIndex, talentIndex)`](#gettalentidbyindextabindex-talentindex)
 - [Time](#time)
   - [`GetServerTime()`](#getservertime)
+  - [`C_Timer.After(seconds, callback)`](#c_timeraftersseconds-callback)
+  - [`C_Timer.NewTimer(seconds, callback)`](#c_timernewtimerseconds-callback)
+  - [`C_Timer.NewTicker(seconds, callback, [iterations])`](#c_timernewtickerseconds-callback-iterations)
   - [`C_DateAndTime` overview](#c_dateandtime-overview)
   - [`C_DateAndTime.GetCurrentCalendarTime()`](#c_dateandtimegetcurrentcalendartime)
   - [`C_DateAndTime.GetCalendarTimeFromEpoch(epoch)`](#c_dateandtimegetcalendartimefromepochepoch)
@@ -3915,6 +3918,71 @@ right call for calendar / log-timestamp / cooldown-sync use cases.
 > engine's clock for as long as the session continues.
 
 Equivalent to the function of the same name introduced in 3.0.
+
+### `C_Timer.After(seconds, callback)`
+
+Schedules `callback` to fire once after `seconds`. Returns nothing.
+Backports modern WoW's `C_Timer.After` as an engine binding (retail
+12.0.5 ships this as a `Script_*` C function, not Lua — we mirror
+that shape so addons relying on the modern semantics get
+identical behavior).
+
+```lua
+C_Timer.After(0.5, function() print("half a second later") end)
+C_Timer.After(0, function() print("next frame") end)
+```
+
+Errors in the callback are caught (via `lua_pcall`) and silently
+swallowed — same as modern's behavior. One broken timer doesn't
+poison other timers on the same tick.
+
+### `C_Timer.NewTimer(seconds, callback)`
+
+Like `After`, but returns a cancel-handle table:
+
+```lua
+local handle = C_Timer.NewTimer(10, function() print("never if I cancel") end)
+handle:Cancel()           -- prevents the callback from firing
+print(handle:IsCancelled()) -- true
+```
+
+`Cancel()` is idempotent; calling it on a timer that already fired
+or was previously cancelled is a no-op. `IsCancelled()` returns
+`true` after `Cancel()`, after natural expiry, or for an unknown
+timer ID. Both methods take no arguments other than `self`.
+
+### `C_Timer.NewTicker(seconds, callback, [iterations])`
+
+Recurring variant. `callback` fires every `seconds` until cancelled
+or until `iterations` fires have happened. `iterations` is optional;
+omitted or non-numeric means forever.
+
+```lua
+local h = C_Timer.NewTicker(1, function() print("each second") end)
+-- ...later
+h:Cancel()
+
+-- bounded:
+C_Timer.NewTicker(0.25, function() ... end, 8)  -- fires 8 times, every 250ms
+```
+
+Minimum period is clamped to `0.0001` to prevent tight loops.
+Returns the same kind of cancel handle as `NewTimer`. The handle
+auto-cancels itself when the iteration count exhausts.
+
+Implementation notes (apply to all three functions):
+
+- One unified timer queue walked once per frame from
+  `FUN_WORLD_TICK`'s subscription. Same hook the
+  `BAG_UPDATE_DELAYED` flusher uses, so there's no per-feature hook
+  overhead.
+- Resolution is one frame (~16ms at 60fps). A timer scheduled for
+  `0.001` seconds will fire on the next tick, same as one
+  scheduled for `0`.
+- The timer queue uses a monotonic clock (`QueryPerformanceCounter`),
+  so timers don't drift if the system clock changes mid-session.
+- Callbacks are pinned in the Lua registry under per-timer string
+  keys so they survive GC between scheduling and firing.
 
 ### `C_DateAndTime` overview
 
