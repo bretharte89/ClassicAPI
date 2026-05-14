@@ -1727,6 +1727,33 @@ enum Offsets {
     VAR_REALM_INFO_PTR = 0x00C28130,
     OFF_REALM_INFO_NAME = 0x20,
 
+    // CGUnit -> MovementInfo pointer. Holds the unit's per-instance
+    // position / orientation / movement-flags / per-direction-speed
+    // block. Both the local player and synced remote units carry
+    // valid pointers here (NPCs included, when they exist as
+    // CGUnits). Verified at multiple call sites that pass
+    // `[unit + 0x118]` to `FUN_MOVEMENT_GET_EFFECTIVE_SPEED` — e.g.
+    // `0x00511920` (sprint-jump motion calculator).
+    OFF_UNIT_MOVEMENT_INFO_PTR = 0x118,
+
+    // Inside the MovementInfo block:
+    OFF_MOVEMENT_FLAGS = 0x40,        // u32 — engine's MOVEFLAG_* bits
+    OFF_MOVEMENT_WALK_SPEED = 0x88,
+    OFF_MOVEMENT_RUN_SPEED = 0x8C,
+    OFF_MOVEMENT_RUN_BACK_SPEED = 0x90,
+    OFF_MOVEMENT_SWIM_SPEED = 0x94,
+    OFF_MOVEMENT_SWIM_BACK_SPEED = 0x98,
+
+    // Effective-speed selector. `__thiscall float(this = MovementInfo,
+    // int forceWalk) → float`. Returns the speed the engine would
+    // apply to this frame's movement step — accounts for movement
+    // flags (walking, swimming, backward), taxi paths, and the
+    // walk/run/swim selection. Returns 0 when the unit isn't
+    // moving (movement-flag bits 0..3 all clear). Used by 1.12's
+    // movement-prediction loop; we call it to provide modern's
+    // `currentSpeed` first return from `GetUnitSpeed`.
+    FUN_MOVEMENT_GET_EFFECTIVE_SPEED = 0x007C4C90,
+
     // ------------------------------------------------------------------
     // Get*ItemID companions to the engine's Get*ItemLink functions.
     // Each offset block is the data path the corresponding

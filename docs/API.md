@@ -105,6 +105,7 @@ build instructions.
   - [`FillLocalizedClassList(table [, isFemale])`](#filllocalizedclasslisttable-isfemale)
 - [Unit](#unit)
   - [`UnitGUID(unit)`](#unitguidunit)
+  - [`GetUnitSpeed(unit)`](#getunitspeedunit)
   - [`UnitIsAFK(unit)`](#unitisafkunit)
   - [`UnitIsDND(unit)`](#unitisdndunit)
   - [`UnitIsFeignDeath(unit)`](#unitisfeigndeathunit)
@@ -2781,6 +2782,41 @@ which is independent of unit visibility.
 > we match the engine's existing convention here. Unit tokens that
 > resolve to "no current unit" (like `"target"` with nothing
 > targeted) return nil cleanly via the GUID = 0 check.
+
+### `GetUnitSpeed(unit)`
+
+Returns `currentSpeed, runSpeed, flightSpeed, swimSpeed` — all four
+in yards/second. Modern WoW signature exactly; 1.12 doesn't have
+flying, so `flightSpeed` is always `0`.
+
+```lua
+local current, run, _, swim = GetUnitSpeed("player")
+-- e.g. 7.0, 7.0, 0, 4.722 for an unmounted player running normally
+-- e.g. 14.0, 14.0, 0, 4.722 with a 100% mount active (run speed
+--      reflects the modifier; swim ignores mount)
+```
+
+- **`currentSpeed`** — speed the engine would apply to this frame's
+  movement step. `0` when stationary; otherwise the walk/run/swim/
+  backward variant the unit is actually moving with. Read via the
+  engine's own selector at `0x007C4C90` so movement-flag handling
+  (walking, swimming, taxi paths) matches the engine exactly.
+- **`runSpeed`** — raw forward-run speed from MovementInfo `+0x8C`.
+  Includes mount / buff / debuff multipliers — the engine maintains
+  this field as the post-modifier value, updated by
+  `SMSG_FORCE_RUN_SPEED_CHANGE` and friends.
+- **`flightSpeed`** — always `0` in 1.12.
+- **`swimSpeed`** — raw forward-swim speed from MovementInfo `+0x94`.
+
+All four returns are `0` if the token doesn't resolve to a live
+CGUnit — empty `"target"`, out-of-range party member, etc. Matches
+3.3.5's `Script_GetUnitSpeed` behavior of pushing `0.0` rather than
+nil for non-visible units.
+
+Reads `[CGUnit + 0x118]` to get the MovementInfo pointer, then
+reads speed fields directly. Field offsets verified via the
+movement-prediction loop (`FUN_005FC350` and the sprint-jump
+calculator at `0x00511920` both reach into the same struct).
 
 ### `UnitIsAFK(unit)`
 
