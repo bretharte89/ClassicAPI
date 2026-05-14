@@ -117,7 +117,7 @@ your `Interface/AddOns/` directory.
 ## Bundled addon: DebugTools
 
 A 1.12.1 / Lua 5.0 backport of Blizzard's `Blizzard_DebugTools` addon
-(originally shipped with the 3.0 client) lives in [`DebugTools/`](DebugTools/).
+(originally shipped with the 3.0 client) lives in [`AddOns/DebugTools/`](AddOns/DebugTools/).
 It's an independent addon — it doesn't use anything ClassicAPI adds, and
 ClassicAPI works fine without it. It's bundled here because it's the
 natural companion for testing and debugging anything written against the
@@ -141,7 +141,7 @@ Lua globals provided (backports of 3.3.5 helpers that don't exist in
 | `setprinthandler(func)` / `getprinthandler()` | Install / query a custom print handler. Useful for redirecting print output in tests. |
 | `tostringall(...)` | Apply `tostring()` to every vararg, preserving the count. Lua 5.0-compatible (uses `arg.n` since `select` doesn't exist in 5.0). |
 
-To install: copy [`DebugTools/`](DebugTools/) into your
+To install: copy [`AddOns/DebugTools/`](AddOns/DebugTools/) into your
 `Interface/AddOns/` directory like any other addon.
 
 ## Building
