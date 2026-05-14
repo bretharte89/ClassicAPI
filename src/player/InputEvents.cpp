@@ -26,12 +26,10 @@
 //     on it alone would over-fire on every click.
 //
 //   PLAYER_STARTED_LOOKING / STOPPED_LOOKING
-//     Source: UI-input free-look bit (LMB-drag). Currently
-//     bit-based (fires on click, not on actual camera move) —
-//     a known divergence from retail. The camera-yaw global
-//     lives outside CGPlayer; finding its address is a TODO.
-//     Addons that want raw click detection should use
-//     `GLOBAL_MOUSE_DOWN`/`UP` for now.
+//     Source: same latch model as TURNING, but driven by the
+//     camera-relative yaw at `[camera + 0xF0]`. STARTED fires when
+//     the free-look bit is held AND the camera yaw changes; STOPPED
+//     fires on LMB release.
 
 #include "Offsets.h"
 #include "event/Custom.h"
@@ -62,7 +60,9 @@ bool g_wasLooking = false;
 bool g_wasTurning = false;
 
 float g_prevBodyYaw = 0.0f;
-bool g_havePrevYaw = false;
+bool g_havePrevBodyYaw = false;
+float g_prevCameraYaw = 0.0f;
+bool g_havePrevCameraYaw = false;
 
 using ResolveUnitToken_t = void *(__fastcall *)(const char *token);
 
@@ -73,6 +73,15 @@ const uint8_t *Controller() {
 const uint8_t *Player() {
     auto fn = reinterpret_cast<ResolveUnitToken_t>(Offsets::FUN_RESOLVE_UNIT_TOKEN);
     return static_cast<const uint8_t *>(fn("player"));
+}
+
+const uint8_t *Camera() {
+    const uint8_t *gameState = *reinterpret_cast<const uint8_t *const *>(
+        Offsets::VAR_GAME_STATE_PTR);
+    if (gameState == nullptr)
+        return nullptr;
+    return *reinterpret_cast<const uint8_t *const *>(
+        gameState + Offsets::OFF_GAME_STATE_CAMERA_PTR);
 }
 
 void FireTransition(bool now, bool &prev, const char *startedName,
@@ -88,44 +97,70 @@ void FireTransition(bool now, bool &prev, const char *startedName,
 void OnWorldTick() {
     auto *ctrl = Controller();
     auto *player = Player();
+    auto *camera = Camera();
     if (ctrl == nullptr || player == nullptr) {
         // Pre-login / teardown — reset so first valid tick doesn't
         // fire spurious STOPPED transitions.
         g_wasMoving = false;
         g_wasLooking = false;
         g_wasTurning = false;
-        g_havePrevYaw = false;
+        g_havePrevBodyYaw = false;
+        g_havePrevCameraYaw = false;
         return;
     }
 
     const uint32_t flags = *reinterpret_cast<const uint32_t *>(
         ctrl + Offsets::OFF_UI_INPUT_FLAGS);
     const bool moving        = (flags & Offsets::INPUT_FLAGS_MOVING_ANY) != 0;
-    const bool looking       = (flags & Offsets::INPUT_FLAG_FREE_LOOK) != 0;
+    const bool freeLookHeld  = (flags & Offsets::INPUT_FLAG_FREE_LOOK) != 0;
     const bool mouselookHeld = (flags & Offsets::INPUT_FLAG_MOUSELOOK) != 0;
 
-    // TURNING is a latched bit-AND-rotation signal:
-    //   STARTED fires when the mouselook bit is held AND the body
-    //     yaw changes (the first actual drag after pressing RMB).
+    // TURNING — latched bit-AND-rotation signal:
+    //   STARTED fires when mouselook bit is held AND the body yaw
+    //     changes (the first actual drag after pressing RMB).
     //   STOPPED fires when the mouselook bit clears (RMB release).
     // Once STARTED has fired during a hold, the latch stays on
     // until the bit clears — so a drag-stop-drag motion within
     // the same RMB hold doesn't flap STARTED/STOPPED.
-    const float yaw = *reinterpret_cast<const float *>(
+    const float bodyYaw = *reinterpret_cast<const float *>(
         player + Offsets::OFF_PLAYER_BODY_YAW);
     bool turning;
     if (!mouselookHeld) {
         turning = false;
     } else if (g_wasTurning) {
-        turning = true; // latched on for the rest of this hold
-    } else if (g_havePrevYaw &&
-               std::fabs(yaw - g_prevBodyYaw) > YAW_EPSILON) {
-        turning = true; // first rotation within this RMB hold
+        turning = true;
+    } else if (g_havePrevBodyYaw &&
+               std::fabs(bodyYaw - g_prevBodyYaw) > YAW_EPSILON) {
+        turning = true;
     } else {
-        turning = false; // bit held but no drag yet — waiting
+        turning = false;
     }
-    g_prevBodyYaw = yaw;
-    g_havePrevYaw = true;
+    g_prevBodyYaw = bodyYaw;
+    g_havePrevBodyYaw = true;
+
+    // LOOKING — same latch model, but driven by camera-relative yaw
+    // at `[camera + 0xF0]`. That field stays at 0 during RMB-
+    // mouselook (camera rotates *with* the character), so this
+    // doesn't double-fire when both buttons are involved.
+    bool looking;
+    if (!freeLookHeld) {
+        looking = false;
+    } else if (camera == nullptr) {
+        looking = false; // can't read camera yaw — bail
+    } else {
+        const float cameraYaw = *reinterpret_cast<const float *>(
+            camera + Offsets::OFF_CAMERA_RELATIVE_YAW);
+        if (g_wasLooking) {
+            looking = true;
+        } else if (g_havePrevCameraYaw &&
+                   std::fabs(cameraYaw - g_prevCameraYaw) > YAW_EPSILON) {
+            looking = true;
+        } else {
+            looking = false;
+        }
+        g_prevCameraYaw = cameraYaw;
+        g_havePrevCameraYaw = true;
+    }
 
     FireTransition(moving,  g_wasMoving,  kStartedMovingEvent,  kStoppedMovingEvent);
     FireTransition(turning, g_wasTurning, kStartedTurningEvent, kStoppedTurningEvent);

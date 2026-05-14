@@ -1736,6 +1736,24 @@ enum Offsets {
     // rotation (vs the mouselook button merely being held).
     OFF_PLAYER_BODY_YAW = 0x9C4,
 
+    // Camera object pointer chain. The game-state singleton lives
+    // at `*0x00B4B2BC`; the camera object hangs off it at `+0x65B8`.
+    // Verified via `Script_CameraZoomIn` (`0x0050B400`) which loads
+    // this chain to call `FUN_0050FC60` on the camera. Returns the
+    // camera struct or `nullptr` if the game state isn't yet
+    // initialized (pre-login).
+    VAR_GAME_STATE_PTR = 0x00B4B2BC,
+    OFF_GAME_STATE_CAMERA_PTR = 0x65B8,
+
+    // Camera yaw, relative to the character (radians). `0` =
+    // camera-behind-character default. Accumulates as the user
+    // LMB-orbits; stays at `0` during RMB-mouselook (camera rotates
+    // *with* the character, so relative offset doesn't change).
+    // Verified empirically: clean 180° LMB orbit moves this from
+    // `0` to `~π`. Mirrored at `+0x210` and `+0x214` (smoothing /
+    // last-applied buffers); we read the primary at `+0xF0`.
+    OFF_CAMERA_RELATIVE_YAW = 0xF0,
+
     // UI input controller — heap-allocated struct holding the
     // engine's master input-state bitfield (mouselook / free-look /
     // turn-key / autorun / strafe-modifier / etc.). The slot at

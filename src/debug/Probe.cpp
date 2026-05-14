@@ -91,6 +91,17 @@ const uint8_t *ResolvePlayerExtra() {
         player + Offsets::OFF_CGPLAYER_INFO);
 }
 
+// Camera object pointer chain — `[*0x00B4B2BC + 0x65B8]`. Verified
+// via `Script_CameraZoomIn` (`0x0050B400`) which loads the same
+// chain to call `FUN_0050FC60` on the camera. The camera's body
+// has fields like `+0x128` (flags) and `+0x15C` (zoom).
+const uint8_t *ResolveCamera() {
+    const uint8_t *gameState = *reinterpret_cast<const uint8_t *const *>(0x00B4B2BC);
+    if (gameState == nullptr)
+        return nullptr;
+    return *reinterpret_cast<const uint8_t *const *>(gameState + 0x65B8);
+}
+
 // Writes non-zero u32 entries in [start, start+len) into `out` as
 // space-separated `0xOFFSET=0xVALUE` pairs. Returns the length
 // written (excluding the nul terminator). Output is truncated if it
@@ -192,6 +203,7 @@ struct Snap {
 Snap descSnap;
 Snap playerSnap;
 Snap extraSnap;
+Snap cameraSnap;
 
 void TakeSnap(Snap &s, const uint8_t *base, int start, int len) {
     s.valid = false;
@@ -257,17 +269,20 @@ int __fastcall Script_SnapAll(void *) {
     TakeSnap(descSnap, ResolvePlayerDescriptor(), 0, 0x400);
     TakeSnap(playerSnap, ResolvePlayer(), 0, 0x2000);
     TakeSnap(extraSnap, ResolvePlayerExtra(), 0, 0x2000);
+    TakeSnap(cameraSnap, ResolveCamera(), 0, 0x800);
     return 0;
 }
 
 int __fastcall Script_DiffAll(void *L) {
-    static char buf[3500];
+    static char buf[4500];
     int pos = 0;
     pos += FormatDiff(descSnap, ResolvePlayerDescriptor(), "DESC",
                       buf + pos, sizeof(buf) - pos);
     pos += FormatDiff(playerSnap, ResolvePlayer(), "PLAYER",
                       buf + pos, sizeof(buf) - pos);
     pos += FormatDiff(extraSnap, ResolvePlayerExtra(), "EXTRA",
+                      buf + pos, sizeof(buf) - pos);
+    pos += FormatDiff(cameraSnap, ResolveCamera(), "CAMERA",
                       buf + pos, sizeof(buf) - pos);
     if (pos >= 0 && pos < static_cast<int>(sizeof(buf)))
         buf[pos] = '\0';
@@ -296,6 +311,11 @@ int __fastcall Script_DiffAllLog(void *L) {
         buf[pos++] = '\n';
     }
     pos += FormatDiff(extraSnap, ResolvePlayerExtra(), "EXTRA",
+                      buf + pos, sizeof(buf) - pos);
+    if (pos < static_cast<int>(sizeof(buf)) - 2) {
+        buf[pos++] = '\n';
+    }
+    pos += FormatDiff(cameraSnap, ResolveCamera(), "CAMERA",
                       buf + pos, sizeof(buf) - pos);
     if (pos >= 0 && pos < static_cast<int>(sizeof(buf)))
         buf[pos] = '\0';
