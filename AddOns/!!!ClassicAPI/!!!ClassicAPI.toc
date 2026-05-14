@@ -20,3 +20,5 @@ Util\EventUtil.lua
 Util\ItemUtil.lua
 Util\AddOnCompat.lua
 Util\FunctionUtil.lua
+Util\Pools.lua
+Util\FrameWatcher.lua
