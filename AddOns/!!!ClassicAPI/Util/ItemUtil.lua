@@ -209,6 +209,12 @@ function ItemMixin:GetItemQualityColor() -- requires item data to be loaded
     return ITEM_QUALITY_COLORS[itemQuality] -- may be nil if item data isn't loaded
 end
 
+
+function ItemMixin:GetItemQualityColorRGB() -- requires item data to be loaded
+	local colorTbl = self:GetItemQualityColor()
+	return colorTbl.color:GetRGB()
+end
+
 function ItemMixin:GetInventoryType()
     if self:GetStaticBackingItem() then
         return C_Item.GetItemInventoryTypeByID(self:GetStaticBackingItem())
