@@ -19,3 +19,4 @@ Util\ItemLocation.lua
 Util\EventUtil.lua
 Util\ItemUtil.lua
 Util\AddOnCompat.lua
+Util\FunctionUtil.lua
