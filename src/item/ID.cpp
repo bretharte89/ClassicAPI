@@ -32,7 +32,7 @@ int FromCGItem(const uint8_t *item) {
 }
 
 static int __fastcall Script_GetItemID(void *L) {
-    if (Game::Lua::Type(L, 1) != Game::Lua::TYPE_TABLE) {
+    if (!Item::Location::IsLocationArg(L, 1)) {
         Game::Lua::Error(L, "Usage: C_Item.GetItemID(itemLocation)");
         return 0;
     }

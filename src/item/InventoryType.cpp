@@ -65,7 +65,7 @@ int PushInventoryTypeForItemID(void *L, int itemID) {
 // `GetItemInfoInstant`; this is for modern code that expects the
 // integer.
 static int __fastcall Script_C_Item_GetItemInventoryType(void *L) {
-    if (Game::Lua::Type(L, 1) != Game::Lua::TYPE_TABLE) {
+    if (!Item::Location::IsLocationArg(L, 1)) {
         Game::Lua::Error(L, "Usage: C_Item.GetItemInventoryType(itemLocation)");
         return 0;
     }

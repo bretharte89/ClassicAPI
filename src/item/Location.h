@@ -17,22 +17,34 @@
 
 namespace Item::Location {
 
-// Resolves an item-location table at Lua stack index `locIdx` to a `CGItem *`
+// Resolves an item-location arg at Lua stack index `locIdx` to a `CGItem *`
 // pointer (returned as a raw byte pointer for use with `OFF_*` offsets).
 //
-// Accepts the same shapes the modern `ItemLocation` mixin uses:
-//   { equipmentSlotIndex = N }   1-based slot index, character pane
-//   { bagID = B, slotIndex = S } both required, bag/slot tuple
+// Accepts:
+//   - location tables: `{ equipmentSlotIndex = N }` or
+//     `{ bagID = B, slotIndex = S }` — same shapes the modern
+//     `ItemLocation` mixin uses.
+//   - GUID strings: `"0xHHHHHHHHLLLLLLLL"` — the form
+//     `C_Item.GetItemGUID` returns. The GUID is looked up by walking
+//     equipment slots 1..19 + bags 0..4; bank and keyring are not
+//     walked.
 //
-// Returns `nullptr` when the stack value isn't a table, the table doesn't
-// carry a valid location, or the resolved slot is empty. Does NOT raise a
-// Lua error — callers should validate the argument type beforehand if they
-// want a typed error message.
+// Returns `nullptr` when the value isn't a valid location arg, the
+// table doesn't carry recognizable fields, the GUID is malformed, or
+// the resolved slot is empty / the GUID isn't resident. Does NOT
+// raise a Lua error — callers should validate the argument type
+// beforehand with `IsLocationArg` if they want a typed error.
 //
-// Walking the bag path stomps the Lua stack (a requirement of the engine's
-// `PackBagSlot` helper, which reads its inputs from stack[1] and stack[2]).
-// Only safe to call from inside a Lua callback.
+// Both paths may stomp the Lua stack (the bag-form table uses
+// `PackBagSlot`; the GUID path iterates bag slots via the same
+// helper). Only safe to call from inside a Lua callback.
 const uint8_t *Resolve(void *L, int locIdx);
+
+// Type-check helper: returns true if the value at `idx` could be a
+// valid location arg (a table or a string). Used by every C_Item.*
+// function that takes a location, to validate before calling
+// `Resolve`. Does not dereference the value.
+bool IsLocationArg(void *L, int idx);
 
 // Resolves a `(bagID, slotIndex)` pair directly to a `CGItem *`. Used by
 // the positional-arg C_Container.* APIs that don't go through the
@@ -47,5 +59,28 @@ const uint8_t *ResolveBag(void *L, int bagID, int slotIndex);
 // manager, same path the `{equipmentSlotIndex=N}` table form uses.
 // Returns nullptr for out-of-range slots or empty equipment.
 const uint8_t *ResolveEquipmentSlot(int slot1Based);
+
+// GUID-walk result. `equipmentSlotIndex != 0` means the item was
+// found in a character-pane equipment slot; otherwise it's in
+// `bagID`/`slotIndex`. `item` always points to the found CGItem
+// when the function returns true.
+struct ByGUIDResult {
+    int equipmentSlotIndex; // 1..19, or 0 if bag form
+    int bagID;
+    int slotIndex;
+    const uint8_t *item;
+};
+
+// Walks the local player's inventory (equipment 1..19 + bags 0..4)
+// looking for a CGItem with a matching GUID. Returns false when the
+// GUID isn't found, true (and fills `*out`) on a hit. Stomps the
+// Lua stack — only safe from inside a Lua callback.
+bool FindByGUID(void *L, uint64_t guid, ByGUIDResult *out);
+
+// Parses the `"0xHHHHHHHHLLLLLLLL"` GUID string format
+// `C_Item.GetItemGUID` returns. Strict: requires exactly `0x` prefix
+// + 16 case-insensitive hex digits. Returns false (and leaves `*out`
+// untouched) on malformed input.
+bool ParseGUIDString(const char *s, uint64_t *out);
 
 } // namespace Item::Location

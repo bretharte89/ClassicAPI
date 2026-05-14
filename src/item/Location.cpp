@@ -15,6 +15,7 @@
 
 #include "../Game.h"
 #include "../Offsets.h"
+#include "ID.h"
 
 namespace Item::Location {
 
@@ -24,6 +25,9 @@ using GetItemBySlot_t = void *(__thiscall *)(void *thisInvMgr, int slot);
 using PackBagSlot_t = int(__fastcall *)(void *L, void **outInvMgr, int *outLinearSlot,
                                          int *outUnused);
 using ResolveUnitToken_t = void *(__fastcall *)(const char *token);
+using GetItemRecord_t = const uint8_t *(__thiscall *)(void *cache, uint32_t itemID,
+                                                      const uint64_t *guid, void *callback,
+                                                      void *userData, int unused);
 
 void *ResolveActivePlayerInvMgr() {
     auto ResolveUnitToken =
@@ -68,6 +72,46 @@ const uint8_t *ResolveBagSlot(void *L, int bagID, int slotIndex) {
     return static_cast<const uint8_t *>(GetItemBySlot(invMgr, linearSlot));
 }
 
+// --- GUID-walk helpers ---------------------------------------------------
+
+const uint8_t *PeekItemRecord(uint32_t itemID) {
+    auto fn = reinterpret_cast<GetItemRecord_t>(Offsets::FUN_DBCACHE_ITEMSTATS_GET_RECORD);
+    auto *cache = reinterpret_cast<void *>(Offsets::VAR_ITEMDB_CACHE);
+    const uint64_t zeroGuid = 0;
+    return fn(cache, itemID, &zeroGuid, nullptr, nullptr, 0);
+}
+
+// Mirrors `Item::Bag::ResolveBagInfo`'s slot-count derivation: backpack
+// is fixed at 16, equipped bags read `m_containerSlots` off the cache
+// record. Returns 0 for empty bag slots or out-of-range bagIDs — those
+// iterations get skipped.
+int SlotCountForBag(int bagID) {
+    if (bagID == 0)
+        return Offsets::BACKPACK_NUM_SLOTS;
+    if (bagID < 1 || bagID > 4)
+        return 0;
+    auto *bagItem = ResolveEquipmentSlot(Offsets::INVSLOT_BAG1 + bagID - 1);
+    if (bagItem == nullptr)
+        return 0;
+    const int bagItemID = Item::ID::FromCGItem(bagItem);
+    if (bagItemID == 0)
+        return 0;
+    auto *record = PeekItemRecord(static_cast<uint32_t>(bagItemID));
+    if (record == nullptr)
+        return 0;
+    return static_cast<int>(*reinterpret_cast<const uint32_t *>(
+        record + Offsets::OFF_ITEMSTATS_CONTAINER_SLOTS));
+}
+
+uint64_t ReadCGItemGUID(const uint8_t *item) {
+    auto *instance = *reinterpret_cast<const uint8_t *const *>(
+        item + Offsets::OFF_ITEM_INSTANCE_BLOCK);
+    if (instance == nullptr)
+        return 0;
+    return *reinterpret_cast<const uint64_t *>(
+        instance + Offsets::OFF_INSTANCE_BLOCK_GUID);
+}
+
 } // namespace
 
 const uint8_t *ResolveEquipmentSlot(int slot1Based) {
@@ -86,8 +130,87 @@ const uint8_t *ResolveBag(void *L, int bagID, int slotIndex) {
     return ResolveBagSlot(L, bagID, slotIndex);
 }
 
+bool ParseGUIDString(const char *s, uint64_t *out) {
+    if (s == nullptr)
+        return false;
+    if (s[0] != '0' || (s[1] != 'x' && s[1] != 'X'))
+        return false;
+    uint64_t v = 0;
+    for (int i = 0; i < 16; ++i) {
+        const char c = s[2 + i];
+        int d;
+        if (c >= '0' && c <= '9')       d = c - '0';
+        else if (c >= 'a' && c <= 'f')  d = c - 'a' + 10;
+        else if (c >= 'A' && c <= 'F')  d = c - 'A' + 10;
+        else                             return false;
+        v = (v << 4) | static_cast<uint64_t>(d);
+    }
+    if (s[18] != '\0')
+        return false;
+    *out = v;
+    return true;
+}
+
+bool FindByGUID(void *L, uint64_t guid, ByGUIDResult *out) {
+    if (guid == 0)
+        return false;
+
+    // Equipment slots first — no Lua stack interaction, so cheaper.
+    for (int slot = Offsets::EQUIPMENT_SLOT_FIRST;
+         slot <= Offsets::EQUIPMENT_SLOT_LAST; ++slot) {
+        auto *item = ResolveEquipmentSlot(slot);
+        if (item == nullptr)
+            continue;
+        if (ReadCGItemGUID(item) == guid) {
+            out->equipmentSlotIndex = slot;
+            out->bagID = 0;
+            out->slotIndex = 0;
+            out->item = item;
+            return true;
+        }
+    }
+
+    // Bag slots — `ResolveBag` stomps the Lua stack on each call. Caller
+    // beware: any data the caller stashed on the stack will be gone after
+    // this returns true.
+    for (int bagID = 0; bagID <= 4; ++bagID) {
+        const int slotCount = SlotCountForBag(bagID);
+        for (int slotIndex = 1; slotIndex <= slotCount; ++slotIndex) {
+            auto *item = ResolveBag(L, bagID, slotIndex);
+            if (item == nullptr)
+                continue;
+            if (ReadCGItemGUID(item) == guid) {
+                out->equipmentSlotIndex = 0;
+                out->bagID = bagID;
+                out->slotIndex = slotIndex;
+                out->item = item;
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+bool IsLocationArg(void *L, int idx) {
+    const int t = Game::Lua::Type(L, idx);
+    return t == Game::Lua::TYPE_TABLE || t == Game::Lua::TYPE_STRING;
+}
+
 const uint8_t *Resolve(void *L, int locIdx) {
-    if (Game::Lua::Type(L, locIdx) != Game::Lua::TYPE_TABLE)
+    const int t = Game::Lua::Type(L, locIdx);
+
+    if (t == Game::Lua::TYPE_STRING) {
+        uint64_t guid = 0;
+        if (!ParseGUIDString(Game::Lua::ToString(L, locIdx), &guid))
+            return nullptr;
+        ByGUIDResult found;
+        if (!FindByGUID(L, guid, &found))
+            return nullptr;
+        return found.item;
+    }
+
+    if (t != Game::Lua::TYPE_TABLE)
         return nullptr;
 
     int eqSlot = 0;

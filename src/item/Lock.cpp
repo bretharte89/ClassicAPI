@@ -37,7 +37,7 @@ static constexpr uint32_t ITEM_FLAG_LOCKED = 0x04;
 // can still read this flag to gate UI actions; they just can't request
 // the lock themselves.
 static int __fastcall Script_C_Item_IsLocked(void *L) {
-    if (Game::Lua::Type(L, 1) != Game::Lua::TYPE_TABLE) {
+    if (!Item::Location::IsLocationArg(L, 1)) {
         Game::Lua::PushBoolean(L, 0);
         return 1;
     }

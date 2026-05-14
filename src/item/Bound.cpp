@@ -30,7 +30,7 @@ static bool ItemIsSoulbound(const uint8_t *item) {
 }
 
 static int __fastcall Script_IsBound(void *L) {
-    if (Game::Lua::Type(L, 1) != Game::Lua::TYPE_TABLE) {
+    if (!Item::Location::IsLocationArg(L, 1)) {
         Game::Lua::Error(L, "Usage: C_Item.IsBound(itemLocation)");
         return 0;
     }

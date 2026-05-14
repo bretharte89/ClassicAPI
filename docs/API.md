@@ -1364,6 +1364,24 @@ state on top.
 
 ## Item
 
+> ### `itemLocation` argument shapes
+>
+> Every `C_Item.*` function on this page that takes `itemLocation` accepts
+> any of three forms, matching the modern `ItemLocation` mixin plus a
+> GUID-string convenience form:
+>
+> ```lua
+> { equipmentSlotIndex = N }     -- 1-based, character pane
+> { bagID = B, slotIndex = S }   -- both required
+> "0xHHHHHHHHLLLLLLLL"           -- a GUID string from C_Item.GetItemGUID
+> ```
+>
+> Table forms are O(1) — the engine knows the slot. The GUID-string form
+> is O(~80) — the function walks equipment slots 1..19 and bags 0..4
+> comparing each CGItem's stored GUID against the requested one. Bank and
+> keyring are not walked. Fine for sporadic addon use; avoid for per-frame
+> polling.
+
 ### `C_Item.IsBound(itemLocation)`
 
 Returns `true` if the item at the given location is soulbound, `false` otherwise
@@ -1374,17 +1392,10 @@ the only way to read it from Lua was a scan-tooltip hack
 constant) — slow, locale-fragile, and one of the hottest paths during bag
 updates.
 
-`itemLocation` is a table with one of these shapes (matching the modern
-`ItemLocation` mixin):
-
-```lua
-{ equipmentSlotIndex = N }     -- 1-based, character pane
-{ bagID = B, slotIndex = S }   -- both required
-```
-
 ```lua
 if C_Item.IsBound({equipmentSlotIndex = INVSLOT_HEAD}) then ... end
 if C_Item.IsBound({bagID = 0, slotIndex = 1}) then ... end
+if C_Item.IsBound(itemGUID) then ... end
 ```
 
 ### `C_Item.GetItemID(itemLocation)`

@@ -63,7 +63,7 @@ int PushNameForItemID(void *L, int itemID) {
 // inputs. Reads `m_name[0]` straight off `ItemStats_C` — no engine
 // round-trip, no `GetItemInfo` chaining.
 static int __fastcall Script_C_Item_GetItemName(void *L) {
-    if (Game::Lua::Type(L, 1) != Game::Lua::TYPE_TABLE) {
+    if (!Item::Location::IsLocationArg(L, 1)) {
         Game::Lua::Error(L, "Usage: C_Item.GetItemName(itemLocation)");
         return 0;
     }

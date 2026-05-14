@@ -58,7 +58,7 @@ int PushMaxStackSizeForItemID(void *L, int itemID) {
 // item, use `C_Item.GetStackCount`. Non-stackable items return 1.
 // nil for empty / uncached / invalid locations.
 static int __fastcall Script_C_Item_GetItemMaxStackSize(void *L) {
-    if (Game::Lua::Type(L, 1) != Game::Lua::TYPE_TABLE) {
+    if (!Item::Location::IsLocationArg(L, 1)) {
         Game::Lua::Error(L, "Usage: C_Item.GetItemMaxStackSize(itemLocation)");
         return 0;
     }

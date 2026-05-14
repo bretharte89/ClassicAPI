@@ -42,7 +42,7 @@ const uint8_t *PeekItemRecord(uint32_t itemID) {
 // player's inventory manager. Empty slots and invalid tables return
 // false without raising.
 static int __fastcall Script_C_Item_DoesItemExist(void *L) {
-    if (Game::Lua::Type(L, 1) != Game::Lua::TYPE_TABLE) {
+    if (!Item::Location::IsLocationArg(L, 1)) {
         Game::Lua::PushBoolean(L, 0);
         return 1;
     }

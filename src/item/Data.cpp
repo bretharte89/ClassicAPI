@@ -137,7 +137,7 @@ static int __fastcall Script_IsItemDataCachedByID(void *L) {
 }
 
 static int __fastcall Script_IsItemDataCached(void *L) {
-    if (Game::Lua::Type(L, 1) != Game::Lua::TYPE_TABLE) {
+    if (!Item::Location::IsLocationArg(L, 1)) {
         Game::Lua::Error(L, "Usage: C_Item.IsItemDataCached(itemLocation)");
         return 0;
     }
@@ -196,7 +196,7 @@ static int __fastcall Script_RequestLoadItemDataByID(void *L) {
 }
 
 static int __fastcall Script_RequestLoadItemData(void *L) {
-    if (Game::Lua::Type(L, 1) != Game::Lua::TYPE_TABLE) {
+    if (!Item::Location::IsLocationArg(L, 1)) {
         Game::Lua::Error(L, "Usage: C_Item.RequestLoadItemData(itemLocation)");
         return 0;
     }

@@ -177,7 +177,7 @@ static int __fastcall Script_GetItemIcon(void *L) {
 // Routes through `Item::Location::Resolve` → CGItem → itemID, then the
 // same cache lookup as the other variants.
 static int __fastcall Script_C_Item_GetItemIcon(void *L) {
-    if (Game::Lua::Type(L, 1) != Game::Lua::TYPE_TABLE) {
+    if (!Item::Location::IsLocationArg(L, 1)) {
         Game::Lua::Error(L, "Usage: C_Item.GetItemIcon(itemLocation)");
         return 0;
     }

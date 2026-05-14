@@ -57,7 +57,7 @@ int PushItemLevelForItemID(void *L, int itemID) {
 // level are the same value. Direct `m_itemLevel` read, no `GetItemInfo`
 // chaining.
 static int __fastcall Script_C_Item_GetCurrentItemLevel(void *L) {
-    if (Game::Lua::Type(L, 1) != Game::Lua::TYPE_TABLE) {
+    if (!Item::Location::IsLocationArg(L, 1)) {
         Game::Lua::Error(L, "Usage: C_Item.GetCurrentItemLevel(itemLocation)");
         return 0;
     }

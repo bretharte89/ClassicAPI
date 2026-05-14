@@ -34,7 +34,7 @@ namespace Item::GUID {
 // Returns nil if the location is invalid, empty, or the instance block
 // is somehow missing (shouldn't happen for live items).
 static int __fastcall Script_C_Item_GetItemGUID(void *L) {
-    if (Game::Lua::Type(L, 1) != Game::Lua::TYPE_TABLE) {
+    if (!Item::Location::IsLocationArg(L, 1)) {
         Game::Lua::Error(L, "Usage: C_Item.GetItemGUID(itemLocation)");
         return 0;
     }
