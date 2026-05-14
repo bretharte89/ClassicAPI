@@ -718,18 +718,32 @@ local TIME_ENTRY_FORMAT     = "Time:";
 local DETAILS_ENTRY_FORMAT  = "Details:";
 local ARGUMENT_ENTRY_FORMAT = "arg %d:";
 
-local function EventTrace_FormatArgValue(val)
+-- `||` is WoW's escape for a literal pipe in FontString display text.
+-- Arg values carrying `|c...|r` color codes or `|Hitem:...|h` hyperlinks
+-- (chat-event args, combat-log fields, anything from a Lua addon that
+-- pushed a colored string) would otherwise get re-interpreted by the
+-- renderer when concatenated into a row. A stray unterminated color
+-- code leaks state into the rest of the row text.
+function _EventTrace_EscapePipes(s)
+    return (string.gsub(s, "|", "||"));
+end
+
+-- Global (not local) because `_EventTrace_FormatRow` defined earlier in
+-- this chunk calls it — a `local function` here wouldn't be in scope at
+-- that earlier declaration site in Lua 5.0.
+function EventTrace_FormatArgValue(val)
     local t = type(val);
     if (t == "string") then
-        return string.format('"%s"', val);
+        return string.format('"%s"', _EventTrace_EscapePipes(val));
     elseif (t == "number") then
         return tostring(val);
     elseif (t == "boolean") then
         return string.format('|cffaaaaff%s|r', tostring(val));
     elseif (t == "table" or t == "function" or t == "userdata") then
-        return string.format('|cffffaaaa%s|r', tostring(val));
+        return string.format('|cffffaaaa%s|r',
+                             _EventTrace_EscapePipes(tostring(val)));
     end
-    return tostring(val);
+    return _EventTrace_EscapePipes(tostring(val));
 end
 
 function EventTraceFrameEvent_DisplayTooltip(eventButton)
