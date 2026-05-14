@@ -13,12 +13,30 @@
 --  * No UIPanelDialogTemplate, no parentKey, no clampedToScreen, no
 --    OnSizeChanged in vanilla -- frames have fixed dimensions.
 --  * No debuglocals
+--
+-- UX additions cherry-picked from modern Blizzard_EventTrace
+-- (10.x+, anniversary _classic_era_):
+--  * SavedVariables persist the user filter list, pause state, and
+--    Args/Time display toggles across sessions (DebugToolsSavedVars).
+--  * Toolbar row inside EventTraceFrame: Pause/Resume button + Args /
+--    Time checkboxes + Search EditBox. Search filters the visible
+--    rows by substring match against the event name.
+--  * Args toggle appends a comma-separated arg dump after the event
+--    name in the row (was tooltip-only before). Time toggle blanks
+--    the time column without re-anchoring frames.
+--
+-- New: TableInspector window (see TableInspector.lua) — open via
+-- `/tinspect <luaexpr>` with a navigable, breadcrumb-tracked view of
+-- any table.
 ------------------------------------------------------------------------------
 
 EVENT_TRACE_EVENT_HEIGHT = 16;
 EVENT_TRACE_MAX_ENTRIES  = 1000;
-EVENT_TRACE_NUM_BUTTONS  = 28;
-EVENT_TRACE_FRAME_HEIGHT = (EVENT_TRACE_NUM_BUTTONS * EVENT_TRACE_EVENT_HEIGHT) + 36;
+-- Toolbar above the event list (Pause + Args/Time toggles + Search) eats
+-- one row's worth of vertical real estate; 26 visible rows instead of 28
+-- keeps the frame the same height as before the enhancements landed.
+EVENT_TRACE_NUM_BUTTONS  = 26;
+EVENT_TRACE_FRAME_HEIGHT = (EVENT_TRACE_NUM_BUTTONS * EVENT_TRACE_EVENT_HEIGHT) + 68;
 
 DEBUGLOCALS_LEVEL = 4;
 local _normalFontColor = { 1, .82, 0, 1 };
@@ -30,6 +48,112 @@ EVENT_TRACE_SYSTEM_TIMES["Elapsed"] = true;
 EVENT_TRACE_EVENT_COLORS = {};
 EVENT_TRACE_EVENT_COLORS["System"]  = _normalFontColor;
 EVENT_TRACE_EVENT_COLORS["Elapsed"] = { .6, .6, .6, 1 };
+
+------------------------------------------------------------------------------
+-- Saved variables — persist user filter list + display toggles across
+-- sessions. WoW fills `DebugToolsSavedVars` from
+-- `WTF\Account\<acct>\SavedVariables\DebugTools.lua` on ADDON_LOADED,
+-- so any reference to it before that event fires is nil.
+------------------------------------------------------------------------------
+
+DebugToolsSavedVars = nil;
+
+-- Defaults applied on a fresh install (no saved file yet) AND merged
+-- field-by-field into older saved files so new fields don't require
+-- a manual wipe to surface.
+local _DEFAULT_FILTERS = {
+    "GLOBAL_MOUSE_DOWN", "GLOBAL_MOUSE_UP",
+    "MODIFIER_STATE_CHANGED",
+    "PLAYER_STARTED_LOOKING",  "PLAYER_STOPPED_LOOKING",
+    "PLAYER_STARTED_TURNING",  "PLAYER_STOPPED_TURNING",
+    "PLAYER_STARTED_MOVING",   "PLAYER_STOPPED_MOVING",
+    "CHAT_MSG_ADDON",
+};
+
+local function _CloneArray(src)
+    local t = {};
+    for i = 1, table.getn(src) do t[i] = src[i]; end
+    return t;
+end
+
+local function _DefaultSavedVars()
+    return {
+        Filters = { User = _CloneArray(_DEFAULT_FILTERS) },
+        ShowArguments = false,
+        ShowTimestamp = true,
+        Paused = false,
+    };
+end
+
+local function _MergeDefaults(stored)
+    local defaults = _DefaultSavedVars();
+    if (type(stored) ~= "table") then return defaults; end
+    for k, v in pairs(defaults) do
+        if (stored[k] == nil) then stored[k] = v; end
+    end
+    if (type(stored.Filters) ~= "table") then
+        stored.Filters = { User = _CloneArray(_DEFAULT_FILTERS) };
+    end
+    if (type(stored.Filters.User) ~= "table") then
+        stored.Filters.User = _CloneArray(_DEFAULT_FILTERS);
+    end
+    return stored;
+end
+
+-- Apply the loaded saved-vars to the live frame state. Runs after both
+-- the frame OnLoad (which sets _EventTraceFrame) and ADDON_LOADED
+-- (which fills DebugToolsSavedVars). Idempotent — safe to re-run.
+local function _ApplySavedVars()
+    if (not _EventTraceFrame or not DebugToolsSavedVars) then return; end
+    _EventTraceFrame.ignoredEvents = {};
+    for i = 1, table.getn(DebugToolsSavedVars.Filters.User) do
+        _EventTraceFrame.ignoredEvents[DebugToolsSavedVars.Filters.User[i]] = true;
+    end
+    _EventTraceFrame.paused = DebugToolsSavedVars.Paused and true or false;
+    _EventTraceFrame.showArguments = DebugToolsSavedVars.ShowArguments and true or false;
+    _EventTraceFrame.showTimestamp = DebugToolsSavedVars.ShowTimestamp and true or false;
+    -- Sync the toolbar widgets if they exist (XML may have loaded them
+    -- before or after this point depending on file order).
+    local pauseBtn = getglobal("EventTraceFramePauseButton");
+    if (pauseBtn) then
+        pauseBtn:SetText(_EventTraceFrame.paused and "Resume" or "Pause");
+    end
+    -- Vanilla 1.12 `CheckButton:SetChecked` takes 1 / nil, not true /
+    -- false — passing the bool directly silently leaves the box in
+    -- whatever state it had before, which is why the Time box looked
+    -- unchecked at first launch even though `showTimestamp` defaults
+    -- to true. (`true` was accepted starting in TBC.)
+    local argsChk = getglobal("EventTraceFrameArgsCheck");
+    if (argsChk) then
+        argsChk:SetChecked(_EventTraceFrame.showArguments and 1 or nil);
+    end
+    local timeChk = getglobal("EventTraceFrameTimeCheck");
+    if (timeChk) then
+        timeChk:SetChecked(_EventTraceFrame.showTimestamp and 1 or nil);
+    end
+end
+
+local _initFrame = CreateFrame("Frame");
+_initFrame:RegisterEvent("ADDON_LOADED");
+_initFrame:RegisterEvent("PLAYER_LOGOUT");
+_initFrame:SetScript("OnEvent", function()
+    if (event == "ADDON_LOADED") then
+        if (arg1 ~= "DebugTools") then return; end
+        DebugToolsSavedVars = _MergeDefaults(DebugToolsSavedVars);
+        _ApplySavedVars();
+        _initFrame:UnregisterEvent("ADDON_LOADED");
+    elseif (event == "PLAYER_LOGOUT") then
+        -- Final sync on logout — captures any state changes made
+        -- after ADDON_LOADED (filter add/remove, toggle clicks).
+        if (DebugToolsSavedVars and _EventTraceFrame) then
+            DebugToolsSavedVars.Paused = _EventTraceFrame.paused;
+            DebugToolsSavedVars.ShowArguments = _EventTraceFrame.showArguments;
+            DebugToolsSavedVars.ShowTimestamp = _EventTraceFrame.showTimestamp;
+            -- Filters.User stays the source of truth — toolbar mutations
+            -- already write through to it directly.
+        end
+    end
+end);
 
 -- Vanilla has no Frame:IsMouseOver(); do it ourselves from cursor + bounds.
 local function DebugTools_IsMouseOver(frame)
@@ -66,15 +190,26 @@ end);
 ------------------------------------------------------------------------------
 
 function EventTraceFrame_OnLoad(self)
-    self.buttons        = {};
-    self.events         = {};
-    self.times          = {};
-    self.rawtimes       = {};
-    self.args           = { {}, {}, {}, {}, {}, {}, {}, {}, {} };
-    self.ignoredEvents  = {};
-    self.lastIndex      = 0;
-    self.visibleButtons = EVENT_TRACE_NUM_BUTTONS;
-    _EventTraceFrame    = self;
+    self.buttons          = {};
+    self.events           = {};
+    self.times            = {};
+    self.rawtimes         = {};
+    self.args             = { {}, {}, {}, {}, {}, {}, {}, {}, {} };
+    self.ignoredEvents    = {};
+    self.lastIndex        = 0;
+    self.visibleButtons   = EVENT_TRACE_NUM_BUTTONS;
+    -- Display state defaults — overwritten by `_ApplySavedVars` once
+    -- ADDON_LOADED fires. Set here so the first Update before saved
+    -- vars come in has sane values.
+    self.paused           = false;
+    self.showArguments    = false;
+    self.showTimestamp    = true;
+    self.searchText       = nil;
+    self.filteredIndices  = nil;
+    _EventTraceFrame      = self;
+
+    -- If saved-vars beat the frame OnLoad (unusual file order), apply now.
+    _ApplySavedVars();
 
     self:EnableMouse(true);
     self:EnableMouseWheel(true);
@@ -93,6 +228,13 @@ end
 
 function EventTraceFrame_OnEvent(self, event, a1, a2, a3, a4, a5, a6, a7, a8, a9)
     if (self.ignoredEvents[event]) then return; end
+    -- Pause swallows real engine events but lets the synthetic
+    -- "Begin Capture"/"End Capture"/"On Update" markers through so the
+    -- log records the boundary clearly.
+    if (self.paused and event ~= "Begin Capture" and event ~= "End Capture"
+        and event ~= "On Update") then
+        return;
+    end
 
     if (not self.ignoreElapsed and _framesSinceLast ~= 0) then
         self.ignoreElapsed = true;
@@ -157,6 +299,19 @@ function EventTraceFrame_OnEvent(self, event, a1, a2, a3, a4, a5, a6, a7, a8, a9
 
     self.rawtimes[nextIndex] = GetTime();
     self.lastIndex = nextIndex;
+    -- Keep the filtered view in sync if a search is active. We append-
+    -- on-match here rather than re-walking the whole event list each
+    -- tick (would be O(n) per event for the most common case where
+    -- the search matches none / many).
+    if (self.filteredIndices and _EventTrace_MatchesSearch(self.events[nextIndex])) then
+        table.insert(self.filteredIndices, nextIndex);
+        -- Bound the filtered list to the same MAX_ENTRIES window the
+        -- raw store enforces. Drop the head when we overflow.
+        while (table.getn(self.filteredIndices) > 0 and
+               self.filteredIndices[1] < (nextIndex - EVENT_TRACE_MAX_ENTRIES + 1)) do
+            table.remove(self.filteredIndices, 1);
+        end
+    end
     EventTraceFrame_Update();
     if (self.eventsToCapture and self.eventsToCapture <= 0) then
         self.eventsToCapture = nil;
@@ -166,6 +321,167 @@ end
 
 function EventTraceFrame_OnUpdate(self, elapsed)
     EventTraceFrame_Update();
+end
+
+------------------------------------------------------------------------------
+-- EventTrace toolbar helpers — search filter, display flags, paused
+-- toggle, filter list mutations. Keep these grouped together so the
+-- toolbar XML scripts only need to reference one well-defined surface.
+------------------------------------------------------------------------------
+
+function _EventTrace_MatchesSearch(eventName)
+    if (not _EventTraceFrame) then return false; end
+    local needle = _EventTraceFrame.searchText;
+    if (not needle or needle == "") then return true; end
+    if (not eventName) then return false; end
+    return string.find(string.lower(eventName), needle, 1, true) ~= nil;
+end
+
+-- Walks the live event store and rebuilds the filtered-index list from
+-- scratch. Called when search text changes; cheap (one pass over at
+-- most EVENT_TRACE_MAX_ENTRIES entries) and matches the engine's own
+-- "build then sort" pattern.
+function _EventTrace_RebuildFilter()
+    if (not _EventTraceFrame) then return; end
+    local needle = _EventTraceFrame.searchText;
+    if (not needle or needle == "") then
+        _EventTraceFrame.filteredIndices = nil;
+        return;
+    end
+    needle = string.lower(needle);
+    local indices = {};
+    local first = math.max(1, (_EventTraceFrame.lastIndex or 0) - EVENT_TRACE_MAX_ENTRIES + 1);
+    for i = first, (_EventTraceFrame.lastIndex or 0) do
+        local ev = _EventTraceFrame.events[i];
+        if (ev and string.find(string.lower(ev), needle, 1, true)) then
+            table.insert(indices, i);
+        end
+    end
+    _EventTraceFrame.filteredIndices = indices;
+end
+
+-- Resolves a per-row event index. With a filter active, the scroll bar
+-- range is over the filtered list — translate back to the underlying
+-- event index here so the rest of the Update loop reads from `events[i]`
+-- as usual.
+function _EventTrace_ResolveIndex(scrollValue, rowOffset)
+    if (_EventTraceFrame.filteredIndices) then
+        return _EventTraceFrame.filteredIndices[scrollValue - rowOffset];
+    end
+    return scrollValue - rowOffset;
+end
+
+-- Returns (firstID, lastID) for the slider's current min/max. With a
+-- filter active, the range is 1..#filtered. Without a filter it's the
+-- raw event-store window.
+function _EventTrace_ScrollRange()
+    if (_EventTraceFrame.filteredIndices) then
+        local n = table.getn(_EventTraceFrame.filteredIndices);
+        if (n == 0) then return 0, 0; end
+        return 1, n;
+    end
+    local first = math.max(1, _EventTraceFrame.lastIndex - EVENT_TRACE_MAX_ENTRIES + 1);
+    local last  = _EventTraceFrame.lastIndex or 1;
+    return first, last;
+end
+
+-- Formats an event entry for in-line display. When `showArguments` is
+-- on, appends a comma-separated rendering of the captured args after
+-- the event name. System rows (Begin/End Capture, On Update markers)
+-- never get args.
+function _EventTrace_FormatRow(index)
+    local ev = _EventTraceFrame.events[index];
+    if (not ev) then return nil; end
+    if (not _EventTraceFrame.showArguments) then return ev; end
+    if (EVENT_TRACE_SYSTEM_TIMES[_EventTraceFrame.times[index]]) then return ev; end
+    local parts = {};
+    for i = 1, 9 do
+        local argList = _EventTraceFrame.args[i];
+        if (argList and argList[index] ~= nil) then
+            table.insert(parts, EventTrace_FormatArgValue(argList[index]));
+        end
+    end
+    if (table.getn(parts) == 0) then return ev; end
+    return ev .. " (" .. table.concat(parts, ", ") .. ")";
+end
+
+------------------------------------------------------------------------------
+-- Toolbar widget handlers — wired up from EventTraceFrame.xml.
+------------------------------------------------------------------------------
+
+function EventTraceFrame_TogglePause()
+    if (not _EventTraceFrame) then return; end
+    _EventTraceFrame.paused = not _EventTraceFrame.paused;
+    if (DebugToolsSavedVars) then
+        DebugToolsSavedVars.Paused = _EventTraceFrame.paused;
+    end
+    local pauseBtn = getglobal("EventTraceFramePauseButton");
+    if (pauseBtn) then
+        pauseBtn:SetText(_EventTraceFrame.paused and "Resume" or "Pause");
+    end
+end
+
+function EventTraceFrame_ToggleArgs(checked)
+    if (not _EventTraceFrame) then return; end
+    _EventTraceFrame.showArguments = checked and true or false;
+    if (DebugToolsSavedVars) then
+        DebugToolsSavedVars.ShowArguments = _EventTraceFrame.showArguments;
+    end
+    EventTraceFrame_Update();
+end
+
+function EventTraceFrame_ToggleTimestamp(checked)
+    if (not _EventTraceFrame) then return; end
+    _EventTraceFrame.showTimestamp = checked and true or false;
+    if (DebugToolsSavedVars) then
+        DebugToolsSavedVars.ShowTimestamp = _EventTraceFrame.showTimestamp;
+    end
+    EventTraceFrame_Update();
+end
+
+function EventTraceFrame_OnSearchChanged(editBox)
+    if (not _EventTraceFrame) then return; end
+    local text = editBox:GetText() or "";
+    if (text == "") then text = nil; end
+    if (text == _EventTraceFrame.searchText) then return; end
+    _EventTraceFrame.searchText = text;
+    _EventTrace_RebuildFilter();
+    -- Reset scroll to the newest end of the filtered view so the user
+    -- sees fresh matches first.
+    local scroll = getglobal("EventTraceFrameScroll");
+    if (scroll) then
+        local mn, mx = _EventTrace_ScrollRange();
+        scroll:SetMinMaxValues(mn, math.max(mn, mx));
+        scroll:SetValue(math.max(mn, mx));
+    end
+    EventTraceFrame_Update();
+end
+
+-- Programmatic filter list mutation — also exposed via `/etrace ignore`.
+-- Updates both the runtime ignoredEvents map and the saved-vars list
+-- so the addition persists across sessions.
+function EventTraceFrame_AddFilter(eventName)
+    if (not _EventTraceFrame or not eventName or eventName == "") then return; end
+    eventName = string.upper(eventName);
+    if (_EventTraceFrame.ignoredEvents[eventName]) then return; end
+    _EventTraceFrame.ignoredEvents[eventName] = true;
+    if (DebugToolsSavedVars and DebugToolsSavedVars.Filters
+        and DebugToolsSavedVars.Filters.User) then
+        table.insert(DebugToolsSavedVars.Filters.User, eventName);
+    end
+end
+
+function EventTraceFrame_RemoveFilter(eventName)
+    if (not _EventTraceFrame or not eventName) then return; end
+    eventName = string.upper(eventName);
+    _EventTraceFrame.ignoredEvents[eventName] = nil;
+    if (DebugToolsSavedVars and DebugToolsSavedVars.Filters
+        and DebugToolsSavedVars.Filters.User) then
+        local list = DebugToolsSavedVars.Filters.User;
+        for i = table.getn(list), 1, -1 do
+            if (list[i] == eventName) then table.remove(list, i); end
+        end
+    end
 end
 
 function EventTraceFrame_Update()
@@ -179,8 +495,7 @@ function EventTraceFrame_Update()
     local scrollBarValue = scrollBar:GetValue();
     local minValue, maxValue = scrollBar:GetMinMaxValues();
 
-    local firstID = math.max(1, _EventTraceFrame.lastIndex - EVENT_TRACE_MAX_ENTRIES + 1);
-    local lastID  = _EventTraceFrame.lastIndex or 1;
+    local firstID, lastID = _EventTrace_ScrollRange();
 
     if (firstID >= lastID) then
         scrollBar:SetMinMaxValues(firstID - 1, lastID);
@@ -196,22 +511,30 @@ function EventTraceFrame_Update()
         scrollBarValue = 1;
     elseif (not _EventTraceFrame.selectedEvent) then
         if (scrollBarValue == maxValue) then
-            scrollBar:SetValue(_EventTraceFrame.lastIndex);
+            scrollBar:SetValue(lastID);
         end
     end
 
     for i = 1, _EventTraceFrame.visibleButtons do
         local button = _EventTraceFrame.buttons[i];
         if (button) then
-            local index = scrollBarValue - (i - 1);
-            local event = _EventTraceFrame.events[index];
+            local index = _EventTrace_ResolveIndex(scrollBarValue, i - 1);
+            local event = index and _EventTraceFrame.events[index];
             if (event) then
                 local timeString = _EventTraceFrame.times[index];
                 button.index = index;
                 local timeFS  = getglobal(button:GetName() .. "Time");
                 local eventFS = getglobal(button:GetName() .. "Event");
-                timeFS:SetText(timeString);
-                eventFS:SetText(event);
+                -- ShowTimestamp toggle blanks the time column rather
+                -- than moving frames around — keeps the event column
+                -- left edge stable, which matters when toggling on/off
+                -- mid-session.
+                if (_EventTraceFrame.showTimestamp) then
+                    timeFS:SetText(timeString);
+                else
+                    timeFS:SetText("");
+                end
+                eventFS:SetText(_EventTrace_FormatRow(index));
                 local color = EVENT_TRACE_EVENT_COLORS[event]
                               or EVENT_TRACE_EVENT_COLORS[timeString];
                 if (color) then
@@ -303,12 +626,21 @@ function EventTraceFrame_HandleSlashCmd(msg)
         return;
     end
 
-    -- /etrace ignore EVENT
+    -- /etrace ignore EVENT — persists across sessions via saved vars
     local _, _, igEvent = string.find(msg, "^ignore%s+(%S+)");
     if (igEvent) then
         igEvent = string.upper(igEvent);
-        _EventTraceFrame.ignoredEvents[igEvent] = true;
+        EventTraceFrame_AddFilter(igEvent);
         _ChatPrint("ignoring " .. igEvent);
+        return;
+    end
+
+    -- /etrace unignore EVENT — opposite of ignore
+    local _, _, unEvent = string.find(msg, "^unignore%s+(%S+)");
+    if (unEvent) then
+        unEvent = string.upper(unEvent);
+        EventTraceFrame_RemoveFilter(unEvent);
+        _ChatPrint("unignored " .. unEvent);
         return;
     end
 
@@ -316,12 +648,27 @@ function EventTraceFrame_HandleSlashCmd(msg)
         EventTraceFrame_StartEventCapture();
     elseif (msg == "stop") then
         EventTraceFrame_StopEventCapture();
+    elseif (msg == "pause") then
+        EventTraceFrame_TogglePause();
+        _ChatPrint(_EventTraceFrame.paused and "paused" or "resumed");
+    elseif (msg == "filters") then
+        if (DebugToolsSavedVars and DebugToolsSavedVars.Filters
+            and DebugToolsSavedVars.Filters.User) then
+            local list = DebugToolsSavedVars.Filters.User;
+            _ChatPrint(string.format("filters (%d):", table.getn(list)));
+            for i = 1, table.getn(list) do
+                _ChatPrint("  " .. list[i]);
+            end
+        else
+            _ChatPrint("no saved filters");
+        end
     elseif (msg == "clear") then
         _EventTraceFrame.events   = {};
         _EventTraceFrame.times    = {};
         _EventTraceFrame.rawtimes = {};
         _EventTraceFrame.args     = { {}, {}, {}, {}, {}, {}, {}, {}, {} };
         _EventTraceFrame.lastIndex = 0;
+        _EventTraceFrame.filteredIndices = nil;
         EventTraceFrame_Update();
     elseif (tonumber(msg) and tonumber(msg) > 0) then
         if (not _EventTraceFrame.started) then
@@ -339,14 +686,18 @@ function EventTraceFrame_HandleSlashCmd(msg)
         end
     else
         _ChatPrint("usage:");
-        _ChatPrint("  /etrace            -- toggle window (auto-start first time)");
-        _ChatPrint("  /etrace start      -- begin event capture");
-        _ChatPrint("  /etrace stop       -- end event capture");
-        _ChatPrint("  /etrace <N>        -- capture next N events");
-        _ChatPrint("  /etrace add <EV>   -- register additional event");
-        _ChatPrint("  /etrace remove <EV>-- unregister event");
-        _ChatPrint("  /etrace ignore <EV>-- hide event from display");
-        _ChatPrint("  /etrace clear      -- clear log");
+        _ChatPrint("  /etrace                -- toggle window (auto-start first time)");
+        _ChatPrint("  /etrace start          -- begin event capture");
+        _ChatPrint("  /etrace stop           -- end event capture");
+        _ChatPrint("  /etrace pause          -- pause/resume in-place");
+        _ChatPrint("  /etrace <N>            -- capture next N events");
+        _ChatPrint("  /etrace add <EV>       -- register additional event");
+        _ChatPrint("  /etrace remove <EV>    -- unregister event");
+        _ChatPrint("  /etrace ignore <EV>    -- hide event (persists)");
+        _ChatPrint("  /etrace unignore <EV>  -- remove from ignore list");
+        _ChatPrint("  /etrace filters        -- list saved ignored events");
+        _ChatPrint("  /etrace clear          -- clear log");
+        _ChatPrint("  (toolbar has Pause + Args/Time toggles + Search)");
     end
 end
 
