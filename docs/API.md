@@ -120,6 +120,7 @@ build instructions.
 - [NameCache](#namecache)
   - [`GetPlayerInfoByGUID(guid)`](#getplayerinfobyguidguid)
   - [`C_PlayerInfo.RememberPlayer(guid, name, classToken)`](#c_playerinforememberplayerguid-name-classtoken)
+  - [`C_PlayerInfo.GUIDIsPlayer(guid)` / `GUIDIsCreature` / `GUIDIsPet` / `GUIDIsGameObject`](#c_playerinfoguidisplayerguid--guidiscreature--guidispet--guidisgameobject)
   - [`ClassicAPI.SetPersistentNameCacheEnabled(enabled)`](#classicapisetpersistentnamecacheenabledenabled)
   - [`ClassicAPI.GetPersistentNameCacheEnabled()`](#classicapigetpersistentnamecacheenabled)
   - [`ClassicAPI.SetNameCacheScanEnabled(enabled)`](#classicapisetnamecachescanenabledenabled)
@@ -3163,6 +3164,40 @@ collision case that name-keyed caches suffer from doesn't apply
 here: GUIDs are permanent for the life of a vanilla character, so
 the new character has a different GUID and gets a different cache
 entry.
+
+### `C_PlayerInfo.GUIDIsPlayer(guid)` / `GUIDIsCreature` / `GUIDIsPet` / `GUIDIsGameObject`
+
+Type checks on the raw 1.12 GUID format. Vanilla GUIDs encode the
+entity type in the high 16 bits of the qword — players have
+`0x0000` (low dword = player ID), creatures `0xF130xxxx`, pets
+`0xF140xxxx`, game objects (herbs / chests / etc.) `0xF110xxxx`,
+items `0x4000xxxx`. Each function returns `true` only for its
+specific prefix; the `"0x0000000000000000"` sentinel returns
+`false` from all four.
+
+```lua
+if C_PlayerInfo.GUIDIsPlayer(UnitGUID("target")) then
+    -- target is a player
+end
+
+-- Combat-log row triage: was that a player kill or a mob kill?
+local function OnCombatLogEvent(_, _, eventType, srcGUID, ...)
+    if eventType == "PARTY_KILL" then
+        if C_PlayerInfo.GUIDIsPlayer(srcGUID) then ... end
+    end
+end
+```
+
+`GUIDIsPlayer` matches modern WoW's signature exactly; the other
+three are companions for the most common type-distinction needs.
+For other types (corpse, dynamic object, transport, item) the
+underlying classifier exists internally — let us know if you need
+one exposed.
+
+Accepts either the 16-digit `"0xHHHHHHHHLLLLLLLL"` form or the
+8-digit `"0xLLLLLLLL"` shortcut (high dword implicitly zero).
+Malformed input returns `false` rather than raising — matching
+modern's tolerance for stale GUIDs from addon-side caches.
 
 ### `ClassicAPI.SetPersistentNameCacheEnabled(enabled)`
 

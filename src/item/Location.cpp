@@ -15,6 +15,7 @@
 
 #include "../Game.h"
 #include "../Offsets.h"
+#include "../guid/Guid.h"
 #include "ID.h"
 
 namespace Item::Location {
@@ -131,24 +132,7 @@ const uint8_t *ResolveBag(void *L, int bagID, int slotIndex) {
 }
 
 bool ParseGUIDString(const char *s, uint64_t *out) {
-    if (s == nullptr)
-        return false;
-    if (s[0] != '0' || (s[1] != 'x' && s[1] != 'X'))
-        return false;
-    uint64_t v = 0;
-    for (int i = 0; i < 16; ++i) {
-        const char c = s[2 + i];
-        int d;
-        if (c >= '0' && c <= '9')       d = c - '0';
-        else if (c >= 'a' && c <= 'f')  d = c - 'a' + 10;
-        else if (c >= 'A' && c <= 'F')  d = c - 'A' + 10;
-        else                             return false;
-        v = (v << 4) | static_cast<uint64_t>(d);
-    }
-    if (s[18] != '\0')
-        return false;
-    *out = v;
-    return true;
+    return Guid::Parse(s, out);
 }
 
 bool FindByGUID(void *L, uint64_t guid, ByGUIDResult *out) {

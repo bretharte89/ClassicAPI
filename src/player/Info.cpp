@@ -37,9 +37,9 @@
 #include "Game.h"
 #include "NameCache.h"
 #include "Offsets.h"
+#include "guid/Guid.h"
 
 #include <cstdint>
-#include <cstring>
 
 namespace Player::Info {
 
@@ -91,38 +91,15 @@ const char *DBCStringField(uintptr_t recordsVar, uintptr_t countVar,
     return (result == nullptr || *result == '\0') ? nullptr : result;
 }
 
-// Parses a `"0xHHHHHHHHLLLLLLLL"` GUID string into hi/lo dword
-// pair. Matches the format `UnitGUID(unit)` returns. Returns true
-// on success. Whitespace is not tolerated; 16 hex digits must
-// follow `0x` / `0X`. Shorter `"0xLLLLLLLL"` (8 digits, hi=0) is
-// also accepted because vanilla addons sometimes drop the high
-// half when it's zero.
+// Thin shim: parses a GUID string and splits to hi/lo dwords for the
+// engine's `__thiscall` cache lookup, which takes them as separate
+// args. Shared parser lives in `Guid::Parse`.
 bool ParseGUID(const char *str, uint32_t &outHi, uint32_t &outLo) {
-    if (str == nullptr)
-        return false;
-    if (str[0] != '0' || (str[1] != 'x' && str[1] != 'X'))
-        return false;
-    const char *hex = str + 2;
-    const size_t len = std::strlen(hex);
-    if (len != 8 && len != 16)
-        return false;
     uint64_t value = 0;
-    for (size_t i = 0; i < len; i++) {
-        const char c = hex[i];
-        uint64_t digit;
-        if (c >= '0' && c <= '9') digit = c - '0';
-        else if (c >= 'a' && c <= 'f') digit = 10 + (c - 'a');
-        else if (c >= 'A' && c <= 'F') digit = 10 + (c - 'A');
-        else return false;
-        value = (value << 4) | digit;
-    }
-    if (len == 8) {
-        outHi = 0;
-        outLo = static_cast<uint32_t>(value);
-    } else {
-        outHi = static_cast<uint32_t>(value >> 32);
-        outLo = static_cast<uint32_t>(value);
-    }
+    if (!Guid::Parse(str, &value))
+        return false;
+    outHi = static_cast<uint32_t>(value >> 32);
+    outLo = static_cast<uint32_t>(value);
     return true;
 }
 

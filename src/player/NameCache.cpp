@@ -55,6 +55,7 @@
 
 #include "Game.h"
 #include "Offsets.h"
+#include "guid/Guid.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -511,29 +512,10 @@ void MaybeScan() {
 
 // ----- Lua surface -----
 
-// Parses `"0xHHHHHHHHLLLLLLLL"` (16-digit) or `"0xLLLLLLLL"` (8-digit
-// with implicit hi=0). Mirrors `Player::Info::ParseGUID` exactly —
-// kept inline here so we don't expand the public surface of that TU
-// just for one helper.
+// Thin shim around the centralized `Guid::Parse` so this TU's Lua
+// surface keeps a local symbol with its existing call shape.
 bool ParseGUID(const char *str, uint64_t *outGUID) {
-    if (str == nullptr || str[0] != '0' || (str[1] != 'x' && str[1] != 'X'))
-        return false;
-    const char *hex = str + 2;
-    const size_t len = std::strlen(hex);
-    if (len != 8 && len != 16)
-        return false;
-    uint64_t value = 0;
-    for (size_t i = 0; i < len; i++) {
-        const char c = hex[i];
-        uint64_t digit;
-        if (c >= '0' && c <= '9') digit = c - '0';
-        else if (c >= 'a' && c <= 'f') digit = 10 + (c - 'a');
-        else if (c >= 'A' && c <= 'F') digit = 10 + (c - 'A');
-        else return false;
-        value = (value << 4) | digit;
-    }
-    *outGUID = value;
-    return true;
+    return Guid::Parse(str, outGUID);
 }
 
 // Returns the ChrClasses.dbc record ID for a class token like
