@@ -86,24 +86,6 @@ const char *SpellIconPath(const uint8_t *spellRecord) {
         iconRecord + OFF_SPELLICON_PATH);
 }
 
-void SetString(void *L, const char *key, const char *value) {
-    Game::Lua::PushString(L, key);
-    Game::Lua::PushString(L, value);
-    Game::Lua::SetTable(L, -3);
-}
-
-void SetNumber(void *L, const char *key, double value) {
-    Game::Lua::PushString(L, key);
-    Game::Lua::PushNumber(L, value);
-    Game::Lua::SetTable(L, -3);
-}
-
-void SetBool(void *L, const char *key, bool value) {
-    Game::Lua::PushString(L, key);
-    Game::Lua::PushBoolean(L, value ? 1 : 0);
-    Game::Lua::SetTable(L, -3);
-}
-
 } // namespace
 
 uint32_t ReadSpellID(const uint8_t *unit, int slot) {
@@ -230,33 +212,34 @@ void Push(void *L, const uint8_t *unit, int slot) {
 
     Game::Lua::NewTable(L);
 
-    SetString(L, "name", name != nullptr ? name : "");
-    SetString(L, "icon", icon != nullptr ? icon : "");
-    SetNumber(L, "applications", static_cast<double>(ReadStacks(unit, slot)));
-    SetNumber(L, "spellId", static_cast<double>(spellID));
-    SetString(L, "dispelName", dispel != nullptr ? dispel : "");
-    SetBool(L, "isHelpful", isHelpful);
-    SetBool(L, "isHarmful", !isHelpful);
+    Game::Lua::SetFieldString(L, "name", name);
+    Game::Lua::SetFieldString(L, "icon", icon);
+    Game::Lua::SetFieldNumber(L, "applications",
+        static_cast<double>(ReadStacks(unit, slot)));
+    Game::Lua::SetFieldNumber(L, "spellId", static_cast<double>(spellID));
+    Game::Lua::SetFieldString(L, "dispelName", dispel);
+    Game::Lua::SetFieldBool(L, "isHelpful", isHelpful);
+    Game::Lua::SetFieldBool(L, "isHarmful", !isHelpful);
 
     // Numeric fields modern always sets — 0 for "not applicable" to
     // match modern semantics (`if data.duration > 0` etc. still
     // works the same on vanilla).
-    SetNumber(L, "duration", 0);
-    SetNumber(L, "expirationTime", 0);
-    SetNumber(L, "charges", 0);
-    SetNumber(L, "maxCharges", 0);
-    SetNumber(L, "timeMod", 1);
+    Game::Lua::SetFieldNumber(L, "duration", 0);
+    Game::Lua::SetFieldNumber(L, "expirationTime", 0);
+    Game::Lua::SetFieldNumber(L, "charges", 0);
+    Game::Lua::SetFieldNumber(L, "maxCharges", 0);
+    Game::Lua::SetFieldNumber(L, "timeMod", 1);
 
     // Boolean fields whose modern semantics don't apply in vanilla.
-    SetBool(L, "isStealable", false);
-    SetBool(L, "isBossAura", false);
-    SetBool(L, "isFromPlayerOrPlayerPet", false);
-    SetBool(L, "isNameplateOnly", false);
-    SetBool(L, "nameplateShowAll", false);
-    SetBool(L, "nameplateShowPersonal", false);
-    SetBool(L, "canApplyAura", false);
-    SetBool(L, "shouldConsolidate", false);
-    SetBool(L, "isRaid", false);
+    Game::Lua::SetFieldBool(L, "isStealable", false);
+    Game::Lua::SetFieldBool(L, "isBossAura", false);
+    Game::Lua::SetFieldBool(L, "isFromPlayerOrPlayerPet", false);
+    Game::Lua::SetFieldBool(L, "isNameplateOnly", false);
+    Game::Lua::SetFieldBool(L, "nameplateShowAll", false);
+    Game::Lua::SetFieldBool(L, "nameplateShowPersonal", false);
+    Game::Lua::SetFieldBool(L, "canApplyAura", false);
+    Game::Lua::SetFieldBool(L, "shouldConsolidate", false);
+    Game::Lua::SetFieldBool(L, "isRaid", false);
 
     // `sourceUnit`, `auraInstanceID`, `points` deliberately omitted
     // — modern returns nil for those when they don't apply, and

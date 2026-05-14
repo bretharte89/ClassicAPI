@@ -101,6 +101,24 @@ void RegisterTableFunction(const char *tableName, const char *methodName, CFunct
     SetTable(L, -3);                     // pops methodName+closure: tbl[m]=c. [tbl]
     SetTop(L, -2);                       // pop tbl. []
 }
+
+void SetFieldNumber(void *L, const char *key, double value) {
+    PushString(L, key);
+    PushNumber(L, value);
+    SetTable(L, -3);
+}
+
+void SetFieldString(void *L, const char *key, const char *value) {
+    PushString(L, key);
+    PushString(L, value != nullptr ? value : "");
+    SetTable(L, -3);
+}
+
+void SetFieldBool(void *L, const char *key, bool value) {
+    PushString(L, key);
+    PushBoolean(L, value ? 1 : 0);
+    SetTable(L, -3);
+}
 } // namespace Lua
 
 namespace {

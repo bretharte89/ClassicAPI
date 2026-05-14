@@ -124,6 +124,15 @@ void RegisterFrameMethods(void *context, const FrameMethodEntry *table, int coun
 // functions, so we manipulate the globals table directly via the Lua C API.
 void RegisterTableFunction(const char *tableName, const char *methodName,
                            CFunction func);
+
+// Set `t[key] = value` on the table currently at stack[-1] (the most
+// common shape used when populating a struct-style table mid-build).
+// Pushes the key + value, calls `SetTable(L, -3)`, which pops both and
+// leaves the table on the stack — so it's safe to chain. NULL string
+// values are coerced to `""` so callers don't have to gate each push.
+void SetFieldNumber(void *L, const char *key, double value);
+void SetFieldString(void *L, const char *key, const char *value);
+void SetFieldBool(void *L, const char *key, bool value);
 } // namespace Lua
 
 // Self-registration for API modules. Each module .cpp declares a file-scope

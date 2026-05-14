@@ -205,20 +205,6 @@ int __fastcall Script_GetCharacterInfo(void *L) {
     return 8;
 }
 
-// Pushes a key/string-value pair into the table at stack[-3] (the
-// table we're populating in `Script_GetCharacters`).
-void SetTableStringField(void *L, const char *key, const char *value) {
-    Game::Lua::PushString(L, key);
-    Game::Lua::PushString(L, value != nullptr ? value : "");
-    Game::Lua::SetTable(L, -3);
-}
-
-void SetTableNumberField(void *L, const char *key, double value) {
-    Game::Lua::PushString(L, key);
-    Game::Lua::PushNumber(L, value);
-    Game::Lua::SetTable(L, -3);
-}
-
 // `C_CharacterList.GetCharacters()` — returns a numeric-keyed table
 // of CharacterInfo tables. Each entry is a struct-style table with
 // the same fields `GetCharacterInfo` returns as a tuple, but named.
@@ -240,35 +226,35 @@ int __fastcall Script_GetCharacters(void *L) {
         Game::Lua::NewTable(L);
         // Stack: [outer-table, key, inner-table]
 
-        SetTableStringField(L, "name", s.name.c_str());
+        Game::Lua::SetFieldString(L, "name", s.name.c_str());
 
-        SetTableStringField(L, "localizedRace", LookupDBCName(
+        Game::Lua::SetFieldString(L, "localizedRace", LookupDBCName(
             Offsets::VAR_CHRRACES_RECORDS, Offsets::VAR_CHRRACES_COUNT,
             s.raceID, Offsets::OFF_CHRRACES_NAMES));
 
-        SetTableStringField(L, "englishRace", LookupDBCField(
+        Game::Lua::SetFieldString(L, "englishRace", LookupDBCField(
             Offsets::VAR_CHRRACES_RECORDS, Offsets::VAR_CHRRACES_COUNT,
             s.raceID, Offsets::OFF_CHRRACES_FILENAME));
 
-        SetTableStringField(L, "localizedClass", LookupDBCName(
+        Game::Lua::SetFieldString(L, "localizedClass", LookupDBCName(
             Offsets::VAR_CHRCLASSES_RECORDS, Offsets::VAR_CHRCLASSES_COUNT,
             s.classID, Offsets::OFF_CHRCLASSES_NAMES));
 
-        SetTableNumberField(L, "level", static_cast<double>(s.level));
+        Game::Lua::SetFieldNumber(L, "level", static_cast<double>(s.level));
 
         const char *area = LookupDBCName(
             Offsets::VAR_AREATABLE_RECORDS, Offsets::VAR_AREATABLE_COUNT,
             static_cast<int>(s.areaID), Offsets::OFF_AREATABLE_NAMES);
         if (area != nullptr)
-            SetTableStringField(L, "areaName", area);
+            Game::Lua::SetFieldString(L, "areaName", area);
 
-        SetTableNumberField(L, "sex", static_cast<double>(s.sex));
+        Game::Lua::SetFieldNumber(L, "sex", static_cast<double>(s.sex));
 
         char buf[24];
         std::snprintf(buf, sizeof(buf), "0x%08X%08X",
                       static_cast<uint32_t>(s.guid >> 32),
                       static_cast<uint32_t>(s.guid));
-        SetTableStringField(L, "guid", buf);
+        Game::Lua::SetFieldString(L, "guid", buf);
 
         // Insert inner-table into outer-table at numeric key.
         Game::Lua::SetTable(L, -3);

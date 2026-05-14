@@ -52,23 +52,17 @@ namespace {
 constexpr int SECONDS_PER_DAY = 86400;
 constexpr int SECONDS_PER_MINUTE = 60;
 
-void SetField(void *L, const char *key, double value) {
-    Game::Lua::PushString(L, key);
-    Game::Lua::PushNumber(L, value);
-    Game::Lua::SetTable(L, -3);
-}
-
 // Pushes a fresh CalendarTime table at the top of the stack. Caller
 // owns the stack — clear it before invoking if you need the new table
 // at a specific index.
 void PushCalendarTime(void *L, const std::tm &t) {
     Game::Lua::NewTable(L);
-    SetField(L, "year",     static_cast<double>(t.tm_year + 1900));
-    SetField(L, "month",    static_cast<double>(t.tm_mon + 1));
-    SetField(L, "monthDay", static_cast<double>(t.tm_mday));
-    SetField(L, "weekday",  static_cast<double>(t.tm_wday + 1));
-    SetField(L, "hour",     static_cast<double>(t.tm_hour));
-    SetField(L, "minute",   static_cast<double>(t.tm_min));
+    Game::Lua::SetFieldNumber(L, "year",     static_cast<double>(t.tm_year + 1900));
+    Game::Lua::SetFieldNumber(L, "month",    static_cast<double>(t.tm_mon + 1));
+    Game::Lua::SetFieldNumber(L, "monthDay", static_cast<double>(t.tm_mday));
+    Game::Lua::SetFieldNumber(L, "weekday",  static_cast<double>(t.tm_wday + 1));
+    Game::Lua::SetFieldNumber(L, "hour",     static_cast<double>(t.tm_hour));
+    Game::Lua::SetFieldNumber(L, "minute",   static_cast<double>(t.tm_min));
 }
 
 // Reads a numeric field off the table at `tableIdx`. Returns false

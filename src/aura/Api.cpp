@@ -252,18 +252,10 @@ void PushColor(void *L, double r, double g, double b, double a) {
         Game::Lua::SetTop(L, -2);
     }
     Game::Lua::NewTable(L);
-    Game::Lua::PushString(L, "r");
-    Game::Lua::PushNumber(L, r);
-    Game::Lua::SetTable(L, -3);
-    Game::Lua::PushString(L, "g");
-    Game::Lua::PushNumber(L, g);
-    Game::Lua::SetTable(L, -3);
-    Game::Lua::PushString(L, "b");
-    Game::Lua::PushNumber(L, b);
-    Game::Lua::SetTable(L, -3);
-    Game::Lua::PushString(L, "a");
-    Game::Lua::PushNumber(L, a);
-    Game::Lua::SetTable(L, -3);
+    Game::Lua::SetFieldNumber(L, "r", r);
+    Game::Lua::SetFieldNumber(L, "g", g);
+    Game::Lua::SetFieldNumber(L, "b", b);
+    Game::Lua::SetFieldNumber(L, "a", a);
 }
 
 int __fastcall Script_GetAuraDispelTypeColor(void *L) {

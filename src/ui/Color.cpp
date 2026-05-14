@@ -56,18 +56,10 @@ RGBA Decode(int32_t argb) {
 // addon-side `CreateColor` isn't available yet.
 void PushPlainColor(void *L, const RGBA &c) {
     Game::Lua::NewTable(L);
-    Game::Lua::PushString(L, "r");
-    Game::Lua::PushNumber(L, c.r);
-    Game::Lua::SetTable(L, -3);
-    Game::Lua::PushString(L, "g");
-    Game::Lua::PushNumber(L, c.g);
-    Game::Lua::SetTable(L, -3);
-    Game::Lua::PushString(L, "b");
-    Game::Lua::PushNumber(L, c.b);
-    Game::Lua::SetTable(L, -3);
-    Game::Lua::PushString(L, "a");
-    Game::Lua::PushNumber(L, c.a);
-    Game::Lua::SetTable(L, -3);
+    Game::Lua::SetFieldNumber(L, "r", c.r);
+    Game::Lua::SetFieldNumber(L, "g", c.g);
+    Game::Lua::SetFieldNumber(L, "b", c.b);
+    Game::Lua::SetFieldNumber(L, "a", c.a);
 }
 
 // With `CreateColor` already at stack index `createColorIdx`, duplicates
@@ -112,9 +104,7 @@ int __fastcall Script_GetColors(void *L) {
         Game::Lua::PushNumber(L, static_cast<double>(i + 1)); // key
         Game::Lua::NewTable(L);                                // inner table
 
-        Game::Lua::PushString(L, "baseTag");
-        Game::Lua::PushString(L, entry.baseTag);
-        Game::Lua::SetTable(L, -3);
+        Game::Lua::SetFieldString(L, "baseTag", entry.baseTag);
 
         Game::Lua::PushString(L, "color");
         if (haveCreateColor)

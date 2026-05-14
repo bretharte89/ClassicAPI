@@ -79,24 +79,6 @@ bool IsActiveQuest(uint32_t status) {
     return status == 3 || status == 4;
 }
 
-void SetTableNumberField(void *L, const char *key, double value) {
-    Game::Lua::PushString(L, key);
-    Game::Lua::PushNumber(L, value);
-    Game::Lua::SetTable(L, -3);
-}
-
-void SetTableStringField(void *L, const char *key, const char *value) {
-    Game::Lua::PushString(L, key);
-    Game::Lua::PushString(L, value != nullptr ? value : "");
-    Game::Lua::SetTable(L, -3);
-}
-
-void SetTableBoolField(void *L, const char *key, bool value) {
-    Game::Lua::PushString(L, key);
-    Game::Lua::PushBoolean(L, value ? 1 : 0);
-    Game::Lua::SetTable(L, -3);
-}
-
 // `C_GossipInfo.GetText()` — pushes the greeting string the engine
 // resolved for the gossip-giver's NPC_TEXT.dbc entry. Mirrors what
 // `Script_GetGossipText` does (one inline `lua_pushstring` of the
@@ -138,16 +120,17 @@ int __fastcall Script_C_GossipInfo_GetOptions(void *L) {
         Game::Lua::PushNumber(L, static_cast<double>(outIdx));
         Game::Lua::NewTable(L);
 
-        SetTableNumberField(L, "gossipOptionID",
-                            static_cast<double>(optIdx));
-        SetTableStringField(L, "name", reinterpret_cast<const char *>(
+        Game::Lua::SetFieldNumber(L, "gossipOptionID",
+                                  static_cast<double>(optIdx));
+        Game::Lua::SetFieldString(L, "name", reinterpret_cast<const char *>(
             entry + Offsets::OFF_GOSSIP_OPTION_TEXT));
-        SetTableNumberField(L, "icon",
+        Game::Lua::SetFieldNumber(L, "icon",
             static_cast<double>(entry[Offsets::OFF_GOSSIP_OPTION_ICON]));
         const uint8_t boxCoded = entry[Offsets::OFF_GOSSIP_OPTION_BOX_CODED];
-        SetTableNumberField(L, "flags",
+        Game::Lua::SetFieldNumber(L, "flags",
             static_cast<double>(boxCoded ? 1u : 0u));
-        SetTableNumberField(L, "orderIndex", static_cast<double>(outIdx));
+        Game::Lua::SetFieldNumber(L, "orderIndex",
+                                  static_cast<double>(outIdx));
 
         Game::Lua::SetTable(L, -3);
     }
@@ -176,17 +159,19 @@ int PushQuestList(void *L, bool wantActive) {
         Game::Lua::PushNumber(L, static_cast<double>(outIdx));
         Game::Lua::NewTable(L);
 
-        SetTableNumberField(L, "questID", static_cast<double>(questID));
-        SetTableStringField(L, "title", reinterpret_cast<const char *>(
+        Game::Lua::SetFieldNumber(L, "questID",
+                                  static_cast<double>(questID));
+        Game::Lua::SetFieldString(L, "title", reinterpret_cast<const char *>(
             entry + Offsets::OFF_GOSSIP_QUEST_TITLE));
         const int32_t level = *reinterpret_cast<const int32_t *>(
             entry + Offsets::OFF_GOSSIP_QUEST_LEVEL);
-        SetTableNumberField(L, "questLevel", static_cast<double>(level));
+        Game::Lua::SetFieldNumber(L, "questLevel",
+                                  static_cast<double>(level));
         // `isComplete` is only meaningful for active quests; vanilla's
         // status==4 row corresponds to "ready to turn in" (the engine
         // also branches on this value in the gossip-icon-color path).
         if (wantActive)
-            SetTableBoolField(L, "isComplete", status == 4);
+            Game::Lua::SetFieldBool(L, "isComplete", status == 4);
 
         Game::Lua::SetTable(L, -3);
     }

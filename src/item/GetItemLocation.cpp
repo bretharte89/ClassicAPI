@@ -23,20 +23,15 @@ namespace {
 void PushEquipmentLocation(void *L, int slot) {
     Game::Lua::SetTop(L, 0);
     Game::Lua::NewTable(L);
-    Game::Lua::PushString(L, "equipmentSlotIndex");
-    Game::Lua::PushNumber(L, static_cast<double>(slot));
-    Game::Lua::SetTable(L, -3);
+    Game::Lua::SetFieldNumber(L, "equipmentSlotIndex",
+                              static_cast<double>(slot));
 }
 
 void PushBagLocation(void *L, int bagID, int slotIndex) {
     Game::Lua::SetTop(L, 0);
     Game::Lua::NewTable(L);
-    Game::Lua::PushString(L, "bagID");
-    Game::Lua::PushNumber(L, static_cast<double>(bagID));
-    Game::Lua::SetTable(L, -3);
-    Game::Lua::PushString(L, "slotIndex");
-    Game::Lua::PushNumber(L, static_cast<double>(slotIndex));
-    Game::Lua::SetTable(L, -3);
+    Game::Lua::SetFieldNumber(L, "bagID", static_cast<double>(bagID));
+    Game::Lua::SetFieldNumber(L, "slotIndex", static_cast<double>(slotIndex));
 }
 
 } // namespace
