@@ -217,6 +217,42 @@ enum Offsets {
     // any visible unit, not just the local player.
     OFF_UNIT_FIELD_CHANNEL_SPELL = 0x228,
 
+    // Aura arrays in the unit's `m_objectFields` descriptor (at `unit
+    // + OFF_CGUNIT_OBJECT_FIELDS`). 48 total auras packed as two
+    // parallel sub-ranges (32 buffs, then 16 debuffs) sharing the
+    // flags / levels / applications side-arrays indexed by absolute
+    // slot (0..47). Derived by decompiling `Script_UnitBuff`
+    // (`0x00519500`) and `Script_UnitDebuff` (`0x005198F0`):
+    //
+    //   Script_UnitBuff   iterates desc[+0xA4 .. +0x124)  step 4 (slots  0..31)
+    //   Script_UnitDebuff iterates desc[+0x124 .. +0x164) step 4 (slots 32..47)
+    //   Both read flag nibble at desc[+0x164 + slot/2] >> ((slot&1)*4) & 0xF
+    //                and gate on `(nibble & 0x0E) != 0` (visibility)
+    //   Both read stacks at desc[+0x1AC + slot] and display as `byte + 1`
+    //
+    // For our purposes we don't decode individual flag bits — we
+    // distinguish helpful vs harmful by absolute slot range, and we
+    // derive `dispelName` from `Spell.dbc[+0x10]` (see
+    // `OFF_SPELL_DISPEL_TYPE` below), not from the flags nibble.
+    OFF_UNIT_FIELD_AURA = 0xA4,                // u32 spell ID per slot, 48 slots total
+    OFF_UNIT_FIELD_AURAFLAGS = 0x164,          // 4 bits per aura, 2 per byte, covers all 48
+    OFF_UNIT_FIELD_AURALEVELS = 0x17C,         // u8 caster level per aura, 48 bytes
+    OFF_UNIT_FIELD_AURAAPPLICATIONS = 0x1AC,   // u8 (stacks-1) per aura, display value = byte+1
+    UNIT_AURA_BUFF_COUNT = 32,                 // slot range 0..31 (helpful)
+    UNIT_AURA_DEBUFF_COUNT = 16,               // slot range 32..47 (harmful)
+    UNIT_AURA_TOTAL = 48,
+    UNIT_AURA_VISIBLE_MASK = 0x0E,             // nibble mask used by the engine's visibility gate
+
+    // Reusable "is this spell record a user-visible aura" predicate.
+    // `__fastcall(spellRecord*) -> bool`. Checks Spell.dbc Attributes
+    // (high bit of byte at +0x18 must be clear), AttributesEx bit
+    // 0x10000000 must be clear, has a non-trivial effect (effects at
+    // +0x16C..+0x174 must contain at least one not in {0x2C, 0x2D,
+    // 0x97}), and a mechanic-vs-player-immunity-bitmap gate via
+    // `+0x2B0`. Both `Script_UnitBuff` and `Script_UnitDebuff` call
+    // it to filter their aura iteration; we call it the same way.
+    FUN_SPELL_IS_VISIBLE_AURA = 0x00519860,
+
     // CGPlayer-side sub-struct, allocated for any player-controlled
     // unit (local self, target, party, raid, inspect targets — all of
     // them). Holds player-specific data that's *not* in the broadcast
@@ -1203,12 +1239,36 @@ enum Offsets {
     //   4 = Frost     5 = Shadow 6 = Arcane
     OFF_SPELL_SCHOOL = 0x04,
     SPELL_SCHOOL_COUNT = 7,
+
+    // Spell.dbc DispelType field — u32 at record +0x10, indexes into
+    // `SpellDispelType.dbc` (`VAR_SPELLDISPEL_RECORDS` below). 0 =
+    // not dispellable. Verified by decompiling `Script_UnitDebuff`,
+    // which reads `*(int*)(spellRecord + 0x10)` and feeds it into
+    // the DispelType DBC to produce the third return value (the
+    // dispel-type name string).
+    OFF_SPELL_DISPEL_TYPE = 0x10,
+
     VAR_SPELL_RANGE_RECORDS = 0x00C0D79C,      // SpellRange.dbc
     VAR_SPELL_RANGE_COUNT = 0x00C0D7A0,
     VAR_SPELL_ICON_RECORDS = 0x00C0D7EC,       // SpellIcon.dbc
     VAR_SPELL_ICON_COUNT = 0x00C0D7F0,
     VAR_SPELL_CAST_TIMES_RECORDS = 0x00C0D878, // SpellCastTimes.dbc
     VAR_SPELL_CAST_TIMES_COUNT = 0x00C0D87C,
+
+    // SpellDispelType.dbc — maps dispel-type IDs (1..N) to localized
+    // names like "Magic", "Curse", "Disease", "Poison". Used by
+    // `Script_UnitDebuff` to fill its third return value. Standard
+    // 5-DWORD class instance shape; records array at +0x08, count at
+    // +0x0C of the instance. Records themselves have a "has-name"
+    // gate at +0x28 (non-zero means the name slot is populated) and
+    // the locale-applied string pointer at +0x2C. The engine's
+    // accessor does the locale lookup before exposing the pointer
+    // here, so we get a ready-to-use string with no further indexing.
+    VAR_SPELLDISPEL_RECORDS = 0x00C0D83C,
+    VAR_SPELLDISPEL_COUNT = 0x00C0D840,
+    OFF_SPELLDISPEL_HAS_NAME = 0x28,
+    OFF_SPELLDISPEL_NAME = 0x2C,
+
     VAR_LOCALE_INDEX = 0x00C0E080,             // 0..8, picks one of the 9 localized strings
 
     LUA_IS_NUMBER = 0x6F34D0,

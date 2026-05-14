@@ -107,6 +107,13 @@ build instructions.
   - [`UnitIsFeignDeath(unit)`](#unitisfeigndeathunit)
   - [`UnitIsInMyGuild(unitOrName)`](#unitisinmyguildunitorname)
   - [`UnitIsPossessed(unit)`](#unitispossessedunit)
+- [UnitAuras](#unitauras)
+  - [`C_UnitAuras.GetAuraDataByIndex(unit, index [, filter])`](#c_unitaurasgetauradatabyindexunit-index--filter)
+  - [`C_UnitAuras.GetBuffDataByIndex(unit, index)` / `GetDebuffDataByIndex(unit, index)`](#c_unitaurasgetbuffdatabyindexunit-index--getdebuffdatabyindexunit-index)
+  - [`C_UnitAuras.GetUnitAuraBySpellID(unit, spellID [, filter])`](#c_unitaurasgetunitaurabyspellidunit-spellid--filter)
+  - [`C_UnitAuras.GetPlayerAuraBySpellID(spellID)`](#c_unitaurasgetplayeraurabyspellidspellid)
+  - [`C_UnitAuras.GetUnitAuras(unit [, filter])`](#c_unitaurasgetunitaurasunit--filter)
+  - [`C_UnitAuras.GetAuraDispelTypeColor(dispelName)`](#c_unitaurasgetauradispeltypecolordispelname)
 - [NameCache](#namecache)
   - [`GetPlayerInfoByGUID(guid)`](#getplayerinfobyguidguid)
   - [`C_PlayerInfo.RememberPlayer(guid, name, classToken)`](#c_playerinforememberplayerguid-name-classtoken)
@@ -2752,6 +2759,123 @@ UnitIsPossessed("target")   -- true if mind-controlled
 Distinct from `UnitIsCharmed`: charm covers any charm-type effect
 (including pets summoned via mob-charm spells), possess is the
 specific spell-driven take-over effect modern WoW splits out.
+
+## UnitAuras
+
+Backport of the modern `C_UnitAuras` namespace. Returns
+`AuraData`-shaped tables instead of vanilla's `UnitBuff` /
+`UnitDebuff` multi-return tuples, so modern addon code that does
+`local d = C_UnitAuras.GetAuraDataByIndex(unit, 1); if d.dispelName ==
+"Magic" then ...` works unchanged.
+
+Reads everything off the unit's `m_objectFields` descriptor — same
+data source `UnitBuff` / `UnitDebuff` use. The descriptor has 48 aura
+slots total: 32 helpful (buffs) at indices 0..31, 16 harmful
+(debuffs) at indices 32..47. Functions in this namespace take a
+1-based Lua index that translates onto whichever range the filter
+selects.
+
+### `AuraData` table shape
+
+| Field | Type | Source / value on vanilla |
+|---|---|---|
+| `name` | string | localized spell name from `Spell.dbc` |
+| `icon` | string | icon path from `SpellIcon.dbc` |
+| `applications` | number | stack count (engine stores `stacks-1`, we display `+1`) |
+| `spellId` | number | spell ID from the descriptor's aura array |
+| `dispelName` | string | `"Magic"` / `"Curse"` / `"Disease"` / `"Poison"` (from `SpellDispelType.dbc`), or `""` if non-dispellable |
+| `isHelpful` | boolean | true for slot < 32 |
+| `isHarmful` | boolean | true for slot >= 32 |
+| `duration` | number | always `0` — vanilla server doesn't broadcast remaining time |
+| `expirationTime` | number | always `0` (same reason) |
+| `charges` / `maxCharges` | number | always `0` — vanilla has stacks, not charges |
+| `timeMod` | number | always `1` — vanilla has no haste-affected auras |
+| `isStealable`, `isBossAura`, `isFromPlayerOrPlayerPet`, `isNameplateOnly`, `nameplateShowAll`, `nameplateShowPersonal`, `canApplyAura`, `shouldConsolidate`, `isRaid` | boolean | always `false` — modern UI concepts vanilla doesn't have |
+| `sourceUnit`, `auraInstanceID`, `points` | (absent) | omitted from the table — Lua read yields nil, matching modern semantics for "field doesn't apply" |
+
+### Filter parsing
+
+The optional `filter` string is a pipe-separated set of upper-case
+tokens, matching modern syntax (`"HELPFUL"`, `"HARMFUL"`,
+`"HELPFUL|PLAYER"`, etc.). Only `HELPFUL` (default) and `HARMFUL`
+are honored on vanilla; other tokens (`PLAYER` / `RAID` /
+`CANCELABLE` / `INCLUDE_NAME_PLATE_ONLY`) are accepted but no-op —
+they'd need source-GUID tracking or systems vanilla doesn't have.
+
+### `C_UnitAuras.GetAuraDataByIndex(unit, index [, filter])`
+
+Returns the `AuraData` table for the `index`-th aura (1-based)
+matching `filter`, or `nil` if the unit has fewer than `index`
+matching auras. Empty / non-visible descriptor slots are skipped
+during iteration, so consecutive indices return consecutive *active*
+auras the same way `UnitBuff` does.
+
+```lua
+local d = C_UnitAuras.GetAuraDataByIndex("player", 1, "HELPFUL")
+if d then
+    print(d.name, d.spellId, d.dispelName, d.applications)
+end
+```
+
+### `C_UnitAuras.GetBuffDataByIndex(unit, index)` / `GetDebuffDataByIndex(unit, index)`
+
+Convenience wrappers locking the filter to `HELPFUL` or `HARMFUL`
+respectively. Equivalent to `GetAuraDataByIndex(unit, index,
+"HELPFUL")` / `"HARMFUL"`.
+
+### `C_UnitAuras.GetUnitAuraBySpellID(unit, spellID [, filter])`
+
+Linear-searches `unit`'s aura array for the first populated slot
+whose `spellId` matches and returns its `AuraData`, or `nil` if not
+found. Without a filter, searches both ranges (helpful first, then
+harmful).
+
+```lua
+-- Is the player blessed with Wisdom right now?
+local d = C_UnitAuras.GetUnitAuraBySpellID("player", 25290)
+if d then print("yes, with", d.applications, "stacks") end
+```
+
+### `C_UnitAuras.GetPlayerAuraBySpellID(spellID)`
+
+Shorthand for `GetUnitAuraBySpellID("player", spellID)` — the most
+common consumer pattern (WeakAuras-style aura tracking).
+
+### `C_UnitAuras.GetUnitAuras(unit [, filter])`
+
+Returns a numerically-indexed array of `AuraData` tables for every
+populated aura on `unit`. Without a filter the array is helpful auras
+followed by harmful; with a filter it's restricted to one range.
+Empty array (`{}`) if the unit has no auras or doesn't resolve.
+
+```lua
+for _, aura in ipairs(C_UnitAuras.GetUnitAuras("target")) do
+    print(aura.spellId, aura.dispelName, aura.isHarmful)
+end
+```
+
+### `C_UnitAuras.GetAuraDispelTypeColor(dispelName)`
+
+Returns a `{r, g, b, a}` table for the given dispel-type name,
+matching modern FrameXML's `DebuffTypeColor` values:
+
+| dispelName | r | g | b |
+|---|---|---|---|
+| `"Magic"` | 0.20 | 0.60 | 1.00 |
+| `"Curse"` | 0.60 | 0.00 | 1.00 |
+| `"Disease"` | 0.60 | 0.40 | 0.00 |
+| `"Poison"` | 0.00 | 0.60 | 0.00 |
+| `"Enrage"` | 1.00 | 0.55 | 0.00 |
+| (anything else, including `""`) | 0.80 | 0 | 0 |
+
+Returns a `ColorMixin` instance the same way modern does — the C
+function `pcall`s Lua's `CreateColor(r, g, b, a)` (defined in
+`!!!ClassicAPI/Util/Color.lua`) and returns whatever table it
+builds. So the returned value carries the mixin methods
+(`GetRGB`, `GenerateHexColorMarkup`, etc.) in addition to the
+`.r/.g/.b/.a` fields. Falls back to a plain `{r,g,b,a}` table if
+`CreateColor` isn't loaded yet (shouldn't happen — `!!!ClassicAPI`
+loads first thanks to the triple-`!` prefix).
 
 ## NameCache
 

@@ -1,0 +1,307 @@
+// This file is part of ClassicAPI.
+//
+// ClassicAPI is free software: you can redistribute it and/or modify it under the terms
+// of the GNU Lesser General Public License as published by the Free Software Foundation, either
+// version 3 of the License, or (at your option) any later version.
+//
+// ClassicAPI is distributed in the hope that it will be useful, but WITHOUT ANY
+// WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+// PURPOSE. See the GNU Lesser General Public License for more details.
+
+// `C_UnitAuras.*` — modern aura-data namespace. Returns AuraData
+// tables built by `Aura::Data::Push` (see `Data.h`). The fields the
+// vanilla descriptor exposes (`name`, `icon`, `applications`,
+// `spellId`, `dispelName`, `isHelpful`, `isHarmful`, `timeMod`)
+// match modern; the fields that depend on systems vanilla doesn't
+// have (`duration`, `expirationTime`, `auraInstanceID`, charges,
+// nameplate flags, etc.) are populated with vanilla-truthful
+// defaults so consumers reading those keys get sensible values.
+//
+// Filter parsing here mirrors what most modern addons actually pass:
+// "HELPFUL" / "HARMFUL" are honored, every other modern filter
+// (`PLAYER` / `RAID` / `CANCELABLE` / `INCLUDE_NAME_PLATE_ONLY`) is
+// accepted but no-ops — they'd require either source-GUID tracking
+// (`PLAYER`), class-dispel-matrix infra (`RAID`), or systems
+// vanilla doesn't have at all.
+
+#include "Data.h"
+
+#include "Game.h"
+#include "Offsets.h"
+
+#include <cstdint>
+#include <string.h>
+
+namespace Aura::Api {
+
+namespace {
+
+using ResolveUnitToken_t = void *(__fastcall *)(const char *token);
+
+const uint8_t *ResolveUnit(const char *token) {
+    if (token == nullptr)
+        return nullptr;
+    auto fn = reinterpret_cast<ResolveUnitToken_t>(
+        static_cast<uintptr_t>(Offsets::FUN_RESOLVE_UNIT_TOKEN));
+    return static_cast<const uint8_t *>(fn(token));
+}
+
+// Parses the filter string. Returns Helpful by default; Harmful if
+// the string contains the substring "HARMFUL". Case-sensitive — the
+// modern API documents the filter tokens as upper-case constants
+// (`"HELPFUL"` etc.) and addons that pass them through case-changing
+// transforms are already broken on modern too.
+Data::Filter ParseFilter(const char *filter) {
+    if (filter == nullptr)
+        return Data::Filter::Helpful;
+    if (strstr(filter, "HARMFUL") != nullptr)
+        return Data::Filter::Harmful;
+    return Data::Filter::Helpful;
+}
+
+const char *ArgUnit(void *L, int idx) {
+    if (!Game::Lua::IsString(L, idx))
+        return nullptr;
+    return Game::Lua::ToString(L, idx);
+}
+
+int ArgInt(void *L, int idx) {
+    if (!Game::Lua::IsNumber(L, idx))
+        return 0;
+    return static_cast<int>(Game::Lua::ToNumber(L, idx));
+}
+
+const char *ArgOptString(void *L, int idx) {
+    if (!Game::Lua::IsString(L, idx))
+        return nullptr;
+    return Game::Lua::ToString(L, idx);
+}
+
+// Pushes `AuraData` for the n-th aura on `unit` matching `filter`,
+// or nil if no such aura. Used by `GetAuraDataByIndex` and the
+// filter-locked aliases.
+int PushAuraByIndex(void *L, const char *unitToken, int index,
+                    Data::Filter filter) {
+    const uint8_t *unit = ResolveUnit(unitToken);
+    const int slot = Data::FindNthSlot(unit, index, filter);
+    if (slot < 0) {
+        Game::Lua::PushNil(L);
+        return 1;
+    }
+    Data::Push(L, unit, slot);
+    return 1;
+}
+
+int __fastcall Script_GetAuraDataByIndex(void *L) {
+    const char *unit = ArgUnit(L, 1);
+    const int index = ArgInt(L, 2);
+    const char *filterStr = ArgOptString(L, 3);
+    if (unit == nullptr || index < 1) {
+        Game::Lua::PushNil(L);
+        return 1;
+    }
+    return PushAuraByIndex(L, unit, index, ParseFilter(filterStr));
+}
+
+int __fastcall Script_GetBuffDataByIndex(void *L) {
+    const char *unit = ArgUnit(L, 1);
+    const int index = ArgInt(L, 2);
+    if (unit == nullptr || index < 1) {
+        Game::Lua::PushNil(L);
+        return 1;
+    }
+    return PushAuraByIndex(L, unit, index, Data::Filter::Helpful);
+}
+
+int __fastcall Script_GetDebuffDataByIndex(void *L) {
+    const char *unit = ArgUnit(L, 1);
+    const int index = ArgInt(L, 2);
+    if (unit == nullptr || index < 1) {
+        Game::Lua::PushNil(L);
+        return 1;
+    }
+    return PushAuraByIndex(L, unit, index, Data::Filter::Harmful);
+}
+
+int __fastcall Script_GetUnitAuraBySpellID(void *L) {
+    const char *unitToken = ArgUnit(L, 1);
+    const int spellID = ArgInt(L, 2);
+    const char *filterStr = ArgOptString(L, 3);
+    if (unitToken == nullptr || spellID <= 0) {
+        Game::Lua::PushNil(L);
+        return 1;
+    }
+    const uint8_t *unit = ResolveUnit(unitToken);
+    Data::Filter f;
+    const Data::Filter *fp = nullptr;
+    if (filterStr != nullptr) {
+        f = ParseFilter(filterStr);
+        fp = &f;
+    }
+    const int slot = Data::FindSlotBySpellID(unit, static_cast<uint32_t>(spellID), fp);
+    if (slot < 0) {
+        Game::Lua::PushNil(L);
+        return 1;
+    }
+    Data::Push(L, unit, slot);
+    return 1;
+}
+
+int __fastcall Script_GetPlayerAuraBySpellID(void *L) {
+    const int spellID = ArgInt(L, 1);
+    if (spellID <= 0) {
+        Game::Lua::PushNil(L);
+        return 1;
+    }
+    const uint8_t *unit = ResolveUnit("player");
+    const int slot = Data::FindSlotBySpellID(unit, static_cast<uint32_t>(spellID), nullptr);
+    if (slot < 0) {
+        Game::Lua::PushNil(L);
+        return 1;
+    }
+    Data::Push(L, unit, slot);
+    return 1;
+}
+
+// Iterates one slot range and pushes AuraData tables into `outer` at
+// sequential keys starting from `nextKey`. Updates `nextKey` so a
+// follow-up call can append to the same outer table.
+void AppendRangeToArray(void *L, const uint8_t *unit, int outerIdx,
+                       Data::Filter filter, int &nextKey) {
+    const int start = (filter == Data::Filter::Harmful)
+                          ? Offsets::UNIT_AURA_BUFF_COUNT
+                          : 0;
+    const int end = (filter == Data::Filter::Harmful)
+                        ? Offsets::UNIT_AURA_TOTAL
+                        : Offsets::UNIT_AURA_BUFF_COUNT;
+    for (int slot = start; slot < end; ++slot) {
+        if (!Data::IsSlotPopulated(unit, slot))
+            continue;
+        Game::Lua::PushNumber(L, static_cast<double>(nextKey++));
+        Data::Push(L, unit, slot);
+        Game::Lua::SetTable(L, outerIdx);
+    }
+}
+
+int __fastcall Script_GetUnitAuras(void *L) {
+    const char *unitToken = ArgUnit(L, 1);
+    const char *filterStr = ArgOptString(L, 2);
+    const uint8_t *unit = ResolveUnit(unitToken);
+
+    Game::Lua::SetTop(L, 0);
+    Game::Lua::NewTable(L);
+    if (unit == nullptr)
+        return 1;
+
+    int nextKey = 1;
+    if (filterStr == nullptr) {
+        // No filter — return both ranges.
+        AppendRangeToArray(L, unit, 1, Data::Filter::Helpful, nextKey);
+        AppendRangeToArray(L, unit, 1, Data::Filter::Harmful, nextKey);
+    } else {
+        AppendRangeToArray(L, unit, 1, ParseFilter(filterStr), nextKey);
+    }
+    return 1;
+}
+
+// Modern color table — `DebuffTypeColor` in FrameXML. The string
+// keys are the names returned by `SpellDispelType.dbc` (locale-
+// applied), so we match against the English names used in-engine.
+// "" (no dispel type) falls back to the same color as "none".
+struct DispelColor {
+    const char *name;
+    double r, g, b;
+};
+
+constexpr DispelColor kDispelColors[] = {
+    {"Magic",   0.20, 0.60, 1.00},
+    {"Curse",   0.60, 0.00, 1.00},
+    {"Disease", 0.60, 0.40, 0.00},
+    {"Poison",  0.00, 0.60, 0.00},
+    {"Enrage",  1.00, 0.55, 0.00},
+};
+
+// Pushes a single color value onto the Lua stack, matching modern
+// `GetAuraDispelTypeColor`'s behavior: returns a `ColorMixin`
+// instance built by Lua's `CreateColor(r, g, b, a)` when available,
+// falls back to a plain `{r, g, b, a}` table when not. The
+// ColorMixin path is what modern engine functions like
+// `C_UnitAuras.GetAuraDispelTypeColor` do internally — they don't
+// know what ColorMixin is; they just `pcall` into the Lua-defined
+// `CreateColor` and return whatever table it builds.
+//
+// `!!!ClassicAPI/Util/Color.lua` defines `CreateColor` and runs
+// before any consumer addon (triple-`!` prefix), so the fallback
+// shouldn't trip in practice — it's there for the edge case where
+// another DLL or the engine itself calls us pre-addon-load.
+void PushColor(void *L, double r, double g, double b, double a) {
+    Game::Lua::PushString(L, "CreateColor");
+    Game::Lua::GetTable(L, Game::Lua::GLOBALS_INDEX);
+    if (Game::Lua::Type(L, -1) == Game::Lua::TYPE_FUNCTION) {
+        Game::Lua::PushNumber(L, r);
+        Game::Lua::PushNumber(L, g);
+        Game::Lua::PushNumber(L, b);
+        Game::Lua::PushNumber(L, a);
+        if (Game::Lua::PCall(L, 4, 1, 0) == 0)
+            return; // ColorMixin on top
+        // PCall pushed an error object — discard it and fall through.
+        Game::Lua::SetTop(L, -2);
+    } else {
+        // Globals lookup yielded nil / non-function — discard before
+        // building the fallback table.
+        Game::Lua::SetTop(L, -2);
+    }
+    Game::Lua::NewTable(L);
+    Game::Lua::PushString(L, "r");
+    Game::Lua::PushNumber(L, r);
+    Game::Lua::SetTable(L, -3);
+    Game::Lua::PushString(L, "g");
+    Game::Lua::PushNumber(L, g);
+    Game::Lua::SetTable(L, -3);
+    Game::Lua::PushString(L, "b");
+    Game::Lua::PushNumber(L, b);
+    Game::Lua::SetTable(L, -3);
+    Game::Lua::PushString(L, "a");
+    Game::Lua::PushNumber(L, a);
+    Game::Lua::SetTable(L, -3);
+}
+
+int __fastcall Script_GetAuraDispelTypeColor(void *L) {
+    const char *type = ArgOptString(L, 1);
+    double r = 0.80, g = 0.00, b = 0.00; // "none" default
+    if (type != nullptr) {
+        for (const auto &c : kDispelColors) {
+            if (strcmp(type, c.name) == 0) {
+                r = c.r;
+                g = c.g;
+                b = c.b;
+                break;
+            }
+        }
+    }
+    PushColor(L, r, g, b, 1.0);
+    return 1;
+}
+
+} // namespace
+
+static void RegisterLuaFunctions() {
+    Game::Lua::RegisterTableFunction("C_UnitAuras", "GetAuraDataByIndex",
+                                     &Script_GetAuraDataByIndex);
+    Game::Lua::RegisterTableFunction("C_UnitAuras", "GetBuffDataByIndex",
+                                     &Script_GetBuffDataByIndex);
+    Game::Lua::RegisterTableFunction("C_UnitAuras", "GetDebuffDataByIndex",
+                                     &Script_GetDebuffDataByIndex);
+    Game::Lua::RegisterTableFunction("C_UnitAuras", "GetUnitAuraBySpellID",
+                                     &Script_GetUnitAuraBySpellID);
+    Game::Lua::RegisterTableFunction("C_UnitAuras", "GetPlayerAuraBySpellID",
+                                     &Script_GetPlayerAuraBySpellID);
+    Game::Lua::RegisterTableFunction("C_UnitAuras", "GetUnitAuras",
+                                     &Script_GetUnitAuras);
+    Game::Lua::RegisterTableFunction("C_UnitAuras", "GetAuraDispelTypeColor",
+                                     &Script_GetAuraDispelTypeColor);
+}
+
+static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
+
+} // namespace Aura::Api
