@@ -1546,6 +1546,68 @@ enum Offsets {
     FUN_ADDON_GET_TITLE_BY_NAME = 0x0051DF20,   // (name) → title string or NULL
     FUN_ADDON_GET_NOTES_BY_NAME = 0x0051E050,   // (name) → notes string or NULL
     FUN_SCRIPT_GET_ADDON_INFO = 0x0048E390,
+
+    // Per-field accessors `Script_GetAddOnInfo` calls internally for
+    // returns 5 (loadable), 6 (reason string), 7 (security category).
+    // We dispatch to these directly so the wrappers don't need to
+    // bounce through `Script_GetAddOnInfo` and unwind 7 returns.
+    //
+    //   IS_LOAD_ON_DEMAND `__fastcall(entry) → byte`
+    //     Hash-table lookup in the addon registry. Non-zero ⇒
+    //     `## LoadOnDemand: 1` in the .toc.
+    //
+    //   CAN_LOAD `__fastcall(entry, char fullCheck=1, int *outStatus,
+    //                        int *outDepHandle, const char *accountName) → byte`
+    //     Recursive load-check that resolves all forward `## Dependencies`.
+    //     On `0` return, writes one of 8 status codes into `*outStatus`
+    //     (see `VAR_ADDON_LOADABLE_REASON_TABLE` for the index→string
+    //     mapping). `outDepHandle` carries a dep-pointer when status is 0
+    //     ("DEP: %s" path), unused otherwise. We pass `&zeroDep` for
+    //     `outDepHandle` — we don't render the dep-name into the reason
+    //     since the modern API gives just the status enum.
+    //
+    //   GET_REASON_STRING `__thiscall(int statusCode, char *buf, uint cap)`
+    //     Copies the status-code's static string into `buf`, or formats
+    //     `"DEP: <name>"` when `this == 0`. We bypass this entirely and
+    //     index the table directly (see `VAR_ADDON_LOADABLE_REASON_TABLE`).
+    //
+    //   GET_SECURITY_INDEX `__fastcall(entry) → uint`
+    //     Hash-table lookup that returns the security category index
+    //     (0=SECURE, 1=INSECURE, 2=BANNED). Defaults to `1` (INSECURE)
+    //     when the entry isn't in the override table.
+    FUN_ADDON_IS_LOAD_ON_DEMAND = 0x0051E6F0,
+    FUN_ADDON_CAN_LOAD = 0x0051E780,
+    FUN_ADDON_GET_SECURITY_INDEX = 0x0051E990,
+
+    // Returns a pointer to the inline-stored login account name buffer
+    // at `0x00C27D88`, or NULL if no character is logged in yet.
+    // `Script_GetAddOnInfo` feeds this into the loadable + enabled
+    // checks; same convention.
+    FUN_GET_LOGIN_ACCOUNT_NAME = 0x005ABDC0,
+
+    // Two parallel `const char *[]` tables in `.data` covering every
+    // string `Script_GetAddOnInfo`'s returns 6 + 7 can produce.
+    //
+    //   LOADABLE_REASON_TABLE — 8 entries indexed by the status code
+    //     `FUN_ADDON_CAN_LOAD` writes:
+    //       0 LOADABLE          (only emitted for the DEP fallback)
+    //       1 MISSING
+    //       2 DISABLED
+    //       3 BANNED
+    //       4 CORRUPT
+    //       5 INSECURE
+    //       6 NOT_DEMAND_LOADED
+    //       7 INTERFACE_VERSION
+    //
+    //   SECURITY_TABLE — 3 entries indexed by the value
+    //     `FUN_ADDON_GET_SECURITY_INDEX` returns. Lives at
+    //     `LOADABLE_REASON_TABLE + 8 * sizeof(char *)` — the two
+    //     tables are physically contiguous in the binary.
+    //       0 SECURE
+    //       1 INSECURE
+    //       2 BANNED
+    VAR_ADDON_LOADABLE_REASON_TABLE = 0x0085365C,
+    VAR_ADDON_SECURITY_TABLE = 0x0085367C,
     VAR_ADDON_ARRAY = 0x00BE1B94,
     VAR_ADDON_COUNT = 0x00BE1B90,
 

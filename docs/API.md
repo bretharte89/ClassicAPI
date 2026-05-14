@@ -191,6 +191,7 @@ build instructions.
   - [`LE_EXPANSION_*`](#le_expansion_)
   - [`LE_ITEM_QUALITY_*`](#le_item_quality_)
   - [`LE_UNIT_STAT_*`](#le_unit_stat_)
+  - [`Enum.AddOnSecurityStatus`](#enumaddonsecuritystatus)
 
 ## Spell
 
@@ -3772,12 +3773,22 @@ C_AddOns.IsAddOnLoadable("garbage")           -- false, nil
 
 ### `C_AddOns.GetAddOnSecurity(indexOrName)`
 
-Returns `"SECURE"` for Blizzard-signed addons or `"INSECURE"` for
-user addons. Returns `nil` for missing addons. Vanilla addons
-loaded from `Interface/AddOns/` are always insecure.
+Returns an `Enum.AddOnSecurityStatus` integer (not a string — modern
+shape):
+
+| Value | `Enum.AddOnSecurityStatus.*` | When |
+|------:|------------------------------|------|
+| `0`   | `Secure`                     | Blizzard-signed addons (`Blizzard_*`). |
+| `1`   | `Insecure`                   | Every user addon loaded from `Interface/AddOns/`. The default for any registered addon not in the secure or banned override sets. |
+| `2`   | `Banned`                     | Entries the engine has explicitly disqualified — set by server addon-banlist responses, rare in practice. |
+| `3`   | `NotAvailable`               | No addon by that name / index exists. |
 
 ```lua
-C_AddOns.GetAddOnSecurity("DebugTools") -- "INSECURE"
+C_AddOns.GetAddOnSecurity("Blizzard_TalentUI") -- 0 (Secure)
+C_AddOns.GetAddOnSecurity("DebugTools")        -- 1 (Insecure)
+C_AddOns.GetAddOnSecurity("Nonexistent")       -- 3 (NotAvailable)
+
+if status == Enum.AddOnSecurityStatus.Secure then ...
 ```
 
 ### `C_AddOns.DoesAddOnExist(indexOrName)`
@@ -4499,4 +4510,22 @@ has always returned strength.
 
 ```lua
 local _, effective = UnitStat("player", LE_UNIT_STAT_AGILITY)
+```
+
+### `Enum.AddOnSecurityStatus`
+
+The integer enum `C_AddOns.GetAddOnSecurity` returns. Matches
+Blizzard's `Enum.AddOnSecurityStatus`:
+
+| Value | Field          | Notes |
+|------:|----------------|-------|
+| `0`   | `Secure`       | Blizzard-signed addons. |
+| `1`   | `Insecure`     | User addons; default for any registered addon. |
+| `2`   | `Banned`       | Server-disqualified entries. |
+| `3`   | `NotAvailable` | No addon by that name / index. |
+
+```lua
+if C_AddOns.GetAddOnSecurity(name) == Enum.AddOnSecurityStatus.Secure then
+    -- it's a Blizzard_* addon
+end
 ```

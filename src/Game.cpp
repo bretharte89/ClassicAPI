@@ -65,41 +65,58 @@ void RegisterFrameMethods(void *context, const FrameMethodEntry *table, int coun
     fn(table, count, context);
 }
 
-// Registers `func` at `_G[tableName][methodName]`. If the namespace doesn't
-// already exist, creates an empty table for it. If it exists as a table,
-// adds the field non-destructively (so multiple modules can share a
-// namespace, e.g. several C_Item.* functions).
+// Looks up `_G[name]`. If absent, creates a fresh table and binds it.
+// Leaves the resulting table on top of the stack.
 //
 // The implementation deliberately avoids the `lua_pushvalue` + `lua_insert`
 // combo we initially tried: that path was producing stack states that ended
-// up with `_G[tableName]` aliased to one of the Lua standard library tables
+// up with `_G[name]` aliased to one of the Lua standard library tables
 // (`bit`, `table`, etc.), with our intended field write never landing.
 // Re-fetching the namespace from globals after creating it is cheap and
 // sidesteps the issue entirely.
+namespace {
+void EnsureGlobalTable(void *L, const char *name) {
+    PushString(L, name);
+    GetTable(L, GLOBALS_INDEX);
+    if (Type(L, -1) == TYPE_TABLE)
+        return;
+    SetTop(L, -2); // pop the non-table
+    PushString(L, name);
+    NewTable(L);
+    SetTable(L, GLOBALS_INDEX);
+    PushString(L, name);
+    GetTable(L, GLOBALS_INDEX);
+}
+} // namespace
+
+// Registers `func` at `_G[tableName][methodName]`. If the namespace
+// doesn't already exist, creates an empty table for it.
 void RegisterTableFunction(const char *tableName, const char *methodName, CFunction func) {
     void *L = State();
     if (L == nullptr)
         return;
-
-    // Check if _G[tableName] already exists as a table.
-    PushString(L, tableName);
-    GetTable(L, GLOBALS_INDEX);
-    const bool alreadyExists = (Type(L, -1) == TYPE_TABLE);
-    SetTop(L, -2); // pop the lookup result
-
-    if (!alreadyExists) {
-        PushString(L, tableName);
-        NewTable(L);
-        SetTable(L, GLOBALS_INDEX);
-    }
-
-    // Re-fetch the namespace and write the field.
-    PushString(L, tableName);
-    GetTable(L, GLOBALS_INDEX);          // [tbl]
+    EnsureGlobalTable(L, tableName);     // [tbl]
     PushString(L, methodName);           // [tbl, methodName]
     PushCClosure(L, func, 0);            // [tbl, methodName, closure]
-    SetTable(L, -3);                     // pops methodName+closure: tbl[m]=c. [tbl]
+    SetTable(L, -3);                     // tbl[m]=c; pops k+v. [tbl]
     SetTop(L, -2);                       // pop tbl. []
+}
+
+void RegisterIntegerEnum(const char *parent, const char *sub,
+                         const EnumIntegerEntry *entries, int count) {
+    void *L = State();
+    if (L == nullptr)
+        return;
+    EnsureGlobalTable(L, parent); // [parentTbl]
+    PushString(L, sub);           // [parentTbl, subName]
+    NewTable(L);                  // [parentTbl, subName, subTbl]
+    for (int i = 0; i < count; ++i) {
+        PushString(L, entries[i].key);
+        PushNumber(L, static_cast<double>(entries[i].value));
+        SetTable(L, -3); // subTbl[key] = value
+    }
+    SetTable(L, -3); // parentTbl[sub] = subTbl
+    SetTop(L, -2);   // pop parentTbl
 }
 
 void SetFieldNumber(void *L, const char *key, double value) {
