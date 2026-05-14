@@ -22,3 +22,4 @@ Util\AddOnCompat.lua
 Util\FunctionUtil.lua
 Util\Pools.lua
 Util\FrameWatcher.lua
+Util\TimedCallback.lua
