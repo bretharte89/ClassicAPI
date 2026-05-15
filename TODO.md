@@ -1759,15 +1759,14 @@ is a thin wrapper. If they're inlined, we'd either need to skip
 the clear ourselves (call after some no-op state setup) or
 manually call the line-emission primitives.
 
-## ~~61. `GameTooltip:GetItem()` / `GetSpell()` / `GetUnit()`~~ — `GetItem` + `GetSpell` DONE; `GetUnit` deferred
+## ~~61. `GameTooltip:GetItem()` / `GetSpell()` / `GetUnit()`~~ — `GetItem` + `GetSpell` DONE; `GetUnit` skipped
 
 Modern query methods that return what the tooltip is currently
 showing:
 
-- `GetItem()` → `(name, link)` — DONE
+- `GetItem()` → `(name, link, itemID)` — DONE
 - `GetSpell()` → `(name, rank, spellID)` — DONE
-- `GetUnit()` → `(name, unitToken)` — deferred (needs GUID→token
-  reverse lookup, walking known unit tokens)
+- `GetUnit()` → `(name, unitToken)` — skipped intentionally
 
 Each Set* path stashes a "currently displayed" field on the tooltip
 frame instance, and the per-tooltip Clear at `FUN_00530050` zeroes
@@ -1775,7 +1774,6 @@ the full set on Hide/before-redraw. Verified offsets:
 
 | Field | Offset | Written by | Cleared by |
 |---|---:|---|---|
-| Unit GUID | `+0x368/+0x36C` | `BuildUnitTooltip` (0x0052A019) | `FUN_00530050` |
 | Item ID | `+0x398` | `BuildItemTooltip` (0x0052B6FE) | `FUN_00530050` |
 | Spell ID | `+0x39C` | `BuildSpellTooltip` (0x0052E6D5) | `FUN_00530050` |
 
@@ -1797,16 +1795,18 @@ itemID + cached quality + cached name. Returns `(name, link,
 itemID)` — the third return is non-modern but saves callers a
 gsub. See [src/item/Tooltip.cpp](src/item/Tooltip.cpp).
 
-`GetUnit` is the trickier one — we have the GUID at `+0x368/+0x36C`,
-but modern semantics return the *token* the addon passed
-(`"target"`, `"player"`, `"mouseover"`, etc.). Implementation needs:
-
-1. Reverse-resolve GUID → name via the NameCache (existing helper).
-2. Reverse-resolve GUID → token by walking common tokens (`player`,
-   `target`, `mouseover`, `pet`, `party1..4`, `partypet1..4`,
-   `raid1..40`) and calling `FUN_00515970` (TokenToGUID) on each,
-   returning the first match. Returns `nil` for offline GUIDs not
-   currently tied to a token, matching modern WoW.
+`GetUnit` was prototyped two ways (token-walk over 92 hardcoded
+tokens; MinHook on `Script_GameTooltip_SetUnit` + side-map) and
+both scrapped. The 1.12 engine drops the token string immediately
+after converting it to a GUID at `+0x368/+0x36C`, so there's no
+clean way to return the original token. The walk-list approach is
+brittle (misses any future-added token); the hook approach works
+but adds collision surface with other Octo DLLs on a high-traffic
+function. Modern WoW (3.3.5+) added a dedicated "current unit
+token" field on the tooltip frame for exactly this reason — 1.12
+just doesn't have the storage. Re-investigate if a low-collision
+path emerges (e.g. a write site we haven't seen in 1.12 that
+already preserves the string).
 
 ## 62. `GameTooltip:NumLines()` — trivial if reachable
 

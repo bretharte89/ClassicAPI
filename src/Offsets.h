@@ -48,17 +48,14 @@ enum Offsets {
     // them on Hide/before-redraw. The Get* methods are simple reads —
     // whichever field is non-zero tells us what kind of tooltip is up.
     //
-    // Verified by decoding the three builder functions:
-    //   - BuildUnitTooltip  (0x00529FE0) writes +0x368/+0x36C (GUID)
-    //                       at 0x0052A019..0x0052A01E.
-    //   - BuildItemTooltip  (0x0052B650) writes +0x398 (itemID) at
-    //                       0x0052B6FE.
+    // Verified by decoding the builder functions:
+    //   - BuildItemTooltip  (0x0052B650) writes +0x380/+0x384 (item
+    //                       GUID, only when there's a real CGItem) and
+    //                       +0x398 (itemID) at 0x0052B6CE / 0x0052B6FE.
     //   - BuildSpellTooltip (0x0052E610) writes +0x39C (spellID) at
     //                       0x0052E6D5 (param_7==0 branch — skipped for
     //                       the next-rank tooltip side-build).
     //   - Clear             (0x00530050) zeroes all of them.
-    OFF_TOOLTIP_UNIT_GUID_LO = 0x368,
-    OFF_TOOLTIP_UNIT_GUID_HI = 0x36C,
     OFF_TOOLTIP_ITEM_GUID_LO = 0x380, // 0 for SetItemByID (no CGItem)
     OFF_TOOLTIP_ITEM_GUID_HI = 0x384,
     OFF_TOOLTIP_ITEM_ID = 0x398,
