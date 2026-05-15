@@ -2538,19 +2538,30 @@ boilerplate twice. If a third caller needs it, extract to
 `Item::Inventory::WalkBagsByGUID(callback)` or similar in a shared
 header. Not worth the refactor for two callers yet.
 
-## 77. `IsLoggedIn()` — trivial
+## 77. `IsLoggedIn()` — skipped
 
-WotLK addition (not in 1.12). Returns `true` if the player is in
-the world, `false` if at character select / login screen.
-Identical purpose to checking whether `UnitName("player")` is
-non-nil, but addons that gate side-effects on first-frame-after-
-login depend on the explicit function.
+WotLK addition. Returns `true` if the player is in the world,
+`false` at character select / login screen.
 
-Implementation: read the engine's "in world" flag. Probable
-candidates — `[VAR_CHARACTER_NAME]` byte 0 (already exposed via
-`Storage::ResolveFilePath`'s `ReadActiveCharacterName`), or the
-engine global that `PLAYER_ENTERING_WORLD` sets to 1. Trivial
-once located.
+Prototyped twice and pulled both times:
+
+1. **World-only registration** (via the regular module-register
+   hook) — implementation was trivial (`FUN_RESOLVE_UNIT_TOKEN("player")
+   != nullptr`), but the function only existed in the world Lua
+   state. Glue-screen Lua couldn't reach it, so addons that gate
+   on the world transition would see `attempt to call a nil value`
+   pre-login.
+2. **Glue + world** (added a MinHook on the glue script registration
+   at `FUN_0046DDF0`) — crashed on the "Tiny" 1.12.1 build with an
+   access violation at the patched bytes. The glue-register
+   function is too small (~9 byte prologue) for a stable 5-byte
+   JMP across binary variants and likely overlaps with another
+   loose-loader DLL's hook.
+
+For now, addons that need login-state gating can use the
+`PLAYER_LOGIN` / `PLAYER_ENTERING_WORLD` events (both fire
+in-world reliably). Revisit if a safer glue registration path
+surfaces.
 
 ## 78. `GetCVarBool(cvar)` — trivial
 
