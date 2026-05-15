@@ -161,6 +161,8 @@ build instructions.
   - [`C_AddOns.DoesAddOnExist(indexOrName)`](#c_addonsdoesaddonexistindexorname)
 - [Combat](#combat)
   - [`InCombatLockdown()`](#incombatlockdown)
+- [CVar](#cvar)
+  - [`GetCVarBool(cvar)` / `C_CVar.GetCVarBool(cvar)`](#getcvarboolcvar--c_cvargetcvarboolcvar)
 - [Table](#table)
   - [`table.wipe(t)`](#tablewipet)
 - [Input](#input)
@@ -4044,6 +4046,36 @@ Errors via `lua_error` on:
 - Non-function `callback`
 - `target[name]` not resolvable to a function (covers typos and
   hooking unknown frame methods)
+
+## CVar
+
+### `GetCVarBool(cvar)` / `C_CVar.GetCVarBool(cvar)`
+
+Returns the cvar's value coerced to a boolean. WotLK addition;
+vanilla 1.12 only has `GetCVar` which returns a string.
+
+```lua
+GetCVarBool("autoLootDefault")     -- true if cvar is "1" or "true"
+GetCVarBool("nameplateMotion")     -- false if cvar is "0", empty, or unknown
+C_CVar.GetCVarBool("autoLootDefault")  -- same value, modern namespace
+```
+
+Coercion rules:
+
+| Cvar string value | Result |
+|---|---|
+| `"1"` or any non-zero numeric (`"42"`, `"-3"`, …) | `true` |
+| `"true"` (case-insensitive) | `true` |
+| `"0"` or empty / nil / unknown cvar | `false` |
+| Non-numeric, non-`"true"` (`"on"`, `"yes"`) | `false` |
+
+Implementation dispatches the engine's own `Script_GetCVar` to
+fetch the string, then runs the coercion in C. Unknown cvars
+silently return `false` rather than erroring — matches modern
+behavior.
+
+Equivalent to the global of the same name introduced in 3.x, plus
+the `C_CVar` namespace alias added in 10.x.
 
 ## Table
 

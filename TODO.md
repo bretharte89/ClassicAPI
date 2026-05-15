@@ -2563,12 +2563,14 @@ For now, addons that need login-state gating can use the
 in-world reliably). Revisit if a safer glue registration path
 surfaces.
 
-## 78. `GetCVarBool(cvar)` — trivial
+## ~~78. `GetCVarBool(cvar)`~~ — DONE
 
-WotLK convenience wrapper around `GetCVar` — returns the cvar's
-value coerced to a boolean (`"1"` / `"true"` / non-zero → true,
-else false). 1.12 only has `GetCVar` which returns a string.
-Two-line implementation.
+Dispatches the engine's `Script_GetCVar` at `0x00488BA0` to read
+the cvar's string value, then coerces: non-zero numeric or
+`"true"` (case-insensitive) → `true`; `"0"` / empty / nil /
+unknown cvar → `false`. Exposed as `GetCVarBool(cvar)` (global)
+and `C_CVar.GetCVarBool(cvar)` (modern namespace).
+See [src/cvar/Bool.cpp](src/cvar/Bool.cpp).
 
 ## 79. `IsTrialAccount()` / `IsVeteranTrialAccount()` — trivial
 

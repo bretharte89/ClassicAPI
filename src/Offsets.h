@@ -112,6 +112,12 @@ enum Offsets {
     // Registers a single global Lua function. __fastcall(name, func).
     FUN_FRAMESCRIPT_REGISTER_FUNCTION = 0x00704120,
 
+    // `Script_GetCVar(L)` — the vanilla Lua C function for `GetCVar`.
+    // Reads the cvar name from stack[1], pushes the string value (or
+    // nil for unknown cvars). Dispatched from `GetCVarBool` /
+    // `C_CVar.GetCVarBool` to fetch the string before coercing to bool.
+    FUN_SCRIPT_GET_CVAR = 0x00488BA0,
+
     // Game::ResolveUnitToken — __fastcall(ecx = const char *token) → CGUnit_C *.
     // Returns the unit pointer for "player", "target", "party1", etc. Use this
     // rather than the global at 0x00B41414 — that global holds something
