@@ -1808,20 +1808,6 @@ just doesn't have the storage. Re-investigate if a low-collision
 path emerges (e.g. a write site we haven't seen in 1.12 that
 already preserves the string).
 
-## 62. `GameTooltip:NumLines()` — trivial if reachable
-
-Returns the count of FontStrings currently rendered in the
-tooltip. The frame internally maintains a list of lines (it has
-to, for layout). If there's a count field, this is a single
-deref + push.
-
-Investigation: dump the GameTooltip frame instance after
-`AddLine` calls and look for an integer that increments. Probably
-near the FontStrings array pointer.
-
-Useful for tooltip-parsing addons that want to walk all lines
-without iterating until `_GetTooltipLine(i)` returns nil.
-
 ## ~~65. `hooksecurefunc(name|table, [name,] callback)`~~ — DONE
 
 Shipped as [src/HookSecureFunc.cpp](src/HookSecureFunc.cpp). Pure C
