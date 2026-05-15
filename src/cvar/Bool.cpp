@@ -14,11 +14,13 @@
 #include "Game.h"
 #include "Offsets.h"
 
+#include <cstdint>
+
 namespace CVar::Bool {
 
 namespace {
 
-using ScriptFn_t = int(__fastcall *)(void *L);
+using FindCVar_t = const uint8_t *(__fastcall *)(const char *name);
 
 // Case-insensitive "true" check for the string-form match. Bounded
 // 4-char comparison + null terminator — same shape `BookTypeIsPet`
@@ -60,28 +62,33 @@ bool StringToBool(const char *s) {
     return value != 0;
 }
 
-// `C_CVar.GetCVarBool(cvar)` — dispatches the engine's own
-// `Script_GetCVar` to read the string, then coerces. Returns 1
-// (one value pushed) on any input — modern behavior is "false" for
-// missing/unknown cvars rather than nil/error.
+// `C_CVar.GetCVarBool(cvar)` — looks the cvar up directly through
+// the engine's by-name hash table at `FUN_FIND_CVAR`, reads the
+// value string at `+0x20`, coerces to bool. Returns `nil` for
+// unknown cvars so callers can distinguish "missing" from "set to
+// false" — same shape as modern `C_CVar.GetCVarBool`.
+//
+// Going through `Script_GetCVar` would work too but adds a Lua-stack
+// roundtrip and raises a Lua error for unknown cvars
+// (`"CVar \"%s\" doesn't exist."`). The direct lookup lets us turn
+// that into the nil return cleanly.
 int __fastcall Script_C_CVar_GetCVarBool(void *L) {
     if (!Game::Lua::IsString(L, 1)) {
         Game::Lua::Error(L, "Usage: C_CVar.GetCVarBool(\"cvar\")");
         return 0;
     }
-    // Reuse the existing stack[1] (the cvar name). Script_GetCVar
-    // reads its arg from stack[1] and pushes the string (or nil) on
-    // top. Don't blow the stack first — the name is already there.
-    auto getCVar = reinterpret_cast<ScriptFn_t>(Offsets::FUN_SCRIPT_GET_CVAR);
-    getCVar(L);
+    const char *name = Game::Lua::ToString(L, 1);
 
-    const char *value = nullptr;
-    if (Game::Lua::Type(L, -1) == Game::Lua::TYPE_STRING)
-        value = Game::Lua::ToString(L, -1);
+    auto findCVar = reinterpret_cast<FindCVar_t>(Offsets::FUN_FIND_CVAR);
+    const uint8_t *cvar = findCVar(name);
+    if (cvar == nullptr) {
+        Game::Lua::PushNil(L);
+        return 1;
+    }
 
-    const bool result = StringToBool(value);
-    Game::Lua::SetTop(L, 0);
-    Game::Lua::PushBoolean(L, result ? 1 : 0);
+    const char *value = *reinterpret_cast<const char *const *>(
+        cvar + Offsets::OFF_CVAR_VALUE_STR);
+    Game::Lua::PushBoolean(L, StringToBool(value) ? 1 : 0);
     return 1;
 }
 

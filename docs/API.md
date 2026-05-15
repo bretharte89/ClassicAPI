@@ -4248,28 +4248,30 @@ Errors via `lua_error` on:
 
 ### `C_CVar.GetCVarBool(cvar)`
 
-Returns the cvar's value coerced to a boolean. The `C_CVar`
-namespace was added in 10.x; vanilla 1.12 only has `GetCVar` which
-returns a string.
+Returns the cvar's value coerced to a boolean, or `nil` if no cvar
+by that name is registered. The `C_CVar` namespace was added in
+10.x; vanilla 1.12 only has `GetCVar` which returns a string.
 
 ```lua
-C_CVar.GetCVarBool("autoLootDefault")  -- true if cvar is "1" or "true"
-C_CVar.GetCVarBool("nameplateMotion")  -- false if cvar is "0", empty, or unknown
+C_CVar.GetCVarBool("gxMaximize")    -- true if the window is set fullscreen
+C_CVar.GetCVarBool("CombatDamage")  -- false if floating damage text is off
+C_CVar.GetCVarBool("doesNotExist")  -- nil — distinguishable from false
 ```
 
-Coercion rules:
+Coercion rules (only applied when the cvar exists):
 
 | Cvar string value | Result |
 |---|---|
 | `"1"` or any non-zero numeric (`"42"`, `"-3"`, …) | `true` |
 | `"true"` (case-insensitive) | `true` |
-| `"0"` or empty / nil / unknown cvar | `false` |
+| `"0"` or empty | `false` |
 | Non-numeric, non-`"true"` (`"on"`, `"yes"`) | `false` |
+| Cvar name not registered | `nil` |
 
-Implementation dispatches the engine's own `Script_GetCVar` to
-fetch the string, then runs the coercion in C. Unknown cvars
-silently return `false` rather than erroring — matches modern
-behavior.
+Implementation reads the cvar registry directly (engine's
+`FUN_FIND_CVAR` at `0x0063DEC0`), bypassing `GetCVar`'s Lua-error
+path for unknown cvars. The `nil` return lets callers distinguish
+"the cvar exists and is falsy" from "no such cvar."
 
 ## Table
 

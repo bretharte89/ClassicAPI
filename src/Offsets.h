@@ -112,11 +112,22 @@ enum Offsets {
     // Registers a single global Lua function. __fastcall(name, func).
     FUN_FRAMESCRIPT_REGISTER_FUNCTION = 0x00704120,
 
-    // `Script_GetCVar(L)` — the vanilla Lua C function for `GetCVar`.
-    // Reads the cvar name from stack[1], pushes the string value (or
-    // nil for unknown cvars). Dispatched from `C_CVar.GetCVarBool` to
-    // fetch the string before coercing to bool.
-    FUN_SCRIPT_GET_CVAR = 0x00488BA0,
+    // Direct cvar lookup — `__fastcall(const char *name) → CVar* | NULL`.
+    // Hash-table by-name lookup over the CVar registry; same call
+    // `Script_GetCVar` makes internally before the engine wraps the
+    // result in lua_pushstring + a "CVar doesn't exist" error path.
+    // Calling it directly lets us skip both the Lua roundtrip and the
+    // unknown-cvar error — we coerce NULL to false instead, matching
+    // modern `C_CVar.GetCVarBool` semantics.
+    //
+    // The returned struct holds the value string at `+0x20` (read by
+    // `Script_GetCVar` at `0x00488BF9` as `mov edx, [eax+0x20]; call
+    // lua_pushstring`). The value is the raw `char *` the engine
+    // stores; reading it directly is safe for the lifetime of the
+    // cvar (vanilla cvars don't get re-allocated outside `/console
+    // set` flows, which we don't race here).
+    FUN_FIND_CVAR = 0x0063DEC0,
+    OFF_CVAR_VALUE_STR = 0x20,
 
     // Game::ResolveUnitToken — __fastcall(ecx = const char *token) → CGUnit_C *.
     // Returns the unit pointer for "player", "target", "party1", etc. Use this
