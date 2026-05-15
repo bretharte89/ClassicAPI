@@ -867,11 +867,11 @@ local name, link, id = GameTooltip:GetItem()
 -- id   = 6948
 
 -- SetInventoryItem — full dressed link with enchant + random suffix
-GameTooltip:SetInventoryItem("player", 1)
+GameTooltip:SetInventoryItem("player", INVSLOT_BACK)
 local name, link, id = GameTooltip:GetItem()
--- name = "Cowl of Nature's Breath"
--- link = "|cffa335ee|Hitem:28803:3001:0:0|h[Cowl of Nature's Breath]|h|r"
--- id   = 28803
+-- name = "Superior Cloak"
+-- link = "|cff1eff00|Hitem:9805:247:843:0|h[Superior Cloak of the Eagle]|h|r"
+-- id   = 9805
 ```
 
 Two link paths:
