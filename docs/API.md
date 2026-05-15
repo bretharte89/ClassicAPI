@@ -21,6 +21,8 @@ build instructions.
   - [`IsSpellKnown(spellID, [isPet])`](#isspellknownspellid-ispet)
   - [`IsUsableSpell(spell)` / `IsUsableSpell(slot, bookType)`](#isusablespellspell--isusablespellslot-booktype)
   - [`C_Spell.IsSpellUsable(spellID)`](#c_spellisspellusablespellid)
+  - [`IsHarmfulSpell(spell)` / `IsHelpfulSpell(spell)`](#isharmfulspellspell--ishelpfulspellspell)
+  - [`C_Spell.IsSpellHarmful(spellID)` / `C_Spell.IsSpellHelpful(spellID)`](#c_spellisspellharmfulspellid--c_spellisspellhelpfulspellid)
   - [`GetSpellSchool(spellID)`](#getspellschoolspellid)
   - [`CastAutoRepeatSpell(name | spellID)`](#castautorepeatspellname--spellid)
 - [Macros](#macros)
@@ -597,6 +599,61 @@ local usable, noMana = C_Spell.IsSpellUsable(133)
 ```
 
 Equivalent to the function of the same name introduced in 10.x.
+
+### `IsHarmfulSpell(spell)` / `IsHelpfulSpell(spell)`
+
+Classify a spell as offensive (`IsHarmfulSpell`) or non-offensive
+(`IsHelpfulSpell`) without parsing its tooltip. Accept either form
+the spellbook-aware globals use:
+
+```lua
+IsHarmfulSpell(spellID)             -- by ID
+IsHarmfulSpell(slot, "spell")       -- player spellbook slot
+IsHarmfulSpell(slot, "pet")         -- pet spellbook slot
+-- same calling shapes for IsHelpfulSpell
+```
+
+Examples:
+
+```lua
+IsHarmfulSpell(133)     -- true  (Fireball)
+IsHarmfulSpell(118)     -- true  (Polymorph)
+IsHelpfulSpell(2061)    -- true  (Flash Heal)
+IsHelpfulSpell(1243)    -- true  (Power Word: Fortitude)
+IsHarmfulSpell(2061)    -- false
+```
+
+Reads `Spell.dbc.AttributesEx` (record `+0x1C`) bit `0x80` — the
+same `SPELL_ATTR_EX_NEGATIVE` bit CMaNGOS uses to mark spells as
+debuffs server-side. `IsHarmfulSpell` is true iff that bit is set;
+`IsHelpfulSpell` is true iff the spell exists and the bit is NOT
+set. Both return `false` for invalid spellIDs.
+
+> Vanilla 1.12 doesn't have a dedicated "positive" flag, so the
+> helpful side is the rough complement of harmful. For utility
+> spells with no clear orientation (Aspect of the Cheetah,
+> Stealth, ground-targeted AOEs), modern WoW sometimes returns
+> false for both; we return `true` for helpful as a safer default
+> for addons gating on "is this castable on me?" logic. Compute
+> precise modern semantics by also inspecting effect implicit
+> targets if you need them.
+
+Equivalent to the functions of the same name introduced in 3.x
+(when WoW first exposed them as globals).
+
+### `C_Spell.IsSpellHarmful(spellID)` / `C_Spell.IsSpellHelpful(spellID)`
+
+Same classification logic as the globals above, but exposed in the
+modern `C_Spell` namespace. Both take a numeric `spellID` only —
+no `(slot, bookType)` form.
+
+```lua
+C_Spell.IsSpellHarmful(133)     -- true (Fireball)
+C_Spell.IsSpellHelpful(2061)    -- true (Flash Heal)
+```
+
+Equivalent to `C_Spell.IsSpellHarmful` / `C_Spell.IsSpellHelpful`
+introduced in 11.x.
 
 ### `GetSpellSchool(spellID)`
 

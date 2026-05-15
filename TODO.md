@@ -2576,16 +2576,30 @@ WotLK additions. Always returns `false` on 1.12 — vanilla
 predates trial accounts (introduced 5.x). Modern addons gate
 features on these and crash without them. One-liner.
 
-## 80. `IsHelpfulSpell(spell)` / `IsHarmfulSpell(spell)` — easy
+## ~~80. `IsHelpfulSpell(spell)` / `IsHarmfulSpell(spell)`~~ — DONE
 
-Cataclysm-era globals. Read `Spell.dbc` attribute bits — bit
-`0x00000010` of `AttributesEx2` = helpful, bit `0x00000020` =
-harmful (verify in binary). Allows addons to determine whether
-a spell is offensive or defensive without parsing the tooltip.
+Reads `Spell.dbc.AttributesEx` (`+0x1C`) bit `0x80` —
+`SPELL_ATTR_EX_NEGATIVE` (CMaNGOS' `SPELL_ATTR_EX_NEGATIVE_1`).
+Same bit the engine uses to classify auras into the debuff slot
+range, so it's reliable for combat spells.
 
-We already read `AttributesEx` for `isFunnel` in `GetSpellInfo`
-(`Spell.dbc +0x1C`); these are the same kind of bit-test against
-adjacent attribute fields.
+The earlier TODO note about `AttributesEx2` bits `0x10` / `0x20`
+turned out to be wrong — those bits are `CANT_REFLECTED` and
+`AUTO_REPEAT` per CMaNGOS, not helpful/harmful. The right flag is
+the single `NEGATIVE` bit in `AttributesEx`.
+
+Helpful side: "spell exists in Spell.dbc and isn't marked negative"
+— vanilla has no dedicated positive-spell flag, so utility spells
+that aren't harmful read as helpful. Approximation; close enough
+for most addon use cases. Strict modern semantics (where some
+spells return false for both) would require parsing every effect's
+implicit target — deferred.
+
+Four Lua surfaces: `IsHelpfulSpell(spell)`, `IsHarmfulSpell(spell)`
+(global, accepts `spellID` or `(slot, bookType)`), and
+`C_Spell.IsSpellHelpful(spellID)` / `C_Spell.IsSpellHarmful(spellID)`
+(C_Spell namespace, takes numeric ID only).
+See [src/spell/Info.cpp](src/spell/Info.cpp).
 
 ## 81. `GetItemUniqueness(item)` — easy
 

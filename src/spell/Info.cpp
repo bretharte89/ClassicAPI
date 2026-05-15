@@ -38,6 +38,65 @@ static constexpr int OFF_RANK = 0x204;
 static constexpr int OFF_ATTRIBUTES = 0x18;
 static constexpr uint32_t SPELL_ATTR_PASSIVE = 0x40;
 static constexpr uint32_t SPELL_ATTR_EX_FUNNEL = 0x40;
+// Spell.dbc effect-target arrays. Each spell has 3 effects, each
+// with an implicit target A and an implicit target B (the latter
+// often 0). Used by IsSpellHarmful / IsSpellHelpful — vanilla has
+// no dedicated "positive"/"negative" attribute flag (AttributesEx
+// bit 0x80 = NEGATIVE is sparsely set — most damage spells don't
+// have it), so we classify by walking effect targets and checking
+// whether any falls into a known hostile-target or friendly-target
+// set. Same algorithm CMaNGOS uses in `SpellMgr::IsPositiveSpell`.
+static constexpr int OFF_EFFECT_IMPLICIT_TARGET_A = 0x148; // uint32[3]
+static constexpr int OFF_EFFECT_IMPLICIT_TARGET_B = 0x154; // uint32[3]
+
+// Target IDs from vanilla 1.12's `SpellTarget` enum that mark a
+// spell as hostile-targeted (covers single-target damage,
+// debuffs, AoE damage, etc.). List is conservative — anything not
+// in here defaults to non-hostile.
+static bool IsHostileTarget(uint32_t t) {
+    switch (t) {
+        case 6:   // TARGET_CHAIN_DAMAGE (Fireball, Polymorph, …)
+        case 15:  // TARGET_ALL_ENEMY_IN_AREA
+        case 16:  // TARGET_ALL_ENEMY_IN_AREA_INSTANT
+        case 25:  // TARGET_DUELVSPLAYER
+        case 28:  // TARGET_ALL_ENEMY_IN_AREA_CHANNELED
+        case 36:  // TARGET_ALL_HOSTILE_UNITS_AROUND_CASTER
+        case 47:  // TARGET_SINGLE_ENEMY
+        case 53:  // TARGET_LARGE_FRONTAL_CONE (hostile cone)
+        case 54:  // TARGET_NARROW_FRONTAL_CONE
+            return true;
+        default:
+            return false;
+    }
+}
+
+// Friendly-targeted set (including self-cast). Same caveat — list
+// is curated, false-negatives are possible for edge cases.
+static bool IsFriendlyTarget(uint32_t t) {
+    switch (t) {
+        case 1:   // TARGET_SELF
+        case 5:   // TARGET_PET
+        case 20:  // TARGET_ALL_PARTY_AROUND_CASTER
+        case 21:  // TARGET_SINGLE_FRIEND
+        case 30:  // TARGET_ALL_FRIENDLY_UNITS_AROUND_CASTER
+        case 31:  // TARGET_ALL_FRIENDLY_UNITS_IN_AREA
+        case 33:  // TARGET_ALL_PARTY
+        case 34:  // TARGET_ALL_PARTY_AROUND_CASTER_2
+        case 35:  // TARGET_SINGLE_PARTY
+        case 37:  // TARGET_AREAEFFECT_PARTY
+        case 40:  // TARGET_CHAIN_HEAL
+        case 45:  // TARGET_DYNAMIC_OBJECT_RIGHT_SIDE (friendly buffs use this)
+        case 56:  // TARGET_RANDOM_NEARBY_LOC (totem placement)
+        case 57:  // TARGET_RANDOM_CIRCUMFERENCE_POINT
+        case 61:  // TARGET_RANDOM_FRIEND_AROUND_CASTER
+        case 68:  // TARGET_NONCOMBAT_PET
+        case 77:  // TARGET_SINGLE_FRIEND_2
+        case 80:  // TARGET_AREAEFFECT_PARTY_AND_CLASS
+            return true;
+        default:
+            return false;
+    }
+}
 
 template <typename T>
 static T ReadGlobal(uintptr_t addr) {
@@ -474,6 +533,89 @@ static int __fastcall Script_IsSpellKnown(void *L) {
     return 1;
 }
 
+// Walks the spell's 3 effects' implicit target IDs (both A and B
+// slots) and returns true if `pred` matches any of them. Returns
+// false for null records.
+template <typename Pred>
+static bool AnyEffectTarget(const uint8_t *record, Pred pred) {
+    if (record == nullptr)
+        return false;
+    auto *targetsA = reinterpret_cast<const uint32_t *>(
+        record + OFF_EFFECT_IMPLICIT_TARGET_A);
+    auto *targetsB = reinterpret_cast<const uint32_t *>(
+        record + OFF_EFFECT_IMPLICIT_TARGET_B);
+    for (int i = 0; i < 3; ++i) {
+        if (pred(targetsA[i]) || pred(targetsB[i]))
+            return true;
+    }
+    return false;
+}
+
+// `IsSpellHarmful(spellID)` — true iff any effect of the spell
+// targets a hostile-target type (chain damage, single enemy, AoE
+// enemy, etc. — see `IsHostileTarget`). Same algorithm CMaNGOS uses
+// to classify positive vs negative spells, since vanilla 1.12 has
+// no dedicated "harmful" attribute bit (the `SPELL_ATTR_EX_NEGATIVE`
+// flag is sparsely set — most damage spells don't have it).
+static bool ComputeIsHarmful(int spellID) {
+    const uint8_t *record = Spell::Lookup::RecordForID(spellID);
+    return AnyEffectTarget(record, &IsHostileTarget);
+}
+
+// `IsSpellHelpful(spellID)` — true iff any effect targets a
+// friendly-target type (self, party, single friend, chain heal,
+// etc.). Disjoint from harmful in practice for vanilla spells —
+// most spells are clearly one or the other — but they aren't
+// strict inverses: a few utility/geometry-targeted spells (script-
+// driven, totem placement, etc.) return false for both.
+static bool ComputeIsHelpful(int spellID) {
+    const uint8_t *record = Spell::Lookup::RecordForID(spellID);
+    return AnyEffectTarget(record, &IsFriendlyTarget);
+}
+
+// `IsHarmfulSpell(spellID)` / `IsHarmfulSpell(slot, bookType)` —
+// modern global. Accepts either form via the same
+// `ResolveLuaArgsToSpellID` path `GetSpellInfo` uses.
+static int __fastcall Script_IsHarmfulSpell(void *L) {
+    const int spellID = ResolveLuaArgsToSpellID(L);
+    Game::Lua::PushBoolean(L, ComputeIsHarmful(spellID) ? 1 : 0);
+    return 1;
+}
+
+// `IsHelpfulSpell(spellID)` / `IsHelpfulSpell(slot, bookType)` —
+// modern global. True for spells that exist and aren't marked
+// harmful. Vanilla 1.12 has no dedicated "helpful" flag in
+// Spell.dbc, so "non-harmful and present" is the best approximation
+// without parsing every effect's implicit target.
+static int __fastcall Script_IsHelpfulSpell(void *L) {
+    const int spellID = ResolveLuaArgsToSpellID(L);
+    Game::Lua::PushBoolean(L, ComputeIsHelpful(spellID) ? 1 : 0);
+    return 1;
+}
+
+// `C_Spell.IsSpellHarmful(spellID)` — direct-by-ID modern signature.
+// No spellbook-slot variant; takes a numeric spellID only.
+static int __fastcall Script_C_Spell_IsSpellHarmful(void *L) {
+    if (!Game::Lua::IsNumber(L, 1)) {
+        Game::Lua::Error(L, "Usage: C_Spell.IsSpellHarmful(spellID)");
+        return 0;
+    }
+    const int spellID = static_cast<int>(Game::Lua::ToNumber(L, 1));
+    Game::Lua::PushBoolean(L, ComputeIsHarmful(spellID) ? 1 : 0);
+    return 1;
+}
+
+// `C_Spell.IsSpellHelpful(spellID)` — direct-by-ID modern signature.
+static int __fastcall Script_C_Spell_IsSpellHelpful(void *L) {
+    if (!Game::Lua::IsNumber(L, 1)) {
+        Game::Lua::Error(L, "Usage: C_Spell.IsSpellHelpful(spellID)");
+        return 0;
+    }
+    const int spellID = static_cast<int>(Game::Lua::ToNumber(L, 1));
+    Game::Lua::PushBoolean(L, ComputeIsHelpful(spellID) ? 1 : 0);
+    return 1;
+}
+
 static void RegisterLuaFunctions() {
     Game::Lua::RegisterGlobalFunction("GetSpellInfo", &Script_GetSpellInfo);
     Game::Lua::RegisterGlobalFunction("GetSpellLink", &Script_GetSpellLink);
@@ -482,11 +624,17 @@ static void RegisterLuaFunctions() {
     Game::Lua::RegisterGlobalFunction("IsPassiveSpell", &Script_IsPassiveSpell);
     Game::Lua::RegisterGlobalFunction("IsPlayerSpell", &Script_IsPlayerSpell);
     Game::Lua::RegisterGlobalFunction("IsSpellKnown", &Script_IsSpellKnown);
+    Game::Lua::RegisterGlobalFunction("IsHarmfulSpell", &Script_IsHarmfulSpell);
+    Game::Lua::RegisterGlobalFunction("IsHelpfulSpell", &Script_IsHelpfulSpell);
     Game::Lua::RegisterTableFunction("C_Spell", "GetSpellLink", &Script_C_GetSpellLink);
     Game::Lua::RegisterTableFunction("C_Spell", "GetSpellInfo", &Script_C_GetSpellInfo);
     Game::Lua::RegisterTableFunction("C_Spell", "GetSpellName", &Script_C_GetSpellName);
     Game::Lua::RegisterTableFunction("C_Spell", "GetSpellTexture", &Script_C_GetSpellTexture);
     Game::Lua::RegisterTableFunction("C_Spell", "IsSpellPassive", &Script_C_IsSpellPassive);
+    Game::Lua::RegisterTableFunction("C_Spell", "IsSpellHarmful",
+                                      &Script_C_Spell_IsSpellHarmful);
+    Game::Lua::RegisterTableFunction("C_Spell", "IsSpellHelpful",
+                                      &Script_C_Spell_IsSpellHelpful);
 }
 
 static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
