@@ -231,21 +231,23 @@ bool FindItemInBags(void *L, const Item::Arg::Resolved &arg, int *outBag, int *o
 // item in the player's bags matching `itemInfo` (itemID, link, or
 // name) and equips it.
 //
-// Two paths:
+// Two paths after a shared cursor-clear:
 //
-// - **Explicit `dstSlot`** (1..19): cursor-free direct swap. Calls
-//   the engine's own `FUN_INVENTORY_SWAP` (the helper
-//   `Script_EquipCursorItem` dispatches to after resolving cursor
-//   state). No pickup, no cursor manipulation — cursor state is
-//   untouched. Wraps the call in `Item::Swap::FromBag`, which
-//   handles the (bagID, slotInBag) → (containerGuid, linearSlot)
-//   encoding internally.
+// - **Explicit `dstSlot`** (1..19): cursor-free direct swap via
+//   `Item::Swap::FromBag`, which calls the engine's
+//   `FUN_INVENTORY_SWAP` primitive. Atomic server-side, no pickup.
 //
-// - **No `dstSlot`** (engine auto-picks slot from INVTYPE): falls
-//   back to the cursor-pickup + `AutoEquipCursorItem` path because
-//   1.12's `Script_AutoEquipCursorItem` reads the slot decision off
-//   cursor state. For safety this branch refuses to operate when
-//   `CursorHasItem()` is already true.
+// - **No `dstSlot`** (engine auto-picks slot from INVTYPE): cursor-
+//   pickup + `AutoEquipCursorItem`, because 1.12's auto-pick logic
+//   reads its slot decision off cursor state.
+//
+// Both paths start with `ClearCursor()` to clear any preexisting
+// cursor state. If something was on the cursor, it gets returned
+// to its source slot (visual lock cleared, source globals reset)
+// before our work runs. Without this, the engine's swap primitive
+// ends each call with a cursor-state cleanup that skips the
+// item-flag clear (`FUN_00495190(0, 1)`); a held item would stay
+// visually locked until a relog refreshed inventory state.
 //
 // Returns nothing. Silently no-ops on bad/missing input, item not
 // found in bags, or engine refusing the swap (combat lockdown,
@@ -261,21 +263,15 @@ int __fastcall Script_C_Item_EquipItemByName(void *L) {
 
     using ScriptFn_t = int(__fastcall *)(void *L);
 
-    // For the no-slot (auto-pick) path only: cursor guard. The
-    // pickup we're about to do would clobber whatever's currently
-    // held; better to no-op. Explicit-slot path doesn't touch the
-    // cursor so this check doesn't apply.
-    if (!hasDstSlot) {
-        Game::Lua::SetTop(L, 0);
-        auto cursorHasItem =
-            reinterpret_cast<ScriptFn_t>(Offsets::FUN_SCRIPT_CURSOR_HAS_ITEM);
-        cursorHasItem(L);
-        if (Game::Lua::ToBoolean(L, -1) != 0) {
-            Game::Lua::SetTop(L, 0);
-            return 0;
-        }
-        Game::Lua::SetTop(L, 0);
-    }
+    // Return any held cursor item to its slot BEFORE searching for
+    // the target. FUN_INVENTORY_SWAP's end-of-call cleanup at
+    // FUN_00495190(0, 1) clears LOCAL cursor globals but skips the
+    // visual-lock-flag clear (`item+0x314 & ~1`) — so a held item
+    // would stay visually locked until a relog refreshed state.
+    // ClearCursor's FUN_00495190(1, 1) does include that clear.
+    Game::Lua::SetTop(L, 0);
+    reinterpret_cast<int(__fastcall *)(void *)>(
+        Offsets::FUN_SCRIPT_CLEAR_CURSOR)(L);
 
     int bag = -1, slot = -1;
     const uint8_t *cgItem = nullptr;
@@ -284,13 +280,13 @@ int __fastcall Script_C_Item_EquipItemByName(void *L) {
     }
 
     if (hasDstSlot) {
-        // Cursor-free direct swap.
         Item::Swap::FromBag(cgItem, bag, slot, dstSlot);
         return 0;
     }
 
     // Auto-slot path: pickup → AutoEquip via the engine's existing
-    // cursor-state machinery.
+    // cursor-state machinery (which is now guaranteed clean by the
+    // ClearCursor above).
     Game::Lua::SetTop(L, 0);
     Game::Lua::PushNumber(L, static_cast<double>(bag));
     Game::Lua::PushNumber(L, static_cast<double>(slot));

@@ -391,6 +391,18 @@ int __fastcall Script_UseEquipmentSet(void *L) {
     if (pendingEvt >= 0)
         Event::Custom::Fire_D(pendingEvt, static_cast<int>(setID));
 
+    // If the cursor is holding anything, return it to its source slot
+    // and unlock it server-side BEFORE our swap chain runs. The
+    // engine's FUN_INVENTORY_SWAP ends each call with a cursor-state
+    // cleanup that clears the LOCAL cursor view, but never sends the
+    // server-side cancel-pickup packet — so a held item would stay
+    // server-locked until relog. ClearCursor sends the right packet.
+    // No-op when the cursor is idle (still fires one CURSOR_UPDATE,
+    // negligible).
+    Game::Lua::SetTop(L, 0);
+    reinterpret_cast<int(__fastcall *)(void *)>(
+        Offsets::FUN_SCRIPT_CLEAR_CURSOR)(L);
+
     // Snapshot the set's items into a local — Locations::FindGUID
     // can shuffle the Lua stack, and we've already passed validation.
     uint64_t guids[SLOT_COUNT];
