@@ -16,46 +16,61 @@
 #include <cstdint>
 #include <string>
 
-// Opt-in persistent name cache, keyed by GUID. When enabled, every
-// SMSG_NAME_QUERY_RESPONSE the engine processes — plus anything fed
-// in via `C_PlayerCache.RememberPlayer` from Lua — is persisted to
-// `WTF\Account\<acct>\<realm>\ClassicAPI_NameCache.txt` and survives
-// across sessions on the same realm. Shared across all characters
-// on that account+realm, so a 50-character bank alt's cache is
-// available to the player's main without duplication.
+// Opt-in persistent name cache, keyed by **name**. When enabled,
+// every SMSG_NAME_QUERY_RESPONSE the engine processes — plus
+// anything fed in via `C_PlayerCache.RememberPlayer` from Lua — is
+// persisted to `WTF\Account\<acct>\<realm>\ClassicAPI_NameCache.txt`
+// and survives across sessions on the same realm. Shared across all
+// characters on that account+realm, so a 50-character bank alt's
+// cache is available to the player's main without duplication.
 //
 // Use case: addons like pfUI's libunitscan currently keep their own
-// per-character SVPC name DB to color chat names by class. With this
-// enabled, `GetPlayerInfoByGUID` falls back to the persistent cache
-// on engine miss, so chat coloring Just Works after a /reload — and
-// the data isn't duplicated 50 times.
+// per-character SVPC name DB to color chat names by class. With
+// this enabled, `GetPlayerInfoByGUID` / `GetPlayerInfoByName` falls
+// back to the persistent cache on engine miss, so chat coloring
+// Just Works after a /reload — and the data isn't duplicated 50
+// times.
+//
+// Storage model: **name is the primary key**. Vanilla 1.12 enforces
+// per-realm name uniqueness server-side, so each name maps to at
+// most one live character. GUIDs are unstable — character deletion
+// + recreation produces a new GUID for the same name — so keying by
+// GUID would mean storing dead identities and needing a name-based
+// eviction pass to clean them up. Keying by name makes dedup
+// natural (insert-replaces) and eliminates the stale-GUID problem.
+// A `guid → name` reverse index gives O(1) lookups in both
+// directions. GUIDs are still persisted so addons can recover a
+// name from a stored GUID (combat-log replay, etc.).
 
 namespace Player::NameCache {
 
 struct Entry {
     uint64_t guid;       // full 64-bit GUID (hi << 32 | lo)
-    std::string name;    // ASCII, <= 12 chars (vanilla cap)
     uint32_t classID;    // ChrClasses.dbc record ID (1..9), 0 if unknown
     uint32_t raceID;     // ChrRaces.dbc record ID (1..8), 0 if unknown
     uint32_t sex;        // 0 = male, 1 = female (wire convention), 0 if unknown
 };
 
-// Returns a pointer to the cached entry, or nullptr if not cached.
-// The pointer is stable until the next `Remember` for the same GUID
-// (which may relocate via map rehash). Treat as transient.
-const Entry *Lookup(uint64_t guid);
-
-// Same shape but indexed by name (case-sensitive, exact match). The
-// underlying map is GUID-keyed, so this walks the entries — O(N) per
-// call where N is total cached players. Cheap enough in practice
-// (low thousands of entries; called only from addon chat-coloring
-// paths that fire per chat-line render). Returns nullptr if no
-// entry has that exact name.
+// O(1) lookup by GUID via the reverse index. On hit, returns a
+// pointer to the entry and writes the player's name to `*outName`.
+// On miss, returns nullptr and sets `*outName` to nullptr. The
+// returned pointer and `*outName` are stable until the next
+// `Remember` / eviction; treat as transient.
 //
-// Used by `C_PlayerCache.GetPlayerInfoByName` for the case where an
-// addon has a player's name (e.g., from a |Hplayer:Name|h chat link)
-// but no GUID — `GetCurrentChatGUID()` returns nil for several chat
-// event paths the engine doesn't tag with the sender's GUID.
+// The name out-param is the entry's key in the primary map —
+// passing it by pointer keeps it cheap (no string copy) and lets
+// the caller read both halves from one lookup.
+const Entry *Lookup(uint64_t guid, const std::string **outName);
+
+// O(1) lookup by name (case-sensitive, exact match). Vanilla
+// 1.12's server-stored names are case-stable, so `"Gedwyr"` won't
+// match `"gedwyr"`. Returns nullptr if no entry has that name.
+//
+// Used by `C_PlayerCache.GetPlayerInfoByName` for the case where
+// an addon has a player's name (e.g., from a `|Hplayer:Name|h`
+// chat link or `CHAT_MSG_SYSTEM` string) but no GUID —
+// `GetCurrentChatGUID()` returns nil for several chat event paths
+// the engine doesn't tag with the sender's GUID.
 const Entry *LookupByName(const char *name);
 
 // Adds or updates an entry. Zero values for classID/raceID/sex are

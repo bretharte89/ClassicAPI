@@ -112,11 +112,12 @@ int __fastcall Script_GetPlayerInfoByGUID(void *L) {
         // enabled). Name + class + race + sex round-trip from disk;
         // realm comes back "" since vanilla is single-realm and we
         // never see the realm name as a per-player attribute.
+        const std::string *cachedName = nullptr;
         const NameCache::Entry *cached = NameCache::Lookup(
-            (static_cast<uint64_t>(hi) << 32) | lo);
-        if (cached == nullptr || cached->name.empty())
+            (static_cast<uint64_t>(hi) << 32) | lo, &cachedName);
+        if (cached == nullptr || cachedName == nullptr || cachedName->empty())
             return 0;
-        name = cached->name.c_str();
+        name = cachedName->c_str();
         classID = cached->classID;
         race = cached->raceID;
         sex = cached->sex;
@@ -149,12 +150,15 @@ int __fastcall Script_GetPlayerInfoByGUID(void *L) {
     return 7;
 }
 
-// Shared tuple builder used by both `GetPlayerInfoByGUID`'s
-// NameCache-fallback path and `C_PlayerCache.GetPlayerInfoByName`.
-// Pushes `(localizedClass, englishClass, localizedRace, englishRace,
-// sex, name, realm)` from a NameCache entry. Realm is always "" —
-// vanilla is single-realm and never propagates a per-player realm.
-int PushFromNameCacheEntry(void *L, const NameCache::Entry &e) {
+// Shared tuple builder used by `C_PlayerCache.GetPlayerInfoByName`
+// (and useful for any other NameCache-fronted Lua surface). Pushes
+// `(localizedClass, englishClass, localizedRace, englishRace, sex,
+// name, realm)` — realm is always "" since vanilla is single-realm
+// and never propagates a per-player realm. Name is passed separately
+// because the cache's primary key (name) lives on the map slot, not
+// inside the Entry value.
+int PushFromNameCacheEntry(void *L, const char *name,
+                           const NameCache::Entry &e) {
     const char *englishClass = DBC::StringField(
         Offsets::VAR_CHRCLASSES_RECORDS, Offsets::VAR_CHRCLASSES_COUNT,
         e.classID, Offsets::OFF_CHRCLASSES_FILENAME);
@@ -173,7 +177,7 @@ int PushFromNameCacheEntry(void *L, const NameCache::Entry &e) {
     Game::Lua::PushString(L, localizedRace ? localizedRace : "");
     Game::Lua::PushString(L, englishRace ? englishRace : "");
     Game::Lua::PushNumber(L, static_cast<double>(e.sex + 2));
-    Game::Lua::PushString(L, e.name.c_str());
+    Game::Lua::PushString(L, name);
     Game::Lua::PushString(L, "");
     return 7;
 }
@@ -197,7 +201,7 @@ int __fastcall Script_C_PlayerCache_GetPlayerInfoByName(void *L) {
     const NameCache::Entry *e = NameCache::LookupByName(name);
     if (e == nullptr)
         return 0;
-    PushFromNameCacheEntry(L, *e);
+    PushFromNameCacheEntry(L, name, *e);
     char buf[Guid::STRING_SIZE];
     Game::Lua::PushString(L, Guid::FormatAsString(e->guid, buf, sizeof buf));
     return 8;

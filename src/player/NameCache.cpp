@@ -100,13 +100,15 @@ constexpr uint32_t kMaxSex = 1;
 // players in a static zone do basically nothing.
 constexpr DWORD kScanIntervalMs = 10 * 1000;
 
-std::unordered_map<uint64_t, Entry> g_entries;
-// `name → guid` reverse index, maintained in lockstep with `g_entries`
-// so `LookupByName` and `EvictStaleGuidsForName` are O(1). Invariant:
-// `g_nameIndex[name] == guid` iff `g_entries[guid].name == name`.
-// Vanilla 1.12 server-enforced per-realm name uniqueness means each
-// name maps to at most one entry — the eviction logic preserves that.
-std::unordered_map<std::string, uint64_t> g_nameIndex;
+// Name-primary storage. Vanilla's per-realm name uniqueness makes
+// name the natural identity key; deletion-recreation produces a new
+// GUID for the same name, which inserts-replaces here instead of
+// piling up dead entries the way a GUID-keyed map would.
+std::unordered_map<std::string, Entry> g_entries;
+// `guid → name` reverse index. Maintained in lockstep with
+// `g_entries`. Invariant: `g_guidIndex[guid] == name` iff
+// `g_entries[name].guid == guid`.
+std::unordered_map<uint64_t, std::string> g_guidIndex;
 bool g_enabled = false;
 bool g_scanEnabled = false;
 bool g_settingsLoaded = false;
@@ -227,27 +229,64 @@ std::string SanitizeName(const char *name) {
     return out;
 }
 
-// Removes the cache entry whose name matches `name` if its GUID
-// differs from `keepGuid`. Vanilla 1.12 enforces per-realm name
-// uniqueness, so seeing the same name under a new GUID means the old
-// character was deleted and the name recycled — that old GUID is
-// dead, no addon should ever look it up again, and keeping it just
-// bloats the file. Returns true if an entry was removed.
+// Inserts or updates an entry keyed by `name`, maintaining the
+// `g_guidIndex` reverse-map invariant. Handles three eviction cases:
 //
-// Bots and serial re-rollers are the motivating case: a single
-// player remaking five times in a session leaves five entries under
-// the same name with sequential GUIDs without this.
+//   1. A prior entry exists under this name with a different GUID
+//      (name recycled — character deleted and recreated). Drop the
+//      old entry and its guid-index entry.
+//   2. A prior entry exists under this GUID with a different name
+//      (character renamed — rare in vanilla but defensible). Drop
+//      the old name entry and its guid-index entry.
+//   3. Same name + same GUID — update in place.
 //
-// O(1) via the `g_nameIndex` reverse map.
-bool EvictStaleGuidsForName(const std::string &name, uint64_t keepGuid) {
-    if (name.empty())
+// `classID` / `raceID` / `sex` of 0 mean "caller doesn't know" and
+// don't overwrite an existing non-zero field. Returns true if any
+// change occurred (caller marks the cache dirty for flushing).
+bool Upsert(uint64_t guid, const std::string &name,
+            uint32_t classID, uint32_t raceID, uint32_t sex) {
+    if (name.empty() || guid == 0)
         return false;
-    auto it = g_nameIndex.find(name);
-    if (it == g_nameIndex.end() || it->second == keepGuid)
-        return false;
-    g_entries.erase(it->second);
-    g_nameIndex.erase(it);
-    return true;
+    bool changed = false;
+
+    // Case 1: same name under a different GUID — recycled name.
+    auto nameIt = g_entries.find(name);
+    if (nameIt != g_entries.end() && nameIt->second.guid != guid) {
+        g_guidIndex.erase(nameIt->second.guid);
+        g_entries.erase(nameIt);
+        changed = true;
+    }
+
+    // Case 2: same GUID under a different name — rename.
+    auto guidIt = g_guidIndex.find(guid);
+    if (guidIt != g_guidIndex.end() && guidIt->second != name) {
+        g_entries.erase(guidIt->second);
+        g_guidIndex.erase(guidIt);
+        changed = true;
+    }
+
+    // Case 3: insert or update in place.
+    Entry &e = g_entries[name];
+    if (e.guid != guid) {
+        e.guid = guid;
+        changed = true;
+    }
+    if (classID != 0 && e.classID != classID) {
+        e.classID = classID;
+        changed = true;
+    }
+    if (raceID != 0 && e.raceID != raceID) {
+        e.raceID = raceID;
+        changed = true;
+    }
+    // sex == 0 is ambiguous (male AND "unknown") — only treat
+    // non-zero as authoritative.
+    if (sex != 0 && e.sex != sex) {
+        e.sex = sex;
+        changed = true;
+    }
+    g_guidIndex[guid] = name;
+    return changed;
 }
 
 void LoadCacheIfNeeded() {
@@ -262,9 +301,9 @@ void LoadCacheIfNeeded() {
     if (!file.is_open())
         return; // first run for this realm
 
-    // v3 format: `guid\tclass\trace\tsex\tname`. Single hex GUID
-    // column, no leading zeros — 1-8 hex digits for player GUIDs
-    // (high dword zero), up to 16 digits for non-player GUIDs.
+    // v4 format: `name\tguid\tclass\trace\tsex`. Name first since
+    // it's the primary key; GUID is a peripheral field carried for
+    // GUID-keyed lookups. Variable-width hex GUID (no leading zeros).
     std::string line;
     while (std::getline(file, line)) {
         while (!line.empty() && (line.back() == '\r' || line.back() == '\n'))
@@ -273,44 +312,22 @@ void LoadCacheIfNeeded() {
             continue;
 
         std::istringstream is(line);
-        std::string guidStr, classStr, raceStr, sexStr, name;
-        if (!(is >> guidStr >> classStr >> raceStr >> sexStr))
-            continue;
-        // Consume the single tab/space, then read remaining name
-        // as-is (no spaces in vanilla names but tolerate them).
-        while (is.peek() == ' ' || is.peek() == '\t')
-            is.get();
-        std::getline(is, name);
-        if (name.empty())
+        std::string name, guidStr, classStr, raceStr, sexStr;
+        if (!(is >> name >> guidStr >> classStr >> raceStr >> sexStr))
             continue;
 
+        const std::string sanitized = SanitizeName(name.c_str());
         const uint64_t guid = std::strtoull(guidStr.c_str(), nullptr, 16);
         const uint32_t classID = static_cast<uint32_t>(std::strtoul(classStr.c_str(), nullptr, 10));
         const uint32_t raceID = static_cast<uint32_t>(std::strtoul(raceStr.c_str(), nullptr, 10));
         const uint32_t sex = static_cast<uint32_t>(std::strtoul(sexStr.c_str(), nullptr, 10));
-        if (guid == 0)
+        if (guid == 0 || sanitized.empty())
             continue;
         if (classID > kMaxClassID || raceID > kMaxRaceID || sex > kMaxSex)
             continue;
-        const std::string sanitized = SanitizeName(name.c_str());
-        if (sanitized.empty())
-            continue;
-        // Defensive dedup on load: if the file somehow has two rows
-        // for the same name (shouldn't with EvictStaleGuidsForName
-        // running at every save, but handle gracefully), the later
-        // row wins.
-        auto idx = g_nameIndex.find(sanitized);
-        if (idx != g_nameIndex.end() && idx->second != guid) {
-            g_entries.erase(idx->second);
-            g_nameIndex.erase(idx);
-        }
-        Entry &slot = g_entries[guid];
-        slot.guid = guid;
-        slot.name = sanitized;
-        slot.classID = classID;
-        slot.raceID = raceID;
-        slot.sex = sex;
-        g_nameIndex[sanitized] = guid;
+        // Upsert handles the rare same-name / same-guid dedup if the
+        // file has duplicate rows (shouldn't, but defensive).
+        Upsert(guid, sanitized, classID, raceID, sex);
     }
 }
 
@@ -327,15 +344,21 @@ void SaveCache() {
         // (all we cache today) write as 1-8 hex digits since the high
         // dword is always 0; non-player GUIDs would naturally extend
         // to up to 16 digits if any ever landed here.
-        out << "# ClassicAPI name cache v3 (per-realm)\n";
-        out << "# guid\tclassID\traceID\tsex\tname\n";
+        // Name-primary v4 format. Name first since it's the primary
+        // identity (server-enforced unique per realm) and the natural
+        // sort/scan key when hand-editing. GUID is variable-width
+        // hex — 1-8 digits for player GUIDs, up to 16 if a non-player
+        // GUID ever lands here.
+        out << "# ClassicAPI name cache v4 (per-realm)\n";
+        out << "# name\tguid\tclassID\traceID\tsex\n";
         for (const auto &kv : g_entries) {
+            const std::string &name = kv.first;
             const Entry &e = kv.second;
             char buf[80];
-            std::snprintf(buf, sizeof(buf), "%llX\t%u\t%u\t%u\t",
+            std::snprintf(buf, sizeof(buf), "\t%llX\t%u\t%u\t%u",
                           static_cast<unsigned long long>(e.guid),
                           e.classID, e.raceID, e.sex);
-            out << buf << e.name << "\n";
+            out << name << buf << "\n";
         }
         if (!out)
             return;
@@ -397,40 +420,12 @@ void __fastcall CacheWrite_h(void *self, void *edx, const uint8_t *packet,
 
     const uint64_t guid = (static_cast<uint64_t>(guidHi) << 32) | guidLo;
     const std::string sanitized = SanitizeName(name);
-    if (EvictStaleGuidsForName(sanitized, guid))
-        g_dirty = true;
-    Entry &e = g_entries[guid];
-    bool changed = false;
-    if (e.guid != guid) {
-        e.guid = guid;
-        changed = true;
-    }
-    if (e.name != sanitized) {
-        // Drop the old name's index entry (if any) before re-pointing
-        // the index at the new name. Skips for fresh inserts where the
-        // old name is the empty string.
-        if (!e.name.empty())
-            g_nameIndex.erase(e.name);
-        e.name = sanitized;
-        g_nameIndex[sanitized] = guid;
-        changed = true;
-    }
-    if (e.classID != classID) {
-        e.classID = classID;
-        changed = true;
-    }
-    // Race/sex sanity-check against the same maxes Load enforces.
-    // Out-of-range values mean the packet didn't carry them (some
-    // entry types skip these fields); preserve any prior real data.
-    if (raceID != 0 && raceID <= kMaxRaceID && e.raceID != raceID) {
-        e.raceID = raceID;
-        changed = true;
-    }
-    if (sex <= kMaxSex && e.sex != sex) {
-        e.sex = sex;
-        changed = true;
-    }
-    if (changed) {
+    // Out-of-range race/sex mean the packet didn't carry them (some
+    // entry types skip these fields); pass 0 so `Upsert` preserves
+    // any prior real data.
+    const uint32_t safeRace = (raceID != 0 && raceID <= kMaxRaceID) ? raceID : 0;
+    const uint32_t safeSex = (sex <= kMaxSex) ? sex : 0;
+    if (Upsert(guid, sanitized, classID, safeRace, safeSex)) {
         g_dirty = true;
         MaybeFlush();
     }
@@ -783,27 +778,31 @@ const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
 
 } // namespace
 
-const Entry *Lookup(uint64_t guid) {
+const Entry *Lookup(uint64_t guid, const std::string **outName) {
+    if (outName != nullptr)
+        *outName = nullptr;
     if (!g_enabled)
         return nullptr;
     LoadCacheIfNeeded();
-    auto it = g_entries.find(guid);
-    if (it == g_entries.end())
+    auto guidIt = g_guidIndex.find(guid);
+    if (guidIt == g_guidIndex.end())
         return nullptr;
-    return &it->second;
+    auto entryIt = g_entries.find(guidIt->second);
+    if (entryIt == g_entries.end())
+        return nullptr; // shouldn't happen if invariant holds
+    if (outName != nullptr)
+        *outName = &entryIt->first;
+    return &entryIt->second;
 }
 
 const Entry *LookupByName(const char *name) {
     if (!g_enabled || name == nullptr || name[0] == '\0')
         return nullptr;
     LoadCacheIfNeeded();
-    auto idx = g_nameIndex.find(name);
-    if (idx == g_nameIndex.end())
+    auto it = g_entries.find(name);
+    if (it == g_entries.end())
         return nullptr;
-    auto entry = g_entries.find(idx->second);
-    if (entry == g_entries.end())
-        return nullptr; // shouldn't happen if invariant holds
-    return &entry->second;
+    return &it->second;
 }
 
 void Remember(uint64_t guid, const char *name, uint32_t classID,
@@ -818,42 +817,7 @@ void Remember(uint64_t guid, const char *name, uint32_t classID,
     if (sex > kMaxSex)
         sex = 0;
     const std::string sanitized = SanitizeName(name);
-    if (EvictStaleGuidsForName(sanitized, guid))
-        g_dirty = true;
-    Entry &e = g_entries[guid];
-    bool changed = false;
-    if (e.guid != guid) {
-        e.guid = guid;
-        changed = true;
-    }
-    if (e.name != sanitized) {
-        // Maintain `g_nameIndex` invariant: drop the entry's prior
-        // name (if any) before re-pointing the index at the new one.
-        if (!e.name.empty())
-            g_nameIndex.erase(e.name);
-        e.name = sanitized;
-        g_nameIndex[sanitized] = guid;
-        changed = true;
-    }
-    // 0 means "caller doesn't know"; don't overwrite real data with
-    // unknown. Only update on real → real change.
-    if (classID != 0 && e.classID != classID) {
-        e.classID = classID;
-        changed = true;
-    }
-    if (raceID != 0 && e.raceID != raceID) {
-        e.raceID = raceID;
-        changed = true;
-    }
-    // sex == 0 is ambiguous (male AND "unknown"); we only treat
-    // non-zero (1 = female) as authoritative. Means we can't flip
-    // a wrongly-cached female back to male via Remember — but the
-    // SMSG hook path uses direct assignment so it self-corrects.
-    if (sex != 0 && e.sex != sex) {
-        e.sex = sex;
-        changed = true;
-    }
-    if (changed) {
+    if (Upsert(guid, sanitized, classID, raceID, sex)) {
         g_dirty = true;
         MaybeFlush();
     }
