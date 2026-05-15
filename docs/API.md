@@ -602,6 +602,42 @@ local usable, noMana = C_Spell.IsSpellUsable(133)
 
 Equivalent to the function of the same name introduced in 10.x.
 
+### `C_Item.GetWeaponEnchantInfo()`
+
+Returns the modern 12-tuple matching WotLK+'s extended
+`GetWeaponEnchantInfo` signature, including the **temp-enchant IDs**
+that vanilla 1.12's 8-return global omits.
+
+```
+hasMain, mainExpire, mainCharges, mainEnchantID,
+hasOff,  offExpire,  offCharges,  offEnchantID,
+hasRanged, rangedExpire, rangedCharges, rangedEnchantID
+   = C_Item.GetWeaponEnchantInfo()
+```
+
+```lua
+-- Apply Brilliant Mana Oil to mainhand, then:
+local has, expireMs, charges, enchantID = C_Item.GetWeaponEnchantInfo()
+-- has = true, expireMs ≈ 1800000, charges = 5, enchantID = <oil's enchant>
+```
+
+Reads the **temporary** enchant slot (`ITEM_FIELD_ENCHANTMENT`
+slot 1 at descriptor `+0x4C`) — the same slot oils, sharpening
+stones, and poisons populate and the engine drains as they expire.
+This is what modern's `GetWeaponEnchantInfo` measures.
+
+The permanent enchant (Crusader, Mongoose, etc., in slot 0 at
+`+0x40`) is **not** reported here — that's a separate field and
+modern's `GetWeaponEnchantInfo` doesn't expose it either. Get the
+permanent enchant ID by parsing `GetInventoryItemLink("player",
+slot)` (the link includes it as the 2nd numeric field).
+
+Vanilla 1.12's global `GetWeaponEnchantInfo` is unchanged — old
+addons reading positions 4..8 by index still work.
+
+Equivalent to the extension of `GetWeaponEnchantInfo` introduced
+in 3.x.
+
 ### `IsHarmfulSpell(spell)` / `IsHelpfulSpell(spell)`
 
 Classify a spell as offensive (`IsHarmfulSpell`) or non-offensive

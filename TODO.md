@@ -2563,6 +2563,23 @@ For now, addons that need login-state gating can use the
 in-world reliably). Revisit if a safer glue registration path
 surfaces.
 
+## ~~83. `C_Item.GetWeaponEnchantInfo()`~~ — DONE
+
+Vanilla 1.12's global `GetWeaponEnchantInfo` returns 8 values
+(has/expire/charges per weapon slot) but **no enchant IDs**.
+WotLK+ extended the signature to 12 returns by inserting the
+temp-enchant ID after each weapon's data. We provide the modern
+12-tuple in the `C_Item` namespace, leaving the vanilla global
+intact for addons that depend on its position layout.
+
+Reads `ITEM_FIELD_ENCHANTMENT` slot 1 (descriptor `+0x4C..+0x54`,
+the TEMPORARY enchantment slot) for mainhand / offhand / ranged
+equipment slots — the same slot the engine drains as the
+oil/stone/poison expires. The permanent enchant (Crusader,
+Mongoose, etc. in slot 0 at `+0x40`) isn't reported here; modern's
+`GetWeaponEnchantInfo` is specifically about temp data.
+See [src/item/WeaponEnchant.cpp](src/item/WeaponEnchant.cpp).
+
 ## ~~78. `GetCVarBool(cvar)`~~ — DONE
 
 Dispatches the engine's `Script_GetCVar` at `0x00488BA0` to read
