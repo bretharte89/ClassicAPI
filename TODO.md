@@ -2592,8 +2592,7 @@ See [src/item/WeaponEnchant.cpp](src/item/WeaponEnchant.cpp).
 Dispatches the engine's `Script_GetCVar` at `0x00488BA0` to read
 the cvar's string value, then coerces: non-zero numeric or
 `"true"` (case-insensitive) → `true`; `"0"` / empty / nil /
-unknown cvar → `false`. Exposed as `GetCVarBool(cvar)` (global)
-and `C_CVar.GetCVarBool(cvar)` (modern namespace).
+unknown cvar → `false`. Exposed as `C_CVar.GetCVarBool(cvar)`.
 See [src/cvar/Bool.cpp](src/cvar/Bool.cpp).
 
 ## 79. `IsTrialAccount()` / `IsVeteranTrialAccount()` — trivial

@@ -114,8 +114,8 @@ enum Offsets {
 
     // `Script_GetCVar(L)` — the vanilla Lua C function for `GetCVar`.
     // Reads the cvar name from stack[1], pushes the string value (or
-    // nil for unknown cvars). Dispatched from `GetCVarBool` /
-    // `C_CVar.GetCVarBool` to fetch the string before coercing to bool.
+    // nil for unknown cvars). Dispatched from `C_CVar.GetCVarBool` to
+    // fetch the string before coercing to bool.
     FUN_SCRIPT_GET_CVAR = 0x00488BA0,
 
     // Game::ResolveUnitToken — __fastcall(ecx = const char *token) → CGUnit_C *.
@@ -1122,6 +1122,18 @@ enum Offsets {
     VAR_WHO_SYSTEM = 0x00C28168,
     VAR_WHO_TO_UI_FLAG = 0x00C2A12C,
     FUN_WHO_SYSTEM_SEND_QUERY = 0x005AEBB0,
+
+    // SMSG_WHO opcode handler — opcode 0x63 (99) per the registration
+    // in `FUN_005adc50`: `FUN_005ab650(99, FUN_005adf60, 0)`. Reads
+    // `VAR_WHO_TO_UI_FLAG` mid-function (at `0x005ADF9C`) to decide
+    // between WhoList + WHO_LIST_UPDATE vs the chat-count printer.
+    //
+    // We hook post-original to restore the flag after each response
+    // so the routing override only affects responses we initiated.
+    // Otherwise a user-typed `/who` inheriting our flag=1 stays
+    // silent (no chat-count message, no FriendsFrame popup) when the
+    // user actually wanted both.
+    FUN_SMSG_WHO_RESPONSE = 0x005ADF60,
 
     // Per-faction current standing — `__fastcall(ecx = factionID) → int`.
     // Returns `base + delta` where the two values are stored at

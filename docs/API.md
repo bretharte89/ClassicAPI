@@ -167,7 +167,7 @@ build instructions.
 - [Combat](#combat)
   - [`InCombatLockdown()`](#incombatlockdown)
 - [CVar](#cvar)
-  - [`GetCVarBool(cvar)` / `C_CVar.GetCVarBool(cvar)`](#getcvarboolcvar--c_cvargetcvarboolcvar)
+  - [`C_CVar.GetCVarBool(cvar)`](#c_cvargetcvarboolcvar)
 - [Table](#table)
   - [`table.wipe(t)`](#tablewipet)
 - [Input](#input)
@@ -4246,15 +4246,15 @@ Errors via `lua_error` on:
 
 ## CVar
 
-### `GetCVarBool(cvar)` / `C_CVar.GetCVarBool(cvar)`
+### `C_CVar.GetCVarBool(cvar)`
 
-Returns the cvar's value coerced to a boolean. WotLK addition;
-vanilla 1.12 only has `GetCVar` which returns a string.
+Returns the cvar's value coerced to a boolean. The `C_CVar`
+namespace was added in 10.x; vanilla 1.12 only has `GetCVar` which
+returns a string.
 
 ```lua
-GetCVarBool("autoLootDefault")     -- true if cvar is "1" or "true"
-GetCVarBool("nameplateMotion")     -- false if cvar is "0", empty, or unknown
-C_CVar.GetCVarBool("autoLootDefault")  -- same value, modern namespace
+C_CVar.GetCVarBool("autoLootDefault")  -- true if cvar is "1" or "true"
+C_CVar.GetCVarBool("nameplateMotion")  -- false if cvar is "0", empty, or unknown
 ```
 
 Coercion rules:
@@ -4270,9 +4270,6 @@ Implementation dispatches the engine's own `Script_GetCVar` to
 fetch the string, then runs the coercion in C. Unknown cvars
 silently return `false` rather than erroring — matches modern
 behavior.
-
-Equivalent to the global of the same name introduced in 3.x, plus
-the `C_CVar` namespace alias added in 10.x.
 
 ## Table
 

@@ -60,13 +60,13 @@ bool StringToBool(const char *s) {
     return value != 0;
 }
 
-// Pushes the resolved cvar value as a boolean. Dispatches the
-// engine's own `Script_GetCVar` to read the string, then coerces.
-// Returns 1 (one value pushed) on any input — modern behavior is
-// "false" for missing/unknown cvars rather than nil/error.
-int PushCVarBool(void *L) {
+// `C_CVar.GetCVarBool(cvar)` — dispatches the engine's own
+// `Script_GetCVar` to read the string, then coerces. Returns 1
+// (one value pushed) on any input — modern behavior is "false" for
+// missing/unknown cvars rather than nil/error.
+int __fastcall Script_C_CVar_GetCVarBool(void *L) {
     if (!Game::Lua::IsString(L, 1)) {
-        Game::Lua::Error(L, "Usage: GetCVarBool(\"cvar\")");
+        Game::Lua::Error(L, "Usage: C_CVar.GetCVarBool(\"cvar\")");
         return 0;
     }
     // Reuse the existing stack[1] (the cvar name). Script_GetCVar
@@ -85,19 +85,7 @@ int PushCVarBool(void *L) {
     return 1;
 }
 
-// `GetCVarBool(cvar)` — global, modern signature. WotLK addition.
-int __fastcall Script_GetCVarBool(void *L) {
-    return PushCVarBool(L);
-}
-
-// `C_CVar.GetCVarBool(cvar)` — `C_CVar` namespace form, retained
-// after Blizzard moved cvar APIs there in 10.x.
-int __fastcall Script_C_CVar_GetCVarBool(void *L) {
-    return PushCVarBool(L);
-}
-
 void RegisterLuaFunctions() {
-    Game::Lua::RegisterGlobalFunction("GetCVarBool", &Script_GetCVarBool);
     Game::Lua::RegisterTableFunction("C_CVar", "GetCVarBool",
                                       &Script_C_CVar_GetCVarBool);
 }
