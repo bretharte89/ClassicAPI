@@ -46,10 +46,13 @@
 //      VanillaMinimapTracking uses for its blip rendering, so we
 //      know the path is safe and cheap.
 //
-// Lookups are GUID-keyed, so the "deleted character recreated with
-// same name, different class" failure mode of name-keyed caches
-// (libunitscan, etc.) doesn't apply — different GUIDs are different
-// entries, period.
+// Lookups are GUID-keyed. Names ARE the dedup signal though: vanilla
+// server-side names are unique per realm, so a fresh GUID claiming a
+// name we've already seen means the prior character was deleted and
+// the name recycled. The old GUID is dead (server won't honor it
+// again); keeping it just bloats the file. `EvictStaleGuidsForName`
+// drops the old entry on each write so the cache holds one entry per
+// name.
 
 #include "NameCache.h"
 
@@ -218,6 +221,36 @@ std::string SanitizeName(const char *name) {
     return out;
 }
 
+// Removes any cache entries whose name matches `name` but whose GUID
+// is not `keepGuid`. Vanilla 1.12 enforces per-realm name uniqueness,
+// so seeing the same name under a new GUID means the old character
+// was deleted and the name recycled — that old GUID is dead, no
+// addon should ever look it up again, and keeping it just bloats the
+// file. Returns true if anything was removed.
+//
+// Bots and serial re-rollers are the motivating case: a single
+// player remaking five times in a session leaves five entries
+// under the same name with sequential GUIDs without this.
+//
+// O(N) per call but the map is small (hundreds to low thousands of
+// entries on a typical realm) and Remember/CacheWrite frequency is
+// bounded by NAME_QUERY response rate and the 10s scan interval —
+// not hot.
+bool EvictStaleGuidsForName(const std::string &name, uint64_t keepGuid) {
+    if (name.empty())
+        return false;
+    bool removed = false;
+    for (auto it = g_entries.begin(); it != g_entries.end(); ) {
+        if (it->first != keepGuid && it->second.name == name) {
+            it = g_entries.erase(it);
+            removed = true;
+        } else {
+            ++it;
+        }
+    }
+    return removed;
+}
+
 void LoadCacheIfNeeded() {
     if (g_cacheLoaded)
         return;
@@ -350,8 +383,10 @@ void __fastcall CacheWrite_h(void *self, void *edx, const uint8_t *packet,
         return;
 
     const uint64_t guid = (static_cast<uint64_t>(guidHi) << 32) | guidLo;
-    Entry &e = g_entries[guid];
     const std::string sanitized = SanitizeName(name);
+    if (EvictStaleGuidsForName(sanitized, guid))
+        g_dirty = true;
+    Entry &e = g_entries[guid];
     bool changed = false;
     if (e.guid != guid) {
         e.guid = guid;
@@ -750,8 +785,10 @@ void Remember(uint64_t guid, const char *name, uint32_t classID,
         raceID = 0;
     if (sex > kMaxSex)
         sex = 0;
-    Entry &e = g_entries[guid];
     const std::string sanitized = SanitizeName(name);
+    if (EvictStaleGuidsForName(sanitized, guid))
+        g_dirty = true;
+    Entry &e = g_entries[guid];
     bool changed = false;
     if (e.guid != guid) {
         e.guid = guid;
