@@ -55,10 +55,39 @@ int GetStackCount(const uint8_t *cgItem) {
         descriptor + Offsets::OFF_DESCRIPTOR_STACK_COUNT));
 }
 
-// Walks `bagID` and accumulates stack counts for items matching
-// `targetItemID`. Skips empty slots. Each `ResolveBag` call clobbers
-// Lua stack[1]/[2]; we own the stack inside the callback.
-int CountInBag(void *L, int bagID, int targetItemID) {
+// Per-item uses count for `includeUses` mode. Reads
+// ITEM_FIELD_SPELL_CHARGES[0] (signed dword) and returns its absolute
+// value, or 1 if the item has no charges. The "or 1" makes the
+// multiplier neutral for non-charge items — plain stack count flows
+// through unchanged.
+int GetUsesPerItem(const uint8_t *cgItem) {
+    if (cgItem == nullptr)
+        return 1;
+    auto *descriptor = *reinterpret_cast<const uint8_t *const *>(
+        cgItem + Offsets::OFF_ITEM_DESCRIPTOR);
+    if (descriptor == nullptr)
+        return 1;
+    const int32_t raw = *reinterpret_cast<const int32_t *>(
+        descriptor + Offsets::OFF_DESCRIPTOR_SPELL_CHARGES_0);
+    if (raw == 0)
+        return 1;
+    return raw < 0 ? -raw : raw;
+}
+
+// Combined per-slot contribution to GetItemCount. `includeUses=false`
+// gives plain stack count (matches old behavior); `true` multiplies by
+// abs(SPELL_CHARGES[0]) for charged items.
+int GetItemContribution(const uint8_t *cgItem, bool includeUses) {
+    const int stack = GetStackCount(cgItem);
+    if (!includeUses)
+        return stack;
+    return stack * GetUsesPerItem(cgItem);
+}
+
+// Walks `bagID` and accumulates per-slot contributions for items
+// matching `targetItemID`. Skips empty slots. Each `ResolveBag` call
+// clobbers Lua stack[1]/[2]; we own the stack inside the callback.
+int CountInBag(void *L, int bagID, int targetItemID, bool includeUses) {
     int total = 0;
     const int slotCount = GetContainerSlotCount(L, bagID);
     for (int slot = 1; slot <= slotCount; slot++) {
@@ -67,7 +96,7 @@ int CountInBag(void *L, int bagID, int targetItemID) {
             continue;
         if (Item::ID::FromCGItem(item) != targetItemID)
             continue;
-        total += GetStackCount(item);
+        total += GetItemContribution(item, includeUses);
     }
     return total;
 }
@@ -109,12 +138,12 @@ const uint8_t *ResolveByGuid(int type, uint64_t guid) {
 }
 
 // Walks linear slots `[firstSlot, lastSlot]` of `invMgr`'s GUID array
-// at `+0x04`, resolves each non-zero GUID as a TYPE_ITEM, sums stack
-// counts of items matching `targetItemID`. Used for both the main bank
-// (slots 39..62 in player invMgr) and individual bank-bag invMgrs
-// (slots 0..N-1).
+// at `+0x04`, resolves each non-zero GUID as a TYPE_ITEM, sums
+// contributions of items matching `targetItemID`. Used for both the
+// main bank (slots 39..62 in player invMgr) and individual bank-bag
+// invMgrs (slots 0..N-1).
 int CountInGuidArray(const uint8_t *invMgr, int firstSlot, int lastSlot,
-                      int targetItemID) {
+                      int targetItemID, bool includeUses) {
     if (invMgr == nullptr)
         return 0;
     auto *guidArray = *reinterpret_cast<const uint64_t *const *>(
@@ -128,7 +157,7 @@ int CountInGuidArray(const uint8_t *invMgr, int firstSlot, int lastSlot,
             continue;
         if (Item::ID::FromCGItem(item) != targetItemID)
             continue;
-        total += GetStackCount(item);
+        total += GetItemContribution(item, includeUses);
     }
     return total;
 }
@@ -140,7 +169,7 @@ int CountInGuidArray(const uint8_t *invMgr, int firstSlot, int lastSlot,
 //
 // Layout: bag invMgr+0x00 = max slot count (the bag's size); bag
 // invMgr+0x04 = its GUID array. Same shape as the player invMgr.
-int CountInBankBags(int targetItemID) {
+int CountInBankBags(int targetItemID, bool includeUses) {
     auto *playerInvMgr = PlayerInvMgr();
     if (playerInvMgr == nullptr)
         return 0;
@@ -168,16 +197,17 @@ int CountInBankBags(int targetItemID) {
         const int bagSlots = static_cast<int>(*reinterpret_cast<const uint32_t *>(bagInvMgr));
         if (bagSlots <= 0)
             continue;
-        total += CountInGuidArray(bagInvMgr, 0, bagSlots - 1, targetItemID);
+        total += CountInGuidArray(bagInvMgr, 0, bagSlots - 1, targetItemID,
+                                   includeUses);
     }
     return total;
 }
 
-// Walks the player's 19 equipment slots and accumulates stack counts
+// Walks the player's 19 equipment slots and accumulates contributions
 // for items matching `targetItemID`. Equipped items are part of the
 // player's total inventory in the modern API — `GetItemCount` of a
 // currently-equipped trinket returns 1, not 0.
-int CountEquipped(int targetItemID) {
+int CountEquipped(int targetItemID, bool includeUses) {
     int total = 0;
     for (int slot = 1; slot <= 19; slot++) {
         const uint8_t *item = Item::Location::ResolveEquipmentSlot(slot);
@@ -185,7 +215,7 @@ int CountEquipped(int targetItemID) {
             continue;
         if (Item::ID::FromCGItem(item) != targetItemID)
             continue;
-        total += GetStackCount(item);
+        total += GetItemContribution(item, includeUses);
     }
     return total;
 }
@@ -212,27 +242,26 @@ int CountEquipped(int targetItemID) {
 //     `VAR_BANK_GATE_GUID`, but the underlying data is always
 //     present.
 //
-// `includeUses` (charges-multiplier mode) is **accepted but currently
-// ignored**. Modern semantics: when true, multiplies each match by
-// the item's spell-charges count (so a stack of 5 wands × 50 charges
-// each → 250). Implementing this needs the `ITEM_FIELD_SPELL_CHARGES`
-// descriptor offset, which hasn't been verified empirically yet.
-// Most callers don't use this flag; for now, both `true` and `false`
-// produce identical results (stack counts only).
+// `includeUses` (arg 3, boolean) multiplies each match by the item's
+// `abs(SPELL_CHARGES[0])` — so a wand with 50 charges contributes 50
+// instead of 1. Items without charges contribute their plain stack
+// count (via the `or 1` neutralizer in `GetUsesPerItem`), so the flag
+// is a no-op for them.
 int __fastcall Script_C_Item_GetItemCount(void *L) {
     const int itemID = Item::Arg::ResolveItemID(L, 1);
     if (itemID <= 0) {
         Game::Lua::PushNumber(L, 0);
         return 1;
     }
-    // `includeBank` is arg 2. ToBoolean handles missing/nil cleanly
-    // (returns 0). We read it before the bag walk because the walk
-    // clobbers the Lua stack via SetTop(0) inside ResolveBag.
+    // Read both flags before the bag walk — `ResolveBag` clobbers
+    // the Lua stack via SetTop(0) and would invalidate any later
+    // `ToBoolean` reads.
     const bool includeBank = Game::Lua::ToBoolean(L, 2) != 0;
+    const bool includeUses = Game::Lua::ToBoolean(L, 3) != 0;
 
-    int total = CountEquipped(itemID);
+    int total = CountEquipped(itemID, includeUses);
     for (int bag = 0; bag <= 4; bag++)
-        total += CountInBag(L, bag, itemID);
+        total += CountInBag(L, bag, itemID, includeUses);
     if (includeBank) {
         // Direct GUID-array reads — bypass the bank gate so this works
         // without the bank window having ever been opened in the
@@ -240,8 +269,8 @@ int __fastcall Script_C_Item_GetItemCount(void *L) {
         total += CountInGuidArray(PlayerInvMgr(),
                                    Offsets::INVMGR_BANK_MAIN_FIRST_SLOT,
                                    Offsets::INVMGR_BANK_MAIN_LAST_SLOT,
-                                   itemID);
-        total += CountInBankBags(itemID);
+                                   itemID, includeUses);
+        total += CountInBankBags(itemID, includeUses);
     }
 
     Game::Lua::SetTop(L, 0);

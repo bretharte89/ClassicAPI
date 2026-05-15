@@ -482,6 +482,24 @@ enum Offsets {
     // different from the more common documented layout that places
     // STACK_COUNT after them. Trust the binary, not external docs.
     OFF_DESCRIPTOR_STACK_COUNT = 0x20,
+    // ITEM_FIELD_SPELL_CHARGES[0] — first of five signed dwords. Field
+    // indices 10..14 (fields 8..9 are STACK_COUNT and DURATION; field 15
+    // is FLAGS at +0x3C, which gives a tight sandwich around the
+    // SPELL_CHARGES range). Derived from the descriptor-field name table
+    // builder at `FUN_0047f840`, which consumes a list of `{ name_ptr,
+    // ?, count, ?, ? }` entries starting at `0x0083a328` (14 items) —
+    // summing the `count` field in declaration order gives each name's
+    // starting dword index. STACK_COUNT/FLAGS/DURABILITY/MAX_DURABILITY
+    // landing on their known offsets cross-checks the derivation. The
+    // tooltip "X Charges" text in `FUN_0052b650` reads from the
+    // *enchantment*-charges range at +0x48 (slot N + 0x8) which is a
+    // different field (ITEM_FIELD_ENCHANTMENT, fields 16..36).
+    //
+    // Value is signed: positive = rechargeable (wand recovers charges
+    // on use? no — they decrement; positive means "doesn't destroy on
+    // last use"). Negative = single-use, destroyed when count hits 0.
+    // `GetItemCount(includeUses=true)` uses abs() for the multiplier.
+    OFF_DESCRIPTOR_SPELL_CHARGES_0 = 0x28,
     // ITEM_FIELD_DURABILITY (current) and ITEM_FIELD_MAXDURABILITY (max) live
     // adjacent to each other in the descriptor as plain dwords. Verified in
     // `Script_GetInventoryItemBroken` (`0x004C8590`): after resolving the

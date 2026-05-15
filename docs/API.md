@@ -1770,9 +1770,10 @@ count = C_Item.GetItemCount(itemInfo [, includeBank [, includeUses]])
   no name → ID resolver).
 - `includeBank` *(optional, default false)* — also walk bank slots
   (bag `-1` for the main bank, bags `5..10` for bank-bag slots).
-- `includeUses` *(optional, default false)* — **accepted but
-  currently ignored.** Returns the same value as `false` regardless.
-  See note below.
+- `includeUses` *(optional, default false)* — when `true`, multiplies
+  each match by the item's spell-charges count. A wand with 50 charges
+  contributes 50 instead of 1. Items without charges pass their plain
+  stack count through unchanged, so the flag is a no-op for them.
 
 ```lua
 local n = C_Item.GetItemCount(2589)               -- Linen Cloth in bags + equipped
@@ -1782,16 +1783,11 @@ local n = C_Item.GetItemCount("item:2589")        -- string form works too
 -- Equipped items count toward the total:
 local trinketID = GetInventoryItemID("player", INVSLOT_TRINKET1)
 C_Item.GetItemCount(trinketID)                    -- 1
-```
 
-> **`includeUses` not yet supported.** Modern semantics: when `true`,
-> multiplies each match by the item's spell-charges count (a stack
-> of 5 wands × 50 charges each → 250). Implementing this needs the
-> `ITEM_FIELD_SPELL_CHARGES` descriptor offset, which hasn't been
-> verified empirically yet. The arg is accepted for API parity so
-> backported code doesn't break, but currently both `true` and
-> `false` produce the same number (sum of stack counts). Track
-> [TODO #28] for charges support.
+-- includeUses multiplies by charges for charged items:
+C_Item.GetItemCount(wandID, false, true)          -- 50 for one 50-charge wand
+C_Item.GetItemCount(linenID, false, true)         -- same as stack count (no charges)
+```
 
 > **Bank works cold — no banker visit required.** The 1.12 server
 > sends bank inventory at login alongside the rest of the player's

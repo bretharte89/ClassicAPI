@@ -459,7 +459,7 @@ slots 1..19 via the same `Item::Location::ResolveEquipmentSlot` chain
 the existing accessors use, then `Item::ID::FromCGItem` for each one
 and compare to the input itemID. Returns true on first match.
 
-## ~~28. `C_Item.GetItemCount(itemInfo, [includeBank], [includeUses])`~~ — DONE (partial — `includeUses` deferred)
+## ~~28. `C_Item.GetItemCount(itemInfo, [includeBank], [includeUses])`~~ — DONE
 
 Total count of an item across the player's bags (and optionally bank).
 Walks bags 0..4 always (live walk via `Item::Location::ResolveBag`).
@@ -492,13 +492,16 @@ layout (which has STACK_COUNT at index 0xE = +0x38). Trust the
 binary: 0x20 is what the engine itself reads, and our test (cross-
 checked against a manual `GetContainerItemInfo` walk) confirms it.
 
-`includeUses` (charges-multiplier mode) is **accepted but currently
-ignored** — both `true` and `false` produce the same value. Modern
-semantics multiply each match by the item's spell-charges count (a
-stack of 5 wands × 50 charges → 250). To finish: verify
-`ITEM_FIELD_SPELL_CHARGES` offset (suspected +0x40 = field index
-0x10 in 1.12's layout) by reading from a charged item's descriptor
-and confirming against the cast counter.
+`includeUses` reads `ITEM_FIELD_SPELL_CHARGES[0]` (signed dword at
+descriptor +0x28) and multiplies each match by `max(abs(charges), 1)`
+— so a wand with 50 charges contributes 50 instead of 1, while
+non-charge items pass their plain stack count through unchanged. The
+offset was derived from the descriptor field-name table builder at
+`FUN_0047f840`, which iterates `{ name_ptr, ?, count, ?, ? }` entries
+at `0x0083a328` — summing the counts in declaration order puts
+SPELL_CHARGES at field index 10 (fields 10..14, +0x28..+0x38).
+STACK_COUNT/FLAGS/DURABILITY landing on their known offsets
+cross-checks the derivation.
 
 See [src/item/Count.cpp](src/item/Count.cpp).
 
