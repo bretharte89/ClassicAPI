@@ -494,6 +494,17 @@ int __fastcall ScanCallback(void * /*context*/, void * /*edx*/, uint64_t guid) {
 }
 
 void ScanVisibleObjects() {
+    // The iterator's prologue is `mov eax, [VAR_LOCAL_PLAYER_PTR]` +
+    // unconditional `mov ebx, [eax+0xAC]` — at the glue / character-
+    // select screen the global is NULL and the engine crashes on the
+    // deref. Gate the call ourselves rather than relying on other
+    // DLLs' hooks to catch it; we've seen VanillaMinimapTracking's
+    // guard not fire when ClassicAPI and VMT are both loaded and our
+    // path through `FrameRegisterEvent_h → Tick → MaybeScan` reaches
+    // the iterator during glue Lua script load.
+    if (*reinterpret_cast<void *volatile *>(
+            static_cast<uintptr_t>(Offsets::VAR_LOCAL_PLAYER_PTR)) == nullptr)
+        return;
     auto enumerate = reinterpret_cast<EnumVisibleObjects_t>(
         static_cast<uintptr_t>(Offsets::FUN_CLNT_OBJ_MGR_ENUM_VISIBLE_OBJECTS));
     enumerate(reinterpret_cast<void *>(&ScanCallback), nullptr);
