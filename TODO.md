@@ -1612,124 +1612,110 @@ SetTable(L, 1)` per record. `SetTable` consumes both stack values
 so the table sits alone at idx 1 throughout the loop. Returns 1
 to push the (same) table back to Lua.
 
-## 59. `C_Item.EquipItemByName` cursor-free path — DEFERRED, partial
+## ~~59. `C_Item.EquipItemByName` cursor-free path~~ — DONE
 
-Currently shipped in [src/item/Equipment.cpp](src/item/Equipment.cpp)
-as a cursor-state guard: refuses to operate when `CursorHasItem()` is
-true rather than clobber the held item. Modern WoW's `EquipItemByName`
-silently preserves the cursor by routing through an engine-internal
-"swap by GUID" helper that doesn't touch cursor state. The 1.12 engine
-has the same primitive at the binary level but it's not reachable from
-addon space without significant additional reverse-engineering.
+The current implementation in
+[src/item/Equipment.cpp](src/item/Equipment.cpp) is a cursor-state
+guard: refuses to operate when `CursorHasItem()` is true. Modern
+WoW's `EquipItemByName` silently preserves the cursor by routing
+through an engine-internal "swap by GUID" helper. With Ghidra on
+the right binary we found that helper.
 
-### Why we can't just call the obvious helper
+### The primitive: `FUN_005E0C40`
 
-A standalone-looking CMSG_SWAP_INV_ITEM (opcode 0x10D) builder exists
-at `0x005E0B50` — `int __stdcall(int slot1, int slot2)`, builds a
-local Packet, writes opcode + 2 slot bytes, ends with an indirect
-call through vtable `0x007FF9E4`. **It's dead code.** Verified two
-ways:
+`Script_EquipCursorItem` at `0x00489660` calls `FUN_005E0C40` —
+the engine's own swap-and-send function. Signature decoded by
+reading the call site and the function body:
 
-- Zero callers in the binary (full xref scan). The function entry
-  is intact but nothing reaches it.
-- The vtable at `0x007FF9E4` is a memory-buffer vtable, NOT a
-  network-packet vtable. `vtable+4 = 0x00417BD0` reads as a "Send"
-  by name pattern but its body just calls `SMemFree(buffer)` —
-  it's a destructor, not a transmitter.
-
-Calling `0x005E0B50` directly was tested empirically: with that
-path active, `EquipItemByName(item, slot)` produced no observable
-effect. Consistent with the dead-code analysis — the function
-builds a packet in memory and immediately frees it.
-
-### Where the production CMSG_SWAP_INV_ITEM actually goes
-
-Real `0x10D` traffic flows through a different chain:
-
-```
-0x501130  gate function (10 callers; reads cursor-state globals)
-  ↓
-0x468460  generic action dispatcher (1090 total callers, 538 with ECX=0x10)
-  ↓
-0x464870  thin 2-arg wrapper
-  ↓
-0x464890  inner (GCC-style stack-aligned prologue, complex body)
+```c
+void __thiscall FUN_005E0C40(
+    CGPlayer *this,
+    u32 srcItemGuidLo, u32 srcItemGuidHi,
+    u32 srcContainerGuidLo, u32 srcContainerGuidHi,
+    u32 srcLinearSlot,
+    u32 dstContainerGuidLo, u32 dstContainerGuidHi,
+    u32 dstLinearSlot,
+    int flag);                 // 0 = normal path
 ```
 
-Two structural traps caught me:
+Internal behavior:
 
-1. **The `edx = 0x0084ECA0` arg looks like a class table.** It's not —
-   it's a `__FILE__` debug string (`"E:\build\buildWoW\WoW\Source\Ui\
-   QuestFrame.cpp"`). Just metadata for engine logging.
-2. **`0x468460` with `ECX=0x10` is called 538 times across the binary
-   with 100+ distinct "opcode" values pushed.** It's a generic
-   action register, not a packet send. The actual transmission is
-   deeper.
+1. Validates source/dest containers (player invMgr vs CGContainer
+   bag) — looks up `FUN_00468460` to resolve container by GUID.
+2. Picks the opcode based on swap type:
+   - **`0x10D` (`CMSG_SWAP_INV_ITEM`)** — same-container swap.
+     Payload `{src_slot, dst_slot}`. Used when both src and dst
+     resolve to the player's direct invMgr.
+   - **`0x10C` (`CMSG_AUTOEQUIP_ITEM`)** — cross-container swap.
+     Payload `{dst_bag, dst_slot, src_bag, src_slot}`. Used when
+     src or dst is in a CGContainer (equipped bag).
+3. Writes the packet via `FUN_00418190(opcode)` + `FUN_00418070(byte)…`
+   into the same buffer at `PTR_LAB_007FF9E4` that every real
+   network packet flows through.
+4. Sends via `FUN_005AB630` — **the actual send call the previous
+   investigation couldn't find**.
 
-### State coupling that prevents direct invocation
+### Why this bypasses the cursor
 
-`0x501130` reads slot values from globals `[0xBE0810]` (src) and
-`[0xBE0814]` (dst). These are populated by upstream cursor machinery
-— writes traced to:
+`Script_EquipCursorItem` reads cursor state via `FUN_00494C80`
+before passing it to `FUN_005E0C40`, but `FUN_005E0C40` itself
+neither reads nor writes the cursor globals at `[0xBE0810]` /
+`[0xBE0814]`. The dead-code packet builder at `0x005E0B50` was
+unrelated; the real production path is just `FUN_005E0C40`. We
+hand it the right args and it sends the packet — no cursor touch.
 
-- `0x500D86` / `0x500D88` — cleanup path of an "item action" handler
-  (writes both globals from struct fields `[ebx+8]` / `[ebx+0xC]`)
-- `0x501201` / `0x501207` — internal to `0x501130` itself
+The previously-identified gate at `0x501130` was the **right-click
+"use item from cursor"** path (opcode `0x276`), not the swap path.
+Different concern entirely.
 
-To call `0x501130` from outside, we'd need to set up the action-
-handler struct AND the globals. Reproducing that state machine
-without breaking it is the bottleneck.
+### Linear-slot encoding
 
-### What's needed to finish
+The engine's linear slot:
 
-A focused RE pass to find the actual `Connection::Send(packet,
-size)` (or equivalent) at the bottom of the packet pipeline. Once
-that's identified, build CMSG_SWAP_INV_ITEM bytes ourselves:
+| Linear slot | Container | What |
+|---:|---|---|
+| `0..18`   | player invMgr | paperdoll slots 1..19 (subtract 1 from Lua slot) |
+| `19..22`  | player invMgr | equipped bag containers (bag IDs 1..4) |
+| `23..38`  | player invMgr | backpack (bag ID 0) contents, 1-based slot S → linear = 22+S |
+| `0..N-1`  | bag CGContainer | slot inside the bag (subtract 1 from Lua slot) |
 
-```
-[opcode: u32 0x10D]  (or u16 + size header — verify by sniffing
-                      what the engine actually transmits)
-[dst_slot: u8]
-[src_slot: u8]
-```
+For destination paperdoll equip: `dstContainer = player`, `dstSlot = paperdollSlot - 1`.
 
-Linear-slot encoding (already documented in `Offsets.h`):
-- `0..18`  paperdoll equipment (head..tabard)
-- `19..22` equipped bag containers
-- `23..38` backpack contents
-- For backpack source from Lua bag/slot: `linearSrc = 22 + slot`
-- For dst equipment slot: `linearDst = dstSlot - 1`
+For source:
 
-Items inside equipped bags (bagID 1..4) need CMSG_SWAP_ITEM (0x10E)
-instead — `[srcBag, srcSlot, dstBag, dstSlot]` payload, where
-`dstBag = 0xFF` for paperdoll. Add when we have the send path
-identified.
+- Item in paperdoll slot N → `srcContainer = player`, `srcSlot = N - 1`
+- Item in backpack slot S (bagID 0) → `srcContainer = player`, `srcSlot = 22 + S`
+- Item in equipped bag B (bagID 1..4) slot S → `srcContainer = bag GUID`,
+  `srcSlot = S - 1`. Bag GUID read off its CGItem instance block at `+0x8`.
 
-### Risk if we get it wrong
+### Risk assessment
 
-Bad opcodes or malformed payloads can disconnect the client mid-
-session ("disconnected from server"). Worth packet-sniffing a real
-drag-and-drop equip via Wireshark or similar before committing —
-don't trust the static analysis alone for protocol details.
+The previous TODO worried about hand-built packets disconnecting
+the client. **We never build a packet** — we hand off high-level
+args and the engine's own builder/sender runs verbatim. Same code
+path drag-and-drop equip uses. Only risk is bad GUIDs / slot
+indices, validated client-side before the call.
 
 ### Cross-reference
 
-2.4.3 has a clean engine-internal helper at `0x5E8310`
-(`ItemMgr::EquipByGUID` — `__thiscall(this=invMgr, guidLo, guidHi,
-dstSlot, 0)`) that bundles the find-and-move cleanly, called from
-`Script_EquipItemByName` at `0x4A0D80`. 1.12's equivalent (if it
-exists at all as a single function) hasn't surfaced through xref or
-pattern search. The 2.4.3 disassembly is in the conversation
-history; useful as a reference for what the bundled call looked
-like before Blizzard refactored.
+2.4.3 has `ItemMgr::EquipByGUID` at `0x5E8310` (`__thiscall(this=invMgr,
+guidLo, guidHi, dstSlot, 0)`) which bundles find-by-GUID + swap.
+1.12's equivalent is split: find-by-GUID is our existing
+`Item::Location::FindByGUID` + `Locations::FindGUID`, swap is
+`FUN_005E0C40`.
 
-### Status
+### Implementation plan
 
-Cursor-guard implementation ships. Tested with hearthstone-on-
-cursor + `EquipItemByName("Robes of Antiquity", 5)` — refuses
-gracefully, cursor preserved. To work around: caller drops the
-cursor first (`ClearCursor()` or `PutItemInBag(0)`), then calls
-`EquipItemByName`.
+[src/item/Equipment.cpp](src/item/Equipment.cpp) `Script_C_Item_EquipItemByName`:
+
+1. Find the item by name (existing `FindItemInBags`).
+2. Resolve source location via the table above → `(containerGuid, linearSlot)`.
+3. Compute target paperdoll slot (explicit arg, or auto-pick from
+   `m_inventoryType` for the no-slot form).
+4. Read player GUID off the CGPlayer instance block at `+0x8`.
+5. Call `FUN_005E0C40(player, itemGuid, srcContainer, srcSlot,
+   playerGuid, playerGuid, dstSlot-1, 0)`.
+6. Drop the cursor-guard. Cursor state is now irrelevant.
 
 ## 60. `GameTooltip:AddSpellByID(spellID)` — easy/medium
 
@@ -2475,7 +2461,7 @@ addon code copy-pasted from modern FrameXML's
 `EQUIPMENT_SWAP_FINISHED(success, setID)` at the end of
 `UseEquipmentSet`. See `docs/API.md` and `src/equipmentset/`.
 
-## 73. `C_EquipmentSet.UseEquipmentSet` — proper swap-cycle resolution
+## ~~73. `C_EquipmentSet.UseEquipmentSet` — proper swap-cycle resolution~~ — DONE
 
 `UseEquipmentSet` currently walks slots in order and does a
 pickup→equip pair per item. If two items in the set want each other's
@@ -2487,19 +2473,51 @@ which our cleanup `ClearCursor` either drops back or routes to a free
 bag slot. Re-running `UseEquipmentSet` finishes the job, but it
 shouldn't take two calls.
 
-4.3.4 native fixes this with a temp-bag-slot shuffle: when a swap
-would race, it parks the cursor item in a free bag slot, picks up
-the target, equips, then re-fetches the parked item. The algorithm
-lives in `EquipmentManager_EquipItemByLocation` / the
-`EQUIPMENTMANAGER_INVENTORYSLOTS` lock-tracking machinery in modern
-FrameXML.
+### Solution: same primitive as #59
 
-Reasonable plan: port the modern Lua-side dependency-graph approach
-into C++. Build a slot→source map, detect cycles (two items want
-each other's slots), and for each cycle do the temp-bag-slot
-shuffle. ~50 LOC.
+`FUN_005E0C40` (decoded in #59) is the engine's atomic swap-and-send.
+Replacing the pickup+equip pair with a direct `FUN_005E0C40` call
+fixes the cycle case naturally: each swap is one server packet that
+atomically exchanges two slots. The classic 2-cycle "A in 11, B in
+12, want A in 12, B in 11" resolves in a single call —
+`FUN_005E0C40(player, A, player, 10, player, player, 11, 0)` sends
+opcode `0x10D {src=10, dst=11}` and the server swaps both slots.
 
-For now, the known limitation is documented in `docs/API.md`.
+Longer chains (3+ items rotating) are rare with 1.12's equipment
+slot set — the realistic conflicts are 2-cycles between paired
+slots (rings 11/12, trinkets 13/14, weapons 16/17). One swap each.
+
+For sequential non-cycle moves (item from bag → empty slot), the
+swap is still atomic and doesn't touch the cursor. The catch is
+that consecutive `FUN_005E0C40` calls in the same frame queue at
+the server before any inventory update arrives — so subsequent
+iterations see stale local state. For independent moves this is
+fine (each swap target is different); for chains it can produce
+no-op or undo behavior.
+
+### Implementation plan
+
+[src/equipmentset/Api.cpp](src/equipmentset/Api.cpp)
+`Script_UseEquipmentSet`:
+
+1. Drop the `ClearCursor()` calls at start and end — irrelevant now.
+2. Replace the per-slot pickup+equip pair with a single
+   `FUN_005E0C40` call:
+   - srcItem GUID: read off the CGItem at the resolved
+     `Locations::FindGUID` location
+   - srcContainer + srcLinearSlot: from `loc` decode per the table
+     in #59
+   - dstContainer = player, dstSlot = `targetSlot - 1`
+3. Keep the existing skip-conditions: GUID empty/ignored, already
+   in target slot, in bank, etc.
+
+The bank-skip stays: vanilla server rejects equip-from-bank, and
+no client-side workaround changes that.
+
+Same shared helper between #59 and #73: an `Item::Swap::EquipByGuid`
+or similar that takes (CGItem*, dstPaperdollSlot) and handles the
+container-guid + linear-slot resolution. Implement once, use in
+both call sites.
 
 ## ~~74. `EQUIPMENT_SWAP_PENDING` event~~ — DONE
 

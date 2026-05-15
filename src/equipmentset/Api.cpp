@@ -35,6 +35,7 @@
 #include "Offsets.h"
 #include "Set.h"
 #include "event/Custom.h"
+#include "item/Swap.h"
 
 #include <cstdint>
 #include <cstring>
@@ -82,25 +83,6 @@ void PushTableEntry(void *L, int key, double value) {
     Game::Lua::PushNumber(L, static_cast<double>(key));
     Game::Lua::PushNumber(L, value);
     Game::Lua::SetTable(L, -3);
-}
-
-// Dispatches a `Script_*`-style helper that reads its args off the
-// Lua stack. We blow the stack first, push the args ourselves, and
-// then invoke. The return value of the helper is discarded; we don't
-// expose the per-call success bit upstream (modern doesn't either).
-void DispatchScriptFn(void *L, uintptr_t fnAddr, int arg1) {
-    Game::Lua::SetTop(L, 0);
-    Game::Lua::PushNumber(L, static_cast<double>(arg1));
-    using Fn_t = int(__fastcall *)(void *);
-    reinterpret_cast<Fn_t>(fnAddr)(L);
-}
-
-void DispatchScriptFn(void *L, uintptr_t fnAddr, int arg1, int arg2) {
-    Game::Lua::SetTop(L, 0);
-    Game::Lua::PushNumber(L, static_cast<double>(arg1));
-    Game::Lua::PushNumber(L, static_cast<double>(arg2));
-    using Fn_t = int(__fastcall *)(void *);
-    reinterpret_cast<Fn_t>(fnAddr)(L);
 }
 
 // 1.12 has no concept of "uncomingable equipment-set support", so
@@ -377,18 +359,20 @@ int __fastcall Script_EquipmentSetContainsLockedItems(void *L) {
     return 1;
 }
 
-// Walks the set and dispatches pickup→equip pairs for any item that
-// isn't already in its target slot. Items currently in the main bank
-// or bank bags are skipped silently — vanilla won't let you equip
-// directly from the bank, so the user needs to retrieve them first.
+// Walks the set and dispatches one atomic server-side swap per item
+// that isn't already in its target slot. Items currently in the main
+// bank or bank bags are skipped silently — vanilla rejects equip
+// from bank slots server-side, so the user needs to retrieve them
+// first.
 //
-// We don't attempt the swap-shuffle logic the 4.3.4 native does (which
-// handled the "two items want each other's slots" cycle by dropping
-// the first one in a temporary bag slot). For v1, if the set requires
-// a swap chain, the cursor will end up empty after the call but some
-// items may not have moved — re-run `UseEquipmentSet` and the rest
-// will settle into place. Returns `true` if the call ran to completion,
-// `false` if the set doesn't exist.
+// Cycle handling: with cursor-based pickup+equip, swap cycles (e.g.
+// rings A↔B wanting each other's slots) needed a temp-bag-slot
+// shuffle. We now call the engine's own `FUN_INVENTORY_SWAP` per
+// item, which sends opcode 0x10D / 0x10C through the engine's
+// packet pipeline — an atomic server-side swap. A two-cycle resolves
+// in one call (server swaps both slots from one packet); the cursor
+// is never touched. See TODO #59 for the primitive's decoding and
+// TODO #73 for the cycle-resolution rationale.
 int __fastcall Script_UseEquipmentSet(void *L) {
     const uint32_t setID = ArgSetID(L, 1);
     const Set *s = Data::FindByID(setID);
@@ -401,17 +385,11 @@ int __fastcall Script_UseEquipmentSet(void *L) {
     }
 
     // Fire PENDING right after the set-exists check, before any of
-    // the pickup/equip work. Addon UI can use this to gate swap-in-
-    // progress visuals.
+    // the swap work. Addon UI can use this to gate swap-in-progress
+    // visuals.
     const int pendingEvt = Event::Custom::Lookup(kSwapPendingEvent);
     if (pendingEvt >= 0)
         Event::Custom::Fire_D(pendingEvt, static_cast<int>(setID));
-
-    // Clear any preexisting cursor state — otherwise our PickupX
-    // calls will swap with whatever's held instead of lifting.
-    Game::Lua::SetTop(L, 0);
-    reinterpret_cast<int(__fastcall *)(void *)>(
-        Offsets::FUN_SCRIPT_CLEAR_CURSOR)(L);
 
     // Snapshot the set's items into a local — Locations::FindGUID
     // can shuffle the Lua stack, and we've already passed validation.
@@ -433,29 +411,23 @@ int __fastcall Script_UseEquipmentSet(void *L) {
             (loc & LOC_SLOT_MASK) == targetSlot)
             continue;
 
-        // In bank (main or bank-bag) — can't equip from there.
+        // In bank (main or bank-bag) — server rejects equip-from-bank.
         if (loc & LOC_BANK)
+            continue;
+
+        const uint8_t *item = Locations::ResolveItemByGUID(g);
+        if (item == nullptr)
             continue;
 
         if (loc & LOC_BAGS) {
             const int srcBag = (loc >> LOC_BAG_SHIFT) & 0xFF;
             const int srcSlot = loc & LOC_SLOT_MASK;
-            DispatchScriptFn(L, Offsets::FUN_SCRIPT_PICKUP_CONTAINER_ITEM,
-                             srcBag, srcSlot);
+            Item::Swap::FromBag(item, srcBag, srcSlot, targetSlot);
         } else {
             const int srcSlot = loc & LOC_SLOT_MASK;
-            DispatchScriptFn(L, Offsets::FUN_SCRIPT_PICKUP_INVENTORY_ITEM,
-                             srcSlot);
+            Item::Swap::FromPaperdoll(item, srcSlot, targetSlot);
         }
-        DispatchScriptFn(L, Offsets::FUN_SCRIPT_EQUIP_CURSOR_ITEM, targetSlot);
     }
-
-    // Cursor cleanup: any item still on the cursor (swap couldn't
-    // place) goes back to where the engine routes it (usually the
-    // first free bag slot).
-    Game::Lua::SetTop(L, 0);
-    reinterpret_cast<int(__fastcall *)(void *)>(
-        Offsets::FUN_SCRIPT_CLEAR_CURSOR)(L);
 
     const int evt = Event::Custom::Lookup(kSwapFinishedEvent);
     if (evt >= 0)

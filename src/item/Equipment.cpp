@@ -16,6 +16,7 @@
 #include "item/Arg.h"
 #include "item/ID.h"
 #include "item/Location.h"
+#include "item/Swap.h"
 
 #include <cstdint>
 #include <string.h>
@@ -184,12 +185,13 @@ int GetContainerSlotCount(void *L, int bagID) {
 }
 
 // Walks bags 0..4 looking for an item matching `arg`. On hit, sets
-// `*outBag` / `*outSlot` and returns true.
+// `*outBag` / `*outSlot` / `*outItem` and returns true.
 //
 // itemID match is direct; name match peeks the item-cache record's
 // `m_name[0]` and compares case-insensitively. Stomps the Lua stack
 // per the helpers it calls.
-bool FindItemInBags(void *L, const Item::Arg::Resolved &arg, int *outBag, int *outSlot) {
+bool FindItemInBags(void *L, const Item::Arg::Resolved &arg, int *outBag, int *outSlot,
+                    const uint8_t **outItem) {
     for (int bag = 0; bag <= 4; ++bag) {
         const int slotCount = GetContainerSlotCount(L, bag);
         for (int slot = 1; slot <= slotCount; ++slot) {
@@ -203,6 +205,7 @@ bool FindItemInBags(void *L, const Item::Arg::Resolved &arg, int *outBag, int *o
                 if (id == arg.itemID) {
                     *outBag = bag;
                     *outSlot = slot;
+                    *outItem = item;
                     return true;
                 }
                 continue;
@@ -216,6 +219,7 @@ bool FindItemInBags(void *L, const Item::Arg::Resolved &arg, int *outBag, int *o
             if (_stricmp(name, arg.name) == 0) {
                 *outBag = bag;
                 *outSlot = slot;
+                *outItem = item;
                 return true;
             }
         }
@@ -225,21 +229,27 @@ bool FindItemInBags(void *L, const Item::Arg::Resolved &arg, int *outBag, int *o
 
 // `C_Item.EquipItemByName(itemInfo [, dstSlot])` — finds the first
 // item in the player's bags matching `itemInfo` (itemID, link, or
-// name) and equips it. With `dstSlot` (1..19 character-pane index),
-// equips to that slot specifically; without, the engine auto-picks.
+// name) and equips it.
 //
-// Returns nothing. Silently no-ops on:
-//   - bad/missing input
-//   - item not in bags (already-equipped items aren't moved — modern
-//     API behavior)
-//   - the engine refusing the equip (combat, item locked, type
-//     mismatch with `dstSlot`, etc.)
+// Two paths:
 //
-// Implementation dispatches to `Script_PickupContainerItem` then
-// `Script_AutoEquipCursorItem` / `Script_EquipCursorItem`. Same
-// pattern `Item::Hearthstone` uses for `UseContainerItem` — delegates
-// to the engine's secure-action path so combat/lockdown/lock states
-// are handled the same way they are for direct Lua calls.
+// - **Explicit `dstSlot`** (1..19): cursor-free direct swap. Calls
+//   the engine's own `FUN_INVENTORY_SWAP` (the helper
+//   `Script_EquipCursorItem` dispatches to after resolving cursor
+//   state). No pickup, no cursor manipulation — cursor state is
+//   untouched. Wraps the call in `Item::Swap::FromBag`, which
+//   handles the (bagID, slotInBag) → (containerGuid, linearSlot)
+//   encoding internally.
+//
+// - **No `dstSlot`** (engine auto-picks slot from INVTYPE): falls
+//   back to the cursor-pickup + `AutoEquipCursorItem` path because
+//   1.12's `Script_AutoEquipCursorItem` reads the slot decision off
+//   cursor state. For safety this branch refuses to operate when
+//   `CursorHasItem()` is already true.
+//
+// Returns nothing. Silently no-ops on bad/missing input, item not
+// found in bags, or engine refusing the swap (combat lockdown,
+// item-locked flag, type mismatch).
 int __fastcall Script_C_Item_EquipItemByName(void *L) {
     const auto arg = Item::Arg::Resolve(L, 1);
     if (arg.itemID <= 0 && arg.name == nullptr) {
@@ -249,26 +259,38 @@ int __fastcall Script_C_Item_EquipItemByName(void *L) {
     const bool hasDstSlot = Game::Lua::IsNumber(L, 2);
     const int dstSlot = hasDstSlot ? static_cast<int>(Game::Lua::ToNumber(L, 2)) : 0;
 
-    // Refuse the swap if the player's cursor is holding something —
-    // the dispatch path below uses PickupContainerItem internally,
-    // which would clobber the held item by swapping it into the
-    // source bag slot. Better to no-op than to silently swap
-    // someone's hearthstone into wherever the source weapon was.
     using ScriptFn_t = int(__fastcall *)(void *L);
-    Game::Lua::SetTop(L, 0);
-    auto cursorHasItem = reinterpret_cast<ScriptFn_t>(Offsets::FUN_SCRIPT_CURSOR_HAS_ITEM);
-    cursorHasItem(L);
-    if (Game::Lua::ToBoolean(L, -1) != 0) {
+
+    // For the no-slot (auto-pick) path only: cursor guard. The
+    // pickup we're about to do would clobber whatever's currently
+    // held; better to no-op. Explicit-slot path doesn't touch the
+    // cursor so this check doesn't apply.
+    if (!hasDstSlot) {
         Game::Lua::SetTop(L, 0);
-        return 0;
+        auto cursorHasItem =
+            reinterpret_cast<ScriptFn_t>(Offsets::FUN_SCRIPT_CURSOR_HAS_ITEM);
+        cursorHasItem(L);
+        if (Game::Lua::ToBoolean(L, -1) != 0) {
+            Game::Lua::SetTop(L, 0);
+            return 0;
+        }
+        Game::Lua::SetTop(L, 0);
     }
-    Game::Lua::SetTop(L, 0);
 
     int bag = -1, slot = -1;
-    if (!FindItemInBags(L, arg, &bag, &slot)) {
+    const uint8_t *cgItem = nullptr;
+    if (!FindItemInBags(L, arg, &bag, &slot, &cgItem)) {
         return 0;
     }
 
+    if (hasDstSlot) {
+        // Cursor-free direct swap.
+        Item::Swap::FromBag(cgItem, bag, slot, dstSlot);
+        return 0;
+    }
+
+    // Auto-slot path: pickup → AutoEquip via the engine's existing
+    // cursor-state machinery.
     Game::Lua::SetTop(L, 0);
     Game::Lua::PushNumber(L, static_cast<double>(bag));
     Game::Lua::PushNumber(L, static_cast<double>(slot));
@@ -276,14 +298,8 @@ int __fastcall Script_C_Item_EquipItemByName(void *L) {
     pickup(L);
 
     Game::Lua::SetTop(L, 0);
-    if (hasDstSlot) {
-        Game::Lua::PushNumber(L, static_cast<double>(dstSlot));
-        auto equip = reinterpret_cast<ScriptFn_t>(Offsets::FUN_SCRIPT_EQUIP_CURSOR_ITEM);
-        equip(L);
-    } else {
-        auto equip = reinterpret_cast<ScriptFn_t>(Offsets::FUN_SCRIPT_AUTO_EQUIP_CURSOR_ITEM);
-        equip(L);
-    }
+    auto equip = reinterpret_cast<ScriptFn_t>(Offsets::FUN_SCRIPT_AUTO_EQUIP_CURSOR_ITEM);
+    equip(L);
     return 0;
 }
 

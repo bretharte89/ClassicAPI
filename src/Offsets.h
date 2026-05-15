@@ -77,6 +77,38 @@ enum Offsets {
     // the item isn't in the player's bag/equipment.
     FUN_GAMETOOLTIP_BUILD_ITEM_LINK = 0x0052AE00,
 
+    // Engine's inventory swap-and-send. Same primitive
+    // `Script_EquipCursorItem` (0x00489660) uses after the cursor's
+    // source location has been resolved. Sends opcode 0x10D
+    // (CMSG_SWAP_INV_ITEM) for same-container swaps or 0x10C
+    // (CMSG_AUTOEQUIP_ITEM) for cross-container, then runs the
+    // packet through the engine's own send pipeline at FUN_005AB630.
+    //
+    // Signature:
+    //   void __thiscall(
+    //     CGPlayer *this,
+    //     u32 srcItemGuidLo, u32 srcItemGuidHi,
+    //     u32 srcContainerGuidLo, u32 srcContainerGuidHi,
+    //     u32 srcLinearSlot,
+    //     u32 dstContainerGuidLo, u32 dstContainerGuidHi,
+    //     u32 dstLinearSlot,
+    //     int flag);   // 0 = normal path
+    //
+    // Linear-slot encoding for sources/dests in player invMgr:
+    //   0..18  paperdoll (1-based slot - 1)
+    //   19..22 equipped bag containers (bag IDs 1..4 themselves)
+    //   23..38 backpack contents (1-based bag-0 slot S → 22 + S)
+    // For sources in a CGContainer (equipped bag B = 1..4), the
+    // container GUID is the bag's own GUID and srcLinearSlot is
+    // 0-based within that bag (1-based Lua slot - 1).
+    //
+    // This call neither reads nor writes the cursor-state globals at
+    // [0xBE0810] / [0xBE0814]; cursor visibility is purely a side
+    // effect of the cursor-pickup path that normally precedes it.
+    // Calling this directly produces a server-side swap with no
+    // client-side cursor manipulation.
+    FUN_INVENTORY_SWAP = 0x005E0C40,
+
     // Registers a single global Lua function. __fastcall(name, func).
     FUN_FRAMESCRIPT_REGISTER_FUNCTION = 0x00704120,
 

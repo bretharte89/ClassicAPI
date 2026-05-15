@@ -1,0 +1,47 @@
+// This file is part of ClassicAPI.
+//
+// ClassicAPI is free software: you can redistribute it and/or modify it under the terms
+// of the GNU Lesser General Public License as published by the Free Software Foundation, either
+// version 3 of the License, or (at your option) any later version.
+//
+// ClassicAPI is distributed in the hope that it will be useful, but WITHOUT ANY
+// WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+// PURPOSE. See the GNU Lesser General Public License for more details.
+//
+// You should have received a copy of the GNU Lesser General Public License along with
+// ClassicAPI. If not, see <https://www.gnu.org/licenses/>.
+
+#pragma once
+
+namespace Item::Swap {
+
+// Sends a server-side swap to equip `cgItem` into the given paperdoll
+// slot, by way of the engine's own packet builder/sender at
+// FUN_INVENTORY_SWAP (0x005E0C40). Same code path drag-and-drop equip
+// uses — the cursor is never read or written.
+//
+// Variants differ only in how they encode the *source* location:
+//
+// - `FromBag(item, bagID, slotInBag, dst)` — item currently in
+//   container `bagID` at 1-based `slotInBag`. `bagID = 0` is the
+//   backpack (linear-slot 22 + slotInBag, container = player);
+//   `bagID = 1..4` is an equipped bag (linear-slot `slotInBag - 1`,
+//   container = that bag's GUID).
+//
+// - `FromPaperdoll(item, srcSlot, dst)` — item currently in
+//   paperdoll slot `srcSlot` (1-based). Used for paperdoll-to-
+//   paperdoll swaps like rings 11/12, trinkets 13/14.
+//
+// All slot args are 1-based Lua-facing; helpers do the
+// linear-slot conversion. Returns `false` on bad args (slot out of
+// range, no player object, missing instance block on the item or
+// player), `true` after dispatching the packet (does NOT wait for
+// server confirmation).
+//
+// Caller must already hold the source CGItem pointer — typically
+// obtained from the location walk that discovered the swap target.
+bool FromBag(const void *cgItem, int bagID, int slotInBag, int dstPaperdollSlot);
+
+bool FromPaperdoll(const void *cgItem, int srcPaperdollSlot, int dstPaperdollSlot);
+
+} // namespace Item::Swap

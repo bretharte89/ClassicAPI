@@ -2170,27 +2170,23 @@ Returns nothing. Silently no-ops when:
 - the engine refuses the equip — combat, locked item, type mismatch
   with `dstSlot`, locked equipment slot, etc.
 
-Walks bags 0..4 in order and stops on the first match, then dispatches
-to the engine's `PickupContainerItem` + `EquipCursorItem` /
-`AutoEquipCursorItem` path. The dispatch goes through the same secure-
-action flow a direct Lua call would, so combat lockdown and the
-standard equip-failure error messages behave identically.
+Two paths based on `dstSlot`:
 
-**Cursor-state guard.** Because the dispatch path uses
-`PickupContainerItem` internally, an item already on the cursor would
-get swapped into the source bag slot. To avoid that side effect, the
-function checks `CursorHasItem()` first and refuses to operate (no-op
-return) when the cursor is non-empty. Callers must drop the cursor
-before calling — `ClearCursor()` or completing the held action.
-
-Background: vanilla 1.12 has a CMSG_SWAP_INV_ITEM (0x10D) packet
-builder that would let us bypass the cursor entirely (matching 2.4.3's
-`ItemMgr::EquipByGUID` semantic), but the only clean wrapper for it
-in the binary is dead code with zero callers. Other 0x10D build sites
-read from the engine's internal cursor-tracking globals, so they
-can't be called safely from outside that state machine. Refusing the
-swap when cursor is dirty is the safest available option until a
-working bypass is found.
+- **Explicit `dstSlot` (1..19): cursor-free direct swap.** Calls the
+  engine's own `FUN_INVENTORY_SWAP` (`0x005E0C40`) — the same
+  primitive `Script_EquipCursorItem` dispatches to after resolving
+  cursor state. We hand it the source item GUID, source container
+  GUID, source linear slot, and target paperdoll slot; the engine
+  builds and sends the CMSG_SWAP_INV_ITEM (or CMSG_AUTOEQUIP_ITEM
+  for cross-container) packet through its normal pipeline. **The
+  cursor is never read or written.** An item already on the cursor
+  stays on the cursor.
+- **No `dstSlot` (engine auto-picks slot from inventory type):**
+  falls back to the cursor-pickup + `AutoEquipCursorItem` path
+  because 1.12's auto-pick logic reads off cursor state. For this
+  path only, the function refuses to operate (no-op) when
+  `CursorHasItem()` is already true, to avoid clobbering whatever's
+  held.
 
 ```lua
 -- By itemID, auto-pick slot:
@@ -2887,19 +2883,38 @@ by the engine — a pending pickup or use is in flight that
 
 ### `C_EquipmentSet.UseEquipmentSet(setID)`
 
-Walks the set and dispatches pickup→equip pairs for every item that
-isn't already in its target slot. Items in the bank are skipped
+Walks the set and dispatches one **atomic server-side swap** per item
+that isn't already in its target slot. Items in the bank are skipped
 silently (vanilla can't equip from bank). Missing items are skipped
 silently. Returns `true` if the call ran (the set existed), `false`
 otherwise.
 
-> Behavior: this is **not a perfect swap solver**. If two set items
-> want each other's slots ("ring A in slot 11, ring B in slot 12, set
-> swaps them") the cursor cleanup may stash one in a free bag slot
-> instead of completing the cycle. Re-run `UseEquipmentSet(setID)`
-> and the next pass picks up the stashed item and finishes. The
-> 4.3.4 native uses a temporary-bag-slot shuffle to nail this in one
-> pass; we leave that as future work.
+Implementation uses the same `FUN_INVENTORY_SWAP` primitive
+[`C_Item.EquipItemByName`](#c_itemequipitembynameiteminfo--dstslot)
+uses for its explicit-slot path. Each swap is a single
+CMSG_SWAP_INV_ITEM (or CMSG_AUTOEQUIP_ITEM) packet that the server
+applies atomically — the two-cycle "ring A in slot 11, ring B in
+slot 12, set swaps them" case resolves in one packet because the
+opcode swaps both slots in a single server transaction. The cursor
+is never touched; an item held on the cursor when
+`UseEquipmentSet` is called stays on the cursor.
+
+Longer dependency chains (3+ items rotating) are rare with 1.12's
+slot set — the realistic conflicts are paired slots (rings 11/12,
+trinkets 13/14, weapons 16/17), all 2-cycles.
+
+> **`CURSOR_UPDATE` fires per item moved.** The engine's swap
+> primitive (`FUN_005E0C40`) runs a generic cursor-state cleanup at
+> the end of each call, which fires `CURSOR_UPDATE` regardless of
+> whether the cursor was actually touched. So one
+> `UseEquipmentSet` call that moves N items will fire N
+> `CURSOR_UPDATE` events in quick succession. Addons that react to
+> `CURSOR_UPDATE` (cursor-attached tooltips, drag-state tracking)
+> should debounce — or check `CursorHasItem()` before doing work —
+> since most of those fires won't reflect a real cursor change.
+> This is engine behavior, not a bug in the implementation; the
+> old cursor-based path actually fired more (one per pickup, one
+> per equip, one per cursor-clear).
 
 ### `EQUIPMENT_SETS_CHANGED` event
 
