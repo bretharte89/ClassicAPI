@@ -25,6 +25,7 @@ build instructions.
   - [`C_Spell.IsSpellHarmful(spellID)` / `C_Spell.IsSpellHelpful(spellID)`](#c_spellisspellharmfulspellid--c_spellisspellhelpfulspellid)
   - [`C_SpellBook.GetSpellLevelLearned(spellID)`](#c_spellbookgetspelllevellearnedspellid)
   - [`C_SpellBook.GetCurrentLevelSpells([level])`](#c_spellbookgetcurrentlevelspellslevel)
+  - [`C_SpellBook.GetSpellSkillLine(spellID)`](#c_spellbookgetspellskilllinespellid)
   - [`GetSpellSchool(spellID)`](#getspellschoolspellid)
   - [`CastAutoRepeatSpell(name | spellID)`](#castautorepeatspellname--spellid)
 - [Macros](#macros)
@@ -743,6 +744,46 @@ Class/race come from the local player — there's no
 clean class-string→classID lookup. Returns an empty table at
 character select / pre-login (no CGPlayer yet) and for levels
 where no class/race spells match.
+
+### `C_SpellBook.GetSpellSkillLine(spellID)`
+
+Returns `(name, skillID)` — the SkillLine.dbc row that the given spell
+belongs to. The name is the user-facing skill/tab string in the engine's
+current locale: spellbook tab names for class spells (`"Protection"`,
+`"Fire"`, `"Holy"`), profession headers (`"Tailoring"`, `"Engineering"`),
+weapon-skill rows (`"Swords"`, `"Bows"`), etc.
+
+```lua
+C_SpellBook.GetSpellSkillLine(1671)   -- "Protection", 26 (Shield Bash)
+C_SpellBook.GetSpellSkillLine(133)    -- "Fire", 8        (Fireball)
+C_SpellBook.GetSpellSkillLine(2050)   -- "Holy", 56       (Lesser Heal)
+C_SpellBook.GetSpellSkillLine(2480)   -- "Bows", 45       (Shoot Bow)
+C_SpellBook.GetSpellSkillLine(3273)   -- "First Aid", 129 (Anesthetic)
+```
+
+Walks `SkillLineAbility.dbc` for any row whose `spellID` matches, then
+reads the localized `Name[locale]` field at offset `+0x0C` of the
+referenced `SkillLine.dbc` record. For spells with multiple SLA rows
+(race-locked variants, Turtle WoW's faction-specific entries) the
+lookup prefers a row whose class/race masks match the local player —
+so the result reflects "what tab is this spell in *for me*" when one
+exists. Falls back to the first matching row otherwise, so the
+function still answers for spells the local player can't actually use
+(inspecting other classes, parsing combat-log entries from unfamiliar
+specs).
+
+Returns `(nil, nil)` for:
+- non-numeric or non-positive input
+- spellIDs with no `SkillLineAbility.dbc` row (most temporary auras,
+  proc-only spells, item-on-use effects, GM-debug spells)
+- rows whose `skillID` doesn't resolve in `SkillLine.dbc`
+
+Vanilla's `GetSpellTabInfo(tabIndex)` enumerates spellbook tabs by
+1-based index — it can't answer "what tab is *this spellID* in".
+Addons that need a spellID→tab mapping have historically had to walk
+every tab's slot range and string-match against `GetSpellName`. This
+function reads it directly off the DBC for any spellID, including
+spells the player hasn't learned.
 
 ### `GetSpellSchool(spellID)`
 

@@ -1013,11 +1013,31 @@ enum Offsets {
     //   +0x18 excludeClass  (bitmask of classes this entry does NOT apply to)
     //   +0x1C minSkillRank
     //   ... (more fields)
+    OFF_SLA_SKILL_ID = 0x04,
     OFF_SLA_SPELL_ID = 0x08,
     OFF_SLA_RACE_MASK = 0x0C,
     OFF_SLA_CLASS_MASK = 0x10,
     OFF_SLA_EXCLUDE_RACE = 0x14,
     OFF_SLA_EXCLUDE_CLASS = 0x18,
+
+    // SkillLine.dbc — the skill/category each SLA row points into via
+    // its `skillId` field. Each record carries a 9-locale localized
+    // name array (the user-facing tab name in the spellbook, profession
+    // header, weapon-skill name, etc.) plus a SpellIcon ID at +0x54.
+    // Standard 5-DWORD class instance at `0x00C0D924`; records-array
+    // pointer at `0x00C0D92C`, count at `0x00C0D930`.
+    //
+    // Record layout (verified against `Script_GetSpellTabInfo` at
+    // `0x004B3CE0`):
+    //   +0x00 id
+    //   +0x0C `Name[9]` — locale string pointers, indexed via the
+    //         global locale at `0x00C0E080` (read as
+    //         `*(char **)(record + 0x0C + locale * 4)`)
+    //   +0x54 SpellIcon.dbc ID (looked up via `SpellIcon` for the
+    //         spellbook tab/profession icon)
+    VAR_SKILL_LINE_RECORDS = 0x00C0D92C,
+    VAR_SKILL_LINE_COUNT = 0x00C0D930,
+    OFF_SKILL_LINE_NAME = 0x0C,
 
     // Spell.dbc `BaseLevel` — the level a spell becomes available
     // (trainer offers it, quest reward grants it, etc.). Distinct
