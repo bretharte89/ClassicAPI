@@ -984,6 +984,19 @@ enum Offsets {
     OFF_UNIT_DESCRIPTOR_RACE_BYTE = 0x78,
     OFF_UNIT_DESCRIPTOR_CLASS_BYTE = 0x79,
     OFF_UNIT_DESCRIPTOR_SEX_BYTE = 0x7A,
+
+    // `UNIT_BYTES_1` (CMaNGOS field 132 in the 1.12.1 layout). 32-bit
+    // composite field; the low byte is the standstate (standing /
+    // sitting / sleeping / kneeling / etc.), the upper bytes hold
+    // PetTalents / VisFlag / AnimTier per CMaNGOS docs (uncalibrated
+    // for 1.12). Broadcast field, so the standstate works for any
+    // synced unit (player, target, party/raid, inspect targets) —
+    // not local-only.
+    //
+    // Verified via the `IsAssistingRitual` development session by
+    // observing `0xEE00 → 0xEE05` on `/sit` over a chair (the medium-
+    // chair sit value 5).
+    OFF_UNIT_FIELD_BYTES_1 = 0x210,
     // Inner watched-faction setter — `__fastcall(ecx = factionID) → void`.
     // The engine's `Script_SetWatchedFactionIndex` (0x004D6B60) is a
     // thin Lua-side wrapper that takes a 1-based displayed-list index,

@@ -123,6 +123,7 @@ build instructions.
   - [`UnitIsFeignDeath(unit)`](#unitisfeigndeathunit)
   - [`UnitIsInMyGuild(unitOrName)`](#unitisinmyguildunitorname)
   - [`UnitIsPossessed(unit)`](#unitispossessedunit)
+  - [`UnitStandState(unit)`](#unitstandstateunit)
 - [UnitAuras](#unitauras)
   - [`C_UnitAuras.GetAuraDataByIndex(unit, index [, filter])`](#c_unitaurasgetauradatabyindexunit-index--filter)
   - [`C_UnitAuras.GetBuffDataByIndex(unit, index)` / `GetDebuffDataByIndex(unit, index)`](#c_unitaurasgetbuffdatabyindexunit-index--getdebuffdatabyindexunit-index)
@@ -3156,6 +3157,39 @@ UnitIsPossessed("target")   -- true if mind-controlled
 Distinct from `UnitIsCharmed`: charm covers any charm-type effect
 (including pets summoned via mob-charm spells), possess is the
 specific spell-driven take-over effect modern WoW splits out.
+
+### `UnitStandState(unit)`
+
+Returns the unit's standstate as an integer, matching the modern
+`Enum.PlayerStandState` values:
+
+| Value | Meaning |
+|------:|---------|
+| `0` | STANDING |
+| `1` | SITTING |
+| `2` | SITTING_CHAIR |
+| `3` | SLEEPING |
+| `4` | SITTING_LOW_CHAIR |
+| `5` | SITTING_MEDIUM_CHAIR |
+| `6` | SITTING_HIGH_CHAIR |
+| `7` | DEAD |
+| `8` | KNEELING |
+
+Reads the low byte of `UNIT_BYTES_1` (descriptor `+0x210`), a
+broadcast UpdateField — works for any synced unit (player, target,
+party*, raid*, mouseover, etc.). Returns `0` (STANDING) for
+unresolvable units (empty `party*` slot, no current target, etc.)
+matching the modern behavior of returning a safe default.
+
+```lua
+UnitStandState("player")    -- 0 standing, 1 sitting, 5 chair-sit, …
+UnitStandState("target")    -- works for any visible unit
+UnitStandState("party1")    -- 0 if the slot is empty
+```
+
+1.12 has `IsSitOrStanding()` (local-player boolean) but no
+unit-token form; `UnitStandState` fills the gap and exposes the
+full enum.
 
 ## UnitAuras
 

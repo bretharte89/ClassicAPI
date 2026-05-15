@@ -2402,7 +2402,7 @@ NOT `0xD48`). So `[player+0xD48]` is "gather-cast active"
 with a lootable GO" pointer. Pick which semantic you want before
 naming.
 
-## 70. `UnitStandState(unit)` — easy
+## ~~70. `UnitStandState(unit)`~~ — DONE
 
 Modern `GetUnitStandStateValue(unit)` or `UnitStandState(unit)` (the
 name varies by expansion) returns an integer describing whether
