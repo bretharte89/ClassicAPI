@@ -149,11 +149,67 @@ int __fastcall Script_GetPlayerInfoByGUID(void *L) {
     return 7;
 }
 
+// Shared tuple builder used by both `GetPlayerInfoByGUID`'s
+// NameCache-fallback path and `C_PlayerCache.GetPlayerInfoByName`.
+// Pushes `(localizedClass, englishClass, localizedRace, englishRace,
+// sex, name, realm)` from a NameCache entry. Realm is always "" —
+// vanilla is single-realm and never propagates a per-player realm.
+int PushFromNameCacheEntry(void *L, const NameCache::Entry &e) {
+    const char *englishClass = DBC::StringField(
+        Offsets::VAR_CHRCLASSES_RECORDS, Offsets::VAR_CHRCLASSES_COUNT,
+        e.classID, Offsets::OFF_CHRCLASSES_FILENAME);
+    const char *localizedClass = DBC::LocalizedField(
+        Offsets::VAR_CHRCLASSES_RECORDS, Offsets::VAR_CHRCLASSES_COUNT,
+        e.classID, Offsets::OFF_CHRCLASSES_NAMES);
+    const char *englishRace = DBC::StringField(
+        Offsets::VAR_CHRRACES_RECORDS, Offsets::VAR_CHRRACES_COUNT,
+        e.raceID, Offsets::OFF_CHRRACES_FILENAME);
+    const char *localizedRace = DBC::LocalizedField(
+        Offsets::VAR_CHRRACES_RECORDS, Offsets::VAR_CHRRACES_COUNT,
+        e.raceID, Offsets::OFF_CHRRACES_NAMES);
+
+    Game::Lua::PushString(L, localizedClass ? localizedClass : "");
+    Game::Lua::PushString(L, englishClass ? englishClass : "");
+    Game::Lua::PushString(L, localizedRace ? localizedRace : "");
+    Game::Lua::PushString(L, englishRace ? englishRace : "");
+    Game::Lua::PushNumber(L, static_cast<double>(e.sex + 2));
+    Game::Lua::PushString(L, e.name.c_str());
+    Game::Lua::PushString(L, "");
+    return 7;
+}
+
+// `C_PlayerCache.GetPlayerInfoByName(name)` — name-keyed lookup over
+// the persistent NameCache. Returns `(localizedClass, englishClass,
+// localizedRace, englishRace, sex, name, realm, guid)` or nothing if
+// the name isn't cached.
+//
+// Companion to `GetPlayerInfoByGUID` for the case where an addon has
+// a player's name from a `|Hplayer:Name|h` chat link or
+// CHAT_MSG_SYSTEM string but `GetCurrentChatGUID()` returns nil (the
+// engine doesn't propagate the sender GUID for every chat path).
+// The 8th `guid` return — absent from `GetPlayerInfoByGUID` since
+// the caller already has it — lets name-based callers chain into
+// any GUID-keyed API (e.g., friend list, ignore list).
+int __fastcall Script_C_PlayerCache_GetPlayerInfoByName(void *L) {
+    if (!Game::Lua::IsString(L, 1))
+        return 0;
+    const char *name = Game::Lua::ToString(L, 1);
+    const NameCache::Entry *e = NameCache::LookupByName(name);
+    if (e == nullptr)
+        return 0;
+    PushFromNameCacheEntry(L, *e);
+    char buf[Guid::STRING_SIZE];
+    Game::Lua::PushString(L, Guid::FormatAsString(e->guid, buf, sizeof buf));
+    return 8;
+}
+
 } // namespace
 
 static void RegisterLuaFunctions() {
     Game::Lua::RegisterGlobalFunction("GetPlayerInfoByGUID",
                                        &Script_GetPlayerInfoByGUID);
+    Game::Lua::RegisterTableFunction("C_PlayerCache", "GetPlayerInfoByName",
+                                     &Script_C_PlayerCache_GetPlayerInfoByName);
 }
 
 static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};

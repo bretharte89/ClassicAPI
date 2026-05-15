@@ -45,6 +45,19 @@ struct Entry {
 // (which may relocate via map rehash). Treat as transient.
 const Entry *Lookup(uint64_t guid);
 
+// Same shape but indexed by name (case-sensitive, exact match). The
+// underlying map is GUID-keyed, so this walks the entries — O(N) per
+// call where N is total cached players. Cheap enough in practice
+// (low thousands of entries; called only from addon chat-coloring
+// paths that fire per chat-line render). Returns nullptr if no
+// entry has that exact name.
+//
+// Used by `C_PlayerCache.GetPlayerInfoByName` for the case where an
+// addon has a player's name (e.g., from a |Hplayer:Name|h chat link)
+// but no GUID — `GetCurrentChatGUID()` returns nil for several chat
+// event paths the engine doesn't tag with the sender's GUID.
+const Entry *LookupByName(const char *name);
+
 // Adds or updates an entry. Zero values for classID/raceID/sex are
 // treated as "caller doesn't know" and don't overwrite existing
 // real data — only present (non-zero) fields replace prior values.

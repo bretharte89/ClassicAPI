@@ -139,6 +139,7 @@ build instructions.
   - [`C_UnitAuras.GetAuraDispelTypeColor(dispelName)`](#c_unitaurasgetauradispeltypecolordispelname)
 - [NameCache](#namecache)
   - [`GetPlayerInfoByGUID(guid)`](#getplayerinfobyguidguid)
+  - [`C_PlayerCache.GetPlayerInfoByName(name)`](#c_playercachegetplayerinfobynamename)
   - [`C_PlayerInfo.GUIDIsPlayer(guid)` / `GUIDIsCreature` / `GUIDIsPet` / `GUIDIsGameObject`](#c_playerinfoguidisplayerguid--guidiscreature--guidispet--guidisgameobject)
   - [`C_CreatureInfo.GetCreatureID(guid)`](#c_creatureinfogetcreatureidguid)
   - [`C_PlayerCache.RememberPlayer(guid, name, classToken)`](#c_playercacherememberplayerguid-name-classtoken)
@@ -3634,6 +3635,47 @@ Returns `nil` only when both the engine and persistent caches miss.
 instance lives at `0x00C0E228`; entry layout (name, realm, race,
 sex, class) was reverse-engineered from the
 `SMSG_NAME_QUERY_RESPONSE` write path at `0x0055F310`.
+
+### `C_PlayerCache.GetPlayerInfoByName(name)`
+
+Returns
+`localizedClass, englishClass, localizedRace, englishRace, sex, name, realm, guid`
+for a player in the persistent NameCache, or `nil` if the name
+isn't cached. Companion to `GetPlayerInfoByGUID` for the case where
+an addon has a player's name but not their GUID — e.g., when
+`GetCurrentChatGUID()` returns nil for a chat event the engine
+didn't tag with the sender GUID (system notifications, some channel
+messages, etc.).
+
+```lua
+local _, class, _, race, _, _, _, guid = C_PlayerCache.GetPlayerInfoByName("Gedwyr")
+-- "MAGE", "Human", "0x000000003B9ADAA7"
+
+C_PlayerCache.GetPlayerInfoByName("NeverSeen")  -- nil (not cached)
+```
+
+Match is **case-sensitive, exact** — vanilla server-stored names
+are case-stable (`"Gedwyr"` won't match `"gedwyr"`).
+
+Returns (vs. `GetPlayerInfoByGUID`):
+
+| Slot | Value | Notes |
+|------|-------|-------|
+| 1–7  | same as `GetPlayerInfoByGUID` | see above |
+| 8    | `guid` | `"0xHHHHHHHHLLLLLLLL"` — the cached player's full GUID, so name-based callers can chain into GUID-keyed APIs. Absent from `GetPlayerInfoByGUID` since the caller already has it. |
+
+Only reads from the **persistent NameCache** — does *not* hit the
+engine's in-memory NAME_QUERY cache (that's keyed by GUID and has
+no name index). So this requires `C_PlayerCache.SetEnabled(true)`
+to have been opted into; entries get there via the engine's
+NAME_QUERY response hook, the visible-object scan, and
+`C_PlayerCache.RememberPlayer`.
+
+**Implementation**: O(1) lookup via a `name → guid` index map
+maintained in lockstep with the GUID-keyed entry map. Eviction
+keeps the index consistent: when a name's character is deleted and
+the name is recycled to a different GUID, the prior entry is
+removed from both maps.
 
 ### `C_PlayerCache.RememberPlayer(guid, name, classToken)`
 

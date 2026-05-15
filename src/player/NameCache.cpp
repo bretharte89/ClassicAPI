@@ -101,6 +101,12 @@ constexpr uint32_t kMaxSex = 1;
 constexpr DWORD kScanIntervalMs = 10 * 1000;
 
 std::unordered_map<uint64_t, Entry> g_entries;
+// `name → guid` reverse index, maintained in lockstep with `g_entries`
+// so `LookupByName` and `EvictStaleGuidsForName` are O(1). Invariant:
+// `g_nameIndex[name] == guid` iff `g_entries[guid].name == name`.
+// Vanilla 1.12 server-enforced per-realm name uniqueness means each
+// name maps to at most one entry — the eviction logic preserves that.
+std::unordered_map<std::string, uint64_t> g_nameIndex;
 bool g_enabled = false;
 bool g_scanEnabled = false;
 bool g_settingsLoaded = false;
@@ -221,34 +227,27 @@ std::string SanitizeName(const char *name) {
     return out;
 }
 
-// Removes any cache entries whose name matches `name` but whose GUID
-// is not `keepGuid`. Vanilla 1.12 enforces per-realm name uniqueness,
-// so seeing the same name under a new GUID means the old character
-// was deleted and the name recycled — that old GUID is dead, no
-// addon should ever look it up again, and keeping it just bloats the
-// file. Returns true if anything was removed.
+// Removes the cache entry whose name matches `name` if its GUID
+// differs from `keepGuid`. Vanilla 1.12 enforces per-realm name
+// uniqueness, so seeing the same name under a new GUID means the old
+// character was deleted and the name recycled — that old GUID is
+// dead, no addon should ever look it up again, and keeping it just
+// bloats the file. Returns true if an entry was removed.
 //
 // Bots and serial re-rollers are the motivating case: a single
-// player remaking five times in a session leaves five entries
-// under the same name with sequential GUIDs without this.
+// player remaking five times in a session leaves five entries under
+// the same name with sequential GUIDs without this.
 //
-// O(N) per call but the map is small (hundreds to low thousands of
-// entries on a typical realm) and Remember/CacheWrite frequency is
-// bounded by NAME_QUERY response rate and the 10s scan interval —
-// not hot.
+// O(1) via the `g_nameIndex` reverse map.
 bool EvictStaleGuidsForName(const std::string &name, uint64_t keepGuid) {
     if (name.empty())
         return false;
-    bool removed = false;
-    for (auto it = g_entries.begin(); it != g_entries.end(); ) {
-        if (it->first != keepGuid && it->second.name == name) {
-            it = g_entries.erase(it);
-            removed = true;
-        } else {
-            ++it;
-        }
-    }
-    return removed;
+    auto it = g_nameIndex.find(name);
+    if (it == g_nameIndex.end() || it->second == keepGuid)
+        return false;
+    g_entries.erase(it->second);
+    g_nameIndex.erase(it);
+    return true;
 }
 
 void LoadCacheIfNeeded() {
@@ -263,6 +262,9 @@ void LoadCacheIfNeeded() {
     if (!file.is_open())
         return; // first run for this realm
 
+    // v3 format: `guid\tclass\trace\tsex\tname`. Single hex GUID
+    // column, no leading zeros — 1-8 hex digits for player GUIDs
+    // (high dword zero), up to 16 digits for non-player GUIDs.
     std::string line;
     while (std::getline(file, line)) {
         while (!line.empty() && (line.back() == '\r' || line.back() == '\n'))
@@ -270,10 +272,9 @@ void LoadCacheIfNeeded() {
         if (line.empty() || line[0] == '#')
             continue;
 
-        // tab-separated: hi  lo  classID  raceID  sex  name
         std::istringstream is(line);
-        std::string hiStr, loStr, classStr, raceStr, sexStr, name;
-        if (!(is >> hiStr >> loStr >> classStr >> raceStr >> sexStr))
+        std::string guidStr, classStr, raceStr, sexStr, name;
+        if (!(is >> guidStr >> classStr >> raceStr >> sexStr))
             continue;
         // Consume the single tab/space, then read remaining name
         // as-is (no spaces in vanilla names but tolerate them).
@@ -283,24 +284,33 @@ void LoadCacheIfNeeded() {
         if (name.empty())
             continue;
 
-        const uint32_t hi = static_cast<uint32_t>(std::strtoul(hiStr.c_str(), nullptr, 16));
-        const uint32_t lo = static_cast<uint32_t>(std::strtoul(loStr.c_str(), nullptr, 16));
+        const uint64_t guid = std::strtoull(guidStr.c_str(), nullptr, 16);
         const uint32_t classID = static_cast<uint32_t>(std::strtoul(classStr.c_str(), nullptr, 10));
         const uint32_t raceID = static_cast<uint32_t>(std::strtoul(raceStr.c_str(), nullptr, 10));
         const uint32_t sex = static_cast<uint32_t>(std::strtoul(sexStr.c_str(), nullptr, 10));
-        if (lo == 0 && hi == 0)
+        if (guid == 0)
             continue;
         if (classID > kMaxClassID || raceID > kMaxRaceID || sex > kMaxSex)
             continue;
-        const uint64_t guid = (static_cast<uint64_t>(hi) << 32) | lo;
-        Entry e;
-        e.guid = guid;
-        e.name = SanitizeName(name.c_str());
-        e.classID = classID;
-        e.raceID = raceID;
-        e.sex = sex;
-        if (!e.name.empty())
-            g_entries[guid] = std::move(e);
+        const std::string sanitized = SanitizeName(name.c_str());
+        if (sanitized.empty())
+            continue;
+        // Defensive dedup on load: if the file somehow has two rows
+        // for the same name (shouldn't with EvictStaleGuidsForName
+        // running at every save, but handle gracefully), the later
+        // row wins.
+        auto idx = g_nameIndex.find(sanitized);
+        if (idx != g_nameIndex.end() && idx->second != guid) {
+            g_entries.erase(idx->second);
+            g_nameIndex.erase(idx);
+        }
+        Entry &slot = g_entries[guid];
+        slot.guid = guid;
+        slot.name = sanitized;
+        slot.classID = classID;
+        slot.raceID = raceID;
+        slot.sex = sex;
+        g_nameIndex[sanitized] = guid;
     }
 }
 
@@ -313,14 +323,17 @@ void SaveCache() {
         std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
         if (!out.is_open())
             return;
-        out << "# ClassicAPI name cache v2 (per-realm)\n";
-        out << "# guidHi\tguidLo\tclassID\traceID\tsex\tname\n";
+        // Single hex GUID column with no leading zeros. Player GUIDs
+        // (all we cache today) write as 1-8 hex digits since the high
+        // dword is always 0; non-player GUIDs would naturally extend
+        // to up to 16 digits if any ever landed here.
+        out << "# ClassicAPI name cache v3 (per-realm)\n";
+        out << "# guid\tclassID\traceID\tsex\tname\n";
         for (const auto &kv : g_entries) {
             const Entry &e = kv.second;
             char buf[80];
-            std::snprintf(buf, sizeof(buf), "%08X\t%08X\t%u\t%u\t%u\t",
-                          static_cast<uint32_t>(e.guid >> 32),
-                          static_cast<uint32_t>(e.guid),
+            std::snprintf(buf, sizeof(buf), "%llX\t%u\t%u\t%u\t",
+                          static_cast<unsigned long long>(e.guid),
                           e.classID, e.raceID, e.sex);
             out << buf << e.name << "\n";
         }
@@ -393,7 +406,13 @@ void __fastcall CacheWrite_h(void *self, void *edx, const uint8_t *packet,
         changed = true;
     }
     if (e.name != sanitized) {
+        // Drop the old name's index entry (if any) before re-pointing
+        // the index at the new name. Skips for fresh inserts where the
+        // old name is the empty string.
+        if (!e.name.empty())
+            g_nameIndex.erase(e.name);
         e.name = sanitized;
+        g_nameIndex[sanitized] = guid;
         changed = true;
     }
     if (e.classID != classID) {
@@ -774,6 +793,19 @@ const Entry *Lookup(uint64_t guid) {
     return &it->second;
 }
 
+const Entry *LookupByName(const char *name) {
+    if (!g_enabled || name == nullptr || name[0] == '\0')
+        return nullptr;
+    LoadCacheIfNeeded();
+    auto idx = g_nameIndex.find(name);
+    if (idx == g_nameIndex.end())
+        return nullptr;
+    auto entry = g_entries.find(idx->second);
+    if (entry == g_entries.end())
+        return nullptr; // shouldn't happen if invariant holds
+    return &entry->second;
+}
+
 void Remember(uint64_t guid, const char *name, uint32_t classID,
               uint32_t raceID, uint32_t sex) {
     if (!g_enabled || guid == 0 || name == nullptr || name[0] == '\0')
@@ -795,7 +827,12 @@ void Remember(uint64_t guid, const char *name, uint32_t classID,
         changed = true;
     }
     if (e.name != sanitized) {
+        // Maintain `g_nameIndex` invariant: drop the entry's prior
+        // name (if any) before re-pointing the index at the new one.
+        if (!e.name.empty())
+            g_nameIndex.erase(e.name);
         e.name = sanitized;
+        g_nameIndex[sanitized] = guid;
         changed = true;
     }
     // 0 means "caller doesn't know"; don't overwrite real data with
