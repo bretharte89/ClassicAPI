@@ -42,6 +42,26 @@ enum Offsets {
     FUN_REGISTER_FRAME_METHODS = 0x00701D80,
     VAR_GAMETOOLTIP_METHOD_REGISTRY = 0x00C0CF20,
 
+    // "Currently displayed thing" state fields on a GameTooltip frame
+    // instance. Each Set* path writes one of these (and zero or two
+    // others), and the per-tooltip Clear at FUN_00530050 zeroes all of
+    // them on Hide/before-redraw. The Get* methods are simple reads —
+    // whichever field is non-zero tells us what kind of tooltip is up.
+    //
+    // Verified by decoding the three builder functions:
+    //   - BuildUnitTooltip  (0x00529FE0) writes +0x368/+0x36C (GUID)
+    //                       at 0x0052A019..0x0052A01E.
+    //   - BuildItemTooltip  (0x0052B650) writes +0x398 (itemID) at
+    //                       0x0052B6FE.
+    //   - BuildSpellTooltip (0x0052E610) writes +0x39C (spellID) at
+    //                       0x0052E6D5 (param_7==0 branch — skipped for
+    //                       the next-rank tooltip side-build).
+    //   - Clear             (0x00530050) zeroes all of them.
+    OFF_TOOLTIP_UNIT_GUID_LO = 0x368,
+    OFF_TOOLTIP_UNIT_GUID_HI = 0x36C,
+    OFF_TOOLTIP_ITEM_ID = 0x398,
+    OFF_TOOLTIP_SPELL_ID = 0x39C,
+
     // Registers a single global Lua function. __fastcall(name, func).
     FUN_FRAMESCRIPT_REGISTER_FUNCTION = 0x00704120,
 
