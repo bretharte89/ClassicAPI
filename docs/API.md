@@ -23,6 +23,8 @@ build instructions.
   - [`C_Spell.IsSpellUsable(spellID)`](#c_spellisspellusablespellid)
   - [`IsHarmfulSpell(spell)` / `IsHelpfulSpell(spell)`](#isharmfulspellspell--ishelpfulspellspell)
   - [`C_Spell.IsSpellHarmful(spellID)` / `C_Spell.IsSpellHelpful(spellID)`](#c_spellisspellharmfulspellid--c_spellisspellhelpfulspellid)
+  - [`C_SpellBook.GetSpellLevelLearned(spellID)`](#c_spellbookgetspelllevellearnedspellid)
+  - [`C_SpellBook.GetCurrentLevelSpells([level])`](#c_spellbookgetcurrentlevelspellslevel)
   - [`GetSpellSchool(spellID)`](#getspellschoolspellid)
   - [`CastAutoRepeatSpell(name | spellID)`](#castautorepeatspellname--spellid)
 - [Macros](#macros)
@@ -692,6 +694,55 @@ C_Spell.IsSpellHelpful(2061)    -- true (Flash Heal)
 
 Equivalent to `C_Spell.IsSpellHarmful` / `C_Spell.IsSpellHelpful`
 introduced in 11.x.
+
+### `C_SpellBook.GetSpellLevelLearned(spellID)`
+
+Returns the level at which a spell becomes available — the
+`BaseLevel` field in `Spell.dbc` (record `+0x70`). Direct read off
+the cached record; no class/race filtering.
+
+```lua
+C_SpellBook.GetSpellLevelLearned(133)    -- Fireball rank 1 → 4
+C_SpellBook.GetSpellLevelLearned(25306)  -- Fireball rank 12 → 60
+C_SpellBook.GetSpellLevelLearned(2061)   -- Flash Heal rank 1 → 20
+```
+
+Returns `0` for invalid spellIDs, spells with no level requirement
+(most non-class utility spells), or records the engine hasn't
+cached. Matches modern semantics — unknown / utility spells
+return 0 rather than nil.
+
+### `C_SpellBook.GetCurrentLevelSpells([level])`
+
+Returns a 1-based table of spellIDs the player's class/race can
+learn at the given level. Without arguments, defaults to the
+player's current level.
+
+```lua
+C_SpellBook.GetCurrentLevelSpells()    -- spells trainable at your level
+C_SpellBook.GetCurrentLevelSpells(20)  -- preview what's available at 20
+C_SpellBook.GetCurrentLevelSpells(60)  -- preview at 60
+```
+
+Walks `SkillLineAbility.dbc` filtering by the player's class bit
+(`1 << (classID - 1)`) and race bit, respecting both the include
+masks (entries with mask = 0 are "all classes"/"all races", which
+also pass) and the exclude masks. For each surviving entry, looks
+up the spell's `BaseLevel` and includes it if it matches the
+queried level.
+
+> **Vanilla is trainer-driven.** Modern `GetCurrentLevelSpells`
+> (added in 5.x when trainers were removed) returns *auto-learned*
+> spells. Vanilla 1.12 requires visiting a trainer to actually
+> learn most class spells. We return the closest available analog:
+> **what's *trainable* at this level**. Useful for "what's new
+> this level" UI panels and level-preview tooling ported from MoP+.
+
+Class/race come from the local player — there's no
+`(class, race, level)` form because vanilla doesn't expose a
+clean class-string→classID lookup. Returns an empty table at
+character select / pre-login (no CGPlayer yet) and for levels
+where no class/race spells match.
 
 ### `GetSpellSchool(spellID)`
 

@@ -1,0 +1,324 @@
+// This file is part of ClassicAPI.
+//
+// ClassicAPI is free software: you can redistribute it and/or modify it under the terms
+// of the GNU Lesser General Public License as published by the Free Software Foundation, either
+// version 3 of the License, or (at your option) any later version.
+//
+// ClassicAPI is distributed in the hope that it will be useful, but WITHOUT ANY
+// WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+// PURPOSE. See the GNU Lesser General Public License for more details.
+//
+// You should have received a copy of the GNU Lesser General Public License along with
+// ClassicAPI. If not, see <https://www.gnu.org/licenses/>.
+
+#include "Game.h"
+#include "Offsets.h"
+#include "spell/Lookup.h"
+
+#include <cstdint>
+#include <unordered_set>
+
+namespace Spell::Level {
+
+namespace {
+
+using ResolveUnitToken_t = void *(__fastcall *)(const char *token);
+
+// Reads the local player's descriptor — same pattern as
+// Unit::Combat::Script_InCombatLockdown. Returns nullptr at login
+// screen / character select / loading transition where the
+// CGPlayer doesn't exist yet.
+const uint8_t *PlayerDescriptor() {
+    auto fn = reinterpret_cast<ResolveUnitToken_t>(Offsets::FUN_RESOLVE_UNIT_TOKEN);
+    auto *player = static_cast<const uint8_t *>(fn("player"));
+    if (player == nullptr)
+        return nullptr;
+    return *reinterpret_cast<const uint8_t *const *>(
+        player + Offsets::OFF_UNIT_DESCRIPTOR);
+}
+
+// Builds (or returns the cached) set of every spellID that appears
+// in `Talent.dbc` — across all 9 rank slots of every talent record.
+// Used to skip talent-tree spells in `GetCurrentLevelSpells`; modern
+// `GetCurrentLevelSpells` only reports auto-learned / trainable
+// class spells, never talents (which are point-purchased separately).
+//
+// Cache survives across calls in a session (Talent.dbc is a static
+// DBC). First call before the engine has loaded the DBC (e.g.,
+// pre-login) leaves the set empty; subsequent calls retry until
+// non-empty.
+std::unordered_set<int> &TalentSpellSet() {
+    static std::unordered_set<int> set;
+    if (!set.empty())
+        return set;
+    const uint8_t *const *records = *reinterpret_cast<const uint8_t *const *const *>(
+        static_cast<uintptr_t>(Offsets::VAR_TALENT_DBC_RECORDS));
+    const int count = *reinterpret_cast<const int *>(
+        static_cast<uintptr_t>(Offsets::VAR_TALENT_DBC_COUNT));
+    if (records == nullptr || count <= 0)
+        return set;
+    // Each Talent.dbc record stores rank-N spellIDs at +0x10 + N*4
+    // for N = 0..8 (9 ranks). Many slots are 0 for unused ranks.
+    for (int i = 1; i <= count; ++i) {
+        const uint8_t *rec = records[i];
+        if (rec == nullptr)
+            continue;
+        auto *ranks = reinterpret_cast<const uint32_t *>(
+            rec + Offsets::OFF_TALENT_SPELL_RANK);
+        for (int j = 0; j < 9; ++j) {
+            const uint32_t spellID = ranks[j];
+            if (spellID != 0)
+                set.insert(static_cast<int>(spellID));
+        }
+    }
+    return set;
+}
+
+// Looks up the `BaseLevel` field of a Spell.dbc record. Returns 0
+// for invalid spellIDs or records the engine doesn't have cached.
+int SpellBaseLevel(int spellID) {
+    const uint8_t *record = Spell::Lookup::RecordForID(spellID);
+    if (record == nullptr)
+        return 0;
+    return *reinterpret_cast<const int32_t *>(
+        record + Offsets::OFF_SPELL_RECORD_BASE_LEVEL);
+}
+
+// Spell.dbc attribute fields/bits used to filter learnable-spell
+// results down to what's actually user-facing.
+//
+//   Attributes   (+0x18)
+//     bit 0x80  = HIDDEN_CLIENTSIDE — engine-internal helpers like
+//                 "Defensive Stance Passive" (7376) that pair with
+//                 a user-visible spell (Defensive Stance, 71) and
+//                 never appear in the spellbook. Skip these.
+//
+//   AttributesEx2 (+0x24)
+//     bit 0x02000000 = HIDE_FROM_AUTOLEARN — the same gate Cata's
+//                       GetCurrentLevelSpells checks
+//                       (FUN_00911c60's `(spellData[+0x24] &
+//                       0x02000000) == 0`). Catches proc-only and
+//                       engine-internal spells with a BaseLevel.
+constexpr int OFF_SPELL_RECORD_ATTRIBUTES = 0x18;
+constexpr int OFF_SPELL_RECORD_ATTRIBUTES_EX2 = 0x24;
+constexpr uint32_t SPELL_ATTR_HIDDEN_CLIENTSIDE = 0x80;
+constexpr uint32_t SPELL_ATTR_EX2_HIDE_FROM_AUTOLEARN = 0x02000000;
+
+bool SpellHiddenFromAutoLearn(int spellID) {
+    const uint8_t *record = Spell::Lookup::RecordForID(spellID);
+    if (record == nullptr)
+        return false;
+    const uint32_t attributes = *reinterpret_cast<const uint32_t *>(
+        record + OFF_SPELL_RECORD_ATTRIBUTES);
+    if ((attributes & SPELL_ATTR_HIDDEN_CLIENTSIDE) != 0)
+        return true;
+    const uint32_t attrEx2 = *reinterpret_cast<const uint32_t *>(
+        record + OFF_SPELL_RECORD_ATTRIBUTES_EX2);
+    return (attrEx2 & SPELL_ATTR_EX2_HIDE_FROM_AUTOLEARN) != 0;
+}
+
+// `C_SpellBook.GetSpellLevelLearned(spellID)` — returns the level
+// at which a spell becomes available (the `BaseLevel` field in
+// Spell.dbc). Direct read off the record — no class/race filtering,
+// the level is the spell's own intrinsic requirement.
+//
+// Returns 0 for: invalid spellIDs, spells with no level requirement
+// (most non-class utility spells), or records the engine doesn't
+// have. Matches modern semantics where unknown/utility spells
+// return 0.
+int __fastcall Script_GetSpellLevelLearned(void *L) {
+    if (!Game::Lua::IsNumber(L, 1)) {
+        Game::Lua::Error(L, "Usage: C_SpellBook.GetSpellLevelLearned(spellID)");
+        return 0;
+    }
+    const int spellID = static_cast<int>(Game::Lua::ToNumber(L, 1));
+    if (spellID <= 0) {
+        Game::Lua::PushNumber(L, 0);
+        return 1;
+    }
+    Game::Lua::PushNumber(L, static_cast<double>(SpellBaseLevel(spellID)));
+    return 1;
+}
+
+// `C_SpellBook.GetCurrentLevelSpells([level])` — returns a 1-based
+// table of spellIDs the player's class/race can learn at `level`.
+// If `level` is omitted or non-numeric, defaults to the player's
+// current level.
+//
+// Algorithm: walk SkillLineAbility.dbc; for each entry with the
+// player's class/race mask bits matching (and not in the exclude
+// masks), look up the spell's BaseLevel. If it equals the queried
+// level, the entry contributes to the result.
+//
+// Vanilla 1.12's class progression is trainer-driven — most class
+// spells require visiting a trainer to actually learn them, even
+// though SkillLineAbility says "this is a Mage spell available at
+// level 12". Modern `GetCurrentLevelSpells` (added in 5.x when
+// trainers were removed) reports auto-learned spells; we report
+// the closest available analog — *what's trainable* at this level.
+// Addon code that ported from MoP+ for "what's new this level" UI
+// will find this useful.
+//
+// The optional `level` argument lets addons preview "what would I
+// get at level N" (e.g. a talent planner showing future spells).
+// Class/race still comes from the local player — there's no
+// `(class, race, level)` form because vanilla doesn't expose a
+// class-string→classID lookup we can rely on cleanly.
+//
+// Empty inputs (no player, no descriptor, missing DBC) return an
+// empty table — never errors, never returns nil. Matches modern.
+int __fastcall Script_GetCurrentLevelSpells(void *L) {
+    // Optional level arg (stack[1]) — read BEFORE blowing the stack.
+    const bool hasLevelArg = Game::Lua::IsNumber(L, 1);
+    const int argLevel = hasLevelArg
+        ? static_cast<int>(Game::Lua::ToNumber(L, 1))
+        : 0;
+
+    Game::Lua::SetTop(L, 0);
+    Game::Lua::NewTable(L);
+
+    auto *desc = PlayerDescriptor();
+    if (desc == nullptr)
+        return 1;
+
+    const uint8_t classByte = *(desc + Offsets::OFF_UNIT_DESCRIPTOR_CLASS_BYTE);
+    const uint8_t raceByte = *(desc + Offsets::OFF_UNIT_DESCRIPTOR_RACE_BYTE);
+    const int32_t playerLevel = *reinterpret_cast<const int32_t *>(
+        desc + Offsets::OFF_UNIT_FIELD_LEVEL);
+    if (classByte == 0 || raceByte == 0 || playerLevel <= 0)
+        return 1;
+
+    // Resolve the queried level — caller-provided when valid (>0),
+    // else fall back to the player's current level. Out-of-range
+    // values (negative, 0) are treated as "use mine" since there's
+    // no useful answer for them anyway.
+    const int queryLevel = (hasLevelArg && argLevel > 0) ? argLevel : playerLevel;
+
+    const uint32_t playerClassBit = 1u << (classByte - 1);
+    const uint32_t playerRaceBit = 1u << (raceByte - 1);
+
+    // Bitmask of all valid 1.12 vanilla class bits combined:
+    //   1=Warrior, 2=Paladin, 3=Hunter, 4=Rogue, 5=Priest,
+    //   7=Shaman, 8=Mage, 9=Warlock, 11=Druid
+    // (Class 6 = Death Knight, 10 = Monk; both post-vanilla.)
+    //
+    // Used as a sanity gate: a class mask with bits OUTSIDE this
+    // range is junk data — typically Turtle WoW custom spells with
+    // a buggy classMask = 0xFFFFFFFF or sentinel values. Honoring
+    // those would surface unrelated-class spells (e.g. Hunter's
+    // Searing Shot showing up for a Priest at level 32 because
+    // 0xFFFFFFFF AND Priest-bit != 0). Drop them.
+    constexpr uint32_t VALID_VANILLA_CLASS_MASK =
+        (1u << 0)  | (1u << 1)  | (1u << 2)  | (1u << 3)  | (1u << 4)  |
+        (1u << 6)  | (1u << 7)  | (1u << 8)  | (1u << 10);
+
+    const uint8_t *const *records = *reinterpret_cast<const uint8_t *const *const *>(
+        static_cast<uintptr_t>(Offsets::VAR_SKILL_LINE_ABILITY_RECORDS));
+    const int count = *reinterpret_cast<const int *>(
+        static_cast<uintptr_t>(Offsets::VAR_SKILL_LINE_ABILITY_COUNT));
+    if (records == nullptr || count <= 0)
+        return 1;
+
+    // Dedup: pet abilities (Bite, Claw, Growl) have one SLA entry per
+    // creature family, all pointing at the same spellID. Without
+    // dedup the list double-counts. Even if the class filter below
+    // catches them, profession recipes also have multi-row entries
+    // (per skill line tier) so we keep the set.
+    std::unordered_set<int> seen;
+
+    int outIdx = 1;
+    for (int i = 1; i <= count; ++i) {
+        const uint8_t *rec = records[i];
+        if (rec == nullptr)
+            continue;
+
+        const uint32_t recClassMask = *reinterpret_cast<const uint32_t *>(
+            rec + Offsets::OFF_SLA_CLASS_MASK);
+        const uint32_t recRaceMask = *reinterpret_cast<const uint32_t *>(
+            rec + Offsets::OFF_SLA_RACE_MASK);
+        const uint32_t recExcludeClass = *reinterpret_cast<const uint32_t *>(
+            rec + Offsets::OFF_SLA_EXCLUDE_CLASS);
+        const uint32_t recExcludeRace = *reinterpret_cast<const uint32_t *>(
+            rec + Offsets::OFF_SLA_EXCLUDE_RACE);
+
+        // Skip if explicitly excluded.
+        if ((recExcludeClass & playerClassBit) != 0)
+            continue;
+        if ((recExcludeRace & playerRaceBit) != 0)
+            continue;
+
+        // Race filter — race-locked spells need our race bit set in
+        // raceMask. Applied to both class spells and racials. Without
+        // this, Turtle WoW's race-locked class spells (e.g. Searing
+        // Shot tagged as Night Elf Priest at skill 613) leak into
+        // other races' results.
+        const bool raceOk = (recRaceMask == 0) ||
+                            ((recRaceMask & playerRaceBit) != 0);
+        if (!raceOk)
+            continue;
+
+        // Match rules:
+        //   - classMask has our class bit AND classMask has no
+        //     bits outside vanilla's valid-class set → class spell
+        //     (Smite, Fireball, etc.). The PRIMARY case. The
+        //     valid-bits check rejects Turtle's buggy classMask =
+        //     0xFFFFFFFF entries that would otherwise leak Hunter
+        //     spells into a Priest's list, etc.
+        //   - classMask = 0 AND raceMask has our race bit → racial
+        //     ability (Stoneform, Berserking, etc.) — class-agnostic
+        //     but race-locked. (Race bit already verified above.)
+        //
+        // We deliberately DO NOT pass `classMask = 0 AND raceMask = 0`
+        // (universal entries) because that bucket is dominated by pet
+        // abilities, profession recipes, and generic utility — none of
+        // which modern's `GetCurrentLevelSpells` reports. Modern
+        // returns class-specific learnable spells only; we match that.
+        const bool maskWithinValid =
+            (recClassMask & ~VALID_VANILLA_CLASS_MASK) == 0;
+        const bool isClassSpell = maskWithinValid &&
+                                   (recClassMask & playerClassBit) != 0;
+        const bool isRacial = (recClassMask == 0) && (recRaceMask != 0);
+        if (!isClassSpell && !isRacial)
+            continue;
+
+        const int spellID = *reinterpret_cast<const int *>(
+            rec + Offsets::OFF_SLA_SPELL_ID);
+        if (spellID <= 0)
+            continue;
+        if (SpellBaseLevel(spellID) != queryLevel)
+            continue;
+        // Skip talents — they're class spells in SLA but learned via
+        // talent points, not auto-granted at level. Modern's
+        // GetCurrentLevelSpells excludes them too.
+        if (TalentSpellSet().count(spellID) != 0)
+            continue;
+        // Skip spells flagged "hide from auto-learn list" — the
+        // same AttributesEx2 bit Cata's GetCurrentLevelSpells
+        // checks (FUN_00911c60). Catches engine-internal or proc-
+        // only spells that have a BaseLevel but aren't meant to
+        // surface as learnable.
+        if (SpellHiddenFromAutoLearn(spellID))
+            continue;
+        if (!seen.insert(spellID).second)
+            continue;
+
+        Game::Lua::PushNumber(L, static_cast<double>(outIdx));
+        Game::Lua::PushNumber(L, static_cast<double>(spellID));
+        Game::Lua::SetTable(L, -3);
+        ++outIdx;
+    }
+    return 1;
+}
+
+void RegisterLuaFunctions() {
+    Game::Lua::RegisterTableFunction("C_SpellBook", "GetSpellLevelLearned",
+                                      &Script_GetSpellLevelLearned);
+    Game::Lua::RegisterTableFunction("C_SpellBook", "GetCurrentLevelSpells",
+                                      &Script_GetCurrentLevelSpells);
+}
+
+const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
+
+} // namespace
+
+} // namespace Spell::Level

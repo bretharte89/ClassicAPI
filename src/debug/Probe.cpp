@@ -325,6 +325,70 @@ int __fastcall Script_DiffAllLog(void *L) {
     return 0;
 }
 
+// Walks SkillLineAbility.dbc and returns a string with every row
+// matching `spellID`, formatted as
+//   `row=N id=I skill=S race=0xR class=0xC excR=0xR excC=0xC minRank=M sup=S acq=A`
+// Multiple rows are joined with newlines. Returns "(none)" if no
+// match. Use to diagnose why a spell appears (or doesn't) in
+// GetCurrentLevelSpells — Turtle WoW custom spells with weird
+// classMask values surface here clearly.
+int __fastcall Script_SLADumpForSpell(void *L) {
+    if (!Game::Lua::IsNumber(L, 1)) {
+        Game::Lua::Error(L, "Usage: _classicapi_SLADumpForSpell(spellID)");
+        return 0;
+    }
+    const int wantSpellID = static_cast<int>(Game::Lua::ToNumber(L, 1));
+
+    const uint8_t *const *records = *reinterpret_cast<const uint8_t *const *const *>(
+        static_cast<uintptr_t>(Offsets::VAR_SKILL_LINE_ABILITY_RECORDS));
+    const int count = *reinterpret_cast<const int *>(
+        static_cast<uintptr_t>(Offsets::VAR_SKILL_LINE_ABILITY_COUNT));
+
+    static char buf[4096];
+    int pos = 0;
+    buf[0] = '\0';
+
+    if (records == nullptr || count <= 0) {
+        Game::Lua::PushString(L, "(no SLA records)");
+        return 1;
+    }
+
+    for (int i = 1; i <= count && pos < static_cast<int>(sizeof(buf)) - 256; ++i) {
+        const uint8_t *rec = records[i];
+        if (rec == nullptr)
+            continue;
+        const int spellID = *reinterpret_cast<const int *>(
+            rec + Offsets::OFF_SLA_SPELL_ID);
+        if (spellID != wantSpellID)
+            continue;
+        const int id = *reinterpret_cast<const int *>(rec + 0x00);
+        const int skill = *reinterpret_cast<const int *>(rec + 0x04);
+        const uint32_t race = *reinterpret_cast<const uint32_t *>(
+            rec + Offsets::OFF_SLA_RACE_MASK);
+        const uint32_t cls = *reinterpret_cast<const uint32_t *>(
+            rec + Offsets::OFF_SLA_CLASS_MASK);
+        const uint32_t excR = *reinterpret_cast<const uint32_t *>(
+            rec + Offsets::OFF_SLA_EXCLUDE_RACE);
+        const uint32_t excC = *reinterpret_cast<const uint32_t *>(
+            rec + Offsets::OFF_SLA_EXCLUDE_CLASS);
+        const int minRank = *reinterpret_cast<const int *>(rec + 0x1C);
+        const int sup = *reinterpret_cast<const int *>(rec + 0x20);
+        const int acq = *reinterpret_cast<const int *>(rec + 0x24);
+        const int n = std::snprintf(buf + pos, sizeof(buf) - pos,
+            "row=%d id=%d skill=%d race=0x%X class=0x%X excR=0x%X excC=0x%X minRank=%d sup=%d acq=%d\n",
+            i, id, skill, race, cls, excR, excC, minRank, sup, acq);
+        if (n < 0)
+            break;
+        pos += n;
+    }
+
+    if (pos == 0)
+        Game::Lua::PushString(L, "(none)");
+    else
+        Game::Lua::PushString(L, buf);
+    return 1;
+}
+
 void RegisterLuaFunctions() {
     Game::Lua::RegisterGlobalFunction("_classicapi_DescDump", &Script_DescDump);
     Game::Lua::RegisterGlobalFunction("_classicapi_PlayerDump", &Script_PlayerDump);
@@ -333,6 +397,8 @@ void RegisterLuaFunctions() {
     Game::Lua::RegisterGlobalFunction("_classicapi_SnapAll", &Script_SnapAll);
     Game::Lua::RegisterGlobalFunction("_classicapi_DiffAll", &Script_DiffAll);
     Game::Lua::RegisterGlobalFunction("_classicapi_DiffAllLog", &Script_DiffAllLog);
+    Game::Lua::RegisterGlobalFunction("_classicapi_SLADumpForSpell",
+                                       &Script_SLADumpForSpell);
 }
 
 const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};

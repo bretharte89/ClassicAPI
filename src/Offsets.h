@@ -991,6 +991,42 @@ enum Offsets {
     OFF_UNIT_DESCRIPTOR_CLASS_BYTE = 0x79,
     OFF_UNIT_DESCRIPTOR_SEX_BYTE = 0x7A,
 
+    // SkillLineAbility.dbc — maps each (class, race) pair to its
+    // learnable spell list with skill-rank gating. Indexed by record
+    // ID; reads via the standard `records[id]` pattern. Used by
+    // `GetCurrentLevelSpells` to filter the global spell set down to
+    // entries our class/race can learn.
+    //
+    // Class instance VA `0x00C0D94C` per docs/DBCs.md. Standard 5-DWORD
+    // class shape so the records-array pointer slot sits at +0x08 and
+    // the count slot at +0x0C.
+    VAR_SKILL_LINE_ABILITY_RECORDS = 0x00C0D954,
+    VAR_SKILL_LINE_ABILITY_COUNT = 0x00C0D958,
+
+    // Record-internal offsets, vanilla 1.12 layout (CMaNGOS-canonical):
+    //   +0x00 id
+    //   +0x04 skillId       (→ SkillLine.dbc; e.g. 44 = "Swords")
+    //   +0x08 spellId       (→ Spell.dbc — the spell taught by this entry)
+    //   +0x0C raceMask      (bit `1 << (race - 1)`; 0 = all races)
+    //   +0x10 classMask     (bit `1 << (class - 1)`; 0 = all classes)
+    //   +0x14 excludeRace   (bitmask of races this entry does NOT apply to)
+    //   +0x18 excludeClass  (bitmask of classes this entry does NOT apply to)
+    //   +0x1C minSkillRank
+    //   ... (more fields)
+    OFF_SLA_SPELL_ID = 0x08,
+    OFF_SLA_RACE_MASK = 0x0C,
+    OFF_SLA_CLASS_MASK = 0x10,
+    OFF_SLA_EXCLUDE_RACE = 0x14,
+    OFF_SLA_EXCLUDE_CLASS = 0x18,
+
+    // Spell.dbc `BaseLevel` — the level a spell becomes available
+    // (trainer offers it, quest reward grants it, etc.). Distinct
+    // from `SpellLevel` at +0x74 which is the effective level used
+    // for damage scaling and resistance math. Per CMaNGOS-canonical
+    // 1.12 Spell.dbc layout; cross-checked against known fields at
+    // ±a few offsets (PowerType at +0x7C is verified).
+    OFF_SPELL_RECORD_BASE_LEVEL = 0x70,
+
     // `UNIT_BYTES_1` (CMaNGOS field 132 in the 1.12.1 layout). 32-bit
     // composite field; the low byte is the standstate (standing /
     // sitting / sleeping / kneeling / etc.), the upper bytes hold
