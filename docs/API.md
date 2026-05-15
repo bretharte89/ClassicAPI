@@ -905,7 +905,7 @@ GameTooltip:SetOwner(UIParent, "ANCHOR_CURSOR")
 GameTooltip:SetSpellByID(25306)
 local name, rank, spellID = GameTooltip:GetSpell()
 -- name = "Fireball"
--- rank = "Rank 11"
+-- rank = "Rank 12"
 -- spellID = 25306
 ```
 
