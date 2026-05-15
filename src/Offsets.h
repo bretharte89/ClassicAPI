@@ -59,8 +59,26 @@ enum Offsets {
     //   - Clear             (0x00530050) zeroes all of them.
     OFF_TOOLTIP_UNIT_GUID_LO = 0x368,
     OFF_TOOLTIP_UNIT_GUID_HI = 0x36C,
+    OFF_TOOLTIP_ITEM_GUID_LO = 0x380, // 0 for SetItemByID (no CGItem)
+    OFF_TOOLTIP_ITEM_GUID_HI = 0x384,
     OFF_TOOLTIP_ITEM_ID = 0x398,
     OFF_TOOLTIP_SPELL_ID = 0x39C,
+
+    // CGItem → fully-dressed item link string. __fastcall(ecx = CGItem *)
+    // → const char *. Reads the item's itemID, quality, permanent
+    // enchant ID, random-properties seed/factor, and unique ID off the
+    // CGItem's instance block + descriptor, builds the dressed name via
+    // FUN_005D8BC0 (handles random-suffix decoration like "Foo of the
+    // Bear"), then sprintf's into the global buffer at DAT_00C0CF68 and
+    // returns its address. The returned pointer is to a long-lived
+    // engine global, safe to read until the next call.
+    //
+    // Same helper Script_GetContainerItemLink (0x004F9930) and
+    // Script_GetInventoryItemLink (0x004C8C10) call after resolving
+    // their slot-form args. Bypassing them lets us build dressed links
+    // for tooltips set via SetMerchantItem / SetLootItem / etc. where
+    // the item isn't in the player's bag/equipment.
+    FUN_GAMETOOLTIP_BUILD_ITEM_LINK = 0x0052AE00,
 
     // Registers a single global Lua function. __fastcall(name, func).
     FUN_FRAMESCRIPT_REGISTER_FUNCTION = 0x00704120,

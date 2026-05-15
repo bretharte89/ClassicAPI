@@ -1759,40 +1759,54 @@ is a thin wrapper. If they're inlined, we'd either need to skip
 the clear ourselves (call after some no-op state setup) or
 manually call the line-emission primitives.
 
-## 61. `GameTooltip:GetItem()` / `GetSpell()` / `GetUnit()` — easy if reachable
+## ~~61. `GameTooltip:GetItem()` / `GetSpell()` / `GetUnit()`~~ — `GetItem` + `GetSpell` DONE; `GetUnit` deferred
 
 Modern query methods that return what the tooltip is currently
 showing:
 
-- `GetItem()` → `(name, link)`
-- `GetSpell()` → `(name, rank, spellID)`
-- `GetUnit()` → `(name, unitToken)`
+- `GetItem()` → `(name, link)` — DONE
+- `GetSpell()` → `(name, rank, spellID)` — DONE
+- `GetUnit()` → `(name, unitToken)` — deferred (needs GUID→token
+  reverse lookup, walking known unit tokens)
 
-1.12 has `SetUnit` (slot 31), `SetSpell` (slot 18), and various
-`SetInventoryItem`/`SetBagItem`/`SetMerchantItem` (slots 19, 30,
-27) but no `Get*` counterparts. Modern addons that scrape tooltip
-state — rank parsers, link extractors, debug overlays — currently
-have to wrap every `SetX` call in their own state tracking.
+Each Set* path stashes a "currently displayed" field on the tooltip
+frame instance, and the per-tooltip Clear at `FUN_00530050` zeroes
+the full set on Hide/before-redraw. Verified offsets:
 
-The engine almost certainly maintains "what am I currently
-displaying?" fields on the GameTooltip frame for its own redraw
-logic. Finding those fields is the work; once located, each `Get*`
-is a one-line read.
+| Field | Offset | Written by | Cleared by |
+|---|---:|---|---|
+| Unit GUID | `+0x368/+0x36C` | `BuildUnitTooltip` (0x0052A019) | `FUN_00530050` |
+| Item ID | `+0x398` | `BuildItemTooltip` (0x0052B6FE) | `FUN_00530050` |
+| Spell ID | `+0x39C` | `BuildSpellTooltip` (0x0052E6D5) | `FUN_00530050` |
 
-Investigation steps:
-1. Set a known item via `SetItemByID(6948)` (Hearthstone)
-2. Search the GameTooltip frame's instance memory for the value
-   `6948` after the call
-3. Repeat with `SetSpellByID(133)` (Fireball) — find spellID slot
-4. Repeat with `SetUnit("player")` — find the unit-token or GUID
-   slot
+`GetSpell` reads `+0x39C`, looks up the Spell.dbc record, and pushes
+the localized name + rank + spellID. Returns nothing if the slot is
+zero (no spell tooltip displayed). See [src/spell/Tooltip.cpp](src/spell/Tooltip.cpp).
 
-Each of these will reveal an offset on the frame's instance struct
-that holds the current state. Symmetric for the others.
+`GetItem` reads two fields: itemID at `+0x398`, item GUID at
+`+0x380/+0x384`. When the GUID is non-zero (any path with a real
+CGItem — `SetBagItem`, `SetInventoryItem`, `SetLootItem`,
+`SetMerchantItem`, etc.) we resolve to a CGItem and dispatch to the
+engine's own per-instance link builder at `FUN_0052AE00` — same
+helper `Script_GetContainerItemLink` (0x004F9930) uses after
+resolving its slot-form args. That produces the fully dressed link
+with enchant ID, random-suffix factor, unique ID, and decorated
+name. When the GUID is zero (`SetItemByID` / `SetHyperlink` with no
+instance data), we fall back to a basic colored link built from
+itemID + cached quality + cached name. Returns `(name, link,
+itemID)` — the third return is non-modern but saves callers a
+gsub. See [src/item/Tooltip.cpp](src/item/Tooltip.cpp).
 
-`GetItem()` returns a link — slightly more involved since we'd
-need to format the item link string (we have `Item::Tooltip` for
-this pattern).
+`GetUnit` is the trickier one — we have the GUID at `+0x368/+0x36C`,
+but modern semantics return the *token* the addon passed
+(`"target"`, `"player"`, `"mouseover"`, etc.). Implementation needs:
+
+1. Reverse-resolve GUID → name via the NameCache (existing helper).
+2. Reverse-resolve GUID → token by walking common tokens (`player`,
+   `target`, `mouseover`, `pet`, `party1..4`, `partypet1..4`,
+   `raid1..40`) and calling `FUN_00515970` (TokenToGUID) on each,
+   returning the first match. Returns `nil` for offline GUIDs not
+   currently tied to a token, matching modern WoW.
 
 ## 62. `GameTooltip:NumLines()` — trivial if reachable
 

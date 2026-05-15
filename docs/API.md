@@ -30,6 +30,8 @@ build instructions.
   - [`GameTooltip:SetSpellByID(spellID)`](#gametooltipsetspellbyidspellid)
   - [`GameTooltip:SetTalentByID(talentID)`](#gametooltipsettalentbyidtalentid)
   - [`GameTooltip:SetInventoryItemByID(itemID)`](#gametooltipsetinventoryitembyiditemid)
+  - [`GameTooltip:GetItem()`](#gametooltipgetitem)
+  - [`GameTooltip:GetSpell()`](#gametooltipgetspell)
 - [Quest](#quest)
   - [`GetQuestIDFromLogIndex(index)`](#getquestidfromlogindexindex)
   - [`C_QuestLog.RequestLoadQuestByID(questID)`](#c_questlogrequestloadquestbyidquestid)
@@ -834,6 +836,83 @@ GameTooltip:SetOwner(UIParent, "ANCHOR_CURSOR")
 GameTooltip:SetSpellByID(133)  -- Fireball
 GameTooltip:Show()
 ```
+
+Equivalent to the function of the same name introduced in 3.0.
+
+### `GameTooltip:GetItem()`
+
+Returns `(name, link, itemID)` for whichever item the tooltip is
+currently displaying, or nothing if it isn't showing an item. Modern
+WoW returns only `(name, link)`; we extend with `itemID` as a third
+return so callers don't have to gsub-extract it from the link.
+
+The engine stashes two fields per Set* item call:
+- `tooltip+0x398` ← itemID (always populated)
+- `tooltip+0x380/+0x384` ← item GUID (only when there's a real
+  CGItem — `SetBagItem`, `SetInventoryItem`, `SetLootItem`,
+  `SetMerchantItem`, etc. Zero for `SetItemByID` / `SetHyperlink`
+  which have no instance.)
+
+Both fields are zeroed by the per-tooltip Clear on Hide / before the
+next Set*.
+
+```lua
+GameTooltip:SetOwner(UIParent, "ANCHOR_CURSOR")
+
+-- SetItemByID — no per-instance data, basic link returned
+GameTooltip:SetItemByID(6948)
+local name, link, id = GameTooltip:GetItem()
+-- name = "Hearthstone"
+-- link = "|cffffffff|Hitem:6948:0:0:0:0:0:0:0|h[Hearthstone]|h|r"
+-- id   = 6948
+
+-- SetInventoryItem — full dressed link with enchant + random suffix
+GameTooltip:SetInventoryItem("player", 1)
+local name, link, id = GameTooltip:GetItem()
+-- name = "Cowl of Nature's Breath"
+-- link = "|cffa335ee|Hitem:28803:3001:0:0|h[Cowl of Nature's Breath]|h|r"
+-- id   = 28803
+```
+
+Two link paths:
+
+| Set* path | Link form | Dressing |
+|---|---|---|
+| `SetBagItem`, `SetInventoryItem`, `SetLootItem`, `SetMerchantItem`, … | Full dressed link via the engine's own builder at `0x0052AE00` | Enchant ID, random-suffix factor, unique ID, suffix-decorated name |
+| `SetItemByID`, `SetHyperlink` (item:N with no instance data) | Basic colored link | itemID + cached quality + cached name only |
+
+The dressed-link path works for items not in player inventory
+(merchant, loot, mailbox, trade window, etc.) — the engine's
+resolver finds any CGItem the client has loaded.
+
+Returns nothing for: non-item tooltip, uncached itemID on the
+no-GUID path (fires a background cache warmup), or empty name.
+
+Equivalent to the function of the same name introduced in 3.0,
+with the added `itemID` third return.
+
+### `GameTooltip:GetSpell()`
+
+Returns `(name, rank, spellID)` for whichever spell the tooltip is
+currently displaying, or nothing if it isn't showing a spell. The
+engine stashes the spellID on the tooltip frame at `+0x39C` whenever
+any `SetX` spell path runs (`SetSpell`, `SetSpellByID`,
+`SetUnitBuff`/`SetUnitDebuff`, `SetTalent`, etc.) and zeroes it on
+the next `Clear` / `Hide`.
+
+```lua
+GameTooltip:SetOwner(UIParent, "ANCHOR_CURSOR")
+GameTooltip:SetSpellByID(25306)
+local name, rank, spellID = GameTooltip:GetSpell()
+-- name = "Fireball"
+-- rank = "Rank 11"
+-- spellID = 25306
+```
+
+`rank` is the empty string (not nil) for spells whose Spell.dbc rank
+slot is blank — most racials, talent passives, and proc-triggered
+spells. This matches the modern semantics where the rank position is
+always populated.
 
 Equivalent to the function of the same name introduced in 3.0.
 
