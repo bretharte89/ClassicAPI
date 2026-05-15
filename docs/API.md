@@ -123,6 +123,7 @@ build instructions.
 - [Unit](#unit)
   - [`UnitGUID(unit)`](#unitguidunit)
   - [`GetUnitSpeed(unit)`](#getunitspeedunit)
+  - [`UnitClassBase(unit)`](#unitclassbaseunit)
   - [`UnitIsAFK(unit)`](#unitisafkunit)
   - [`UnitIsDND(unit)`](#unitisdndunit)
   - [`UnitIsFeignDeath(unit)`](#unitisfeigndeathunit)
@@ -3378,6 +3379,46 @@ UnitStandState("party1")    -- 0 if the slot is empty
 1.12 has `IsSitOrStanding()` (local-player boolean) but no
 unit-token form; `UnitStandState` fills the gap and exposes the
 full enum.
+
+### `UnitClassBase(unit)`
+
+Returns `(classFile, classID)` — the locale-independent class
+token plus the numeric classID. The token is one of
+`"WARRIOR"`, `"PALADIN"`, `"HUNTER"`, `"ROGUE"`, `"PRIEST"`,
+`"SHAMAN"`, `"MAGE"`, `"WARLOCK"`, `"DRUID"`; the classID matches
+the integer `UnitClass`'s third return surfaces (1=Warrior,
+2=Paladin, 3=Hunter, 4=Rogue, 5=Priest, 7=Shaman, 8=Mage,
+9=Warlock, 11=Druid — 6 and 10 are post-vanilla).
+
+```lua
+local token, id = UnitClassBase("player")    -- "WARRIOR", 1
+local token = UnitClassBase("target")        -- works for any synced unit
+local color = RAID_CLASS_COLORS[UnitClassBase("party1")]
+```
+
+Modern addons use the token for class detection because vanilla's
+`UnitClass(unit)` returns a localized first return (e.g.
+`"Krieger"` on a German client), which is fine for display but
+breaks any addon code that keys on `if class == "WARRIOR"`. The
+classID second return is a vanilla extension — modern's
+`UnitClassBase` returns the token only — but it saves callers
+from chaining `UnitClass(unit)` just to get the integer.
+
+Reads the class byte from `UNIT_FIELD_BYTES_0` (descriptor `+0x79`,
+the same byte `UnitClass`'s general-token path reads) and looks up
+the english filename at `ChrClasses.dbc::Filename` (record `+0x38`).
+Both fields are broadcast / static, so remote players' class is
+current regardless of distance.
+
+Returns `(nil, nil)` for:
+- `target` with no current target, empty `partyN` / `raidN` slots,
+  or units whose descriptor isn't loaded yet
+- creatures and other non-player units (their class byte indexes a
+  different table; the class-byte lookup naturally returns nil for
+  out-of-range / zero values)
+
+Throws a Lua error on missing / non-string `unit` argument — same
+shape as `UnitClass` itself.
 
 ## UnitAuras
 

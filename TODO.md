@@ -367,15 +367,22 @@ the new `src/unit/` directory. Future unit-flag accessors
 can land alongside without polluting the per-domain Lua-namespace
 directories.
 
-## 22. `UnitClassBase(unit)` — easy
+## ~~22. `UnitClassBase(unit)`~~ — DONE
 
 Locale-independent class file string (`"WARRIOR"`, `"MAGE"`, etc.).
-Modern addons use this for class detection because `UnitClass` returns
-a localized name. Read from `UNIT_FIELD_BYTES_0` (the byte field that
-holds class/race/gender/power-type), then map to one of the 9 vanilla
-class strings. We already know the unit descriptor lives at
-`[unit + 0x110]` (see `UnitPlayerControlled` discovery for
-`GetInventoryItemID`).
+Resolves the unit via `FUN_RESOLVE_UNIT_TOKEN`, reads the class
+byte from `UNIT_FIELD_BYTES_0` (descriptor `+0x79`, same byte
+`Script_UnitClass`'s general-token branch uses), and looks up
+`ChrClasses.dbc::Filename` (record `+0x38`) for the english token.
+
+Works for any synced unit — both fields are broadcast UpdateField /
+static-DBC data. Returns nil for unresolvable units (empty
+`partyN` slot, `target` with no target, out-of-range class byte
+for non-player units). Implementation uses the existing
+`DBC::StringField` helper so the bounds-checking and locale-array
+hairiness stays in one place.
+
+See [src/unit/ClassBase.cpp](src/unit/ClassBase.cpp).
 
 ## ~~23. `GetItemSpell(item)`~~ — DONE
 
