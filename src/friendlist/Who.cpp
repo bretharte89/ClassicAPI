@@ -23,12 +23,19 @@
 // FriendsFrame_OnEvent wrap, flag toggle). This collapses the
 // invocation half of that dance to one call.
 //
+// Routing-flag save/restore: vanilla `VAR_WHO_TO_UI_FLAG` is
+// process-global. Setting it to 1 for our query also affects any
+// other /who response that lands afterward — a user typing `/who Bob`
+// would inherit our flag and lose both the chat-count printer and
+// the FriendsFrame popup. To keep our override local to OUR
+// responses, we hook the SMSG_WHO handler at `FUN_005ADF60`,
+// post-original, and restore the prior flag value once all in-flight
+// queries we initiated have been answered.
+//
 // The friends-panel suppression itself still needs an addon-side
 // `FriendsFrame_OnEvent` wrap — gated on `IsWhoQueryPending()` —
-// because we don't hook the WHO_LIST_UPDATE engine dispatch yet
-// (that requires interposing on `FrameScript_SignalEvent` or the
-// SMSG_WHO handler, both higher-risk hook sites). With the wrap +
-// gate, pfUI's ScanWhoName collapses to a one-liner.
+// because we don't hook the WHO_LIST_UPDATE Lua dispatch directly.
+// With the wrap + gate, pfUI's ScanWhoName collapses to a one-liner.
 
 #include "Game.h"
 #include "Offsets.h"
@@ -48,15 +55,27 @@ namespace {
 // "did my query get sent?" signal via the bool return.
 constexpr DWORD kCooldownMs = 5000;
 
-// Window during which `IsWhoQueryPending()` reports true after a
-// send. Generous upper bound on response RTT — the engine usually
-// replies within a few hundred ms, but a stalled connection or
-// dropped packet can stretch it. Larger than the cooldown so a
-// time-based reset still pins down the worst case.
-constexpr DWORD kPendingWindowMs = 5000;
+// Lost-response safety net. If a query's SMSG_WHO somehow never
+// arrives (network blip, server drop), `g_inFlight` would otherwise
+// stay positive forever and we'd never restore the routing flag.
+// On every new send we check this window first and force-reset if
+// the last send is older than this and the counter's still up.
+constexpr DWORD kPendingWindowMs = 10000;
 
 DWORD g_lastSendTick = 0;
 bool g_haveSent = false;
+
+// Count of /who queries we've initiated whose SMSG_WHO response we
+// haven't seen yet. Drives `IsWhoQueryPending` directly — addons
+// gating on this get an exact answer rather than the old 5s-timer
+// heuristic. Also gates the flag-restore in the response hook.
+int g_inFlight = 0;
+
+// Snapshot of `VAR_WHO_TO_UI_FLAG` taken on the first send while
+// `g_inFlight == 0`. Restored once `g_inFlight` returns to zero so
+// our override doesn't leak into unrelated /who queries.
+int g_savedFlag = 0;
+bool g_flagOverridden = false;
 
 bool OnCooldown() {
     if (!g_haveSent)
@@ -65,11 +84,33 @@ bool OnCooldown() {
     return (now - g_lastSendTick) < kCooldownMs;
 }
 
-bool IsPending() {
+void RestoreFlagIfOwned() {
+    if (!g_flagOverridden)
+        return;
+    *reinterpret_cast<int *>(
+        static_cast<uintptr_t>(Offsets::VAR_WHO_TO_UI_FLAG)) = g_savedFlag;
+    g_flagOverridden = false;
+}
+
+// Force-reset if our in-flight counter has been stuck for longer
+// than the response should ever take. Covers the (rare) lost-packet
+// case where SMSG_WHO never arrives for a query we sent — without
+// this, `IsWhoQueryPending` would stay true and the flag would never
+// restore. Runs at the START of every new send so the safety check
+// always precedes a fresh override.
+void ResetIfStuck() {
+    if (g_inFlight <= 0)
+        return;
     if (!g_haveSent)
-        return false;
-    const DWORD now = GetTickCount();
-    return (now - g_lastSendTick) < kPendingWindowMs;
+        return;
+    if ((GetTickCount() - g_lastSendTick) < kPendingWindowMs)
+        return;
+    g_inFlight = 0;
+    RestoreFlagIfOwned();
+}
+
+bool IsPending() {
+    return g_inFlight > 0;
 }
 
 // `__thiscall(this = WhoSystem*, queryStr)` — the inner sender that
@@ -88,10 +129,56 @@ bool SendQueryInternal(const char *fullQuery) {
     return true;
 }
 
-void SetWhoToUIFlag(int value) {
-    *reinterpret_cast<int *>(
-        static_cast<uintptr_t>(Offsets::VAR_WHO_TO_UI_FLAG)) = value;
+int *FlagPtr() {
+    return reinterpret_cast<int *>(
+        static_cast<uintptr_t>(Offsets::VAR_WHO_TO_UI_FLAG));
 }
+
+// Sets the routing flag to 1 (WhoList path) and remembers the prior
+// value once per "in-flight burst". Only the FIRST send in a burst
+// snapshots; subsequent overlapping sends ride on the same snapshot.
+// `RestoreFlagIfOwned` puts it back once the matching responses have
+// all been processed by `WhoResponse_h`.
+void OverrideFlagForWhoList() {
+    if (!g_flagOverridden) {
+        g_savedFlag = *FlagPtr();
+        g_flagOverridden = true;
+    }
+    *FlagPtr() = 1;
+}
+
+// Hook on the SMSG_WHO response handler (`FUN_005ADF60`, opcode 0x63).
+// All SMSG opcode handlers in 1.12 are `__stdcall(uint32 opcode,
+// void *packetReader)` — verified by the `ret 0x8` epilogue on
+// `FUN_005ADF60` and its siblings registered via
+// `FUN_005AB650(opcode, handler, 0)`. (An earlier version of this
+// hook used `__cdecl` based on Ghidra's default decompile signature,
+// which corrupted the stack on every call — the trampoline cleaned
+// 8 bytes the caller had already cleaned, ESP slid down, and
+// execution eventually landed in unmapped memory.)
+//
+// We invoke the trampoline first so the engine's response handling
+// (including its `FrameScript_SignalEvent(WHO_LIST_UPDATE)` call
+// into Lua) sees `IsWhoQueryPending() == true` and the flag still
+// set to 1. After the original returns, we decrement and — when
+// in-flight hits 0 — restore the pre-override flag value.
+using WhoResponse_t = int(__stdcall *)(uint32_t opcode, void *packet);
+WhoResponse_t WhoResponse_o = nullptr;
+
+int __stdcall WhoResponse_h(uint32_t opcode, void *packet) {
+    const int result = WhoResponse_o(opcode, packet);
+    if (g_inFlight > 0) {
+        g_inFlight--;
+        if (g_inFlight == 0)
+            RestoreFlagIfOwned();
+    }
+    return result;
+}
+
+static const Game::HookAutoRegister _hookreg{
+    Offsets::FUN_SMSG_WHO_RESPONSE,
+    reinterpret_cast<void *>(&WhoResponse_h),
+    reinterpret_cast<void **>(&WhoResponse_o)};
 
 // `C_FriendList.SendWhoQueryByName(name)` — fires a /who query for
 // exactly one character name, buffered into the WhoList so a normal
@@ -148,26 +235,41 @@ int __fastcall Script_C_FriendList_SendWhoQueryByName(void *L) {
     std::memcpy(query + prefixLen, name, nameLen);
     query[prefixLen + nameLen] = '\0';
 
-    // Engine routes responses into the WhoList (and fires
-    // WHO_LIST_UPDATE) when this flag is set; otherwise it prints
-    // "Found N players matching..." to chat. We want list semantics.
-    SetWhoToUIFlag(1);
+    // Reap stalled state from a prior send whose response never
+    // arrived before overriding the flag for this one — otherwise
+    // `g_savedFlag` would shift from the engine's real default
+    // (typically 0) to whatever we last forced.
+    ResetIfStuck();
+
+    // Snapshot the pre-override flag (so we can restore in the
+    // response hook) then force route-to-WhoList for our query.
+    OverrideFlagForWhoList();
     if (!SendQueryInternal(query)) {
+        // Send failed — usually pre-login (WhoSystem singleton
+        // null). Nothing in flight, so we can immediately undo the
+        // override and report failure.
+        if (g_inFlight == 0)
+            RestoreFlagIfOwned();
         Game::Lua::PushBoolean(L, 0);
         return 1;
     }
     g_lastSendTick = GetTickCount();
     g_haveSent = true;
+    g_inFlight++;
     Game::Lua::PushBoolean(L, 1);
     return 1;
 }
 
-// `C_FriendList.IsWhoQueryPending()` — true within a short window
-// (~5s) after the most recent `SendWhoQueryByName` returned true.
-// Time-based — the engine doesn't expose a "response arrived" hook
-// from C++ yet, so we conservatively report pending until the
-// cooldown expires. In practice the WHO_LIST_UPDATE response lands
-// well inside this window.
+// `C_FriendList.IsWhoQueryPending()` — true while at least one of
+// our `SendWhoQueryByName` calls is still awaiting its SMSG_WHO
+// response. Backed by an exact in-flight counter that the
+// `WhoResponse_h` hook decrements when the engine processes a
+// response — addons gating their `FriendsFrame_OnEvent` wraps on
+// this get a precise yes/no rather than a 5s-window heuristic.
+//
+// Counter has a 10-second safety net (`ResetIfStuck` at next send)
+// for the rare case where a response packet is lost; in normal play
+// the engine responds within hundreds of milliseconds.
 int __fastcall Script_C_FriendList_IsWhoQueryPending(void *L) {
     Game::Lua::PushBoolean(L, IsPending() ? 1 : 0);
     return 1;
