@@ -119,20 +119,10 @@ const uint8_t *PlayerInvMgr() {
 
 // Walk a single bag, invoking `cb(cgItem)` for each non-empty slot.
 // `cb` returns true to continue, false to stop iteration. Stomps
-// the Lua stack — caller must own it.
+// the Lua stack — caller must own it (`ResolveBag` does the stomping).
 template <typename Cb>
 void ForEachItemInBag(void *L, int bagID, Cb &&cb) {
-    using ScriptFn_t = int(__fastcall *)(void *L);
-
-    Game::Lua::SetTop(L, 0);
-    Game::Lua::PushNumber(L, static_cast<double>(bagID));
-    auto getNumSlots = reinterpret_cast<ScriptFn_t>(
-        Offsets::FUN_SCRIPT_GET_CONTAINER_NUM_SLOTS);
-    getNumSlots(L);
-    if (!Game::Lua::IsNumber(L, -1))
-        return;
-    const int slotCount = static_cast<int>(Game::Lua::ToNumber(L, -1));
-
+    const int slotCount = Item::Location::GetBagSlotCount(bagID);
     for (int slot = 1; slot <= slotCount; ++slot) {
         const uint8_t *item = Item::Location::ResolveBag(L, bagID, slot);
         if (item == nullptr)

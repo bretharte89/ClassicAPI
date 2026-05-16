@@ -166,24 +166,6 @@ int __fastcall Script_C_Item_IsEquippedItem(void *L) {
     return 1;
 }
 
-// Asks the engine how many slots `bagID` has via the existing
-// `Script_GetContainerNumSlots` Lua C function. Same dispatch trick
-// `Item::Hearthstone` uses; delegates the "what's a valid bag, how
-// big is it" decision to the engine. Returns 0 for empty bag slots
-// (engine pushes 0 for "no bag equipped").
-//
-// Stomps the Lua stack — caller must own it.
-int GetContainerSlotCount(void *L, int bagID) {
-    Game::Lua::SetTop(L, 0);
-    Game::Lua::PushNumber(L, static_cast<double>(bagID));
-    using ScriptFn_t = int(__fastcall *)(void *L);
-    auto fn = reinterpret_cast<ScriptFn_t>(Offsets::FUN_SCRIPT_GET_CONTAINER_NUM_SLOTS);
-    fn(L);
-    if (!Game::Lua::IsNumber(L, -1))
-        return 0;
-    return static_cast<int>(Game::Lua::ToNumber(L, -1));
-}
-
 // Walks bags 0..4 looking for an item matching `arg`. On hit, sets
 // `*outBag` / `*outSlot` / `*outItem` and returns true.
 //
@@ -193,7 +175,7 @@ int GetContainerSlotCount(void *L, int bagID) {
 bool FindItemInBags(void *L, const Item::Arg::Resolved &arg, int *outBag, int *outSlot,
                     const uint8_t **outItem) {
     for (int bag = 0; bag <= 4; ++bag) {
-        const int slotCount = GetContainerSlotCount(L, bag);
+        const int slotCount = Item::Location::GetBagSlotCount(bag);
         for (int slot = 1; slot <= slotCount; ++slot) {
             const uint8_t *item = Item::Location::ResolveBag(L, bag, slot);
             if (item == nullptr) continue;

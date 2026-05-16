@@ -23,24 +23,6 @@ namespace Item::Count {
 
 namespace {
 
-// Asks the engine how many slots `bagID` has by invoking the existing
-// `Script_GetContainerNumSlots` Lua C function. Same dispatch trick
-// `Item::Hearthstone` uses; delegates the whole "what's a valid bag,
-// how big is it" decision to the engine. Returns 0 for empty bag
-// slots (no bag equipped → engine pushes 0).
-//
-// Stomps the Lua stack — caller must own it.
-int GetContainerSlotCount(void *L, int bagID) {
-    Game::Lua::SetTop(L, 0);
-    Game::Lua::PushNumber(L, static_cast<double>(bagID));
-    using ScriptFn_t = int(__fastcall *)(void *L);
-    auto fn = reinterpret_cast<ScriptFn_t>(Offsets::FUN_SCRIPT_GET_CONTAINER_NUM_SLOTS);
-    fn(L);
-    if (!Game::Lua::IsNumber(L, -1))
-        return 0;
-    return static_cast<int>(Game::Lua::ToNumber(L, -1));
-}
-
 // Reads ITEM_FIELD_STACK_COUNT off a CGItem's m_objectFields
 // descriptor at +0x20. Returns 0 if the descriptor is null. Stack
 // counts are always positive — non-stackable items have count = 1.
@@ -92,7 +74,7 @@ int GetItemContribution(const uint8_t *cgItem, bool includeUses) {
 // clobbers Lua stack[1]/[2]; we own the stack inside the callback.
 int CountInBag(void *L, int bagID, int targetItemID, bool includeUses) {
     int total = 0;
-    const int slotCount = GetContainerSlotCount(L, bagID);
+    const int slotCount = Item::Location::GetBagSlotCount(bagID);
     for (int slot = 1; slot <= slotCount; slot++) {
         const uint8_t *item = Item::Location::ResolveBag(L, bagID, slot);
         if (item == nullptr)

@@ -82,28 +82,6 @@ const uint8_t *PeekItemRecord(uint32_t itemID) {
     return fn(cache, itemID, &zeroGuid, nullptr, nullptr, 0);
 }
 
-// Mirrors `Item::Bag::ResolveBagInfo`'s slot-count derivation: backpack
-// is fixed at 16, equipped bags read `m_containerSlots` off the cache
-// record. Returns 0 for empty bag slots or out-of-range bagIDs — those
-// iterations get skipped.
-int SlotCountForBag(int bagID) {
-    if (bagID == 0)
-        return Offsets::BACKPACK_NUM_SLOTS;
-    if (bagID < 1 || bagID > 4)
-        return 0;
-    auto *bagItem = ResolveEquipmentSlot(Offsets::INVSLOT_BAG1 + bagID - 1);
-    if (bagItem == nullptr)
-        return 0;
-    const int bagItemID = Item::ID::FromCGItem(bagItem);
-    if (bagItemID == 0)
-        return 0;
-    auto *record = PeekItemRecord(static_cast<uint32_t>(bagItemID));
-    if (record == nullptr)
-        return 0;
-    return static_cast<int>(*reinterpret_cast<const uint32_t *>(
-        record + Offsets::OFF_ITEMSTATS_CONTAINER_SLOTS));
-}
-
 uint64_t ReadCGItemGUID(const uint8_t *item) {
     auto *instance = *reinterpret_cast<const uint8_t *const *>(
         item + Offsets::OFF_ITEM_INSTANCE_BLOCK);
@@ -125,6 +103,27 @@ const uint8_t *ResolveEquipmentSlot(int slot1Based) {
     auto GetItemBySlot = reinterpret_cast<GetItemBySlot_t>(
         Offsets::FUN_ITEMMGR_GET_ITEM_BY_SLOT);
     return static_cast<const uint8_t *>(GetItemBySlot(invMgr, slot1Based - 1));
+}
+
+// Mirrors `Item::Bag::ResolveBagInfo`'s slot-count derivation: backpack
+// is fixed at 16, equipped bags read `m_containerSlots` off the cache
+// record. Returns 0 for empty bag slots or out-of-range bagIDs.
+int GetBagSlotCount(int bagID) {
+    if (bagID == 0)
+        return Offsets::BACKPACK_NUM_SLOTS;
+    if (bagID < 1 || bagID > 4)
+        return 0;
+    auto *bagItem = ResolveEquipmentSlot(Offsets::INVSLOT_BAG1 + bagID - 1);
+    if (bagItem == nullptr)
+        return 0;
+    const int bagItemID = Item::ID::FromCGItem(bagItem);
+    if (bagItemID == 0)
+        return 0;
+    auto *record = PeekItemRecord(static_cast<uint32_t>(bagItemID));
+    if (record == nullptr)
+        return 0;
+    return static_cast<int>(*reinterpret_cast<const uint32_t *>(
+        record + Offsets::OFF_ITEMSTATS_CONTAINER_SLOTS));
 }
 
 const uint8_t *ResolveBag(void *L, int bagID, int slotIndex) {
@@ -170,7 +169,7 @@ bool FindByGUID(void *L, uint64_t guid, ByGUIDResult *out) {
     // beware: any data the caller stashed on the stack will be gone after
     // this returns true.
     for (int bagID = 0; bagID <= 4; ++bagID) {
-        const int slotCount = SlotCountForBag(bagID);
+        const int slotCount = GetBagSlotCount(bagID);
         for (int slotIndex = 1; slotIndex <= slotCount; ++slotIndex) {
             auto *item = ResolveBag(L, bagID, slotIndex);
             if (item == nullptr)

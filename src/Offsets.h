@@ -482,14 +482,6 @@ enum Offsets {
     // even though the slot data in `invMgr+0x04` remains populated.
     // Bypassed in the direct-read bank path; informational only otherwise.
     VAR_BANK_GATE_GUID = 0x00BDD038,
-    // `Script_GetContainerNumSlots` Lua C function — `__fastcall(void *L)`.
-    // Reads bagID from Lua stack[1] and pushes the bag's slot count back.
-    // We invoke this from C-side bag walks instead of hardcoding a max
-    // (vanilla bags top out at 24, but custom servers can ship larger
-    // bags). Returns 16 for the backpack, the actual bag size for slots
-    // 1..4, or 0 if no bag is equipped at the slot — engine handles the
-    // edge cases for us. Errors on out-of-range bagIDs.
-    FUN_SCRIPT_GET_CONTAINER_NUM_SLOTS = 0x004F9560,
     // Engine's Lua C functions for the per-instance item link of a bag
     // or character-pane slot. Reads (bagID, slotIndex) from stack[1]/[2]
     // for the container form, or (unit, slot) from stack[1]/[2] for the

@@ -60,6 +60,15 @@ const uint8_t *ResolveBag(void *L, int bagID, int slotIndex);
 // Returns nullptr for out-of-range slots or empty equipment.
 const uint8_t *ResolveEquipmentSlot(int slot1Based);
 
+// Returns the number of slots in player bag `bagID` (0..4) without
+// going through `Script_GetContainerNumSlots` — bag 0 is the fixed
+// 16-slot backpack, bags 1..4 read `m_containerSlots` off the
+// equipped bag's cached `ItemStats_C` record. Returns 0 for empty
+// bag slots and out-of-range `bagID`. No Lua stack interaction —
+// safe to call outside a callback. Equipped-bag ItemStats are
+// guaranteed cached by the engine's bag-sync flow at login.
+int GetBagSlotCount(int bagID);
+
 // GUID-walk result. `equipmentSlotIndex != 0` means the item was
 // found in a character-pane equipment slot; otherwise it's in
 // `bagID`/`slotIndex`. `item` always points to the found CGItem

@@ -87,17 +87,9 @@ bool IsOnCooldown(int spellID) {
 // Stomps the Lua stack — caller must own it. Stack contents on
 // return are unspecified (caller should `SetTop` if needed).
 int CountItemInBags(void *L, int targetItemID) {
-    using GetSlots_t = int(__fastcall *)(void *L);
-    auto getSlots = reinterpret_cast<GetSlots_t>(
-        Offsets::FUN_SCRIPT_GET_CONTAINER_NUM_SLOTS);
     int total = 0;
     for (int bag = 0; bag <= 4; bag++) {
-        Game::Lua::SetTop(L, 0);
-        Game::Lua::PushNumber(L, static_cast<double>(bag));
-        getSlots(L);
-        if (!Game::Lua::IsNumber(L, -1))
-            continue;
-        const int slots = static_cast<int>(Game::Lua::ToNumber(L, -1));
+        const int slots = Item::Location::GetBagSlotCount(bag);
         for (int slot = 1; slot <= slots; slot++) {
             const uint8_t *item = Item::Location::ResolveBag(L, bag, slot);
             if (item == nullptr)

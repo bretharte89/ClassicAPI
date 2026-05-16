@@ -23,25 +23,6 @@ namespace Item::Hearthstone {
 
 namespace {
 
-// Asks the engine how many slots `bagID` has by invoking the existing
-// `Script_GetContainerNumSlots` Lua C function. Delegates instead of
-// hardcoding so custom servers shipping larger-than-vanilla bags
-// (e.g., 36-slot custom containers) work transparently. Returns 0
-// for empty bag slots (engine pushes 0 for "no bag equipped").
-//
-// Stomps the Lua stack — caller must own it. Same stack-clobber
-// pattern as `Item::Location::ResolveBag`.
-int GetContainerSlotCount(void *L, int bagID) {
-    Game::Lua::SetTop(L, 0);
-    Game::Lua::PushNumber(L, static_cast<double>(bagID));
-    using ScriptFn_t = int(__fastcall *)(void *L);
-    auto fn = reinterpret_cast<ScriptFn_t>(Offsets::FUN_SCRIPT_GET_CONTAINER_NUM_SLOTS);
-    fn(L);
-    if (!Game::Lua::IsNumber(L, -1))
-        return 0;
-    return static_cast<int>(Game::Lua::ToNumber(L, -1));
-}
-
 // Tests whether `itemID` is a hearthstone — either the vanilla one
 // (6948) or a custom-server variant that reuses Hearthstone's
 // on-use spell (8690). The itemID check is the fast path; the
@@ -64,11 +45,11 @@ bool IsHearthstoneItem(uint32_t itemID) {
 // matched itemID (which for a custom-server hearthstone won't be
 // `HEARTHSTONE_ITEM_ID`).
 //
-// Each `ResolveBag` / `GetContainerSlotCount` call clobbers Lua
-// stack[1]/[2], but we own the stack inside our callback context.
+// Each `ResolveBag` call clobbers Lua stack[1]/[2], but we own the
+// stack inside our callback context. `GetBagSlotCount` is stack-free.
 bool FindHearthstone(void *L, int *outBag, int *outSlot, int *outItemID) {
     for (int bag = 0; bag <= 4; bag++) {
-        const int slotCount = GetContainerSlotCount(L, bag);
+        const int slotCount = Item::Location::GetBagSlotCount(bag);
         for (int slot = 1; slot <= slotCount; slot++) {
             const uint8_t *item = Item::Location::ResolveBag(L, bag, slot);
             if (item == nullptr)
