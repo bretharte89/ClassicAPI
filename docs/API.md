@@ -39,7 +39,7 @@ build instructions.
   - [`GameTooltip:GetSpell()`](#gametooltipgetspell)
   - [`GameTooltip:HasItem()` / `GameTooltip:HasSpell()`](#gametooltiphasitem--gametooltiphasspell)
 - [Quest](#quest)
-  - [`GetQuestIDFromLogIndex(index)`](#getquestidfromlogindexindex)
+  - [`C_QuestLog.GetQuestIDFromLogIndex(index)`](#c_questloggetquestidfromlogindexindex)
   - [`C_QuestLog.RequestLoadQuestByID(questID)`](#c_questlogrequestloadquestbyidquestid)
   - [`C_QuestLog.GetTitleForQuestID(questID)`](#c_questloggettitleforquestidquestid)
 - [Gossip](#gossip)
@@ -1216,7 +1216,7 @@ Equivalent to the function of the same name introduced in 8.0.
 
 ## Quest
 
-### `GetQuestIDFromLogIndex(index)`
+### `C_QuestLog.GetQuestIDFromLogIndex(index)`
 
 Returns the questID (Quest.dbc row ID) for the entry at the given 1-based
 quest log index. In 3.3.5 this came as the 9th return of `GetQuestLogTitle`;
@@ -1230,7 +1230,7 @@ in 1.12 it isn't returned at all, even though the engine has it internally.
 for i = 1, GetNumQuestLogEntries() do
     local title, level, questTag, isHeader, isCollapsed, isComplete
         = GetQuestLogTitle(i)
-    local questID = GetQuestIDFromLogIndex(i)  -- 0 for headers
+    local questID = C_QuestLog.GetQuestIDFromLogIndex(i)  -- 0 for headers
     -- ...
 end
 ```

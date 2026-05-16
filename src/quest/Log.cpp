@@ -48,7 +48,8 @@ static int __fastcall Script_GetQuestIDFromLogIndex(void *L) {
 }
 
 static void RegisterLuaFunctions() {
-    Game::Lua::RegisterGlobalFunction("GetQuestIDFromLogIndex", &Script_GetQuestIDFromLogIndex);
+    Game::Lua::RegisterTableFunction("C_QuestLog", "GetQuestIDFromLogIndex",
+                                     &Script_GetQuestIDFromLogIndex);
 }
 
 static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
