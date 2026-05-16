@@ -61,7 +61,10 @@ const char *LogPath() {
 // written before the fault.
 FILE *OpenAppend() {
     const char *path = LogPath();
-    return path != nullptr ? std::fopen(path, "a") : nullptr;
+    if (path == nullptr)
+        return nullptr;
+    FILE *f = nullptr;
+    return fopen_s(&f, path, "a") == 0 ? f : nullptr;
 }
 
 // SEH-wrapped 16-byte-row read. Returns true if all 16 bytes
@@ -107,7 +110,8 @@ void Clear() {
     const char *path = LogPath();
     if (path == nullptr)
         return;
-    if (FILE *f = std::fopen(path, "w"))
+    FILE *f = nullptr;
+    if (fopen_s(&f, path, "w") == 0 && f != nullptr)
         std::fclose(f);
 }
 
