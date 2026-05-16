@@ -153,50 +153,87 @@ uint32_t ReadGuildKey(const uint8_t *unit) {
         info + Offsets::OFF_PLAYER_INFO_GUILD_KEY);
 }
 
-// Resolves an input string (unit token or literal name) to a
-// canonical character name by calling Lua's `UnitName(input)` via
-// `lua_pcall`. Falls back to the literal input on error (invalid
-// token / unknown name) or empty result.
-//
-// We use `Script_UnitName` indirectly rather than reimplementing
-// its logic because it correctly handles every case:
-//   - `"player"` reads directly from the local player object
-//     (skips NameCache since the cache doesn't pre-populate the
-//     local player's entry).
-//   - `"target"`, `"party*"`, `"raid*"` etc. resolve via the
-//     engine's GUID-to-object lookup, then `CGUnit::GetName` which
-//     hits NameCache with the engine's own callback wiring (the
-//     gate `_GetRecord` uses to allow returning loaded entries).
-//   - Invalid tokens raise a Lua error, caught here by `pcall`.
-const char *ResolveInputToName(void *L, const char *input, char (&nameBuf)[64]) {
-    const int topBefore = Game::Lua::GetTop(L);
+using TokenToGUID_t = uint64_t(__fastcall *)(const char *token);
+using PlayerInfoLookup_t = const uint8_t *(__thiscall *)(
+    void *cache, uint32_t guidLo, uint32_t guidHi, uint64_t *cookie,
+    void *callback, void *userData, int retryFlag);
 
-    Game::Lua::PushString(L, "UnitName");
-    Game::Lua::GetTable(L, Game::Lua::GLOBALS_INDEX);
-    if (Game::Lua::Type(L, -1) != Game::Lua::TYPE_FUNCTION) {
-        Game::Lua::SetTop(L, topBefore);
-        return input;
+bool AllDigits(const char *s) {
+    if (s == nullptr || *s == '\0')
+        return false;
+    for (; *s != '\0'; ++s) {
+        if (*s < '0' || *s > '9')
+            return false;
     }
-    Game::Lua::PushString(L, input);
-    const int status = Game::Lua::PCall(L, 1, 1, 0);
-    if (status != 0) {
-        // Errored (e.g. "Unknown unit name"). Pop the error message.
-        Game::Lua::SetTop(L, topBefore);
-        return input;
-    }
-    if (Game::Lua::Type(L, -1) != Game::Lua::TYPE_STRING) {
-        Game::Lua::SetTop(L, topBefore);
-        return input;
-    }
-    const char *resolved = Game::Lua::ToString(L, -1);
-    if (resolved == nullptr || *resolved == '\0') {
-        Game::Lua::SetTop(L, topBefore);
-        return input;
-    }
-    // Copy out — Lua's `tostring` pointer is only stable while the
-    // value remains on the stack.
-    std::snprintf(nameBuf, sizeof(nameBuf), "%s", resolved);
-    Game::Lua::SetTop(L, topBefore);
+    return true;
+}
+
+bool HasPrefix(const char *s, const char *prefix) {
+    return std::strncmp(s, prefix, std::strlen(prefix)) == 0;
+}
+
+// Inline mirror of the engine's token-prefix tree inside
+// `FUN_TOKEN_TO_GUID` (`0x00515970`). The engine raises a Lua error
+// on unknown input via `"Unknown unit name: %s"`; we want a
+// non-erroring "is this a token?" predicate so we can dispatch only
+// recognized tokens to the engine and treat everything else as a
+// literal character name.
+//
+// Order matters: `partypet`/`raidpet` must be checked before
+// `party`/`raid` because they share the shorter prefix.
+bool LooksLikeKnownToken(const char *s) {
+    if (s == nullptr)
+        return false;
+    if (std::strcmp(s, "player") == 0) return true;
+    if (std::strcmp(s, "pet") == 0) return true;
+    if (std::strcmp(s, "target") == 0) return true;
+    if (std::strcmp(s, "mouseover") == 0) return true;
+    if (std::strcmp(s, "npc") == 0) return true;
+    if (HasPrefix(s, "partypet")) return AllDigits(s + 8);
+    if (HasPrefix(s, "raidpet"))  return AllDigits(s + 7);
+    if (HasPrefix(s, "party"))    return AllDigits(s + 5);
+    if (HasPrefix(s, "raid"))     return AllDigits(s + 4);
+    return false;
+}
+
+// Resolves a known unit token to a player name via:
+//   1. `FUN_TOKEN_TO_GUID` — OOR-safe (reads the SMSG_GROUP_LIST GUID
+//      tables, not CGObject lookups). Returns 0 for empty slots like
+//      `"party6"` when not in a 6-person group.
+//   2. `FUN_PLAYER_INFO_LOOKUP` with a NULL callback — a pure
+//      NameCache read; returns the entry block for any GUID the
+//      engine has seen a `SMSG_NAME_QUERY_RESPONSE` for. Same path
+//      `GetPlayerInfoByGUID` uses.
+//
+// Returns `nameBuf` on success (copied out — the entry's name pointer
+// isn't guaranteed stable across reentrant cache writes), or nullptr
+// if either step fails (empty token slot, NPC/creature GUID not in
+// the player cache, or player not yet name-queried).
+//
+// Caller must have already prefix-gated the input via
+// `LooksLikeKnownToken` — `FUN_TOKEN_TO_GUID` raises a Lua error for
+// unrecognized tokens.
+const char *TokenNameViaNameCache(const char *token, char (&nameBuf)[64]) {
+    auto toGuid = reinterpret_cast<TokenToGUID_t>(Offsets::FUN_TOKEN_TO_GUID);
+    const uint64_t guid = toGuid(token);
+    if (guid == 0)
+        return nullptr;
+
+    auto lookup = reinterpret_cast<PlayerInfoLookup_t>(
+        Offsets::FUN_PLAYER_INFO_LOOKUP);
+    auto *cache = reinterpret_cast<void *>(
+        static_cast<uintptr_t>(Offsets::VAR_PLAYER_NAME_CACHE));
+    uint64_t cookie = 0;
+    const uint8_t *entry = lookup(cache,
+                                  static_cast<uint32_t>(guid),
+                                  static_cast<uint32_t>(guid >> 32),
+                                  &cookie, nullptr, nullptr, 0);
+    if (entry == nullptr)
+        return nullptr;
+
+    std::snprintf(nameBuf, sizeof(nameBuf), "%s",
+                  reinterpret_cast<const char *>(
+                      entry + Offsets::OFF_PLAYER_INFO_NAME));
     return nameBuf;
 }
 
@@ -217,11 +254,12 @@ const char *ResolveInputToName(void *L, const char *input, char (&nameBuf)[64]) 
 //    reads the same field. Covers the most common cases (player,
 //    target, party/raid members in range, etc.).
 //
-// 3. Slow path: resolve the input to a canonical name (via
-//    `FUN_TOKEN_TO_GUID` + NameCache, or use the literal input)
-//    and walk the engine's guild roster array comparing names.
-//    Handles OOR party/raid members and literal names. Requires
-//    `GuildRoster()` to have been called.
+// 3. Slow path: resolve the input to a name and walk the engine's
+//    guild roster array comparing names. For tokens, the name comes
+//    from `FUN_TOKEN_TO_GUID` + the engine's player NameCache
+//    (`FUN_PLAYER_INFO_LOOKUP`) — handles OOR raid members in
+//    another zone. For literal names, the input is used directly.
+//    Requires `GuildRoster()` to have been called.
 //
 // In 3.3.5 the engine resolves the input to a 64-bit GUID via
 // `0x0060ABF0` (token-prefix dispatch with NameCache fallback) and
@@ -259,18 +297,13 @@ int __fastcall Script_UnitIsInMyGuild(void *L) {
         return 1;
     }
 
-    // Resolve input to a canonical name via `UnitName` (pcall'd to
-    // catch the "Unknown unit name" error path for literal names).
-    // This serves double duty: gives us a name for the roster walk
-    // AND tells us whether the input is a valid token (success ⇒
-    // token, error ⇒ literal name).
-    char nameBuf[64];
-    const char *nameToFind = ResolveInputToName(L, input, nameBuf);
-    const bool inputIsToken = (nameToFind != input);
+    const bool inputIsToken = LooksLikeKnownToken(input);
 
     if (inputIsToken) {
-        // Input is a valid token — safe to call `resolve()`. Fast
-        // path: direct guild-key comparison for visible/loaded units.
+        // Fast path: direct guild-key comparison for visible/loaded
+        // units. `resolve()` is safe to call now that we've prefix-
+        // gated — the engine raises a Lua error only on unrecognized
+        // tokens.
         auto *unit = static_cast<const uint8_t *>(resolve(input));
         if (unit != nullptr) {
             const uint32_t unitKey = ReadGuildKey(unit);
@@ -287,8 +320,22 @@ int __fastcall Script_UnitIsInMyGuild(void *L) {
         }
     }
 
-    // Roster walk by name (handles OOR party tokens via the resolved
-    // name and literal names via the input itself).
+    // Slow path: derive a name and strcmp against the roster.
+    const char *nameToFind;
+    char nameBuf[64];
+    if (inputIsToken) {
+        nameToFind = TokenNameViaNameCache(input, nameBuf);
+        if (nameToFind == nullptr) {
+            // Token resolved to an empty slot, an NPC GUID, or a
+            // player the engine hasn't name-queried yet. Either way,
+            // not a guildmate we can identify.
+            Game::Lua::PushNil(L);
+            return 1;
+        }
+    } else {
+        // Literal name — used directly for the roster strcmp.
+        nameToFind = input;
+    }
 
     auto **roster = *reinterpret_cast<uint8_t ***>(
         Offsets::VAR_GUILD_ROSTER_PTR);
