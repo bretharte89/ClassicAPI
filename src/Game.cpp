@@ -66,6 +66,22 @@ void *State() {
     return *reinterpret_cast<void **>(static_cast<uintptr_t>(Offsets::VAR_LUA_STATE));
 }
 
+namespace {
+using FrameScriptPushObject_t = void(__fastcall *)(void *L, int idx, int unused);
+using FrameScriptGetObject_t = void *(__fastcall *)(void *L, int idx);
+} // namespace
+
+void *ResolveObject(void *L, int idx) {
+    auto PushObject = reinterpret_cast<FrameScriptPushObject_t>(
+        Offsets::FUN_FRAMESCRIPT_PUSH_OBJECT);
+    auto GetObject = reinterpret_cast<FrameScriptGetObject_t>(
+        Offsets::FUN_FRAMESCRIPT_GET_OBJECT);
+    PushObject(L, idx, 0);
+    void *result = GetObject(L, -1);
+    SetTop(L, -2);
+    return result;
+}
+
 void RegisterGlobalFunction(const char *name, CFunction func) {
     auto fn = reinterpret_cast<FrameScript_RegisterFunction_t>(
         Offsets::FUN_FRAMESCRIPT_REGISTER_FUNCTION);

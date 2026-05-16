@@ -30,41 +30,10 @@ static constexpr int OFF_SPELL_RANK = 0x204; // localized char *[9]
 using BuildSpellTooltip_t = void(__thiscall *)(void *thisObj, int spellID, int arg2, int arg3,
                                                int isPet, int arg5, int arg6, int arg7);
 
-constexpr uintptr_t addrFrameScriptPushObject = Offsets::FUN_FRAMESCRIPT_PUSH_OBJECT;
-constexpr uintptr_t addrFrameScriptGetObject = Offsets::FUN_FRAMESCRIPT_GET_OBJECT;
-constexpr uintptr_t addrLuaSetTop = Offsets::LUA_SET_TOP;
-
-// Mirrors the prologue of Script_GameTooltip_SetSpell at 0x00532D4E-0x00532D74:
-// push 0; mov edx, 1; mov ecx, L; call FrameScript_PushObject  -- pushes self's CObject ref
-// or  edx, -1; mov ecx, L;        call FrameScript_GetObject   -- reads the pointer back
-// mov edx, -2; mov ecx, L;        call lua_settop              -- balances the stack
-static void *ResolveTooltipObject(void *L) {
-    void *result = nullptr;
-    __asm {
-        push 0
-        mov  edx, 1
-        mov  ecx, L
-        mov  eax, addrFrameScriptPushObject
-        call eax
-
-        or   edx, -1
-        mov  ecx, L
-        mov  eax, addrFrameScriptGetObject
-        call eax
-        mov  result, eax
-
-        mov  edx, -2
-        mov  ecx, L
-        mov  eax, addrLuaSetTop
-        call eax
-    }
-    return result;
-}
-
 void ShowByID(void *L, int spellID) {
     if (spellID <= 0)
         return;
-    void *tooltipObj = ResolveTooltipObject(L);
+    void *tooltipObj = Game::Lua::ResolveObject(L, 1);
     if (tooltipObj == nullptr)
         return;
     auto BuildSpellTooltip =
@@ -98,7 +67,7 @@ static int __fastcall Script_GameTooltipGetSpell(void *L) {
         Game::Lua::Error(L, "Usage: GameTooltip:GetSpell()");
         return 0;
     }
-    void *tooltipObj = ResolveTooltipObject(L);
+    void *tooltipObj = Game::Lua::ResolveObject(L, 1);
     if (tooltipObj == nullptr)
         return 0;
 
@@ -138,7 +107,7 @@ static int __fastcall Script_GameTooltipHasSpell(void *L) {
         Game::Lua::Error(L, "Usage: GameTooltip:HasSpell()");
         return 0;
     }
-    void *tooltipObj = ResolveTooltipObject(L);
+    void *tooltipObj = Game::Lua::ResolveObject(L, 1);
     if (tooltipObj == nullptr) {
         Game::Lua::PushBoolean(L, 0);
         return 1;

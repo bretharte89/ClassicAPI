@@ -133,38 +133,6 @@ static int __fastcall Script_GameTooltipSetInventoryItemByID(void *L) {
     return fn(L);
 }
 
-// Same `(L) → CFrameScriptObject *` resolution prologue that the
-// engine's own SetX methods use — we don't have a public helper for
-// this (Spell::Tooltip has a copy in its TU), so duplicate it here
-// rather than expose Spell::Tooltip's private helper. The asm is the
-// well-trodden trio: FrameScript_PushObject(L,1,0); GetObject();
-// lua_settop(L,-2).
-static constexpr uintptr_t addrFrameScriptPushObject = Offsets::FUN_FRAMESCRIPT_PUSH_OBJECT;
-static constexpr uintptr_t addrFrameScriptGetObject = Offsets::FUN_FRAMESCRIPT_GET_OBJECT;
-static constexpr uintptr_t addrLuaSetTop = Offsets::LUA_SET_TOP;
-static void *ResolveTooltipObject(void *L) {
-    void *result = nullptr;
-    __asm {
-        push 0
-        mov  edx, 1
-        mov  ecx, L
-        mov  eax, addrFrameScriptPushObject
-        call eax
-
-        or   edx, -1
-        mov  ecx, L
-        mov  eax, addrFrameScriptGetObject
-        call eax
-        mov  result, eax
-
-        mov  edx, -2
-        mov  ecx, L
-        mov  eax, addrLuaSetTop
-        call eax
-    }
-    return result;
-}
-
 // Modern `Enum.ItemQuality` color codes for the SetItemByID fallback
 // path (no CGItem → no engine link helper). For the CGItem-resolved
 // path we delegate to the engine's own builder, which uses the same
@@ -262,7 +230,7 @@ static int __fastcall Script_GameTooltipGetItem(void *L) {
         Game::Lua::Error(L, "Usage: GameTooltip:GetItem()");
         return 0;
     }
-    void *tooltipObj = ResolveTooltipObject(L);
+    void *tooltipObj = Game::Lua::ResolveObject(L, 1);
     if (tooltipObj == nullptr)
         return 0;
     auto *base = static_cast<const uint8_t *>(tooltipObj);
@@ -342,7 +310,7 @@ static int __fastcall Script_GameTooltipHasItem(void *L) {
         Game::Lua::Error(L, "Usage: GameTooltip:HasItem()");
         return 0;
     }
-    void *tooltipObj = ResolveTooltipObject(L);
+    void *tooltipObj = Game::Lua::ResolveObject(L, 1);
     if (tooltipObj == nullptr) {
         Game::Lua::PushBoolean(L, 0);
         return 1;

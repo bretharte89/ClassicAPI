@@ -105,6 +105,16 @@ extern const lua_error_t Error;
 // Callable outside a Lua callback, e.g. during LoadScriptFunctions setup.
 void *State();
 
+// Resolves a Lua-side frame/object table at stack index `idx` to its
+// underlying `CFrameScriptObject *`. Mirrors the standard prologue
+// of the engine's own `Set*` frame methods — pushes the object via
+// `FrameScript_PushObject`, reads it back as a pointer via
+// `FrameScript_GetObject`, then balances the stack. Returns nullptr
+// if the slot isn't a CObject (table, light-userdata, or userdata
+// types are accepted by the engine resolver). Callers pass `1` for
+// the `self` slot of any `frame:method(...)` invocation.
+void *ResolveObject(void *L, int idx);
+
 // Registers a single global Lua function (e.g. `GetSpellInfo`). The function
 // must use the WoW Lua C function ABI: `int __fastcall(void *L)`.
 void RegisterGlobalFunction(const char *name, CFunction func);
