@@ -1514,17 +1514,45 @@ enum Offsets {
 
     // zlib 1.2.2, statically linked into WoW.exe (version string at
     // `0x008745F0`, copyright banners at `0x00815528`/`0x00815608`).
-    // Standard zlib one-shot helpers — `compress2` for the deflate
-    // side, `uncompress` for inflate. Both `__fastcall` (caller passes
-    // dest/destLen in ECX/EDX, the rest on stack; callee cleans).
     //
+    // One-shot helpers (always Zlib-format with adler32 trailer):
     //   int compress2(dest, *destLen, source, sourceLen, level)
     //   int uncompress(dest, *destLen, source, sourceLen)
     //
-    // Return codes match zlib's: 0 = Z_OK, -3 = Z_DATA_ERROR,
-    // -4 = Z_MEM_ERROR, -5 = Z_BUF_ERROR.
+    // Lower-level streaming API — needed for Gzip and raw Deflate
+    // formats since the one-shots only do Zlib format. The `Init2_`
+    // variants take an explicit `windowBits` which selects format:
+    //   +15        = Zlib (default)
+    //   +15 + 16   = Gzip
+    //   -15        = raw Deflate (no header, no checksum)
+    //   +15 + 32   = auto-detect (decode only; Zlib or Gzip)
+    //
+    // Call signatures (all `__fastcall`, callee cleans the stack):
+    //   int deflateInit2_(strm[ECX], level[EDX],
+    //                     stack: method, windowBits, memLevel,
+    //                            strategy, version, stream_size)
+    //   int deflate(strm[ECX], flush[EDX])
+    //   int deflateEnd(strm[ECX])
+    //   int inflateInit2_(strm[ECX], windowBits[EDX],
+    //                     stack: version, stream_size)
+    //   int inflate(strm[ECX], flush[EDX])
+    //   int inflateEnd(strm[ECX])
+    //
+    // Return codes match zlib's: 0 = Z_OK, 1 = Z_STREAM_END,
+    // -3 = Z_DATA_ERROR, -4 = Z_MEM_ERROR, -5 = Z_BUF_ERROR.
     FUN_ZLIB_COMPRESS2 = 0x00730BC0,
     FUN_ZLIB_UNCOMPRESS = 0x00734810,
+    FUN_ZLIB_DEFLATE_INIT2 = 0x00732A70,
+    FUN_ZLIB_DEFLATE = 0x00733040,
+    FUN_ZLIB_DEFLATE_END = 0x00733650,
+    FUN_ZLIB_INFLATE_INIT2 = 0x00730D60,
+    FUN_ZLIB_INFLATE = 0x00730EA0,
+    FUN_ZLIB_INFLATE_END = 0x00732320,
+    // The version string deflateInit2_/inflateInit2_ checks against
+    // (compile-time mismatch returns Z_VERSION_ERROR). Same string the
+    // one-shot helpers pass through.
+    VAR_ZLIB_VERSION_STRING = 0x008745F0,
+    ZLIB_STREAM_SIZE = 0x38,  // sizeof(z_stream) in 1.2.2 build
 
     // Static event-name "table" at runtime VA `0x00BE11D8` — this is what
     // `C_EventUtils.IsEventValid` walks. It is NOT the structure that
