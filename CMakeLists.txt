@@ -6,6 +6,11 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded")
 
+# minhook's CMakeLists.txt declares `cmake_minimum_required(VERSION 3.0...3.5)`,
+# which CMake 4.x flags as a deprecation warning every reconfigure. Bumping
+# the minimum policy version here promotes its policy set to 3.10 without
+# patching the vendored submodule.
+set(CMAKE_POLICY_VERSION_MINIMUM 3.10)
 add_subdirectory(external/minhook)
 
 file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "src/*.cpp")
