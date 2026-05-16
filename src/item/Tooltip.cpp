@@ -332,10 +332,32 @@ static int __fastcall Script_GameTooltipGetItem(void *L) {
     return 3;
 }
 
+// `GameTooltip:HasItem()` — boolean companion to `GetItem`. Returns
+// true iff the tooltip is currently showing an item (any path:
+// SetBagItem, SetHyperlink, SetItemByID, SetMerchantItem, etc.). Same
+// `[tooltip + OFF_TOOLTIP_ITEM_ID]` check `GetItem` does — that field
+// is non-zero only while an item tooltip is live.
+static int __fastcall Script_GameTooltipHasItem(void *L) {
+    if (Game::Lua::Type(L, 1) != Game::Lua::TYPE_TABLE) {
+        Game::Lua::Error(L, "Usage: GameTooltip:HasItem()");
+        return 0;
+    }
+    void *tooltipObj = ResolveTooltipObject(L);
+    if (tooltipObj == nullptr) {
+        Game::Lua::PushBoolean(L, 0);
+        return 1;
+    }
+    const int itemID = *reinterpret_cast<const int *>(
+        static_cast<const uint8_t *>(tooltipObj) + Offsets::OFF_TOOLTIP_ITEM_ID);
+    Game::Lua::PushBoolean(L, itemID > 0 ? 1 : 0);
+    return 1;
+}
+
 static const Game::Lua::FrameMethodEntry g_methods[] = {
     {"SetItemByID", &Script_GameTooltipSetItemByID},
     {"SetInventoryItemByID", &Script_GameTooltipSetInventoryItemByID},
     {"GetItem", &Script_GameTooltipGetItem},
+    {"HasItem", &Script_GameTooltipHasItem},
 };
 
 static void RegisterLuaFunctions() {

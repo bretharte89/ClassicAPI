@@ -73,7 +73,7 @@ void ShowByID(void *L, int spellID) {
 }
 
 static int __fastcall Script_GameTooltipSetSpellByID(void *L) {
-    if (Game::Lua::Type(L, 1) != 5) {
+    if (Game::Lua::Type(L, 1) != Game::Lua::TYPE_TABLE) {
         Game::Lua::Error(L, "Usage: GameTooltipSetSpellByID(self, spellID)");
         return 0;
     }
@@ -94,7 +94,7 @@ static int __fastcall Script_GameTooltipSetSpellByID(void *L) {
 // live. Name + rank come from the Spell.dbc record's locale-string
 // arrays at +0x1E0 and +0x204 (locale index at VAR_LOCALE_INDEX).
 static int __fastcall Script_GameTooltipGetSpell(void *L) {
-    if (Game::Lua::Type(L, 1) != 5) {
+    if (Game::Lua::Type(L, 1) != Game::Lua::TYPE_TABLE) {
         Game::Lua::Error(L, "Usage: GameTooltip:GetSpell()");
         return 0;
     }
@@ -128,9 +128,31 @@ static int __fastcall Script_GameTooltipGetSpell(void *L) {
     return 3;
 }
 
+// `GameTooltip:HasSpell()` — boolean companion to `GetSpell`. Returns
+// true iff the tooltip is currently showing a spell (any path:
+// SetSpell, SetSpellByID, SetUnitBuff/Debuff, etc.). Same
+// `[tooltip + OFF_TOOLTIP_SPELL_ID]` check `GetSpell` does — that
+// field is non-zero only while a spell tooltip is live.
+static int __fastcall Script_GameTooltipHasSpell(void *L) {
+    if (Game::Lua::Type(L, 1) != Game::Lua::TYPE_TABLE) {
+        Game::Lua::Error(L, "Usage: GameTooltip:HasSpell()");
+        return 0;
+    }
+    void *tooltipObj = ResolveTooltipObject(L);
+    if (tooltipObj == nullptr) {
+        Game::Lua::PushBoolean(L, 0);
+        return 1;
+    }
+    const int spellID = *reinterpret_cast<const int *>(
+        static_cast<const uint8_t *>(tooltipObj) + Offsets::OFF_TOOLTIP_SPELL_ID);
+    Game::Lua::PushBoolean(L, spellID > 0 ? 1 : 0);
+    return 1;
+}
+
 static const Game::Lua::FrameMethodEntry g_methods[] = {
     {"SetSpellByID", &Script_GameTooltipSetSpellByID},
     {"GetSpell", &Script_GameTooltipGetSpell},
+    {"HasSpell", &Script_GameTooltipHasSpell},
 };
 
 static void RegisterLuaFunctions() {

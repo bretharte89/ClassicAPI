@@ -37,6 +37,7 @@ build instructions.
   - [`GameTooltip:SetInventoryItemByID(itemID)`](#gametooltipsetinventoryitembyiditemid)
   - [`GameTooltip:GetItem()`](#gametooltipgetitem)
   - [`GameTooltip:GetSpell()`](#gametooltipgetspell)
+  - [`GameTooltip:HasItem()` / `GameTooltip:HasSpell()`](#gametooltiphasitem--gametooltiphasspell)
 - [Quest](#quest)
   - [`GetQuestIDFromLogIndex(index)`](#getquestidfromlogindexindex)
   - [`C_QuestLog.RequestLoadQuestByID(questID)`](#c_questlogrequestloadquestbyidquestid)
@@ -1114,6 +1115,24 @@ spells. This matches the modern semantics where the rank position is
 always populated.
 
 Equivalent to the function of the same name introduced in 3.0.
+
+### `GameTooltip:HasItem()` / `GameTooltip:HasSpell()`
+
+Boolean companions to `GetItem` / `GetSpell`. Return `true` if the
+tooltip is currently displaying an item / spell, `false` otherwise.
+Cheaper than `GetItem` / `GetSpell` when all you need is the
+predicate — single `uint32` read against `OFF_TOOLTIP_ITEM_ID` /
+`OFF_TOOLTIP_SPELL_ID`, no DBC lookup or link-build.
+
+```lua
+if GameTooltip:HasItem() then
+    local _, link = GameTooltip:GetItem()
+    -- only do the GetItem work when we actually need it
+end
+```
+
+Equivalent to the functions of the same name introduced in 3.0
+(`HasItem`) and 6.0 (`HasSpell`).
 
 ### `GameTooltip:SetTalentByID(talentID)`
 
