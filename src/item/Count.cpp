@@ -56,10 +56,13 @@ int GetStackCount(const uint8_t *cgItem) {
 }
 
 // Per-item uses count for `includeUses` mode. Reads
-// ITEM_FIELD_SPELL_CHARGES[0] (signed dword) and returns its absolute
-// value, or 1 if the item has no charges. The "or 1" makes the
-// multiplier neutral for non-charge items — plain stack count flows
-// through unchanged.
+// ITEM_FIELD_SPELL_CHARGES[0] (signed dword). Only negative values
+// count — they mark "consume-on-use, destroyed at 0" items
+// (Healthstone, Mana Gem, etc.). Positive or zero returns 1, so the
+// multiplier is neutral for stacked consumables and ordinary items.
+// Mirrors 3.3.5's `Script_GetItemCount` charge gate at
+// `FUN_0051c2e0` — it only swaps to the charge-summing walker when
+// `SPELL_CHARGES[0] < 0`.
 int GetUsesPerItem(const uint8_t *cgItem) {
     if (cgItem == nullptr)
         return 1;
@@ -69,9 +72,9 @@ int GetUsesPerItem(const uint8_t *cgItem) {
         return 1;
     const int32_t raw = *reinterpret_cast<const int32_t *>(
         descriptor + Offsets::OFF_DESCRIPTOR_SPELL_CHARGES_0);
-    if (raw == 0)
+    if (raw >= 0)
         return 1;
-    return raw < 0 ? -raw : raw;
+    return -raw;
 }
 
 // Combined per-slot contribution to GetItemCount. `includeUses=false`
