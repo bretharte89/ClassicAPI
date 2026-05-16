@@ -58,6 +58,7 @@ build instructions.
   - [`GetFactionParentID(factionID)`](#getfactionparentidfactionid)
   - [`C_Reputation.GetFactionStandings()`](#c_reputationgetfactionstandings)
   - [`C_Reputation.GetWatchedFactionData()`](#c_reputationgetwatchedfactiondata)
+  - [`C_Reputation.GetFactionDataByIndex(factionSortIndex)`](#c_reputationgetfactiondatabyindexfactionsortindex)
   - [`C_Reputation.SetWatchedFactionByID(factionID)`](#c_reputationsetwatchedfactionbyidfactionid)
   - [`C_Reputation.GetLastStandingChange()`](#c_reputationgetlaststandingchange)
   - [`FACTION_STANDING_CHANGED` event](#faction_standing_changed-event)
@@ -1559,28 +1560,10 @@ struct-style accessor — vanilla's `GetWatchedFactionInfo()` returns
 the same data as a 5-tuple without the factionID, which is the field
 modern callers rely on most.
 
-Fields populated (a subset of the modern schema — only what 1.12's
-engine actually has):
-
-| Field                      | Type    | Notes                                     |
-|----------------------------|---------|-------------------------------------------|
-| `factionID`                | number  | Faction.dbc record ID                     |
-| `name`                     | string  | Locale-applied                            |
-| `description`              | string  | Locale-applied (may be `""`)              |
-| `reaction`                 | number  | `1`=Hated .. `8`=Exalted                  |
-| `currentReactionThreshold` | number  | Band min standing value                   |
-| `nextReactionThreshold`    | number  | Band max standing value                   |
-| `currentStanding`          | number  | Current standing (`base + delta`)         |
-| `atWarWith`                | boolean | At-war flag (rep slot flags bit 1)        |
-| `canToggleAtWar`           | boolean | Can-toggle-at-war flag (bit 4)            |
-| `isWatched`                | boolean | Always `true` (it IS the watched faction) |
-| `isHeader`                 | boolean | Always `false` (factions only)            |
-
-Fields the modern API exposes but 1.12 has no source for —
-`isChild`, `isHeaderWithRep`, `isCollapsed`, `hasBonusRepGain`,
-`canSetInactive`, `isAccountWide` — are omitted rather than
-fabricated. Addons that need to feature-detect can check
-`data.isAccountWide ~= nil`.
+Returns the same `FactionData` table shape as
+[`GetFactionDataByIndex`](#c_reputationgetfactiondatabyindexfactionsortindex)
+— see that section for the full field list. `isWatched` is forced
+`true` (this faction IS the watched one by definition).
 
 ```lua
 local data = C_Reputation.GetWatchedFactionData()
@@ -1592,15 +1575,61 @@ if data then
 end
 ```
 
-Equivalent to the function of the same name introduced in 10.x;
-matches the Classic Era 1.15.x return shape for the fields it
-populates.
+Equivalent to the function of the same name introduced in 10.x.
 
 Implementation reads the watched `RepListID` from the player's
 `+0xE68` sub-struct, indexes the per-faction rep slot array at
-`0x00B73290` to recover the factionID, then derives the remaining
-fields from `Faction.dbc` plus the static reaction-threshold tables
-at `0x0080928C` / `0x00809290`.
+`0x00B73290` to recover the factionID, then runs the shared
+`ReadFactionData` chain (Faction.dbc lookup, reaction band, rep slot
+flags, header/collapsed checks).
+
+### `C_Reputation.GetFactionDataByIndex(factionSortIndex)`
+
+Returns a `FactionData` table for the faction at the given 1-based
+displayed-list index, or `nil` for an out-of-range index or a
+pseudo-row ("Other" / "Inactive" placeholders that don't have a
+`Faction.dbc` record). The index range matches what `GetNumFactions`
+covers — real factions plus category headers.
+
+Fields:
+
+| Field                      | Type    | Notes |
+|----------------------------|---------|-------|
+| `factionID`                | number  | `Faction.dbc` record ID. |
+| `name`                     | string  | Locale-applied. |
+| `description`              | string  | Locale-applied (may be `""`). |
+| `reaction`                 | number  | `1`=Hated .. `8`=Exalted. |
+| `currentReactionThreshold` | number  | Band min standing value. |
+| `nextReactionThreshold`    | number  | Band max standing value. |
+| `currentStanding`          | number  | Current standing (`base + delta`). |
+| `atWarWith`                | boolean | Rep slot flags bit `0x02`. |
+| `canToggleAtWar`           | boolean | `currentStanding ≥ -3000` AND not peace-forced (flags bit `0x10`). |
+| `isHeader`                 | boolean | Faction is a category header in the displayed list. |
+| `isHeaderWithRep`          | boolean | Always `false` in vanilla — parent factions don't aggregate rep. |
+| `isCollapsed`              | boolean | UI state: user has collapsed this header. |
+| `isWatched`                | boolean | This faction is shown above the XP bar. |
+| `canSetInactive`           | boolean | True when `!isHeader && repListIndex ≥ 0` — i.e. the engine's `SetFactionInactive`/`SetFactionActive` will accept this faction. |
+| `isChild`                  | boolean | Always `false` (parent-child rep introduced post-vanilla). |
+| `hasBonusRepGain`          | boolean | Always `false` (added in MoP). |
+| `isAccountWide`            | boolean | Always `false` (added in Dragonflight). |
+
+```lua
+for i = 1, GetNumFactions() do
+    local d = C_Reputation.GetFactionDataByIndex(i)
+    if d and not d.isHeader and d.currentStanding < d.nextReactionThreshold then
+        -- still grindable rep
+    end
+end
+```
+
+Implementation: resolves the 0-based index to a factionID via the
+engine's `FUN_RESOLVE_FACTION_INDEX` at `0x004D5FA0`, then runs the
+shared `ReadFactionData` chain — no Lua-side round-trip through
+`Script_GetFactionInfo`. `isHeader` / `isCollapsed` come from the
+displayed-list header array at `0x00B736C0` (count at `0x00B736B0`)
+and the per-character bitmask at `0x0084A0A4`.
+
+Equivalent to the function of the same name introduced in 10.x.
 
 ### `C_Reputation.SetWatchedFactionByID(factionID)`
 

@@ -1102,9 +1102,31 @@ enum Offsets {
     // `[VAR_LOCALE_INDEX]` (0..8).
     VAR_FACTION_DBC_RECORDS = 0x00C0DD50,
     VAR_FACTION_DBC_COUNT = 0x00C0DD54,
+    // RepListIndex on the Faction.dbc record. Maps factionID to the
+    // 0..63 slot in `VAR_PLAYER_REP_SLOTS`. Read by the engine's
+    // factionID→repListID helper at `0x004D5600` (called by
+    // FUN_FACTION_GET_AT_WAR / GET_CAN_TOGGLE_AT_WAR / IS_WATCHED).
+    // -1 means the faction has no rep slot (it's a category header).
+    OFF_FACTION_REP_LIST_INDEX = 0x04,
     OFF_FACTION_PARENT_ID = 0x48,
     OFF_FACTION_NAMES = 0x4C,
     OFF_FACTION_DESCRIPTIONS = 0x70,
+
+    // Displayed-list category headers. `VAR_FACTION_HEADER_LIST` is a
+    // flat int32 array of header factionIDs (max 32 — engine bounds
+    // it at `0x1f`). `VAR_FACTION_HEADER_COUNT` is the live count.
+    // Special sentinel factionIDs `0` (FACTION_OTHER) and `-1`
+    // (FACTION_INACTIVE) may appear in this list for the "Other" and
+    // "Inactive" pseudo-rows.
+    //
+    // `VAR_FACTION_COLLAPSED_BITMASK` is a 32-bit mask where bit `i`
+    // SET means the header at `VAR_FACTION_HEADER_LIST[i]` is
+    // **expanded** (NOT collapsed) — bit CLEAR = collapsed. Default
+    // state at login is all-clear (all categories collapsed).
+    VAR_FACTION_HEADER_LIST = 0x00B736C0,
+    VAR_FACTION_HEADER_COUNT = 0x00B736B0,
+    VAR_FACTION_COLLAPSED_BITMASK = 0x0084A0A4,
+    MAX_FACTION_HEADERS = 32,
 
     // Who-query (the /who system).
     //
@@ -1179,7 +1201,14 @@ enum Offsets {
     OFF_REP_SLOT_BASE_STANDING = 0x08,
     OFF_REP_SLOT_DELTA_STANDING = 0x0C,
     REP_SLOT_FLAG_AT_WAR = 0x02,
-    REP_SLOT_FLAG_CAN_TOGGLE_AT_WAR = 0x10,
+    // "Peace forced" — when SET, the player CAN'T toggle this faction
+    // to/from at-war (e.g. your own home cities, certain quest
+    // factions). Decoded from `FUN_FACTION_GET_CAN_TOGGLE_AT_WAR` at
+    // `0x004D61E0`, which reads bit `0x10` of the flags byte and
+    // `Script_GetFactionInfo` pushes `canToggleAtWar=false` when set.
+    // Note: the bit's MEANING is "can't toggle" — `canToggleAtWar` is
+    // its inverse, NOT its value.
+    REP_SLOT_FLAG_PEACE_FORCED = 0x10,
     MAX_REP_SLOTS = 64,
 
     // Static reaction-band threshold tables, indexed by reaction band
