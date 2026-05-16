@@ -680,6 +680,7 @@ enum Offsets {
     OFF_ITEMSTATS_NAME = 0x08,
     OFF_ITEMSTATS_DISPLAY_INFO_ID = 0x18,
     OFF_ITEMSTATS_QUALITY = 0x1C,    // u32 — 0=Poor … 5=Legendary
+    OFF_ITEMSTATS_SELL_PRICE = 0x28,
     OFF_ITEMSTATS_INVENTORY_TYPE = 0x2C,
     OFF_ITEMSTATS_ITEM_LEVEL = 0x38, // u32 — base ilvl from ItemSparse
     // `m_stackable` — max stack size for this item type (1 for non-

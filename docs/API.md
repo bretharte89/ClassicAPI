@@ -83,6 +83,7 @@ build instructions.
   - [`C_Item.DoesItemExist(itemLocation)` / `C_Item.DoesItemExistByID(item)`](#c_itemdoesitemexititemlocation--c_itemdoesitemexistbyiditem)
   - [`C_Item.GetItemName(itemLocation)` / `C_Item.GetItemNameByID(item)`](#c_itemgetitemnameitemlocation--c_itemgetitemnamebyiditem)
   - [`C_Item.GetItemQuality(itemLocation)` / `C_Item.GetItemQualityByID(item)`](#c_itemgetitemqualityitemlocation--c_itemgetitemqualitybyiditem)
+  - [`C_Item.GetItemSellPrice(itemLocation)` / `C_Item.GetItemSellPriceByID(item)`](#c_itemgetitemsellpriceitemlocation--c_itemgetitemsellpricebyiditem)
   - [`C_Item.GetCurrentItemLevel(itemLocation)` / `C_Item.GetDetailedItemLevelInfo(item)`](#c_itemgetcurrentitemlevelitemlocation--c_itemgetdetaileditemlevelinfoitem)
   - [`C_Item.GetItemMaxStackSize(itemLocation)` / `C_Item.GetItemMaxStackSizeByID(item)`](#c_itemgetitemmaxstacksizeitemlocation--c_itemgetitemmaxstacksizebyiditem)
   - [`C_Item.GetItemLink(itemLocation)`](#c_itemgetitemlinkitemlocation)
@@ -2448,6 +2449,25 @@ if C_Item.GetItemQualityByID(itemID) >= LE_ITEM_QUALITY_RARE then
     -- highlight rare-or-better drop
 end
 ```
+
+### `C_Item.GetItemSellPrice(itemLocation)` / `C_Item.GetItemSellPriceByID(item)`
+
+Returns the vendor sell price in copper, **per unit** (multiply by
+stack count for the per-stack value). Matches the 11th return of
+modern WoW's `GetItemInfo`. Returns `nil` on cache miss / invalid
+input. Cache miss fires a background fill so a follow-up call after
+`GET_ITEM_INFO_RECEIVED` returns the value.
+
+```lua
+local unit = C_Item.GetItemSellPriceByID(2589)   -- Linen Cloth → 25 (copper)
+local stack = unit * C_Item.GetItemMaxStackSizeByID(2589)
+```
+
+Single `uint32` read at cache record `+0x28` (`m_sellPrice`). Vanilla
+1.12 doesn't surface this in tooltips — the field is populated on
+every sellable item but the engine's tooltip code never reads it —
+so this function exposes data that's been sitting in the cache
+unused.
 
 ### `C_Item.GetCurrentItemLevel(itemLocation)` / `C_Item.GetDetailedItemLevelInfo(item)`
 
