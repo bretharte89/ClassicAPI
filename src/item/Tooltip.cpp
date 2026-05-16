@@ -15,6 +15,7 @@
 #include "Offsets.h"
 #include "item/Data.h"
 #include "item/ID.h"
+#include "item/Link.h"
 #include "item/Location.h"
 
 #include <cstdint>
@@ -167,22 +168,6 @@ static const uint8_t *PeekItemRecord(uint32_t itemID) {
 using ResolveObjectByGuid_t = void *(__fastcall *)(int type, const char *debugName,
                                                     uint32_t guidLo, uint32_t guidHi,
                                                     int priority);
-using BuildItemLink_t = const char *(__fastcall *)(void *cgItem);
-
-// Calls the engine's CGItem → dressed-link builder at FUN_0052AE00.
-// Reads itemID/quality off the instance block, permanent enchant /
-// random-properties seed / random factor off the descriptor, and
-// builds the suffix-decorated name (e.g. "Cowl of Nature's Breath")
-// internally — all in one call. Returns a pointer to the engine's
-// long-lived global string buffer; safe to PushString immediately
-// (Lua copies). nullptr if the CGItem is null or its instance block
-// can't be read.
-static const char *BuildLinkForCGItem(void *cgItem) {
-    if (cgItem == nullptr)
-        return nullptr;
-    auto fn = reinterpret_cast<BuildItemLink_t>(Offsets::FUN_GAMETOOLTIP_BUILD_ITEM_LINK);
-    return fn(cgItem);
-}
 
 // Resolves a stored item GUID into a CGItem via the engine's own
 // resolver. Same path Item::Count uses for direct bank reads — no
@@ -246,7 +231,8 @@ static int __fastcall Script_GameTooltipGetItem(void *L) {
 
     if (guidLo != 0 || guidHi != 0) {
         if (void *cgItem = ResolveItemByGuid(guidLo, guidHi)) {
-            const char *link = BuildLinkForCGItem(cgItem);
+            const char *link = Item::Link::FromCGItem(
+                static_cast<const uint8_t *>(cgItem));
             if (link != nullptr && *link != '\0') {
                 // Engine's link builder also writes the dressed
                 // (random-suffixed) name into the link's `[Name]`
