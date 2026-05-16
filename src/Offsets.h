@@ -2305,10 +2305,22 @@ enum Offsets {
     VAR_GOSSIP_GREETING_TEXT = 0x00BBB678,
 
     // Engine Lua C functions for the selector half of the gossip
-    // surface. We translate modern (gossipOptionID/questID) into the
-    // engine's 1-based-index Lua arg and tail-call these directly.
-    FUN_SCRIPT_SELECT_GOSSIP_OPTION = 0x004E2A30,
-    FUN_SCRIPT_SELECT_GOSSIP_AVAILABLE_QUEST = 0x004E2AA0,
-    FUN_SCRIPT_SELECT_GOSSIP_ACTIVE_QUEST = 0x004E2AE0,
+    // surface. The `FUN_GOSSIP_SELECT_*` helpers are the engine's
+    // internal selectors that the `Script_SelectGossip*` Lua wrappers
+    // call after parsing their args. We call them directly with the
+    // 0-based slot/index to skip the Lua-stack-stomp round-trip.
+    //
+    //   FUN_GOSSIP_SELECT_OPTION — __fastcall(uint slot0Based,
+    //                                          const char *password)
+    //     Sends CMSG_GOSSIP_SELECT_OPTION with `OPTIONS[slot].index`.
+    //     Handles the boxCoded/password-required gate internally —
+    //     pass nullptr if no password.
+    //   FUN_GOSSIP_SELECT_{AVAILABLE,ACTIVE}_QUEST — __fastcall(int idx)
+    //     Walks `GOSSIP_QUESTS`, skipping rows of the wrong status,
+    //     matches by 0-based position into the filtered list, sends
+    //     CMSG with the matching questID.
+    FUN_GOSSIP_SELECT_OPTION = 0x004E2320,
+    FUN_GOSSIP_SELECT_AVAILABLE_QUEST = 0x004E24B0,
+    FUN_GOSSIP_SELECT_ACTIVE_QUEST = 0x004E2600,
     FUN_SCRIPT_CLOSE_GOSSIP = 0x004E2B20,
 };

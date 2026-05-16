@@ -220,67 +220,88 @@ int __fastcall Script_C_GossipInfo_GetNumActiveQuests(void *L) {
     return 1;
 }
 
-// Selector-half helpers — translate a retail-shape arg into vanilla's
-// 1-based slot index, then re-enter the engine's existing
-// `Script_SelectGossip*` by rewriting the Lua stack and tail-calling
-// it. That keeps the engine's CMSG-send path and any error-printing
-// behavior identical to a native `SelectGossipOption` call.
+// Selectors — translate the retail-shape arg into the engine's
+// 0-based slot/index and call the engine helper directly. The helpers
+// are what the `Script_SelectGossip*` Lua wrappers tail-call after
+// parsing their stack args; calling them ourselves skips a redundant
+// Lua-stack-stomp + ftol round-trip.
 
-int CallEngineSelector(void *L, uintptr_t fn, int oneBasedIndex) {
-    Game::Lua::SetTop(L, 0);
-    Game::Lua::PushNumber(L, static_cast<double>(oneBasedIndex));
-    return reinterpret_cast<EngineScriptFn>(fn)(L);
+using SelectOption_t = void(__fastcall *)(unsigned slot0Based, const char *password);
+using SelectQuest_t = void(__fastcall *)(int idx0Based);
+
+void EngineSelectOption(int slot0Based, const char *password) {
+    auto fn = reinterpret_cast<SelectOption_t>(
+        Offsets::FUN_GOSSIP_SELECT_OPTION);
+    fn(static_cast<unsigned>(slot0Based), password);
+}
+
+void EngineSelectAvailableQuest(int idx0Based) {
+    auto fn = reinterpret_cast<SelectQuest_t>(
+        Offsets::FUN_GOSSIP_SELECT_AVAILABLE_QUEST);
+    fn(idx0Based);
+}
+
+void EngineSelectActiveQuest(int idx0Based) {
+    auto fn = reinterpret_cast<SelectQuest_t>(
+        Offsets::FUN_GOSSIP_SELECT_ACTIVE_QUEST);
+    fn(idx0Based);
 }
 
 // `C_GossipInfo.SelectOption(gossipOptionID[, text])` — wraps vanilla's
-// `SelectGossipOption(slotIndex)`. The retail signature also accepts an
-// optional password string for boxCoded options; vanilla's
-// `SelectGossipOption` doesn't, so we just drop the second arg.
+// `SelectGossipOption(slotIndex)`. `text` is the boxCoded password,
+// passed through to the engine helper which gates on the
+// password-required flag internally.
 int __fastcall Script_C_GossipInfo_SelectOption(void *L) {
     if (!Game::Lua::IsNumber(L, 1)) {
         Game::Lua::Error(L,
-            "Usage: C_GossipInfo.SelectOption(gossipOptionID)");
+            "Usage: C_GossipInfo.SelectOption(gossipOptionID [, text])");
         return 0;
     }
     const int target = static_cast<int>(Game::Lua::ToNumber(L, 1));
+    const char *password =
+        Game::Lua::IsString(L, 2) ? Game::Lua::ToString(L, 2) : nullptr;
 
-    int oneBased = 0;
     for (int slot = 0; slot < Offsets::GOSSIP_OPTIONS_MAX; ++slot) {
         const uint8_t *entry = OptionEntry(slot);
         const int32_t optIdx = OptionIndex(entry);
         if (optIdx < 0)
             continue;
-        oneBased += 1;
-        if (optIdx == target)
-            return CallEngineSelector(
-                L, Offsets::FUN_SCRIPT_SELECT_GOSSIP_OPTION, oneBased);
+        if (optIdx == target) {
+            EngineSelectOption(slot, password);
+            return 0;
+        }
     }
     return 0;
 }
 
-// `C_GossipInfo.SelectOptionByIndex(orderIndex)` — direct passthrough
-// to vanilla's index-based selector. `orderIndex` here is already
-// 1-based (matches what `GetOptions()` puts on each entry).
+// `C_GossipInfo.SelectOptionByIndex(orderIndex)` — `orderIndex` is
+// 1-based in display order (matches what `GetOptions()` puts on each
+// entry). The engine helper takes the 0-based array slot.
 int __fastcall Script_C_GossipInfo_SelectOptionByIndex(void *L) {
     if (!Game::Lua::IsNumber(L, 1)) {
         Game::Lua::Error(L,
             "Usage: C_GossipInfo.SelectOptionByIndex(orderIndex)");
         return 0;
     }
-    const int oneBased = static_cast<int>(Game::Lua::ToNumber(L, 1));
-    return CallEngineSelector(
-        L, Offsets::FUN_SCRIPT_SELECT_GOSSIP_OPTION, oneBased);
+    const int slot0Based = static_cast<int>(Game::Lua::ToNumber(L, 1)) - 1;
+    if (slot0Based < 0 || slot0Based >= Offsets::GOSSIP_OPTIONS_MAX)
+        return 0;
+    EngineSelectOption(slot0Based, nullptr);
+    return 0;
 }
 
-int SelectQuestByID(void *L, uintptr_t fn, bool wantActive,
-                    const char *errUsage) {
+// Walks `GOSSIP_QUESTS`, counting only rows whose active/available
+// status matches `wantActive`. On a `questID` match, calls the right
+// engine helper with the 0-based position into that filtered list —
+// which is the index shape the helper's own internal walk expects.
+int SelectQuestByID(void *L, bool wantActive, const char *errUsage) {
     if (!Game::Lua::IsNumber(L, 1)) {
         Game::Lua::Error(L, errUsage);
         return 0;
     }
     const uint32_t target = static_cast<uint32_t>(Game::Lua::ToNumber(L, 1));
 
-    int oneBased = 0;
+    int idx = 0;
     for (int slot = 0; slot < Offsets::GOSSIP_QUESTS_MAX; ++slot) {
         const uint8_t *entry = QuestEntry(slot);
         const uint32_t questID = QuestID(entry);
@@ -288,22 +309,25 @@ int SelectQuestByID(void *L, uintptr_t fn, bool wantActive,
             break;
         if (IsActiveQuest(QuestStatus(entry)) != wantActive)
             continue;
-        oneBased += 1;
-        if (questID == target)
-            return CallEngineSelector(L, fn, oneBased);
+        if (questID == target) {
+            if (wantActive)
+                EngineSelectActiveQuest(idx);
+            else
+                EngineSelectAvailableQuest(idx);
+            return 0;
+        }
+        idx += 1;
     }
     return 0;
 }
 
 int __fastcall Script_C_GossipInfo_SelectAvailableQuest(void *L) {
-    return SelectQuestByID(
-        L, Offsets::FUN_SCRIPT_SELECT_GOSSIP_AVAILABLE_QUEST, false,
+    return SelectQuestByID(L, /*wantActive=*/false,
         "Usage: C_GossipInfo.SelectAvailableQuest(questID)");
 }
 
 int __fastcall Script_C_GossipInfo_SelectActiveQuest(void *L) {
-    return SelectQuestByID(
-        L, Offsets::FUN_SCRIPT_SELECT_GOSSIP_ACTIVE_QUEST, true,
+    return SelectQuestByID(L, /*wantActive=*/true,
         "Usage: C_GossipInfo.SelectActiveQuest(questID)");
 }
 
