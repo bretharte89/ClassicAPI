@@ -69,25 +69,18 @@ void RegisterFrameMethods(void *context, const FrameMethodEntry *table, int coun
 
 // Looks up `_G[name]`. If absent, creates a fresh table and binds it.
 // Leaves the resulting table on top of the stack.
-//
-// The implementation deliberately avoids the `lua_pushvalue` + `lua_insert`
-// combo we initially tried: that path was producing stack states that ended
-// up with `_G[name]` aliased to one of the Lua standard library tables
-// (`bit`, `table`, etc.), with our intended field write never landing.
-// Re-fetching the namespace from globals after creating it is cheap and
-// sidesteps the issue entirely.
 namespace {
 void EnsureGlobalTable(void *L, const char *name) {
     PushString(L, name);
     GetTable(L, GLOBALS_INDEX);
     if (Type(L, -1) == TYPE_TABLE)
         return;
-    SetTop(L, -2); // pop the non-table
-    PushString(L, name);
-    NewTable(L);
-    SetTable(L, GLOBALS_INDEX);
-    PushString(L, name);
-    GetTable(L, GLOBALS_INDEX);
+    SetTop(L, -2);                 // pop the non-table.        []
+    NewTable(L);                   //                           [tbl]
+    PushValue(L, -1);              //                           [tbl, tbl]
+    PushString(L, name);           //                           [tbl, tbl, name]
+    Insert(L, -2);                 //                           [tbl, name, tbl]
+    SetTable(L, GLOBALS_INDEX);    // _G[name] = tbl; pops k+v. [tbl]
 }
 } // namespace
 
