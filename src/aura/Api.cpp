@@ -28,9 +28,10 @@
 
 #include "Game.h"
 #include "Offsets.h"
+#include "ui/ColorData.h"
 
 #include <cstdint>
-#include <string.h>
+#include <cstring>
 
 namespace Aura::Api {
 
@@ -204,74 +205,75 @@ int __fastcall Script_GetUnitAuras(void *L) {
     return 1;
 }
 
-// Modern color table — `DebuffTypeColor` in FrameXML. The string
-// keys are the names returned by `SpellDispelType.dbc` (locale-
-// applied), so we match against the English names used in-engine.
-// "" (no dispel type) falls back to the same color as "none".
-struct DispelColor {
-    const char *name;
-    double r, g, b;
-};
-
-constexpr DispelColor kDispelColors[] = {
-    {"Magic",   0.20, 0.60, 1.00},
-    {"Curse",   0.60, 0.00, 1.00},
-    {"Disease", 0.60, 0.40, 0.00},
-    {"Poison",  0.00, 0.60, 0.00},
-    {"Enrage",  1.00, 0.55, 0.00},
-};
-
-// Pushes a single color value onto the Lua stack, matching modern
-// `GetAuraDispelTypeColor`'s behavior: returns a `ColorMixin`
-// instance built by Lua's `CreateColor(r, g, b, a)` when available,
-// falls back to a plain `{r, g, b, a}` table when not. The
-// ColorMixin path is what modern engine functions like
-// `C_UnitAuras.GetAuraDispelTypeColor` do internally — they don't
-// know what ColorMixin is; they just `pcall` into the Lua-defined
-// `CreateColor` and return whatever table it builds.
-//
-// `!!!ClassicAPI/Util/Color.lua` defines `CreateColor` and runs
-// before any consumer addon (triple-`!` prefix), so the fallback
-// shouldn't trip in practice — it's there for the edge case where
-// another DLL or the engine itself calls us pre-addon-load.
-void PushColor(void *L, double r, double g, double b, double a) {
-    Game::Lua::PushString(L, "CreateColor");
-    Game::Lua::GetTable(L, Game::Lua::GLOBALS_INDEX);
-    if (Game::Lua::Type(L, -1) == Game::Lua::TYPE_FUNCTION) {
-        Game::Lua::PushNumber(L, r);
-        Game::Lua::PushNumber(L, g);
-        Game::Lua::PushNumber(L, b);
-        Game::Lua::PushNumber(L, a);
-        if (Game::Lua::PCall(L, 4, 1, 0) == 0)
-            return; // ColorMixin on top
-        // PCall pushed an error object — discard it and fall through.
-        Game::Lua::SetTop(L, -2);
-    } else {
-        // Globals lookup yielded nil / non-function — discard before
-        // building the fallback table.
-        Game::Lua::SetTop(L, -2);
-    }
+// Pushes a plain `{r, g, b, a}` table decoded from the packed argb
+// int in `ColorData.h`. Used only on the fallback path where
+// `!!!ClassicAPI/Util/Color.lua` hasn't run — without `CreateColor`
+// we can't build a real ColorMixin, but addons reading `.r/.g/.b/.a`
+// still get the right numbers.
+void PushPlainColorTable(void *L, int32_t argb) {
+    const uint32_t v = static_cast<uint32_t>(argb);
     Game::Lua::NewTable(L);
-    Game::Lua::SetFieldNumber(L, "r", r);
-    Game::Lua::SetFieldNumber(L, "g", g);
-    Game::Lua::SetFieldNumber(L, "b", b);
-    Game::Lua::SetFieldNumber(L, "a", a);
+    Game::Lua::SetFieldNumber(L, "r", ((v >> 16) & 0xFF) / 255.0);
+    Game::Lua::SetFieldNumber(L, "g", ((v >>  8) & 0xFF) / 255.0);
+    Game::Lua::SetFieldNumber(L, "b", ( v        & 0xFF) / 255.0);
+    Game::Lua::SetFieldNumber(L, "a", ((v >> 24) & 0xFF) / 255.0);
 }
 
-int __fastcall Script_GetAuraDispelTypeColor(void *L) {
-    const char *type = ArgOptString(L, 1);
-    double r = 0.80, g = 0.00, b = 0.00; // "none" default
-    if (type != nullptr) {
-        for (const auto &c : kDispelColors) {
-            if (strcmp(type, c.name) == 0) {
-                r = c.r;
-                g = c.g;
-                b = c.b;
-                break;
-            }
+bool PushColorByTag(void *L, const char *baseTag) {
+    for (int i = 0; i < UI::ColorData::kColorCount; ++i) {
+        if (strcmp(UI::ColorData::kColors[i].baseTag, baseTag) == 0) {
+            PushPlainColorTable(L, UI::ColorData::kColors[i].argb);
+            return true;
         }
     }
-    PushColor(L, r, g, b, 1.0);
+    return false;
+}
+
+// Mirrors modern retail's one-liner:
+//     return _G["DEBUFF_TYPE_"..type:upper().."_COLOR"]
+//            or DEBUFF_TYPE_NONE_COLOR
+//
+// `!!!ClassicAPI/Util/Color.lua` walks `C_UIColor.GetColors()` at
+// addon load and publishes every entry as a ColorMixin under its
+// `baseTag` global. By the time any addon calls us,
+// `_G.DEBUFF_TYPE_MAGIC_COLOR` etc. are already ColorMixin
+// instances — we push the same one, no rebuild, no duplicate
+// source of truth. The Enrage row is a ClassicAPI extension in
+// `ColorData.h` so it gets the same treatment.
+//
+// Fallback path: if `!!!ClassicAPI` isn't loaded (or hasn't reached
+// `Color.lua` yet), the global lookup returns nil. We then read the
+// raw argb out of `ColorData.h` and push a plain `{r,g,b,a}` table
+// so consumers don't get a nil and crash on `:GetRGB()`. The plain
+// table loses ColorMixin methods but preserves the field access most
+// callers actually use.
+int __fastcall Script_GetAuraDispelTypeColor(void *L) {
+    const char *type = ArgOptString(L, 1);
+
+    char tag[64];
+    if (type != nullptr && type[0] != '\0') {
+        std::memcpy(tag, "DEBUFF_TYPE_", 12);
+        size_t off = 12;
+        for (size_t i = 0; type[i] != '\0' && off < sizeof(tag) - 7;
+             ++i, ++off) {
+            const char c = type[i];
+            tag[off] = (c >= 'a' && c <= 'z') ? c - 32 : c;
+        }
+        std::memcpy(tag + off, "_COLOR", 7); // includes the NUL
+    } else {
+        std::memcpy(tag, "DEBUFF_TYPE_NONE_COLOR", 23);
+    }
+
+    Game::Lua::SetTop(L, 0);
+    Game::Lua::PushString(L, tag);
+    Game::Lua::GetTable(L, Game::Lua::GLOBALS_INDEX);
+    if (Game::Lua::Type(L, -1) == Game::Lua::TYPE_TABLE)
+        return 1;
+
+    Game::Lua::SetTop(L, 0);
+    if (PushColorByTag(L, tag))
+        return 1;
+    PushColorByTag(L, "DEBUFF_TYPE_NONE_COLOR");
     return 1;
 }
 

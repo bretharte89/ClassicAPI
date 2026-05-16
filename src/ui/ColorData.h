@@ -231,6 +231,11 @@ constexpr Entry kColors[] = {
     {"DEBUFF_TYPE_BLEED_COLOR",                          -4718577},
     {"DEBUFF_TYPE_DISEASE_COLOR",                        -955895},
     {"DEBUFF_TYPE_NONE_COLOR",                           -3407872},
+    // ClassicAPI extension — Enrage was dropped from GlobalColor.dbc in
+    // BC Classic. We re-add it so `GetAuraDispelTypeColor("Enrage")`
+    // resolves to a proper ColorMixin via the same Color.lua pipeline.
+    // rgb(1.00, 0.55, 0.00) → 0xFFFF8C00.
+    {"DEBUFF_TYPE_ENRAGE_COLOR",                         -29696},
     {"VISITABLE_URL_DEFAULT_CHAT_LINK_COLOR",            -16733697},
     {"EVENTTRACE_SECRET_COLOR",                          -7798904},
 };
