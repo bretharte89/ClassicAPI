@@ -1469,6 +1469,14 @@ enum Offsets {
     LUA_PUSH_NIL = 0x6F37F0,
     LUA_PUSH_BOOLEAN = 0x6F39F0,
     LUA_PUSH_STRING = 0x6F3890,
+    // `lua_pushlstring(L, ptr, len)` — binary-safe push. Same TValue
+    // tag as `pushstring` but takes an explicit length so the string
+    // can contain NULs.
+    LUA_PUSH_LSTRING = 0x6F3840,
+    // `lua_strlen(L, idx)` — returns the byte length of the string
+    // value at `idx`. Pairs with `lua_tostring` for binary-safe
+    // string reads.
+    LUA_STR_LEN = 0x6F36E0,
     // Verified empirically via `_classicapi_PushValueProbe` —
     // pushes a number then dups via PushValue, checks GetTop tracks.
     // **Doc note:** `docs/LuaCAPI.md` reports `0x6F30D0` as lua_pushvalue
@@ -1503,6 +1511,20 @@ enum Offsets {
     // read it on demand in helpers that run outside a Lua callback (e.g.
     // RegisterTableFunction during LoadScriptFunctions).
     VAR_LUA_STATE = 0x00CEEF74,
+
+    // zlib 1.2.2, statically linked into WoW.exe (version string at
+    // `0x008745F0`, copyright banners at `0x00815528`/`0x00815608`).
+    // Standard zlib one-shot helpers — `compress2` for the deflate
+    // side, `uncompress` for inflate. Both `__fastcall` (caller passes
+    // dest/destLen in ECX/EDX, the rest on stack; callee cleans).
+    //
+    //   int compress2(dest, *destLen, source, sourceLen, level)
+    //   int uncompress(dest, *destLen, source, sourceLen)
+    //
+    // Return codes match zlib's: 0 = Z_OK, -3 = Z_DATA_ERROR,
+    // -4 = Z_MEM_ERROR, -5 = Z_BUF_ERROR.
+    FUN_ZLIB_COMPRESS2 = 0x00730BC0,
+    FUN_ZLIB_UNCOMPRESS = 0x00734810,
 
     // Static event-name "table" at runtime VA `0x00BE11D8` — this is what
     // `C_EventUtils.IsEventValid` walks. It is NOT the structure that

@@ -1,6 +1,7 @@
 /build
 /external
 /debug.log
+/_stash
 
 # Prerequisites
 *.d

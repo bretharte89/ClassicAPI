@@ -11,7 +11,16 @@ add_subdirectory(external/minhook)
 file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "src/*.cpp")
 file(GLOB_RECURSE HEADERS CONFIGURE_DEPENDS "src/*.h")
 
-add_library(${PROJECT_NAME} SHARED ${SOURCES} ${HEADERS})
+set(TINYCBOR_SOURCES
+    external/tinycbor/src/cborencoder.c
+    external/tinycbor/src/cborencoder_close_container_checked.c
+    external/tinycbor/src/cborencoder_float.c
+    external/tinycbor/src/cborparser.c
+    external/tinycbor/src/cborparser_dup_string.c
+    external/tinycbor/src/cborparser_float.c
+    external/tinycbor/src/cborerrorstrings.c)
+
+add_library(${PROJECT_NAME} SHARED ${SOURCES} ${HEADERS} ${TINYCBOR_SOURCES})
 
 set(CLASSICAPI_VERSION_VALUE 1)
 
@@ -40,7 +49,9 @@ target_link_libraries(${PROJECT_NAME} PRIVATE minhook)
 
 target_include_directories(
   ${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
-                          external/minhook/include)
+                          external/minhook/include
+                          external
+                          external/tinycbor/src)
 
 set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME "ClassicAPI")
 
