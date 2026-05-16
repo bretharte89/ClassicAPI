@@ -18,33 +18,43 @@
 namespace Game {
 
 namespace Lua {
-const lua_isnumber_t IsNumber = reinterpret_cast<lua_isnumber_t>(Offsets::LUA_IS_NUMBER);
-const lua_isstring_t IsString = reinterpret_cast<lua_isstring_t>(Offsets::LUA_IS_STRING);
-const lua_tonumber_t ToNumber = reinterpret_cast<lua_tonumber_t>(Offsets::LUA_TO_NUMBER);
-const lua_toboolean_t ToBoolean = reinterpret_cast<lua_toboolean_t>(Offsets::LUA_TO_BOOLEAN);
-const lua_tostring_t ToString = reinterpret_cast<lua_tostring_t>(Offsets::LUA_TO_STRING);
-const lua_strlen_t StrLen = reinterpret_cast<lua_strlen_t>(Offsets::LUA_STR_LEN);
-const lua_pushnumber_t PushNumber = reinterpret_cast<lua_pushnumber_t>(Offsets::LUA_PUSH_NUMBER);
-const lua_pushnil_t PushNil = reinterpret_cast<lua_pushnil_t>(Offsets::LUA_PUSH_NIL);
-const lua_pushboolean_t PushBoolean = reinterpret_cast<lua_pushboolean_t>(Offsets::LUA_PUSH_BOOLEAN);
-const lua_pushstring_t PushString = reinterpret_cast<lua_pushstring_t>(Offsets::LUA_PUSH_STRING);
-const lua_pushlstring_t PushLString = reinterpret_cast<lua_pushlstring_t>(Offsets::LUA_PUSH_LSTRING);
-const lua_pushvalue_t PushValue = reinterpret_cast<lua_pushvalue_t>(Offsets::LUA_PUSH_VALUE);
-const lua_pushcclosure_t PushCClosure = reinterpret_cast<lua_pushcclosure_t>(Offsets::LUA_PUSH_CCLOSURE);
-const lua_newtable_t NewTable = reinterpret_cast<lua_newtable_t>(Offsets::LUA_NEW_TABLE);
-const lua_gettable_t GetTable = reinterpret_cast<lua_gettable_t>(Offsets::LUA_GET_TABLE);
-const lua_rawget_t RawGet = reinterpret_cast<lua_rawget_t>(Offsets::LUA_RAW_GET);
-const lua_settable_t SetTable = reinterpret_cast<lua_settable_t>(Offsets::LUA_SET_TABLE);
-const lua_rawset_t RawSet = reinterpret_cast<lua_rawset_t>(Offsets::LUA_RAW_SET);
-const lua_insert_t Insert = reinterpret_cast<lua_insert_t>(Offsets::LUA_INSERT);
-const lua_remove_t Remove = reinterpret_cast<lua_remove_t>(Offsets::LUA_REMOVE);
-const lua_gettop_t GetTop = reinterpret_cast<lua_gettop_t>(Offsets::LUA_GET_TOP);
-const lua_settop_t SetTop = reinterpret_cast<lua_settop_t>(Offsets::LUA_SET_TOP);
-const lua_call_t Call = reinterpret_cast<lua_call_t>(Offsets::LUA_CALL);
-const lua_pcall_t PCall = reinterpret_cast<lua_pcall_t>(Offsets::LUA_PCALL);
-const lua_next_t Next = reinterpret_cast<lua_next_t>(Offsets::LUA_NEXT);
-const lua_type_t Type = reinterpret_cast<lua_type_t>(Offsets::LUA_TYPE);
-const lua_error_t Error = reinterpret_cast<lua_error_t>(Offsets::LUA_ERROR);
+// Each entry binds a typed function pointer in `Game::Lua::` to the
+// corresponding raw VA in `Offsets`. The X-macro keeps the column-aligned
+// list visually scannable and removes 27 lines of identical cast boilerplate.
+#define CLASSICAPI_LUA_BINDINGS(F)              \
+    F(IsNumber,    lua_isnumber,    LUA_IS_NUMBER)    \
+    F(IsString,    lua_isstring,    LUA_IS_STRING)    \
+    F(ToNumber,    lua_tonumber,    LUA_TO_NUMBER)    \
+    F(ToBoolean,   lua_toboolean,   LUA_TO_BOOLEAN)   \
+    F(ToString,    lua_tostring,    LUA_TO_STRING)    \
+    F(StrLen,      lua_strlen,      LUA_STR_LEN)      \
+    F(PushNumber,  lua_pushnumber,  LUA_PUSH_NUMBER)  \
+    F(PushNil,     lua_pushnil,     LUA_PUSH_NIL)     \
+    F(PushBoolean, lua_pushboolean, LUA_PUSH_BOOLEAN) \
+    F(PushString,  lua_pushstring,  LUA_PUSH_STRING)  \
+    F(PushLString, lua_pushlstring, LUA_PUSH_LSTRING) \
+    F(PushValue,   lua_pushvalue,   LUA_PUSH_VALUE)   \
+    F(PushCClosure,lua_pushcclosure,LUA_PUSH_CCLOSURE)\
+    F(NewTable,    lua_newtable,    LUA_NEW_TABLE)    \
+    F(GetTable,    lua_gettable,    LUA_GET_TABLE)    \
+    F(RawGet,      lua_rawget,      LUA_RAW_GET)      \
+    F(SetTable,    lua_settable,    LUA_SET_TABLE)    \
+    F(RawSet,      lua_rawset,      LUA_RAW_SET)      \
+    F(Insert,      lua_insert,      LUA_INSERT)       \
+    F(Remove,      lua_remove,      LUA_REMOVE)       \
+    F(GetTop,      lua_gettop,      LUA_GET_TOP)      \
+    F(SetTop,      lua_settop,      LUA_SET_TOP)      \
+    F(Call,        lua_call,        LUA_CALL)         \
+    F(PCall,       lua_pcall,       LUA_PCALL)        \
+    F(Next,        lua_next,        LUA_NEXT)         \
+    F(Type,        lua_type,        LUA_TYPE)         \
+    F(Error,       lua_error,       LUA_ERROR)
+
+#define CLASSICAPI_BIND_LUA(Name, Typedef, Offset) \
+    const Typedef##_t Name = reinterpret_cast<Typedef##_t>(Offsets::Offset);
+CLASSICAPI_LUA_BINDINGS(CLASSICAPI_BIND_LUA)
+#undef CLASSICAPI_BIND_LUA
+#undef CLASSICAPI_LUA_BINDINGS
 
 namespace {
 using FrameScript_RegisterFunction_t = void(__fastcall *)(const char *name, CFunction func);
@@ -128,7 +138,7 @@ void SetFieldString(void *L, const char *key, const char *value) {
 
 void SetFieldBool(void *L, const char *key, bool value) {
     PushString(L, key);
-    PushBoolean(L, value ? 1 : 0);
+    PushBoolean(L, static_cast<int>(value));
     SetTable(L, -3);
 }
 } // namespace Lua
