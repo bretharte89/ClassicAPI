@@ -30,9 +30,9 @@ static int __fastcall Script_GetMerchantItemID(void *L) {
     if (index < 0)
         return 0;
 
-    const uint32_t flagA = *reinterpret_cast<const uint32_t *>(Offsets::VAR_MERCHANT_FLAG_A);
-    const uint32_t flagB = *reinterpret_cast<const uint32_t *>(Offsets::VAR_MERCHANT_FLAG_B);
-    if ((flagA | flagB) == 0)
+    const uint32_t guidLo = *reinterpret_cast<const uint32_t *>(Offsets::VAR_MERCHANT_NPC_GUID_LO);
+    const uint32_t guidHi = *reinterpret_cast<const uint32_t *>(Offsets::VAR_MERCHANT_NPC_GUID_HI);
+    if ((guidLo | guidHi) == 0)
         return 0;
 
     const int count = static_cast<int>(*reinterpret_cast<const uint32_t *>(

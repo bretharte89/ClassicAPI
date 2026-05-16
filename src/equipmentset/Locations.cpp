@@ -14,6 +14,7 @@
 #include "Locations.h"
 
 #include "Offsets.h"
+#include "item/Location.h"
 
 #include <cstdint>
 
@@ -173,7 +174,7 @@ int FindGUID(uint64_t targetGuid) {
 const uint8_t *ResolveItemByGUID(uint64_t guid) {
     if (guid == GUID_EMPTY || guid == GUID_IGNORED)
         return nullptr;
-    return ResolveByGUID(Offsets::OBJ_TYPE_ITEM, guid);
+    return Item::Location::ResolveByGUID(guid);
 }
 
 } // namespace EquipmentSet::Locations

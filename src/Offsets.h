@@ -2141,15 +2141,47 @@ enum Offsets {
     LOOT_MAX_SLOTS = 0x10,
 
     // Merchant inventory: flat array at `0xBDD118`, stride 0x1C,
-    // itemID at `entry+4`. Two flag globals must both be non-zero
-    // (engine's `OR; JZ` gate — set when a merchant interaction is
-    // active).
+    // itemID at `entry+4`. The "flag" globals are actually the
+    // merchant NPC's 64-bit GUID lo/hi — both zero when no merchant
+    // is open, which is the engine's gate (`mov a, [LO]; or a, [HI];
+    // jz no_merchant`). Same globals also drive whether the buyback
+    // slots are populated.
     VAR_MERCHANT_ITEMS = 0x00BDD118,
-    VAR_MERCHANT_FLAG_A = 0x00BDDFA0,
-    VAR_MERCHANT_FLAG_B = 0x00BDDFA4,
+    VAR_MERCHANT_NPC_GUID_LO = 0x00BDDFA0,
+    VAR_MERCHANT_NPC_GUID_HI = 0x00BDDFA4,
     VAR_MERCHANT_COUNT = 0x00BDDFA8,
     MERCHANT_STRIDE = 0x1C,
     OFF_MERCHANT_ITEM_ID = 0x04,
+    // Additional 28-byte-entry offsets decoded from
+    // `Script_GetMerchantItemInfo` at `0x004FB150`:
+    //   +0x0C  uint32  numAvailable (-1 = unlimited stock)
+    //   +0x10  uint32  price in copper
+    //   +0x18  uint32  stack quantity per purchase
+    OFF_MERCHANT_NUM_AVAILABLE = 0x0C,
+    OFF_MERCHANT_PRICE = 0x10,
+    OFF_MERCHANT_STACK_COUNT = 0x18,
+
+    // Buyback storage. `VAR_BUYBACK_SLOTS` is a 4-byte-stride array
+    // of inventory-slot indices into the player's invMgr GUID array
+    // (the engine keeps sold items alive in a per-character buyback
+    // pool indexed through normal inventory storage). 12 fixed slots
+    // in vanilla; `VAR_BUYBACK_COUNT` is the live count of populated
+    // entries. Same merchant-open gate as `VAR_MERCHANT_NPC_GUID_*`.
+    VAR_BUYBACK_SLOTS = 0x00BDDF24,
+    VAR_BUYBACK_COUNT = 0x00BDDFAC,
+
+    // CMSG_SELL_ITEM dispatcher. Engine's
+    // `Script_UseContainerItem` merchant branch reaches it with this
+    // shape; calling it directly bypasses the use-vs-sell dispatch
+    // and any addon hooks on `UseContainerItem`.
+    //
+    //   __fastcall(count[ECX],
+    //              merchantGuidLo, merchantGuidHi,
+    //              itemGuidLo, itemGuidHi)
+    //
+    // `count = 0` sells the whole stack — same as what
+    // `Script_UseContainerItem` passes. Callee cleans (`ret 0x10`).
+    FUN_MERCHANT_SELL_ITEM = 0x005E1D50,
 
     // Quest item resolver — used by `GetQuestItem`. Walks the active
     // quest-offer "reward"/"choice" arrays. Returns itemID directly

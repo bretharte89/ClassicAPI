@@ -135,6 +135,18 @@ bool ParseGUIDString(const char *s, uint64_t *out) {
     return Guid::Parse(s, out);
 }
 
+const uint8_t *ResolveByGUID(uint64_t guid) {
+    if (guid == 0)
+        return nullptr;
+    using ResolveByGUID_t = void *(__fastcall *)(int, const char *, uint32_t,
+                                                  uint32_t, int);
+    auto fn = reinterpret_cast<ResolveByGUID_t>(Offsets::FUN_OBJECT_RESOLVE_BY_GUID);
+    return static_cast<const uint8_t *>(fn(Offsets::OBJ_TYPE_ITEM, "ItemMgr",
+                                            static_cast<uint32_t>(guid),
+                                            static_cast<uint32_t>(guid >> 32),
+                                            0x172));
+}
+
 bool FindByGUID(void *L, uint64_t guid, ByGUIDResult *out) {
     if (guid == 0)
         return false;

@@ -83,4 +83,12 @@ bool FindByGUID(void *L, uint64_t guid, ByGUIDResult *out);
 // untouched) on malformed input.
 bool ParseGUIDString(const char *s, uint64_t *out);
 
+// Looks up a CGItem by GUID via the engine's
+// `FUN_OBJECT_RESOLVE_BY_GUID`. Returns nullptr if the GUID isn't
+// known to the client (item not loaded, sentinel zero/-1, etc.).
+// Side-effect free — doesn't touch the Lua stack, safe outside a
+// Lua callback. Same path the equipment-set walks and the merchant
+// buyback chain go through.
+const uint8_t *ResolveByGUID(uint64_t guid);
+
 } // namespace Item::Location

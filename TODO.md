@@ -2971,3 +2971,33 @@ channeled action, perform a clean channel, snap again immediately
 after channel end (use `_classicapi_DescDump(0x1320, 4)` for a
 targeted read). Repeat across several channel types and confirm
 the pattern.
+
+## 93. `C_MerchantFrame.SellAllJunkItems` — explicit cursor clear when holding junk — low
+
+Currently, if the player has a junk item picked up on their cursor
+when calling `SellAllJunkItems`, the item still sells (the CGItem
+remains in its bag slot internally; we walk and find it, the sell
+fires, and the engine clears the cursor as a side effect of the
+item being destroyed). For non-junk on the cursor, the cursor is
+left alone. The incidental behavior is actually pretty good
+already — junk gets cleared, non-junk preserved.
+
+The "clean" version would explicitly call `Script_ClearCursor`
+(`0x004895B0`) at the start of `SellAllJunkItems` *iff* the cursor
+is currently holding a junk item. The cursor-type global at
+`[0x00B4D900]` (1 = item, 3 = ?, 9 = ?) gates "is the cursor
+holding anything," but the cursor's actual itemID / GUID / bag-slot
+reference isn't sitting in an obvious adjacent global — the
+neighboring globals at `+0x04` / `+0x08` are unrelated floats and
+pointers, not item identifiers.
+
+Vanilla has no `GetCursorInfo` (only `CursorHasItem`), so there's
+no Lua-visible accessor to crib from. Finding the cursor item
+state means tracing through `Script_PickupContainerItem`'s 200+
+bytes of arg-validation to locate where it stashes the picked-up
+(bag, slot) tuple after pickup. Probably an hour of recon.
+
+Defer until either:
+- a user actively reports the current behavior as annoying, or
+- the cursor state needs to be read for some other purpose
+  anyway (e.g. a `GetCursorInfo` polyfill).

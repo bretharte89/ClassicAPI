@@ -98,6 +98,13 @@ build instructions.
   - [`C_Container.GetContainerNumFreeSlots(bagID)`](#c_containergetcontainernumfreeslotsbagid)
   - [`C_Container.PlayerHasHearthstone()`](#c_containerplayerhashearthstone)
   - [`C_Container.UseHearthstone()`](#c_containerusehearthstone)
+- [MerchantFrame](#merchantframe)
+  - [`C_MerchantFrame.GetItemInfo(slot)`](#c_merchantframegetiteminfoslot)
+  - [`C_MerchantFrame.GetBuybackItemID(slot)`](#c_merchantframegetbuybackitemidslot)
+  - [`C_MerchantFrame.GetNumJunkItems()`](#c_merchantframegetnumjunkitems)
+  - [`C_MerchantFrame.SellAllJunkItems()`](#c_merchantframesellalljunkitems)
+  - [`C_MerchantFrame.IsMerchantItemRefundable(slot)`](#c_merchantframeismerchantitemrefundableslot)
+  - [`C_MerchantFrame.IsSellAllJunkEnabled()`](#c_merchantframeissellalljunkenabled)
 - [EquipmentSet](#equipmentset)
   - [Overview & file format](#overview--file-format)
   - [`C_EquipmentSet.CanUseEquipmentSets()`](#c_equipmentsetcanuseequipmentsets)
@@ -2875,6 +2882,152 @@ on the stack. No new use-item logic is introduced — this is a
 convenience wrapper.
 
 Equivalent to the function of the same name introduced in 9.0.
+
+## MerchantFrame
+
+Backports the six `C_MerchantFrame.*` calls retail addons use when
+interacting with a vendor. All entry points read the engine's
+merchant/buyback storage directly — no Lua-roundtrip through
+`GetMerchantItemInfo` / `GetBuybackItemLink` etc. — and the
+`SellAllJunkItems` dispatcher bypasses `UseContainerItem` entirely
+by calling the engine's internal `MerchantSellItem` packet builder.
+
+A "merchant frame is currently open" gate (`VAR_MERCHANT_NPC_GUID_*`
+non-zero) applies to every function — the same gate retail enforces.
+`GetNumJunkItems` returns `0` away from a vendor and the sell
+functions are no-ops; the per-slot getters return `nil`.
+
+### `C_MerchantFrame.GetItemInfo(slot)`
+
+Returns a table describing the merchant's item at the given 1-based
+slot, or `nil` if no merchant is open / the slot is out of range.
+
+Table fields:
+
+| Field             | Type    | Notes |
+|-------------------|---------|-------|
+| `itemID`          | number  | Item record key, suitable for `C_Item.GetItemInfoInstant` / cache lookups. |
+| `price`           | number  | Copper cost per stack (multiply by `stackCount` for unit price). |
+| `stackCount`      | number  | Units delivered per purchase (1 for most equipment, e.g. 5 for stacks of cloth). |
+| `numAvailable`    | number  | Limited-supply count, or `-1` for unlimited stock. |
+| `isPurchasable`   | boolean | Always `true` in this build — vanilla has no "blocked from buying" flag. |
+| `isThrottled`     | boolean | Always `false` — modern's anti-spam concept doesn't apply in vanilla. |
+| `hasExtendedCost` | boolean | Always `false` — currency/honor-cost merchants don't exist in vanilla. |
+
+```lua
+local info = C_MerchantFrame.GetItemInfo(1)
+if info then
+    print(info.itemID, info.price, info.stackCount)
+end
+```
+
+Reads directly from the 28-byte merchant entry at
+`VAR_MERCHANT_ITEMS + (slot-1) * MERCHANT_STRIDE` (the same flat
+array `Script_GetMerchantItemInfo` walks). Compared to the existing
+[`GetMerchantItemID`](#getitemid--companions-to-the-engines-getitemlink-family),
+this returns the wider modern struct shape in one call.
+
+Equivalent to the function of the same name introduced in 10.x.
+
+### `C_MerchantFrame.GetBuybackItemID(slot)`
+
+Returns the itemID of the merchant's buyback slot at the given
+1-based index (1..12), or `nil` if the slot is empty / no merchant
+is open.
+
+```lua
+for slot = 1, 12 do
+    local id = C_MerchantFrame.GetBuybackItemID(slot)
+    if id then
+        -- buybackable item at slot
+    end
+end
+```
+
+Resolution chain (engine-direct, no Lua-side `GetBuybackItemLink`
+roundtrip):
+
+1. Read the buyback slot's stored invMgr index from
+   `VAR_BUYBACK_SLOTS + (slot-1)*4`.
+2. Look up that index in the player invMgr's flat GUID array (the
+   engine keeps sold items alive in the player's inventory storage,
+   not in a separate buyback pool).
+3. Resolve the GUID to a `CGItem*` via
+   `Item::Location::ResolveByGUID` — same engine helper
+   `C_EquipmentSet.GetItemLocations` uses.
+4. Read the itemID from the CGItem's instance block at `+0x08 + 0x0C`.
+
+### `C_MerchantFrame.GetNumJunkItems()`
+
+Returns the count of grey-quality (`LE_ITEM_QUALITY_POOR`) items in
+the player's bags 0..4 that `SellAllJunkItems` would sell. Returns
+`0` when no merchant frame is open — matching retail's behavior of
+gating the count on merchant context, since the count is meant as
+a "what would the sell-junk button do right now" signal rather than
+a passive inventory query.
+
+```lua
+-- Inside a MERCHANT_SHOW handler:
+local junk = C_MerchantFrame.GetNumJunkItems()
+if junk > 0 then
+    print("Selling " .. junk .. " junk item(s)")
+    C_MerchantFrame.SellAllJunkItems()
+end
+```
+
+Quality is read from each item's `ItemStats` cache record at the
+`m_quality` field (`OFF_ITEMSTATS_QUALITY = 0x1C`). Items with
+unloaded cache records (rare for items in your own bags) are
+skipped — same conservative behavior the sell path uses.
+
+### `C_MerchantFrame.SellAllJunkItems()`
+
+Sells every quality-0 item in the player's bags to the open
+merchant. No-op when no merchant frame is open.
+
+Sells are dispatched **one per frame** via the shared
+`WorldTick` subscriber, not in a tight loop within the call —
+vanilla's network path drops packets when CMSG_SELL_ITEM is
+flooded (a 10-item burst consistently lost the 2nd-to-last sell
+in testing). Calling pace matches click-by-click selling. For
+10 junk items, expect the queue to drain in ~10 frames (~150ms
+at 60fps).
+
+```lua
+C_MerchantFrame.SellAllJunkItems()
+```
+
+If the player closes the merchant frame or opens a different
+vendor mid-drain, the remaining queue is discarded rather than
+mis-routed to the new merchant.
+
+Each sell is delivered via the engine's internal
+`MerchantSellItem` helper (`FUN_MERCHANT_SELL_ITEM`, opcode
+`CMSG_SELL_ITEM`/`0x1A0`) called with `count = 0` ("sell whole
+stack"). Bypasses `Script_UseContainerItem` entirely — addons
+hooking `UseContainerItem` will not see these sells, and there's
+no risk of the use-not-sell dispatch branch firing if the merchant
+state changes mid-loop.
+
+### `C_MerchantFrame.IsMerchantItemRefundable(slot)`
+
+Always returns `false`. Vanilla 1.12 has no refund mechanic
+(retail's 2-hour buy-back-for-full-price system was introduced
+post-vanilla); the function exists for API parity so retail
+addons that gate behavior on refundability don't break.
+
+```lua
+if not C_MerchantFrame.IsMerchantItemRefundable(slot) then
+    -- always taken in this build
+end
+```
+
+### `C_MerchantFrame.IsSellAllJunkEnabled()`
+
+Always returns `true`. Retail exposes an optional client setting to
+disable the sell-all-junk button; vanilla has no such setting, so
+the feature is always on. Function exists so retail addons that
+gate `SellAllJunkItems` on this don't no-op silently.
 
 ## EquipmentSet
 
