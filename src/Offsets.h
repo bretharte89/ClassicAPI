@@ -1790,7 +1790,6 @@ enum Offsets {
     FUN_ADDON_GET_BY_INDEX = 0x0051DF00,        // (idx0Based) → AddOnEntry* or NULL
     FUN_ADDON_GET_TITLE_BY_NAME = 0x0051DF20,   // (name) → title string or NULL
     FUN_ADDON_GET_NOTES_BY_NAME = 0x0051E050,   // (name) → notes string or NULL
-    FUN_SCRIPT_GET_ADDON_INFO = 0x0048E390,
 
     // Per-field accessors `Script_GetAddOnInfo` calls internally for
     // returns 5 (loadable), 6 (reason string), 7 (security category).
