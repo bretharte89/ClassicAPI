@@ -266,18 +266,27 @@ int __fastcall Script_C_Item_EquipItemByName(void *L) {
         return 0;
     }
 
-    // Auto-slot path: pickup → AutoEquip via the engine's existing
-    // cursor-state machinery (which is now guaranteed clean by the
-    // ClearCursor above).
+    // Auto-slot path: pickup the item via Script_PickupContainerItem
+    // (its state-machine handles spell-cast targeting / repair /
+    // enchant-scroll / etc., none of which we want to replicate), then
+    // call the engine's `CGPlayer::AutoEquipCursorItem` helper directly
+    // — `Script_AutoEquipCursorItem` is a thin wrapper that just
+    // resolves the local player and calls this with flag=0.
     Game::Lua::SetTop(L, 0);
     Game::Lua::PushNumber(L, static_cast<double>(bag));
     Game::Lua::PushNumber(L, static_cast<double>(slot));
     auto pickup = reinterpret_cast<ScriptFn_t>(Offsets::FUN_SCRIPT_PICKUP_CONTAINER_ITEM);
     pickup(L);
 
-    Game::Lua::SetTop(L, 0);
-    auto equip = reinterpret_cast<ScriptFn_t>(Offsets::FUN_SCRIPT_AUTO_EQUIP_CURSOR_ITEM);
-    equip(L);
+    using ResolveUnitToken_t = void *(__fastcall *)(const char *token);
+    using AutoEquipCursor_t = void (__thiscall *)(void *player, int flag);
+    auto resolve = reinterpret_cast<ResolveUnitToken_t>(
+        Offsets::FUN_RESOLVE_UNIT_TOKEN);
+    if (auto *player = resolve("player")) {
+        auto equip = reinterpret_cast<AutoEquipCursor_t>(
+            Offsets::FUN_AUTO_EQUIP_CURSOR_ITEM);
+        equip(player, 0);
+    }
     return 0;
 }
 

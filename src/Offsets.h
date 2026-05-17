@@ -506,31 +506,14 @@ enum Offsets {
     // an item, swaps with the bag slot). Used by `EquipItemByName` to
     // pick up the source item before dispatching to the equip helpers.
     FUN_SCRIPT_PICKUP_CONTAINER_ITEM = 0x004F9B30,
-    // `Script_EquipCursorItem` Lua C function — `__fastcall(void *L)`.
-    // Reads dstSlot at Lua stack[1] (1-based character-pane slot 1..19)
-    // and equips the cursor item to that slot. No-op if cursor is empty
-    // or the item type doesn't fit the slot.
-    FUN_SCRIPT_EQUIP_CURSOR_ITEM = 0x00489660,
-    // `Script_AutoEquipCursorItem` Lua C function — `__fastcall(void *L)`.
-    // Takes no Lua args; equips the cursor item to its natural slot
-    // (engine picks based on inventory type). No-op if cursor is empty.
-    FUN_SCRIPT_AUTO_EQUIP_CURSOR_ITEM = 0x0048A040,
-    // `Script_CursorHasItem` Lua C function — `__fastcall(void *L)`.
-    // Pushes a boolean: 1 if the cursor currently holds an item, 0
-    // otherwise. Used by `C_Item.EquipItemByName` to refuse the swap
-    // when cursor is non-empty (the cursor-based dispatch path would
-    // otherwise clobber the player's held item).
-    //
-    // Background: 1.12 has a clean CMSG_SWAP_INV_ITEM (0x10D) packet
-    // builder at `0x005E0B50` that would let us skip the cursor entirely,
-    // matching the 2.4.3 `ItemMgr::EquipByGUID` semantic — but it has
-    // zero callers in the binary (verified by xref scan), so it's dead
-    // code and doesn't actually send when invoked. The other 0x10D
-    // build sites are deeply coupled to internal cursor-tracking
-    // globals (`[0x00BE0810]` / `[0x00BE0814]`) and aren't safe to
-    // call from outside that state machine. So instead of bypassing
-    // the cursor we just refuse to clobber it.
-    FUN_SCRIPT_CURSOR_HAS_ITEM = 0x004895D0,
+    // `CGPlayer::AutoEquipCursorItem` — `__thiscall(CGPlayer *this, int flag)`.
+    // The engine-internal helper that `Script_AutoEquipCursorItem`
+    // (`0x0048A040`) is a thin wrapper around: that wrapper just
+    // resolves the local player and calls this with `flag = 0`.
+    // Equips the cursor item to its natural slot (engine picks based
+    // on inventory type) and clears the cursor. No-op if cursor is
+    // empty.
+    FUN_AUTO_EQUIP_CURSOR_ITEM = 0x005E1480,
     // Per-item descriptor block (object/item-field array) lives at this offset
     // on the CGItem instance.
     OFF_ITEM_DESCRIPTOR = 0x114,
