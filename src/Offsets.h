@@ -1964,8 +1964,11 @@ enum Offsets {
     FUN_SCRIPT_PICKUP_INVENTORY_ITEM = 0x004C8DA0,
 
     // Bag-update fire sites — see TODO #67 for the full Ghidra
-    // investigation. Hook these two to detect BAG_UPDATE fires and
+    // investigation. Hook these three to detect BAG_UPDATE fires and
     // emit BAG_UPDATE_DELAYED once per frame in which any fired.
+    // Pattern-search confirms only three fire sites for `0x148`
+    // (the BAG_UPDATE event ID) exist in 1.12.1's `.text`, and we
+    // cover all three.
     //
     //   FUN_BAG_SLOT_DIFF (`0x004F91A0`) — __cdecl `void()` (zero
     //   args, ends with plain `RET`). Walks linear slots `0x13..0x16`
@@ -1985,13 +1988,19 @@ enum Offsets {
     //   field-change goes through here. 3 callers, all within the
     //   bag subsystem at `0x004F9xxx`.
     //
-    // A third site (FUN_004F8DB0 at `0x004F8DB0`) handles keyring
-    // updates with a `BAG_UPDATE(-2)` direct fire — __thiscall
-    // calling convention plus ECX-context arg make the hook
-    // signature awkward; deferred for now. The two below cover
-    // the common cases.
+    //   FUN_BAG_KEYRING_DESC_CHANGE (`0x004F8DB0`) — __thiscall
+    //   `unsigned(void *bagDesc, uint guidLo, void *guidHi, uint *current)`.
+    //   Bag descriptor update callback. Computes the slot index
+    //   from `((int)this - 0x4a8) >> 3`; for slots `0x51..0x70` (the
+    //   keyring range) fires `BAG_UPDATE` directly. For non-keyring
+    //   slots it delegates to `FUN_BAG_ITEM_TO_BAG`, so we'd
+    //   double-count if we naively hooked both — the keyring branch
+    //   is the only path here that doesn't already go through our
+    //   other hook. Hooking is safe because the `g_pending` drain
+    //   is idempotent (the flag stays true until WorldTick clears it).
     FUN_BAG_SLOT_DIFF = 0x004F91A0,
     FUN_BAG_ITEM_TO_BAG = 0x004F9370,
+    FUN_BAG_KEYRING_DESC_CHANGE = 0x004F8DB0,
     // World-subsystem per-frame update — runs exactly once per frame
     // as part of the main world tick (`FUN_00482EA0`). Only one caller
     // in the entire binary; deep in the rendering/world pipeline,
