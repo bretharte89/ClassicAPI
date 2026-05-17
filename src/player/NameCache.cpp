@@ -16,10 +16,12 @@
 // Two persistence files:
 //
 //   `WTF\Account\<acct>\ClassicAPI.txt`
-//       Account-level settings. Single `PersistentNameCacheEnabled=1`
-//       line for now; other ClassicAPI features may layer here later.
-//       Loaded on first need (when the account-name global is
-//       populated by the engine's login flow). Hand-edits survive.
+//       Account-level settings — `PersistentNameCacheEnabled` and
+//       `NameCacheScanEnabled`. Shared with other modules via the
+//       [`Settings::Account`](../settings/Account.h) registry; we
+//       register a section at static-init time with reset / serialize /
+//       parse callbacks, and the registry handles load/save so neither
+//       this module nor `Charlist::Order` clobbers the other's lines.
 //
 //   `WTF\Account\<acct>\<realm>\ClassicAPI_NameCache.txt`
 //       Per-realm cache contents. v2 format. One entry per line:
@@ -59,12 +61,14 @@
 #include "Game.h"
 #include "Offsets.h"
 #include "guid/Guid.h"
+#include "settings/Account.h"
 
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <ostream>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -111,7 +115,6 @@ std::unordered_map<std::string, Entry> g_entries;
 std::unordered_map<uint64_t, std::string> g_guidIndex;
 bool g_enabled = false;
 bool g_scanEnabled = false;
-bool g_settingsLoaded = false;
 bool g_cacheLoaded = false;
 bool g_dirty = false;
 DWORD g_lastSaveTick = 0;
@@ -135,16 +138,6 @@ const char *ReadRealmName() {
 
 // ----- path resolution -----
 
-std::string SettingsPath() {
-    const char *account = ReadAccountName();
-    if (account == nullptr || account[0] == '\0')
-        return {};
-    std::string out = "WTF\\Account\\";
-    out += account;
-    out += "\\ClassicAPI.txt";
-    return out;
-}
-
 std::string CachePath() {
     const char *account = ReadAccountName();
     if (account == nullptr || account[0] == '\0')
@@ -160,56 +153,32 @@ std::string CachePath() {
     return out;
 }
 
-// ----- settings load/save -----
+// ----- account settings (registered with Settings::Account) -----
 
-void LoadSettingsIfNeeded() {
-    if (g_settingsLoaded)
-        return;
-    const std::string path = SettingsPath();
-    if (path.empty())
-        return; // pre-login; retry on next call (g_settingsLoaded stays false)
-    g_settingsLoaded = true; // path resolved — even an empty file is "loaded"
-
-    std::ifstream file(path);
-    if (!file.is_open())
-        return; // no settings file = all defaults (disabled)
-    std::string line;
-    while (std::getline(file, line)) {
-        while (!line.empty() && (line.back() == '\r' || line.back() == '\n'
-                                 || line.back() == ' ' || line.back() == '\t'))
-            line.pop_back();
-        if (line.empty() || line[0] == '#')
-            continue;
-        auto eq = line.find('=');
-        if (eq == std::string::npos)
-            continue;
-        const std::string key = line.substr(0, eq);
-        const std::string value = line.substr(eq + 1);
-        if (key == "PersistentNameCacheEnabled")
-            g_enabled = (value == "1" || value == "true");
-        else if (key == "NameCacheScanEnabled")
-            g_scanEnabled = (value == "1" || value == "true");
-    }
+void SettingsReset() {
+    g_enabled = false;
+    g_scanEnabled = false;
 }
 
-void SaveSettings() {
-    const std::string path = SettingsPath();
-    if (path.empty())
-        return;
-    const std::string tmp = path + ".tmp";
-    {
-        std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
-        if (!out.is_open())
-            return;
-        out << "# ClassicAPI account-level settings\n";
-        out << "PersistentNameCacheEnabled=" << g_enabled << "\n";
-        out << "NameCacheScanEnabled=" << g_scanEnabled << "\n";
-        if (!out)
-            return;
-    }
-    std::remove(path.c_str());
-    std::rename(tmp.c_str(), path.c_str());
+void SettingsSerialize(std::ostream &out) {
+    out << "PersistentNameCacheEnabled=" << (g_enabled ? 1 : 0) << "\n";
+    out << "NameCacheScanEnabled=" << (g_scanEnabled ? 1 : 0) << "\n";
 }
+
+bool SettingsParse(const std::string &key, const std::string &value) {
+    if (key == "PersistentNameCacheEnabled") {
+        g_enabled = (value == "1" || value == "true");
+        return true;
+    }
+    if (key == "NameCacheScanEnabled") {
+        g_scanEnabled = (value == "1" || value == "true");
+        return true;
+    }
+    return false;
+}
+
+const Settings::Account::AutoRegister _accountSettings{
+    &SettingsReset, &SettingsSerialize, &SettingsParse};
 
 // ----- cache load/save -----
 
@@ -710,7 +679,7 @@ int __fastcall Script_C_PlayerCache_RememberPlayer(void *L) {
 // triggers a lazy load of any prior cache contents for the current
 // realm.
 int __fastcall Script_C_PlayerCache_SetEnabled(void *L) {
-    LoadSettingsIfNeeded();
+    Settings::Account::EnsureLoaded();
     bool desired = false;
     if (Game::Lua::IsNumber(L, 1))
         desired = Game::Lua::ToNumber(L, 1) != 0;
@@ -718,7 +687,7 @@ int __fastcall Script_C_PlayerCache_SetEnabled(void *L) {
         desired = Game::Lua::ToBoolean(L, 1) != 0;
     if (g_enabled != desired) {
         g_enabled = desired;
-        SaveSettings();
+        Settings::Account::Save();
         if (g_enabled) {
             LoadCacheIfNeeded();
         } else {
@@ -731,7 +700,7 @@ int __fastcall Script_C_PlayerCache_SetEnabled(void *L) {
 }
 
 int __fastcall Script_C_PlayerCache_IsEnabled(void *L) {
-    LoadSettingsIfNeeded();
+    Settings::Account::EnsureLoaded();
     Game::Lua::PushBoolean(L, g_enabled);
     return 1;
 }
@@ -742,7 +711,7 @@ int __fastcall Script_C_PlayerCache_IsEnabled(void *L) {
 // (scan results would have nowhere to go). Persists to the same
 // account-level settings file.
 int __fastcall Script_C_PlayerCache_SetScanEnabled(void *L) {
-    LoadSettingsIfNeeded();
+    Settings::Account::EnsureLoaded();
     bool desired = false;
     if (Game::Lua::IsNumber(L, 1))
         desired = Game::Lua::ToNumber(L, 1) != 0;
@@ -750,13 +719,13 @@ int __fastcall Script_C_PlayerCache_SetScanEnabled(void *L) {
         desired = Game::Lua::ToBoolean(L, 1) != 0;
     if (g_scanEnabled != desired) {
         g_scanEnabled = desired;
-        SaveSettings();
+        Settings::Account::Save();
     }
     return 0;
 }
 
 int __fastcall Script_C_PlayerCache_IsScanEnabled(void *L) {
-    LoadSettingsIfNeeded();
+    Settings::Account::EnsureLoaded();
     Game::Lua::PushBool(L, g_scanEnabled);
     return 1;
 }
@@ -824,16 +793,16 @@ void Remember(uint64_t guid, const char *name, uint32_t classID,
 }
 
 bool IsEnabled() {
-    LoadSettingsIfNeeded();
+    Settings::Account::EnsureLoaded();
     return g_enabled;
 }
 
 void SetEnabled(bool enabled) {
-    LoadSettingsIfNeeded();
+    Settings::Account::EnsureLoaded();
     if (g_enabled == enabled)
         return;
     g_enabled = enabled;
-    SaveSettings();
+    Settings::Account::Save();
     if (g_enabled)
         LoadCacheIfNeeded();
     else if (g_dirty)

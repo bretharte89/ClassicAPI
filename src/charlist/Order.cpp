@@ -13,23 +13,21 @@
 
 // `GetSavedCharacterOrder(realm)` / `SetSavedCharacterOrder(realm, order)`
 // — glue-only globals for persisting the character-select reorder UI
-// across sessions. Storage:
+// across sessions. Storage lives in the shared per-account settings
+// file via `Settings::Account` (`WTF\Account\<account>\ClassicAPI.txt`),
+// keyed by `CharacterOrder.<realm>=<opaque order>` lines.
 //
-//   WTF\Account\<account>\CharacterOrder.txt
-//
-// One `<realm>=<order>` line per realm. The `<order>` payload is opaque
-// to this module — the Lua caller decides the encoding (the current
-// GlueXML patch uses pipe-delimited character names).
+// The `<order>` payload is opaque to this module — the Lua caller
+// decides the encoding (the current GlueXML patch uses pipe-delimited
+// character names).
 //
 // Account scoping is implicit via the file path (the engine writes
-// `VAR_ACCOUNT_NAME_PTR` after auth response, so it's already populated
-// by the time the user lands on character-select). Realm scoping is
-// explicit via the key inside the file: multiple realms under one
-// account each get an independent line. Vanilla 1.12 glue has no
-// general-purpose persistence API — only the autologin-saturated
-// `GetSavedAccountName`/`SetSavedAccountName` pair — so we roll the
-// file format ourselves matching sibling persistence modules
-// (`player::NameCache`, `equipmentset::Storage`).
+// `VAR_ACCOUNT_NAME_PTR` after auth response, so it's populated by the
+// time the user lands on character-select). Realm scoping is explicit
+// via the prefixed key: multiple realms under one account each get an
+// independent line. Vanilla 1.12 glue has no general-purpose persistence
+// API — only the autologin-saturated `GetSavedAccountName`/`Set` pair —
+// so we layer onto our own settings file format.
 //
 // Registered on the **glue** Lua state only. In-world Lua sees a nil
 // global; `/script GetSavedCharacterOrder("X")` from inside the world
@@ -37,109 +35,54 @@
 // outside the screens that need it.
 
 #include "Game.h"
-#include "Offsets.h"
+#include "settings/Account.h"
 
-#include <cstdint>
-#include <cstdio>
-#include <fstream>
 #include <map>
+#include <ostream>
 #include <string>
 
 namespace Charlist::Order {
 
 namespace {
 
-// In-memory mirror of the on-disk file, pinned to whichever account
-// it was loaded for. When the user switches autologin accounts on
-// the glue screen, `VAR_ACCOUNT_NAME_PTR` updates and the next call
-// to `EnsureLoaded` drops the stale cache and re-reads from the new
-// account's path. Survives glue↔world transitions because the DLL
-// stays loaded; the GlueModuleAutoRegister just re-attaches the two
-// Lua C functions to the freshly created glue state each cycle.
+constexpr const char *kKeyPrefix = "CharacterOrder.";
+
+// In-memory mirror of the on-disk file's `CharacterOrder.*` lines for
+// the currently-loaded account. The `Settings::Account` registry owns
+// the load/save cycle and the account-change detection; this module
+// just exposes Reset/Serialize/Parse callbacks so the registry knows
+// how to round-trip our slice of the file.
 std::map<std::string, std::string> g_orders;
-std::string g_cachedAccount;
-bool g_cacheValid = false;
 
-const char *ReadAccountName() {
-    return *reinterpret_cast<const char *const *>(
-        static_cast<uintptr_t>(Offsets::VAR_ACCOUNT_NAME_PTR));
-}
+// Account-settings registry hooks ---------------------------------------
 
-std::string ResolvePath(const std::string &account) {
-    if (account.empty())
-        return {};
-    std::string out = "WTF\\Account\\";
-    out += account;
-    out += "\\CharacterOrder.txt";
-    return out;
-}
-
-void RightTrim(std::string *s) {
-    while (!s->empty()) {
-        const char c = s->back();
-        if (c != '\r' && c != '\n' && c != ' ' && c != '\t')
-            break;
-        s->pop_back();
-    }
-}
-
-void EnsureLoaded() {
-    const char *acctRaw = ReadAccountName();
-    const std::string account = (acctRaw != nullptr) ? acctRaw : "";
-    if (g_cacheValid && g_cachedAccount == account)
-        return;
-    g_cachedAccount = account;
+void SettingsReset() {
     g_orders.clear();
-    g_cacheValid = true; // mark valid even on empty/missing — re-loads when account changes
-    const std::string path = ResolvePath(account);
-    if (path.empty())
-        return;
-    std::ifstream file(path);
-    if (!file.is_open())
-        return; // first run on this account
-    std::string line;
-    while (std::getline(file, line)) {
-        RightTrim(&line);
-        if (line.empty() || line[0] == '#')
-            continue;
-        const auto eq = line.find('=');
-        if (eq == std::string::npos)
-            continue;
-        std::string key = line.substr(0, eq);
-        std::string val = line.substr(eq + 1);
-        if (key.empty())
-            continue;
-        g_orders[std::move(key)] = std::move(val);
+}
+
+void SettingsSerialize(std::ostream &out) {
+    for (const auto &kv : g_orders) {
+        if (kv.second.empty())
+            continue; // skip cleared entries
+        out << kKeyPrefix << kv.first << '=' << kv.second << '\n';
     }
 }
 
-bool Save() {
-    const std::string path = ResolvePath(g_cachedAccount);
-    if (path.empty())
+bool SettingsParse(const std::string &key, const std::string &value) {
+    constexpr std::size_t prefixLen = 15; // strlen("CharacterOrder.")
+    if (key.compare(0, prefixLen, kKeyPrefix) != 0)
         return false;
-    const std::string tmp = path + ".tmp";
-    {
-        std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
-        if (!out.is_open())
-            return false;
-        out << "# ClassicAPI character-select order\n";
-        out << "# <realm>=<opaque order payload> — one entry per realm\n";
-        for (const auto &kv : g_orders) {
-            if (kv.second.empty())
-                continue; // skip cleared entries
-            out << kv.first << '=' << kv.second << '\n';
-        }
-        if (!out)
-            return false;
-    }
-    // Win32: `rename` fails if the destination exists. Removing first
-    // leaves a brief window without the file, mitigated by the .tmp
-    // surviving a crash here on the next save's recovery path.
-    std::remove(path.c_str());
-    if (std::rename(tmp.c_str(), path.c_str()) != 0)
-        return false;
+    std::string realm = key.substr(prefixLen);
+    if (realm.empty())
+        return true; // claim the key even if malformed — drop the value
+    g_orders[std::move(realm)] = value;
     return true;
 }
+
+const Settings::Account::AutoRegister _accountSettings{
+    &SettingsReset, &SettingsSerialize, &SettingsParse};
+
+// Lua surface -----------------------------------------------------------
 
 // CR/LF inside either arg would corrupt the line-oriented file format
 // on the next save (a key with an embedded newline would parse as two
@@ -157,7 +100,7 @@ bool HasFileBreakChars(const char *s) {
 // pre-login (no account name), or unreadable file. Per TODO #94 the
 // Lua side relies on `""` as the "first-run / cleared" sentinel.
 int __fastcall Script_GetSavedCharacterOrder(void *L) {
-    EnsureLoaded();
+    Settings::Account::EnsureLoaded();
     if (!Game::Lua::IsString(L, 1)) {
         Game::Lua::PushString(L, "");
         return 1;
@@ -178,7 +121,7 @@ int __fastcall Script_GetSavedCharacterOrder(void *L) {
 // Silent no-op when `realm` is missing/empty, when either arg
 // contains a CR/LF, or when the account name isn't available yet.
 int __fastcall Script_SetSavedCharacterOrder(void *L) {
-    EnsureLoaded();
+    Settings::Account::EnsureLoaded();
     if (!Game::Lua::IsString(L, 1) || !Game::Lua::IsString(L, 2))
         return 0;
     const char *realm = Game::Lua::ToString(L, 1);
@@ -194,7 +137,7 @@ int __fastcall Script_SetSavedCharacterOrder(void *L) {
     } else {
         g_orders[realm] = order;
     }
-    Save();
+    Settings::Account::Save();
     return 0;
 }
 
@@ -205,7 +148,7 @@ void RegisterGlue() {
                                     &Script_SetSavedCharacterOrder);
 }
 
-static const Game::GlueModuleAutoRegister _autoreg{&RegisterGlue};
+const Game::GlueModuleAutoRegister _autoreg{&RegisterGlue};
 
 } // namespace
 
