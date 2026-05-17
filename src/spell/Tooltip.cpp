@@ -62,6 +62,13 @@ static int __fastcall Script_GameTooltipSetSpellByID(void *L) {
 // Hide/before-redraw, so a non-zero read means the spell tooltip is
 // live. Name + rank come from the Spell.dbc record's locale-string
 // arrays at +0x1E0 and +0x204 (locale index at VAR_LOCALE_INDEX).
+//
+// Aura-tooltip coverage (SetUnitBuff / SetUnitDebuff / SetPlayerBuff)
+// was attempted via a MinHook on the inner aura builder at
+// FUN_0052F880; that consistently crashed in pfUI-style
+// hooksecurefunc paths, with the trampoline executing from corrupted
+// JIT memory. Reverted pending a different design. For now,
+// aura-path tooltips return nothing here.
 static int __fastcall Script_GameTooltipGetSpell(void *L) {
     if (Game::Lua::Type(L, 1) != Game::Lua::TYPE_TABLE) {
         Game::Lua::Error(L, "Usage: GameTooltip:GetSpell()");
@@ -98,10 +105,9 @@ static int __fastcall Script_GameTooltipGetSpell(void *L) {
 }
 
 // `GameTooltip:HasSpell()` — boolean companion to `GetSpell`. Returns
-// true iff the tooltip is currently showing a spell (any path:
-// SetSpell, SetSpellByID, SetUnitBuff/Debuff, etc.). Same
-// `[tooltip + OFF_TOOLTIP_SPELL_ID]` check `GetSpell` does — that
-// field is non-zero only while a spell tooltip is live.
+// true iff the tooltip is currently showing a cast spell tooltip.
+// Aura tooltips (SetUnitBuff/SetUnitDebuff/SetPlayerBuff) leave
+// `OFF_TOOLTIP_SPELL_ID` zero — see the note on `Script_GameTooltipGetSpell`.
 static int __fastcall Script_GameTooltipHasSpell(void *L) {
     if (Game::Lua::Type(L, 1) != Game::Lua::TYPE_TABLE) {
         Game::Lua::Error(L, "Usage: GameTooltip:HasSpell()");
@@ -114,7 +120,7 @@ static int __fastcall Script_GameTooltipHasSpell(void *L) {
     }
     const int spellID = *reinterpret_cast<const int *>(
         static_cast<const uint8_t *>(tooltipObj) + Offsets::OFF_TOOLTIP_SPELL_ID);
-    Game::Lua::PushBoolean(L, spellID > 0);
+    Game::Lua::PushBool(L, spellID > 0);
     return 1;
 }
 
