@@ -3001,3 +3001,64 @@ Defer until either:
 - a user actively reports the current behavior as annoying, or
 - the cursor state needs to be read for some other purpose
   anyway (e.g. a `GetCursorInfo` polyfill).
+
+## ~~94. Glue-side bindings: `GetSavedCharacterOrder` / `SetSavedCharacterOrder`~~ — DONE
+
+Two glue-only globals for persisting the character-select reorder UI
+(GlueXML port of Blizzard's anniversary drag-to-reorder). Vanilla 1.12
+glue has no general-purpose persistence API — only
+`GetSavedAccountName` / `SetSavedAccountName`, which is saturated by
+the autologin system.
+
+### As shipped
+
+API (registered on the **glue** Lua state only — in-world Lua sees a
+nil global, by design):
+
+```
+GetSavedCharacterOrder(realm) -> string   -- "" when missing, never nil
+SetSavedCharacterOrder(realm, order)      -- order="" clears the entry
+```
+
+Storage: `WTF\Account\<account>\ClassicAPI.txt`, one `CharacterOrder.<realm>=<order>`
+line per realm. Account scope is implicit via the file path; realm scope
+is explicit via the line key. The `<order>` payload is opaque (the
+GlueXML side uses pipe-delimited names). Implementation lives in
+[src/charlist/Order.cpp](src/charlist/Order.cpp).
+
+### Registration mechanics
+
+Required three pieces of new infrastructure, all in their own commits:
+
+1. **Glue Lua state hook** — `FUN_0046ABB0` is the master glue init
+   (linear caller of all 5 glue batch trampolines, single caller,
+   35-byte body). Hooked in [src/DllMain.cpp](src/DllMain.cpp). Fires
+   once per glue boot (launch + every world→glue return). Earlier
+   attempt at inner trampoline `FUN_0046DDF0` crashed on Octo —
+   smaller target, sibling-DLL collision. The linear caller is
+   structurally identical to our existing in-game `FUN_LOAD_SCRIPT_FUNCTIONS`
+   hook and has none of those problems.
+
+2. **`Game::GlueModuleAutoRegister`** ([src/Game.h](src/Game.h)) —
+   parallel of the in-game `ModuleAutoRegister`. Modules opt into
+   glue exposure with a file-scope static. `Game::Lua::RegisterGlueFunction`
+   is an alias of `RegisterGlobalFunction` (the engine reads
+   `VAR_LUA_STATE` to route, and that pointer is the glue state for
+   the duration of our hook).
+
+3. **`Settings::Account` registry** ([src/settings/Account.h](src/settings/Account.h))
+   — shared per-account persistence file. NameCache and Order both
+   register reset/serialize/parse sections; the registry handles load,
+   save, and account-change detection (re-loads on autologin switch
+   from the glue screen) in one place. Avoids each module managing
+   its own `WTF\Account\<acct>\*.txt` file.
+
+### Notes for callers
+
+- `FUN_GET_LOGIN_ACCOUNT_NAME` (`0x005ABDC0`) is misnamed in
+  `Offsets.h` — it actually returns `VAR_CHARACTER_NAME`. The real
+  account name pointer is `VAR_ACCOUNT_NAME_PTR` (`0x00BE1C0C`), which
+  is what Order and NameCache use.
+- WoW.cfg was considered for persistence and rejected: extending the
+  cfg parser is more invasive than a self-managed file under WTF,
+  and we already have the `Settings::Account` shape.
