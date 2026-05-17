@@ -20,6 +20,11 @@ namespace Game {
 using FrameScript_Initialize_t = bool(__fastcall *)();
 using LoadScriptFunctions_t = void(__fastcall *)();
 
+// Master glue Lua-state init function. `__stdcall` (no args, no return).
+// Hooked to inject our own glue-side globals after the engine finishes
+// registering its 109 glue functions. See FUN_LOAD_GLUE_SCRIPT_FUNCTIONS.
+using LoadGlueScriptFunctions_t = void(__stdcall *)();
+
 namespace Lua {
 using CFunction = int(__fastcall *)(void *L);
 
@@ -124,6 +129,16 @@ void *ResolveObject(void *L, int idx);
 // must use the WoW Lua C function ABI: `int __fastcall(void *L)`.
 void RegisterGlobalFunction(const char *name, CFunction func);
 
+// Glue-state equivalent of `RegisterGlobalFunction`. Identical wire
+// (calls `FrameScript_RegisterFunction`); the engine routes the
+// registration to whichever Lua state `VAR_LUA_STATE` currently
+// references. Only safe to call from inside a `GlueModuleAutoRegister`
+// callback — at that point the engine has just finished registering
+// its own 109 glue functions, and `VAR_LUA_STATE` still points at the
+// glue state. Calling outside that window would silently target the
+// wrong state.
+void RegisterGlueFunction(const char *name, CFunction func);
+
 // Frame-method registration entry: { name, func } pairs walked by the engine's
 // per-frame-type method-table iterator. Layout matches what the engine expects
 // natively — name first, then function pointer.
@@ -191,6 +206,22 @@ struct ModuleAutoRegister {
 };
 
 void RunModuleRegistrations();
+
+// Glue-state mirror of `ModuleAutoRegister`. Modules wanting login-
+// screen exposure declare a file-scope
+// `static const Game::GlueModuleAutoRegister _g{&RegisterGlueFunctions};`
+// alongside (or instead of) the in-game `ModuleAutoRegister`. Glue
+// callbacks run from the `FUN_LOAD_GLUE_SCRIPT_FUNCTIONS` post-hook,
+// once per glue boot (game launch + every world→glue return). Use
+// `Game::Lua::RegisterGlueFunction` from inside the callback.
+struct GlueModuleAutoRegister {
+    using Fn = void (*)();
+    explicit GlueModuleAutoRegister(Fn fn);
+    Fn fn;
+    GlueModuleAutoRegister *next;
+};
+
+void RunGlueModuleRegistrations();
 
 // Declarative MinHook registration. Each feature module declares a
 // file-scope `static const Game::HookAutoRegister _hookreg{target,

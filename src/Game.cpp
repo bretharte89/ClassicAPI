@@ -88,6 +88,17 @@ void RegisterGlobalFunction(const char *name, CFunction func) {
     fn(name, func);
 }
 
+// Aliased to the same engine entry; the engine reads VAR_LUA_STATE
+// internally to decide which state to write to, and the glue hook
+// runs while that pointer is set to the glue state. Wrapped as a
+// named function (rather than `using RegisterGlueFunction = ...`) so
+// callers express intent at the call site.
+void RegisterGlueFunction(const char *name, CFunction func) {
+    auto fn = reinterpret_cast<FrameScript_RegisterFunction_t>(
+        Offsets::FUN_FRAMESCRIPT_REGISTER_FUNCTION);
+    fn(name, func);
+}
+
 void RegisterFrameMethods(void *context, const FrameMethodEntry *table, int count) {
     auto fn = reinterpret_cast<RegisterFrameMethods_t>(Offsets::FUN_REGISTER_FRAME_METHODS);
     fn(table, count, context);
@@ -167,6 +178,7 @@ void SetGlobalNumber(void *L, const char *name, double value) {
 
 namespace {
 ModuleAutoRegister *g_moduleHead = nullptr;
+GlueModuleAutoRegister *g_glueModuleHead = nullptr;
 HookAutoRegister *g_hookHead = nullptr;
 } // namespace
 
@@ -176,6 +188,16 @@ ModuleAutoRegister::ModuleAutoRegister(Fn f) : fn(f), next(g_moduleHead) {
 
 void RunModuleRegistrations() {
     for (auto *node = g_moduleHead; node != nullptr; node = node->next)
+        node->fn();
+}
+
+GlueModuleAutoRegister::GlueModuleAutoRegister(Fn f)
+    : fn(f), next(g_glueModuleHead) {
+    g_glueModuleHead = this;
+}
+
+void RunGlueModuleRegistrations() {
+    for (auto *node = g_glueModuleHead; node != nullptr; node = node->next)
         node->fn();
 }
 

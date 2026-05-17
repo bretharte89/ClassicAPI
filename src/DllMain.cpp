@@ -20,6 +20,7 @@
 
 static Game::FrameScript_Initialize_t FrameScript_Initialize_o = nullptr;
 static Game::LoadScriptFunctions_t LoadScriptFunctions_o = nullptr;
+static Game::LoadGlueScriptFunctions_t LoadGlueScriptFunctions_o = nullptr;
 
 // `Frame::RegisterEvent` is `__thiscall(this, eventName)`. MSVC can't emit
 // __thiscall on free functions, but a __fastcall function with a dummy EDX
@@ -57,6 +58,11 @@ static void __fastcall LoadScriptFunctions_h() {
     Event::Custom::EnableWrites();
 }
 
+static void __stdcall LoadGlueScriptFunctions_h() {
+    LoadGlueScriptFunctions_o();
+    Game::RunGlueModuleRegistrations();
+}
+
 // Every Lua-side `frame:RegisterEvent(...)` is a chance to claim a slot
 // for any custom event still waiting. By this point the engine's table
 // is fully populated and SuperWoWhook / other DLLs have done their
@@ -83,14 +89,17 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved) {
         if (MH_EnableHook(target) != MH_OK)
             return FALSE;
 
-        // Three core init hooks stay here — each runs glue logic
-        // (PrepareForReload, RunModuleRegistrations, EnableWrites,
-        // RetryClaims) that's tightly coupled to DllMain state, so
-        // a declarative HookAutoRegister wouldn't simplify them.
+        // Four core init hooks stay here — each runs glue logic
+        // (PrepareForReload, RunModuleRegistrations,
+        // RunGlueModuleRegistrations, EnableWrites, RetryClaims)
+        // that's tightly coupled to DllMain state, so a declarative
+        // HookAutoRegister wouldn't simplify them.
         HOOK_FUNCTION(Offsets::FUN_FRAME_SCRIPT_INITIALIZE, FrameScript_Initialize_h,
                       FrameScript_Initialize_o);
         HOOK_FUNCTION(Offsets::FUN_LOAD_SCRIPT_FUNCTIONS, LoadScriptFunctions_h,
                       LoadScriptFunctions_o);
+        HOOK_FUNCTION(Offsets::FUN_LOAD_GLUE_SCRIPT_FUNCTIONS,
+                      LoadGlueScriptFunctions_h, LoadGlueScriptFunctions_o);
         HOOK_FUNCTION(Offsets::FUN_FRAME_REGISTER_EVENT, FrameRegisterEvent_h,
                       FrameRegisterEvent_o);
 

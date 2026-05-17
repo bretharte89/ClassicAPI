@@ -18,6 +18,16 @@ enum Offsets {
     FUN_INVALID_FUNCTION_PTR_CHECK = 0x42A320,
     FUN_LOAD_SCRIPT_FUNCTIONS = 0x490250,
 
+    // Master glue Lua init — clean linear caller of all 5 glue batch
+    // trampolines (60 main + 11 char-select + 24 char-create + 10 realm
+    // + 4 frame globals = 109 total). Body: 0x0046ABB0..0x0046ABD2,
+    // 35 bytes, single caller (FUN_0046A7B0). Runs once per glue boot:
+    // initial launch and every world→glue return (log out). Post-hook
+    // is the glue analog of `FUN_LOAD_SCRIPT_FUNCTIONS` — by the time
+    // it returns, `VAR_LUA_STATE` points at the freshly populated glue
+    // state, so `FrameScript_RegisterFunction` writes land on it.
+    FUN_LOAD_GLUE_SCRIPT_FUNCTIONS = 0x0046ABB0,
+
     // GameTooltip script-method prologue helpers (used to resolve self → CFrameScriptObject*).
     FUN_FRAMESCRIPT_PUSH_OBJECT = 0x6F3BC0,
     FUN_FRAMESCRIPT_GET_OBJECT = 0x6F3740,
