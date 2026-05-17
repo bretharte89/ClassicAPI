@@ -1,4 +1,4 @@
-// This file is part of ClassicAPI.
+﻿// This file is part of ClassicAPI.
 //
 // ClassicAPI is free software: you can redistribute it and/or modify it under the terms
 // of the GNU Lesser General Public License as published by the Free Software Foundation, either
@@ -100,7 +100,7 @@ void __fastcall FireNotify_h(int factionID, int delta) {
 
     const int slot = Event::Custom::Lookup(kEventName);
     if (slot >= 0)
-        Event::Custom::Fire_DDD(slot, factionID, newStanding, delta);
+        Event::Custom::Fire(slot, "%d%d%d", factionID, newStanding, delta);
 
     g_last = {};
 }

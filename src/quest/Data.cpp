@@ -1,4 +1,4 @@
-// This file is part of ClassicAPI.
+﻿// This file is part of ClassicAPI.
 //
 // ClassicAPI is free software: you can redistribute it and/or modify it under the terms
 // of the GNU Lesser General Public License as published by the Free Software Foundation, either
@@ -36,7 +36,7 @@ static void __stdcall QuestLoadCallback(void *userData, int success) {
         return;
     const auto questID =
         static_cast<int>(reinterpret_cast<uintptr_t>(userData));
-    Event::Custom::Fire_DD(slot, questID, static_cast<int>(success != 0));
+    Event::Custom::Fire(slot, "%d%d", questID, static_cast<int>(success != 0));
 }
 
 static void RequestAndMaybeNotify(uint32_t questID) {
@@ -49,7 +49,7 @@ static void RequestAndMaybeNotify(uint32_t questID) {
     if (wasCached) {
         const int slot = Event::Custom::Lookup(kQuestDataLoadResult);
         if (slot >= 0)
-            Event::Custom::Fire_DD(slot, static_cast<int>(questID), 1);
+            Event::Custom::Fire(slot, "%d%d", static_cast<int>(questID), 1);
     }
 }
 

@@ -13,6 +13,8 @@
 
 #pragma once
 
+#include "Offsets.h"
+
 namespace Event::Custom {
 
 // Reserve an event name to be claimed in the engine's event table at
@@ -47,33 +49,30 @@ struct AutoReserve {
 // so call this at fire time rather than caching the value.
 int Lookup(const char *name);
 
-// Dispatches an event with no payload (empty format string). Used by
-// `EQUIPMENT_SETS_CHANGED` and other notifications whose only signal
-// is "something in this domain changed — go re-read".
-void Fire_None(int eventID);
-
-// Dispatches an event with one int arg (format `"%d"`). Used by
-// `EQUIPMENT_SWAP_PENDING(setID)`.
-void Fire_D(int eventID, int arg1);
-
-// Dispatches an event with two int args (format `"%d%d"`). Pass
-// booleans as 0/1 since the engine has no native bool format code.
-void Fire_DD(int eventID, int arg1, int arg2);
-
-// Three-int variant — `(eventID, %d%d%d, a, b, c)`. Used by
-// `FACTION_STANDING_CHANGED(factionID, newStanding, repGained)`.
-void Fire_DDD(int eventID, int arg1, int arg2, int arg3);
-
-// Dispatches with `(string, int)` — used by `MODIFIER_STATE_CHANGED`
-// for `(keyName, down)` payloads. `arg1` must outlive the call (the
-// engine doesn't copy strings out of varargs); for compile-time
-// literals this is automatic.
-void Fire_SD(int eventID, const char *arg1, int arg2);
-
-// Single string arg (format `"%s"`). Same lifetime caveat as
-// `Fire_SD` — used by `GLOBAL_MOUSE_DOWN` / `GLOBAL_MOUSE_UP` for
-// `(button)` payloads.
-void Fire_S(int eventID, const char *arg1);
+// Dispatches a custom event via the engine's printf-style event
+// dispatcher at `FUN_FIRE_EVENT` (`0x00703F50`). `format` is a
+// concatenation of `%d` (int), `%u` (uint), `%f` (double), `%s`
+// (const char *) tokens — one per payload arg, no separators or
+// literal text. The engine has no `%b` for booleans — pass `%d`
+// with `0` / `1`. String args must outlive the call (engine doesn't
+// copy them out of varargs); compile-time literals are fine.
+//
+// Examples:
+//   Fire(slot, "");                       // EQUIPMENT_SETS_CHANGED (no payload)
+//   Fire(slot, "%d", setID);              // EQUIPMENT_SWAP_PENDING(setID)
+//   Fire(slot, "%d%d", itemID, success);  // ITEM_DATA_LOAD_RESULT(id, ok)
+//   Fire(slot, "%s%d", keyName, down);    // MODIFIER_STATE_CHANGED(key, down)
+//
+// No-op for `eventID < 0`, which lets callers cheaply guard on the
+// `Lookup()` result without an explicit if.
+template <typename... Args>
+inline void Fire(int eventID, const char *format, Args... args) {
+    if (eventID < 0)
+        return;
+    using FireEventFn_t = void(__cdecl *)(int eventID, const char *format, ...);
+    auto fn = reinterpret_cast<FireEventFn_t>(Offsets::FUN_FIRE_EVENT);
+    fn(eventID, format, args...);
+}
 
 // Internal: try to claim a slot for every reservation that's still
 // unclaimed (`slot < 0`). Called from the `Frame::RegisterEvent` hook

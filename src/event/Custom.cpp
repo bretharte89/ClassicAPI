@@ -120,58 +120,6 @@ void PrepareForReload() {
     g_writesEnabled = false;
 }
 
-void Fire_None(int eventID) {
-    if (eventID < 0)
-        return;
-    using FireEvent_None_t = void(__cdecl *)(int eventID, const char *format);
-    auto fn = reinterpret_cast<FireEvent_None_t>(Offsets::FUN_FIRE_EVENT);
-    fn(eventID, "");
-}
-
-void Fire_D(int eventID, int arg1) {
-    if (eventID < 0)
-        return;
-    using FireEvent_D_t = void(__cdecl *)(int eventID, const char *format, int a);
-    auto fn = reinterpret_cast<FireEvent_D_t>(Offsets::FUN_FIRE_EVENT);
-    fn(eventID, "%d", arg1);
-}
-
-void Fire_DD(int eventID, int arg1, int arg2) {
-    if (eventID < 0)
-        return;
-    using FireEvent_DD_t = void(__cdecl *)(int eventID, const char *format,
-                                           int a, int b);
-    auto fn = reinterpret_cast<FireEvent_DD_t>(Offsets::FUN_FIRE_EVENT);
-    fn(eventID, "%d%d", arg1, arg2);
-}
-
-void Fire_DDD(int eventID, int arg1, int arg2, int arg3) {
-    if (eventID < 0)
-        return;
-    using FireEvent_DDD_t = void(__cdecl *)(int eventID, const char *format,
-                                            int a, int b, int c);
-    auto fn = reinterpret_cast<FireEvent_DDD_t>(Offsets::FUN_FIRE_EVENT);
-    fn(eventID, "%d%d%d", arg1, arg2, arg3);
-}
-
-void Fire_SD(int eventID, const char *arg1, int arg2) {
-    if (eventID < 0)
-        return;
-    using FireEvent_SD_t = void(__cdecl *)(int eventID, const char *format,
-                                           const char *a, int b);
-    auto fn = reinterpret_cast<FireEvent_SD_t>(Offsets::FUN_FIRE_EVENT);
-    fn(eventID, "%s%d", arg1, arg2);
-}
-
-void Fire_S(int eventID, const char *arg1) {
-    if (eventID < 0)
-        return;
-    using FireEvent_S_t = void(__cdecl *)(int eventID, const char *format,
-                                          const char *a);
-    auto fn = reinterpret_cast<FireEvent_S_t>(Offsets::FUN_FIRE_EVENT);
-    fn(eventID, "%s", arg1);
-}
-
 // Diagnostic Lua functions — registered via the auto-register pattern
 // at the bottom of this file. Not on any hot path.
 namespace {

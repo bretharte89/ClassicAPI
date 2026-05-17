@@ -1,4 +1,4 @@
-// This file is part of ClassicAPI.
+﻿// This file is part of ClassicAPI.
 //
 // ClassicAPI is free software: you can redistribute it and/or modify it under the terms
 // of the GNU Lesser General Public License as published by the Free Software Foundation, either
@@ -147,7 +147,7 @@ void ProcessKeyMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
     // and the index may shift.
     const int slot = Event::Custom::Lookup(kModifierStateChanged);
     if (slot >= 0)
-        Event::Custom::Fire_SD(slot, kKeyName[bitIdx], static_cast<int>(nowDown));
+        Event::Custom::Fire(slot, "%s%d", kKeyName[bitIdx], static_cast<int>(nowDown));
 }
 
 LRESULT CALLBACK GetMsgHook(int code, WPARAM wParam, LPARAM lParam) {

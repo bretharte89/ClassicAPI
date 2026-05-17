@@ -1,4 +1,4 @@
-// This file is part of ClassicAPI.
+﻿// This file is part of ClassicAPI.
 //
 // ClassicAPI is free software: you can redistribute it and/or modify it under the terms
 // of the GNU Lesser General Public License as published by the Free Software Foundation, either
@@ -82,7 +82,7 @@ void OnWorldTick() {
         g_prev[i] = effectiveDown;
         const int slot = Event::Custom::Lookup(effectiveDown ? kDownEvent : kUpEvent);
         if (slot >= 0)
-            Event::Custom::Fire_S(slot, kButtons[i].name);
+            Event::Custom::Fire(slot, "%s", kButtons[i].name);
     }
 }
 

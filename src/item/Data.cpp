@@ -55,13 +55,13 @@ static const Event::Custom::AutoReserve _reserveGetItemInfoReceived{kGetItemInfo
 static void FireGetItemInfoReceived(int itemID, int success) {
     const int slot = Event::Custom::Lookup(kGetItemInfoReceived);
     if (slot >= 0)
-        Event::Custom::Fire_DD(slot, itemID, success);
+        Event::Custom::Fire(slot, "%d%d", itemID, success);
 }
 
 static void FireItemDataLoadResult(int itemID, int success) {
     const int slot = Event::Custom::Lookup(kItemDataLoadResult);
     if (slot >= 0)
-        Event::Custom::Fire_DD(slot, itemID, success);
+        Event::Custom::Fire(slot, "%d%d", itemID, success);
 }
 
 // Engine callback for **implicit** cache fills (transparent warmup

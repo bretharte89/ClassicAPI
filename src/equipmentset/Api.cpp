@@ -377,7 +377,7 @@ int __fastcall Script_UseEquipmentSet(void *L) {
     if (s == nullptr) {
         const int evt = Event::Custom::Lookup(kSwapFinishedEvent);
         if (evt >= 0)
-            Event::Custom::Fire_DD(evt, 0, static_cast<int>(setID));
+            Event::Custom::Fire(evt, "%d%d", 0, static_cast<int>(setID));
         Game::Lua::PushBoolean(L, 0);
         return 1;
     }
@@ -387,7 +387,7 @@ int __fastcall Script_UseEquipmentSet(void *L) {
     // visuals.
     const int pendingEvt = Event::Custom::Lookup(kSwapPendingEvent);
     if (pendingEvt >= 0)
-        Event::Custom::Fire_D(pendingEvt, static_cast<int>(setID));
+        Event::Custom::Fire(pendingEvt, "%d", static_cast<int>(setID));
 
     // If the cursor is holding anything, return it to its source slot
     // and unlock it server-side BEFORE our swap chain runs. The
@@ -441,7 +441,7 @@ int __fastcall Script_UseEquipmentSet(void *L) {
 
     const int evt = Event::Custom::Lookup(kSwapFinishedEvent);
     if (evt >= 0)
-        Event::Custom::Fire_DD(evt, 1, static_cast<int>(setID));
+        Event::Custom::Fire(evt, "%d%d", 1, static_cast<int>(setID));
 
     Game::Lua::PushBoolean(L, 1);
     return 1;
