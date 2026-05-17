@@ -40,7 +40,6 @@
 
 #include "Game.h"
 #include "Offsets.h"
-#include "debug/Log.h"
 #include "spell/Lookup.h"
 
 #include <cstdint>
@@ -290,18 +289,12 @@ void __fastcall MacroParse_h(int macroEntry) {
 
     int *cacheField = reinterpret_cast<int *>(
         macroEntry + Offsets::OFF_MACRO_PRIMARY_SPELL);
-    const int before = *cacheField;
-
-    const char *body = reinterpret_cast<const char *>(
-        macroEntry + Offsets::OFF_MACRO_BODY);
-    Debug::Log::Printf("[MacroParse_h] cacheField=0x%X body=\n%s",
-                       static_cast<unsigned>(before), body ? body : "<null>");
-
     if (*cacheField != 0)
         return;
 
+    const char *body = reinterpret_cast<const char *>(
+        macroEntry + Offsets::OFF_MACRO_BODY);
     const int spellID = ScanMacroBodyForOurPattern(body);
-    Debug::Log::Printf("[MacroParse_h] scan returned spellID=%d", spellID);
     if (spellID > 0)
         *cacheField = spellID;
 }
