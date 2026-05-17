@@ -166,6 +166,7 @@ build instructions.
 - [CharacterList](#characterlist)
   - [`C_CharacterList.GetNumCharacters()` / `GetCharacterInfo(index)`](#c_characterlistgetnumcharacters--getcharacterinfoindex)
   - [`C_CharacterList.GetCharacters()`](#c_characterlistgetcharacters)
+  - [`GetSavedCharacterOrder(realm)` / `SetSavedCharacterOrder(realm, order)` — GlueXML only](#getsavedcharacterorderrealm--setsavedcharacterorderrealm-order--gluexml-only)
 - [Chat](#chat)
   - [`GetCurrentChatGUID()`](#getcurrentchatguid)
 - [AddOns](#addons)
@@ -4323,6 +4324,65 @@ end
 > empty until the player goes back to character-select. Under
 > normal use (DLL loaded at game start via VanillaFixes) the cache
 > is populated before any addon Lua runs.
+
+### `GetSavedCharacterOrder(realm)` / `SetSavedCharacterOrder(realm, order)` — GlueXML only
+
+> **GlueXML scope.** These globals are registered on the **glue**
+> Lua state (the engine that runs login / realm-select /
+> character-select), not the in-world FrameScript engine. In-world
+> addons can't see them — `/script GetSavedCharacterOrder("X")`
+> from inside the world will error on a nil global. They exist
+> specifically to support GlueXML patches that reorder the
+> character-select list and need to persist that order across
+> sessions; 1.12 glue ships no general-purpose persistence API
+> (just `GetSavedAccountName`/`SetSavedAccountName`, which is
+> saturated by the autologin system).
+
+- `GetSavedCharacterOrder(realm) -> string` — returns the saved
+  order string for `realm`, or `""` if none. Never returns `nil`.
+- `SetSavedCharacterOrder(realm, order)` — writes the order
+  string. Calling with `order == ""` clears the realm's entry.
+
+Both args are opaque UTF-8 strings. The caller picks the encoding
+for `order`; the DLL stores it verbatim. The expected pattern
+(matching the anniversary-client reorder UI) is a pipe-delimited
+list of character names: `"Thrall|Jaina|Sylvanas"`.
+
+Persistence: `WTF\Account\<account>\ClassicAPI.txt`, one
+`CharacterOrder.<realm>=<order>` line per realm. Account scope is
+implicit via the file path (so switching autologin accounts on the
+glue screen automatically isolates per-account orderings); realm
+scope is explicit via the line key. The same file is shared with
+the persistent name cache settings — see [`Settings::Account`
+in the source](../src/settings/Account.h) — no file-level
+coordination needed at the call site.
+
+```lua
+-- GlueXML, e.g. CharacterSelect.lua: persist the user's drag-reordered list
+local realm = GetServerName() or ""
+local names = {}
+for i = 1, GetNumCharacters() do
+    table.insert(names, (GetCharacterInfo(translationTable[i])))
+end
+SetSavedCharacterOrder(realm, table.concat(names, "|"))
+
+-- On the next CHARACTER_LIST_UPDATE: read the saved order back
+local saved = GetSavedCharacterOrder(realm)
+if saved ~= "" then
+    for name in string.gfind(saved, "([^|]+)") do
+        -- reconcile against the current GetCharacterInfo names
+    end
+end
+```
+
+> **How it works.** ClassicAPI hooks `FUN_0046ABB0` — the engine's
+> master glue-init function, which runs once per glue boot (initial
+> launch and every world→glue return on logout). After the engine
+> registers its own 109 glue functions, our hook adds these two on
+> the same Lua state via the engine's own
+> `FrameScript_RegisterFunction`. The glue Lua state is torn down
+> and recreated on every world transition; we re-register each
+> cycle automatically.
 
 ## Chat
 
