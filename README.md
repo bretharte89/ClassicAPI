@@ -70,7 +70,7 @@ functions, just behavior the stock 1.12 engine didn't have. See the
 |------|--------------|
 | `/cast <spellID>` | `/cast 5019` casts Shoot if known; macro slot tags correctly for action-bar UI |
 | `CastSpellByName("<spellID>")` | Same — numeric strings resolve through the engine's name resolver |
-| `CastSpellNoToggle("<name>")` in a macro | Engine's macro parser now recognizes it as a primary-spell line, so the macro slot highlights when its spell is auto-repeating or its self-aura is active |
+| `CastSpellNoToggle("<name>")` in a macro | Engine's macro parser now recognizes it as a primary-spell line, so the macro slot in an addon like pfUI highlights when its spell is auto-repeating or its self-aura is active |
 
 ### Events
 
