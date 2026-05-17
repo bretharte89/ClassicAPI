@@ -18,7 +18,7 @@ Full per-function reference: **[docs/API.md](docs/API.md)**.
 | Namespace | Calls |
 |-----------|-------|
 | AddOns | `C_AddOns.DoesAddOnExist`, `C_AddOns.GetAddOnName`, `C_AddOns.GetAddOnNotes`, `C_AddOns.GetAddOnSecurity`, `C_AddOns.GetAddOnTitle`, `C_AddOns.IsAddOnLoadable` |
-| CharacterList | `C_CharacterList.GetCharacterInfo`, `C_CharacterList.GetCharacters`, `C_CharacterList.GetNumCharacters`. **GlueXML-only** (registered on the glue Lua state, not visible in-world): `GetSavedCharacterOrder`, `SetSavedCharacterOrder` (persist to `WTF\Account\...\ClassicAPI.txt`) |
+| CharacterList | `C_CharacterList.GetCharacterInfo`, `C_CharacterList.GetCharacters`, `C_CharacterList.GetNumCharacters` |
 | Chat | `GetCurrentChatGUID` |
 | Class | `FillLocalizedClassList` |
 | Combat | `InCombatLockdown` |
@@ -45,6 +45,20 @@ Full per-function reference: **[docs/API.md](docs/API.md)**.
 | UIColor | `C_UIColor.GetColors` (backports `GlobalColor.dbc`; companion addon wraps each row with `ColorMixin` and assigns `_G[baseTag]` + `_G[baseTag.."_CODE"]`) |
 | Unit | `GetUnitSpeed`, `UnitClassBase`, `UnitGUID`, `UnitIsAFK`, `UnitIsDND`, `UnitIsFeignDeath`, `UnitIsInMyGuild`, `UnitIsPossessed`, `UnitStandState` |
 | UnitAuras | `C_UnitAuras.GetAuraDataByIndex`, `C_UnitAuras.GetAuraDispelTypeColor`, `C_UnitAuras.GetBuffDataByIndex`, `C_UnitAuras.GetDebuffDataByIndex`, `C_UnitAuras.GetPlayerAuraBySpellID`, `C_UnitAuras.GetUnitAuraBySpellID`, `C_UnitAuras.GetUnitAuras` |
+
+### GlueXML calls
+
+Registered on the **glue** Lua state (the engine that runs the login,
+realm-select, and character-select screens) — *not* the in-world
+FrameScript engine. In-world addons can't reach these; they exist
+to support GlueXML patches that need a small persistence surface
+across sessions. (Vanilla 1.12 glue ships no general-purpose
+persistence API beyond `GetSavedAccountName`/`SetSavedAccountName`,
+which is saturated by autologin.)
+
+| Group | Calls |
+|-------|-------|
+| CharacterOrder | `GetSavedCharacterOrder`, `SetSavedCharacterOrder` (persist to `WTF\Account\...\ClassicAPI.txt`) |
 
 ### Macros
 
