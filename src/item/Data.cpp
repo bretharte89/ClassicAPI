@@ -1,4 +1,4 @@
-// This file is part of ClassicAPI.
+﻿// This file is part of ClassicAPI.
 //
 // ClassicAPI is free software: you can redistribute it and/or modify it under the terms
 // of the GNU Lesser General Public License as published by the Free Software Foundation, either
@@ -76,7 +76,7 @@ static void FireItemDataLoadResult(int itemID, int success) {
 // callback would crash the engine, so stdcall is verified by induction.
 static void __stdcall ItemLoadCallback_Implicit(void *userData, int success) {
     const auto itemID = static_cast<int>(reinterpret_cast<uintptr_t>(userData));
-    FireGetItemInfoReceived(itemID, success ? 1 : 0);
+    FireGetItemInfoReceived(itemID, static_cast<int>(success != 0));
 }
 
 // Engine callback for **explicit** cache fills (player-side
@@ -85,7 +85,7 @@ static void __stdcall ItemLoadCallback_Implicit(void *userData, int success) {
 // fills, not for callers who explicitly asked.
 static void __stdcall ItemLoadCallback_Explicit(void *userData, int success) {
     const auto itemID = static_cast<int>(reinterpret_cast<uintptr_t>(userData));
-    FireItemDataLoadResult(itemID, success ? 1 : 0);
+    FireItemDataLoadResult(itemID, static_cast<int>(success != 0));
 }
 
 using ItemLoadCallback_t = void(__stdcall *)(void *userData, int success);
@@ -132,7 +132,7 @@ static int __fastcall Script_IsItemDataCachedByID(void *L) {
     const int itemID = Item::Arg::ResolveItemID(L, 1);
     const bool cached =
         (itemID > 0) && (CacheFetch(static_cast<uint32_t>(itemID), nullptr) != nullptr);
-    Game::Lua::PushBoolean(L, cached ? 1 : 0);
+    Game::Lua::PushBool(L, cached);
     return 1;
 }
 
@@ -144,7 +144,7 @@ static int __fastcall Script_IsItemDataCached(void *L) {
     const int itemID = ResolveLocationToItemID(L, 1);
     const bool cached =
         (itemID > 0) && (CacheFetch(static_cast<uint32_t>(itemID), nullptr) != nullptr);
-    Game::Lua::PushBoolean(L, cached ? 1 : 0);
+    Game::Lua::PushBool(L, cached);
     return 1;
 }
 

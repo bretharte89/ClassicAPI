@@ -1,4 +1,4 @@
-// This file is part of ClassicAPI.
+﻿// This file is part of ClassicAPI.
 //
 // ClassicAPI is free software: you can redistribute it and/or modify it under the terms
 // of the GNU Lesser General Public License as published by the Free Software Foundation, either
@@ -80,8 +80,7 @@ bool TestPlayerFlag(void *L, uint32_t flagMask) {
 // player-controlled unit (player, target, party*, raid*, etc.). NPCs
 // always return false.
 int __fastcall Script_UnitIsAFK(void *L) {
-    Game::Lua::PushBoolean(L,
-        TestPlayerFlag(L, Offsets::PLAYER_FLAG_AFK) ? 1 : 0);
+    Game::Lua::PushBool(L, TestPlayerFlag(L, Offsets::PLAYER_FLAG_AFK));
     return 1;
 }
 
@@ -89,8 +88,7 @@ int __fastcall Script_UnitIsAFK(void *L) {
 // ("Do Not Disturb", toggled via `/dnd`). Same unit-token coverage as
 // `UnitIsAFK`.
 int __fastcall Script_UnitIsDND(void *L) {
-    Game::Lua::PushBoolean(L,
-        TestPlayerFlag(L, Offsets::PLAYER_FLAG_DND) ? 1 : 0);
+    Game::Lua::PushBool(L, TestPlayerFlag(L, Offsets::PLAYER_FLAG_DND));
     return 1;
 }
 
@@ -107,7 +105,7 @@ int __fastcall Script_UnitIsFeignDeath(void *L) {
     }
     const char *token = Game::Lua::ToString(L, 1);
     if (token == nullptr) {
-        Game::Lua::PushBoolean(L, 0);
+        Game::Lua::PushBool(L, 0);
         return 1;
     }
 
@@ -126,7 +124,7 @@ int __fastcall Script_UnitIsFeignDeath(void *L) {
     const uint32_t unitFlags = *reinterpret_cast<const uint32_t *>(
         fields + Offsets::OFF_UNIT_FIELD_FLAGS);
     Game::Lua::PushBoolean(L,
-        (unitFlags & Offsets::UNIT_FLAG_FEIGN_DEATH) != 0 ? 1 : 0);
+        (unitFlags & Offsets::UNIT_FLAG_FEIGN_DEATH) != 0);
     return 1;
 }
 
@@ -372,7 +370,7 @@ int __fastcall Script_UnitIsPossessed(void *L) {
     }
     const char *token = Game::Lua::ToString(L, 1);
     if (token == nullptr) {
-        Game::Lua::PushBoolean(L, 0);
+        Game::Lua::PushBool(L, 0);
         return 1;
     }
 
@@ -391,7 +389,7 @@ int __fastcall Script_UnitIsPossessed(void *L) {
     const uint32_t unitFlags = *reinterpret_cast<const uint32_t *>(
         fields + Offsets::OFF_UNIT_FIELD_FLAGS);
     Game::Lua::PushBoolean(L,
-        (unitFlags & Offsets::UNIT_FLAG_POSSESSED) != 0 ? 1 : 0);
+        (unitFlags & Offsets::UNIT_FLAG_POSSESSED) != 0);
     return 1;
 }
 

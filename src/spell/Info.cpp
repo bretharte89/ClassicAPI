@@ -1,4 +1,4 @@
-// This file is part of ClassicAPI.
+﻿// This file is part of ClassicAPI.
 //
 // ClassicAPI is free software: you can redistribute it and/or modify it under the terms
 // of the GNU Lesser General Public License as published by the Free Software Foundation, either
@@ -204,7 +204,7 @@ static int ResolveLuaArgsToSpellID(void *L) {
 
     if (Game::Lua::Type(L, 2) == Game::Lua::TYPE_STRING) {
         const char *book = Game::Lua::ToString(L, 2);
-        const int bookType = BookTypeIsPet(book) ? 1 : 0;
+        const int bookType = static_cast<int>(BookTypeIsPet(book));
         return Spell::Lookup::SpellbookSlotToID(arg1, bookType);
     }
     return arg1;
@@ -225,7 +225,7 @@ static int __fastcall Script_GetSpellInfo(void *L) {
     Game::Lua::PushString(L, info.rank);                         // 2. rank
     Game::Lua::PushString(L, info.iconPath);                     // 3. icon (path string)
     Game::Lua::PushNumber(L, static_cast<double>(info.cost));    // 4. cost
-    Game::Lua::PushBoolean(L, info.isFunnel ? 1 : 0);            // 5. isFunnel
+    Game::Lua::PushBool(L, info.isFunnel);            // 5. isFunnel
     Game::Lua::PushNumber(L, static_cast<double>(info.powerType)); // 6. powerType
     Game::Lua::PushNumber(L, static_cast<double>(info.castTimeMs)); // 7. castTime (ms)
     Game::Lua::PushNumber(L, static_cast<double>(info.minRange)); // 8. minRange
@@ -249,7 +249,7 @@ static void SetField(void *L, const char *key, double value) {
 }
 static void SetFieldBool(void *L, const char *key, bool value) {
     Game::Lua::PushString(L, key);
-    Game::Lua::PushBoolean(L, value ? 1 : 0);
+    Game::Lua::PushBool(L, value);
     Game::Lua::RawSet(L, -3);
 }
 
@@ -420,7 +420,7 @@ static int PushIsPassive(void *L, int spellID) {
     if (record == nullptr)
         return 0;
     const uint32_t attr = *reinterpret_cast<const uint32_t *>(record + OFF_ATTRIBUTES);
-    Game::Lua::PushBoolean(L, (attr & SPELL_ATTR_PASSIVE) != 0 ? 1 : 0);
+    Game::Lua::PushBool(L, (attr & SPELL_ATTR_PASSIVE) != 0);
     return 1;
 }
 
@@ -469,7 +469,7 @@ static int __fastcall Script_IsPlayerSpell(void *L) {
     }
     const int spellID = static_cast<int>(Game::Lua::ToNumber(L, 1));
     if (spellID < 1) {
-        Game::Lua::PushBoolean(L, 0);
+        Game::Lua::PushBool(L, 0);
         return 1;
     }
 
@@ -489,7 +489,7 @@ static int __fastcall Script_IsPlayerSpell(void *L) {
 
     const uint32_t mask = 1u << (spellID & 31);
     const bool isKnown = (bitmap[spellID >> 5] & mask) != 0;
-    Game::Lua::PushBoolean(L, isKnown ? 1 : 0);
+    Game::Lua::PushBoolean(L, isKnown);
     return 1;
 }
 
@@ -521,15 +521,15 @@ static int __fastcall Script_IsSpellKnown(void *L) {
     }
     const int spellID = static_cast<int>(Game::Lua::ToNumber(L, 1));
     if (spellID < 1) {
-        Game::Lua::PushBoolean(L, 0);
+        Game::Lua::PushBool(L, 0);
         return 1;
     }
-    const int wantBookType = (Game::Lua::ToBoolean(L, 2) != 0) ? 1 : 0;
+    const int wantBookType = static_cast<int>(Game::Lua::ToBoolean(L, 2) != 0);
 
     int bookType = -1;
     const int slot = Spell::Lookup::FindSpellbookSlot(spellID, &bookType);
     const bool found = (slot > 0 && bookType == wantBookType);
-    Game::Lua::PushBoolean(L, found ? 1 : 0);
+    Game::Lua::PushBoolean(L, found);
     return 1;
 }
 
@@ -578,7 +578,7 @@ static bool ComputeIsHelpful(int spellID) {
 // `ResolveLuaArgsToSpellID` path `GetSpellInfo` uses.
 static int __fastcall Script_IsHarmfulSpell(void *L) {
     const int spellID = ResolveLuaArgsToSpellID(L);
-    Game::Lua::PushBoolean(L, ComputeIsHarmful(spellID) ? 1 : 0);
+    Game::Lua::PushBool(L, ComputeIsHarmful(spellID));
     return 1;
 }
 
@@ -589,7 +589,7 @@ static int __fastcall Script_IsHarmfulSpell(void *L) {
 // without parsing every effect's implicit target.
 static int __fastcall Script_IsHelpfulSpell(void *L) {
     const int spellID = ResolveLuaArgsToSpellID(L);
-    Game::Lua::PushBoolean(L, ComputeIsHelpful(spellID) ? 1 : 0);
+    Game::Lua::PushBool(L, ComputeIsHelpful(spellID));
     return 1;
 }
 
@@ -601,7 +601,7 @@ static int __fastcall Script_C_Spell_IsSpellHarmful(void *L) {
         return 0;
     }
     const int spellID = static_cast<int>(Game::Lua::ToNumber(L, 1));
-    Game::Lua::PushBoolean(L, ComputeIsHarmful(spellID) ? 1 : 0);
+    Game::Lua::PushBool(L, ComputeIsHarmful(spellID));
     return 1;
 }
 
@@ -612,7 +612,7 @@ static int __fastcall Script_C_Spell_IsSpellHelpful(void *L) {
         return 0;
     }
     const int spellID = static_cast<int>(Game::Lua::ToNumber(L, 1));
-    Game::Lua::PushBoolean(L, ComputeIsHelpful(spellID) ? 1 : 0);
+    Game::Lua::PushBool(L, ComputeIsHelpful(spellID));
     return 1;
 }
 

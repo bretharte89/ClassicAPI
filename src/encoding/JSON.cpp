@@ -1,4 +1,4 @@
-// This file is part of ClassicAPI.
+﻿// This file is part of ClassicAPI.
 //
 // ClassicAPI is free software: you can redistribute it and/or modify it under the terms
 // of the GNU Lesser General Public License as published by the Free Software Foundation, either
@@ -142,7 +142,7 @@ void PicojsonToLua(void *L, const picojson::value &v) {
     if (v.is<picojson::null>()) {
         Game::Lua::PushNil(L);
     } else if (v.is<bool>()) {
-        Game::Lua::PushBoolean(L, v.get<bool>() ? 1 : 0);
+        Game::Lua::PushBool(L, v.get<bool>());
     } else if (v.is<double>()) {
         Game::Lua::PushNumber(L, v.get<double>());
     } else if (v.is<int64_t>()) {

@@ -1,4 +1,4 @@
-// This file is part of ClassicAPI.
+﻿// This file is part of ClassicAPI.
 //
 // ClassicAPI is free software: you can redistribute it and/or modify it under the terms
 // of the GNU Lesser General Public License as published by the Free Software Foundation, either
@@ -96,7 +96,7 @@ static int __fastcall Script_CastAutoRepeatSpell(void *L) {
     if (argType == Game::Lua::TYPE_NUMBER) {
         requestedID = static_cast<int>(Game::Lua::ToNumber(L, 1));
         if (requestedID <= 0) {
-            Game::Lua::PushBoolean(L, 0);
+            Game::Lua::PushBool(L, 0);
             return 1;
         }
         const char *name = LocaleName(requestedID);
@@ -127,7 +127,7 @@ static int __fastcall Script_CastAutoRepeatSpell(void *L) {
         } else {
             match = NameMatches(nameBuf, LocaleName(activeID));
         }
-        Game::Lua::PushBoolean(L, match ? 1 : 0);
+        Game::Lua::PushBoolean(L, match);
         return 1;
     }
 
@@ -138,7 +138,7 @@ static int __fastcall Script_CastAutoRepeatSpell(void *L) {
     Game::Lua::PushString(L, nameBuf);
     Script_CastSpellByName_Engine(L);
 
-    Game::Lua::PushBoolean(L, ReadActiveSpellID() != 0 ? 1 : 0);
+    Game::Lua::PushBool(L, ReadActiveSpellID() != 0);
     return 1;
 }
 

@@ -1,4 +1,4 @@
-// This file is part of ClassicAPI.
+﻿// This file is part of ClassicAPI.
 //
 // ClassicAPI is free software: you can redistribute it and/or modify it under the terms
 // of the GNU Lesser General Public License as published by the Free Software Foundation, either
@@ -43,11 +43,11 @@ const uint8_t *PeekItemRecord(uint32_t itemID) {
 // false without raising.
 static int __fastcall Script_C_Item_DoesItemExist(void *L) {
     if (!Item::Location::IsLocationArg(L, 1)) {
-        Game::Lua::PushBoolean(L, 0);
+        Game::Lua::PushBool(L, 0);
         return 1;
     }
     const uint8_t *item = Item::Location::Resolve(L, 1);
-    Game::Lua::PushBoolean(L, item != nullptr ? 1 : 0);
+    Game::Lua::PushBoolean(L, item != nullptr);
     return 1;
 }
 

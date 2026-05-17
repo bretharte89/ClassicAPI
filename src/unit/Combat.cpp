@@ -1,4 +1,4 @@
-// This file is part of ClassicAPI.
+﻿// This file is part of ClassicAPI.
 //
 // ClassicAPI is free software: you can redistribute it and/or modify it under the terms
 // of the GNU Lesser General Public License as published by the Free Software Foundation, either
@@ -33,7 +33,7 @@ static int __fastcall Script_InCombatLockdown(void *L) {
     auto resolve = reinterpret_cast<ResolveUnitToken_t>(Offsets::FUN_RESOLVE_UNIT_TOKEN);
     auto *player = static_cast<const uint8_t *>(resolve("player"));
     if (player == nullptr) {
-        Game::Lua::PushBoolean(L, 0);
+        Game::Lua::PushBool(L, 0);
         return 1;
     }
     auto *fields = *reinterpret_cast<const uint8_t *const *>(
@@ -44,7 +44,7 @@ static int __fastcall Script_InCombatLockdown(void *L) {
     }
     const uint32_t flags = *reinterpret_cast<const uint32_t *>(
         fields + Offsets::OFF_UNIT_FIELD_FLAGS);
-    Game::Lua::PushBoolean(L, (flags & Offsets::UNIT_FLAG_IN_COMBAT) != 0 ? 1 : 0);
+    Game::Lua::PushBoolean(L, (flags & Offsets::UNIT_FLAG_IN_COMBAT) != 0);
     return 1;
 }
 

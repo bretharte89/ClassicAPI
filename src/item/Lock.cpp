@@ -1,4 +1,4 @@
-// This file is part of ClassicAPI.
+﻿// This file is part of ClassicAPI.
 //
 // ClassicAPI is free software: you can redistribute it and/or modify it under the terms
 // of the GNU Lesser General Public License as published by the Free Software Foundation, either
@@ -38,7 +38,7 @@ static constexpr uint32_t ITEM_FLAG_LOCKED = 0x04;
 // the lock themselves.
 static int __fastcall Script_C_Item_IsLocked(void *L) {
     if (!Item::Location::IsLocationArg(L, 1)) {
-        Game::Lua::PushBoolean(L, 0);
+        Game::Lua::PushBool(L, 0);
         return 1;
     }
     const uint8_t *item = Item::Location::Resolve(L, 1);
@@ -54,7 +54,7 @@ static int __fastcall Script_C_Item_IsLocked(void *L) {
     }
     const uint32_t flags = *reinterpret_cast<const uint32_t *>(
         descriptor + Offsets::OFF_DESCRIPTOR_FLAGS);
-    Game::Lua::PushBoolean(L, (flags & ITEM_FLAG_LOCKED) != 0 ? 1 : 0);
+    Game::Lua::PushBoolean(L, (flags & ITEM_FLAG_LOCKED) != 0);
     return 1;
 }
 

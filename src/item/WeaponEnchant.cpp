@@ -1,4 +1,4 @@
-// This file is part of ClassicAPI.
+﻿// This file is part of ClassicAPI.
 //
 // ClassicAPI is free software: you can redistribute it and/or modify it under the terms
 // of the GNU Lesser General Public License as published by the Free Software Foundation, either
@@ -92,17 +92,17 @@ int __fastcall Script_C_Item_GetWeaponEnchantInfo(void *L) {
     const EnchantInfo off = ReadTempEnchant(INVSLOT_OFFHAND);
     const EnchantInfo ranged = ReadTempEnchant(INVSLOT_RANGED);
 
-    Game::Lua::PushBoolean(L, main.has ? 1 : 0);
+    Game::Lua::PushBool(L, main.has);
     Game::Lua::PushNumber(L, static_cast<double>(main.expirationMs));
     Game::Lua::PushNumber(L, static_cast<double>(main.charges));
     Game::Lua::PushNumber(L, static_cast<double>(main.enchantID));
 
-    Game::Lua::PushBoolean(L, off.has ? 1 : 0);
+    Game::Lua::PushBool(L, off.has);
     Game::Lua::PushNumber(L, static_cast<double>(off.expirationMs));
     Game::Lua::PushNumber(L, static_cast<double>(off.charges));
     Game::Lua::PushNumber(L, static_cast<double>(off.enchantID));
 
-    Game::Lua::PushBoolean(L, ranged.has ? 1 : 0);
+    Game::Lua::PushBool(L, ranged.has);
     Game::Lua::PushNumber(L, static_cast<double>(ranged.expirationMs));
     Game::Lua::PushNumber(L, static_cast<double>(ranged.charges));
     Game::Lua::PushNumber(L, static_cast<double>(ranged.enchantID));

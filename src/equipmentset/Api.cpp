@@ -1,4 +1,4 @@
-// This file is part of ClassicAPI.
+﻿// This file is part of ClassicAPI.
 //
 // ClassicAPI is free software: you can redistribute it and/or modify it under the terms
 // of the GNU Lesser General Public License as published by the Free Software Foundation, either
@@ -89,7 +89,7 @@ void PushTableEntry(void *L, int key, double value) {
 // `CanUseEquipmentSets` is always true (we mirror what Classic Era
 // 1.15 does — it returns true unconditionally there as well).
 int __fastcall Script_CanUseEquipmentSets(void *L) {
-    Game::Lua::PushBoolean(L, 1);
+    Game::Lua::PushBool(L, 1);
     return 1;
 }
 
@@ -172,9 +172,7 @@ int __fastcall Script_GetEquipmentSetInfo(void *L) {
     Game::Lua::PushString(L, s->icon.c_str());
     Game::Lua::PushNumber(L, static_cast<double>(s->setID));
     Game::Lua::PushBoolean(L, (numItems > 0 && numEquipped + numMissing == numItems &&
-                               numInInventory == 0)
-                                  ? 1
-                                  : 0);
+                               numInInventory == 0));
     Game::Lua::PushNumber(L, static_cast<double>(numItems));
     Game::Lua::PushNumber(L, static_cast<double>(numEquipped));
     Game::Lua::PushNumber(L, static_cast<double>(numInInventory));
@@ -316,7 +314,7 @@ int __fastcall Script_UnignoreSlotForSave(void *L) {
 
 int __fastcall Script_IsSlotIgnoredForSave(void *L) {
     const int slot = ArgInt(L, 1);
-    Game::Lua::PushBoolean(L, Data::IsSlotIgnored(slot) ? 1 : 0);
+    Game::Lua::PushBool(L, Data::IsSlotIgnored(slot));
     return 1;
 }
 
@@ -355,7 +353,7 @@ int __fastcall Script_EquipmentSetContainsLockedItems(void *L) {
         if (flags & ITEM_FLAG_LOCKED)
             any = true;
     }
-    Game::Lua::PushBoolean(L, any ? 1 : 0);
+    Game::Lua::PushBool(L, any);
     return 1;
 }
 

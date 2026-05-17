@@ -1,4 +1,4 @@
-// This file is part of ClassicAPI.
+﻿// This file is part of ClassicAPI.
 //
 // ClassicAPI is free software: you can redistribute it and/or modify it under the terms
 // of the GNU Lesser General Public License as published by the Free Software Foundation, either
@@ -54,7 +54,7 @@ const uint8_t *PeekItemRecord(uint32_t itemID) {
 int __fastcall Script_OffhandHasWeapon(void *L) {
     auto *item = Item::Location::ResolveEquipmentSlot(Offsets::INVSLOT_OFFHAND);
     if (item == nullptr) {
-        Game::Lua::PushBoolean(L, 0);
+        Game::Lua::PushBool(L, 0);
         return 1;
     }
 
@@ -74,7 +74,7 @@ int __fastcall Script_OffhandHasWeapon(void *L) {
         record + Offsets::OFF_ITEMSTATS_INVENTORY_TYPE);
     const bool isWeapon = (invType == Offsets::INVTYPE_WEAPON ||
                            invType == Offsets::INVTYPE_WEAPONOFFHAND);
-    Game::Lua::PushBoolean(L, isWeapon ? 1 : 0);
+    Game::Lua::PushBoolean(L, static_cast<int>(isWeapon));
     return 1;
 }
 
@@ -109,7 +109,7 @@ int __fastcall Script_C_Item_IsEquippableItem(void *L) {
     }
     const uint32_t invType = *reinterpret_cast<const uint32_t *>(
         record + Offsets::OFF_ITEMSTATS_INVENTORY_TYPE);
-    Game::Lua::PushBoolean(L, invType > 0 ? 1 : 0);
+    Game::Lua::PushBoolean(L, invType > 0);
     return 1;
 }
 

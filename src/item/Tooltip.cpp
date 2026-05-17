@@ -1,4 +1,4 @@
-// This file is part of ClassicAPI.
+﻿// This file is part of ClassicAPI.
 //
 // ClassicAPI is free software: you can redistribute it and/or modify it under the terms
 // of the GNU Lesser General Public License as published by the Free Software Foundation, either
@@ -298,12 +298,12 @@ static int __fastcall Script_GameTooltipHasItem(void *L) {
     }
     void *tooltipObj = Game::Lua::ResolveObject(L, 1);
     if (tooltipObj == nullptr) {
-        Game::Lua::PushBoolean(L, 0);
+        Game::Lua::PushBool(L, 0);
         return 1;
     }
     const int itemID = *reinterpret_cast<const int *>(
         static_cast<const uint8_t *>(tooltipObj) + Offsets::OFF_TOOLTIP_ITEM_ID);
-    Game::Lua::PushBoolean(L, itemID > 0 ? 1 : 0);
+    Game::Lua::PushBoolean(L, itemID > 0);
     return 1;
 }
 

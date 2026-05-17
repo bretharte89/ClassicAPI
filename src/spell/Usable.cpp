@@ -1,4 +1,4 @@
-// This file is part of ClassicAPI.
+﻿// This file is part of ClassicAPI.
 //
 // ClassicAPI is free software: you can redistribute it and/or modify it under the terms
 // of the GNU Lesser General Public License as published by the Free Software Foundation, either
@@ -200,11 +200,12 @@ int ResolveSpellArg(void *L) {
     const int arg1 = static_cast<int>(Game::Lua::ToNumber(L, 1));
     if (Game::Lua::Type(L, 2) == Game::Lua::TYPE_STRING) {
         const char *book = Game::Lua::ToString(L, 2);
-        const int bookType = (book != nullptr &&
-                              (book[0] == 'p' || book[0] == 'P') &&
-                              (book[1] == 'e' || book[1] == 'E') &&
-                              (book[2] == 't' || book[2] == 'T') &&
-                              book[3] == 0) ? 1 : 0;
+        const int bookType = static_cast<int>(
+            book != nullptr &&
+            (book[0] == 'p' || book[0] == 'P') &&
+            (book[1] == 'e' || book[1] == 'E') &&
+            (book[2] == 't' || book[2] == 'T') &&
+            book[3] == 0);
         return Spell::Lookup::SpellbookSlotToID(arg1, bookType);
     }
     return arg1;
@@ -243,8 +244,8 @@ int __fastcall Script_C_Spell_IsSpellUsable(void *L) {
     }
     const int spellID = static_cast<int>(Game::Lua::ToNumber(L, 1));
     Usability r = ComputeUsability(L, spellID);
-    Game::Lua::PushBoolean(L, r.usable ? 1 : 0);
-    Game::Lua::PushBoolean(L, r.noMana ? 1 : 0);
+    Game::Lua::PushBool(L, r.usable);
+    Game::Lua::PushBool(L, r.noMana);
     return 2;
 }
 

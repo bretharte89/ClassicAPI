@@ -1,4 +1,4 @@
-// This file is part of ClassicAPI.
+﻿// This file is part of ClassicAPI.
 //
 // ClassicAPI is free software: you can redistribute it and/or modify it under the terms
 // of the GNU Lesser General Public License as published by the Free Software Foundation, either
@@ -49,10 +49,10 @@ static int __fastcall Script_IsEventValid(void *L) {
     }
     const char *needle = Game::Lua::ToString(L, 1);
     if (needle == nullptr || needle[0] == 0) {
-        Game::Lua::PushBoolean(L, 0);
+        Game::Lua::PushBool(L, 0);
         return 1;
     }
-    Game::Lua::PushBoolean(L, IsKnownEventName(needle) ? 1 : 0);
+    Game::Lua::PushBoolean(L, IsKnownEventName(needle));
     return 1;
 }
 

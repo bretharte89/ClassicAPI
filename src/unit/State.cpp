@@ -1,4 +1,4 @@
-// This file is part of ClassicAPI.
+﻿// This file is part of ClassicAPI.
 //
 // ClassicAPI is free software: you can redistribute it and/or modify it under the terms
 // of the GNU Lesser General Public License as published by the Free Software Foundation, either
@@ -61,7 +61,7 @@ uint32_t MountDisplayID(const uint8_t *desc) {
 // the engine is rendering a mount under the player.
 int __fastcall Script_IsMounted(void *L) {
     auto *desc = PlayerDescriptor();
-    Game::Lua::PushBoolean(L, MountDisplayID(desc) != 0 ? 1 : 0);
+    Game::Lua::PushBool(L, MountDisplayID(desc) != 0);
     return 1;
 }
 
@@ -80,7 +80,7 @@ int __fastcall Script_IsStealthed(void *L) {
         stealthed = (visBytes & Offsets::PLAYER_VIS_BIT_STEALTH) != 0
                     && MountDisplayID(desc) == 0;
     }
-    Game::Lua::PushBoolean(L, stealthed ? 1 : 0);
+    Game::Lua::PushBool(L, stealthed);
     return 1;
 }
 
@@ -94,7 +94,7 @@ int __fastcall Script_IsFalling(void *L) {
     const uint32_t flags = PlayerMovementFlags();
     const uint32_t fallMask = Offsets::MOVEFLAG_FALLING |
                               Offsets::MOVEFLAG_FALLING_FAR;
-    Game::Lua::PushBoolean(L, (flags & fallMask) != 0 ? 1 : 0);
+    Game::Lua::PushBool(L, (flags & fallMask) != 0);
     return 1;
 }
 
@@ -103,8 +103,7 @@ int __fastcall Script_IsFalling(void *L) {
 // check on the SWIMMING flag in the local movement-flags word.
 int __fastcall Script_IsSwimming(void *L) {
     const uint32_t flags = PlayerMovementFlags();
-    Game::Lua::PushBoolean(L,
-        (flags & Offsets::MOVEFLAG_SWIMMING) != 0 ? 1 : 0);
+    Game::Lua::PushBool(L, (flags & Offsets::MOVEFLAG_SWIMMING) != 0);
     return 1;
 }
 
@@ -135,7 +134,7 @@ int __fastcall Script_IsSwimming(void *L) {
 int __fastcall Script_IsAssistingRitual(void *L) {
     auto *player = Player();
     if (player == nullptr) {
-        Game::Lua::PushBoolean(L, 0);
+        Game::Lua::PushBool(L, 0);
         return 1;
     }
     auto *desc = PlayerDescriptor();
@@ -148,7 +147,7 @@ int __fastcall Script_IsAssistingRitual(void *L) {
     const void *castGameObject = *reinterpret_cast<const void *const *>(
         player + Offsets::OFF_CGPLAYER_CAST_GAMEOBJECT_PTR);
     Game::Lua::PushBoolean(L,
-        (channelSpell != 0 && castGameObject != nullptr) ? 1 : 0);
+        (channelSpell != 0 && castGameObject != nullptr));
     return 1;
 }
 

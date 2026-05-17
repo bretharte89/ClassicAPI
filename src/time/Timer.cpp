@@ -1,4 +1,4 @@
-// This file is part of ClassicAPI.
+﻿// This file is part of ClassicAPI.
 //
 // ClassicAPI is free software: you can redistribute it and/or modify it under the terms
 // of the GNU Lesser General Public License as published by the Free Software Foundation, either
@@ -127,7 +127,7 @@ int __fastcall Script_TimerIsCancelled(void *L) {
         if (Entry *t = FindByID(id))
             cancelled = t->cancelled;
     }
-    Game::Lua::PushBoolean(L, cancelled ? 1 : 0);
+    Game::Lua::PushBool(L, cancelled);
     return 1;
 }
 

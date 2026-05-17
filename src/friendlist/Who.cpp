@@ -1,4 +1,4 @@
-// This file is part of ClassicAPI.
+﻿// This file is part of ClassicAPI.
 //
 // ClassicAPI is free software: you can redistribute it and/or modify it under the terms
 // of the GNU Lesser General Public License as published by the Free Software Foundation, either
@@ -213,7 +213,7 @@ int __fastcall Script_C_FriendList_SendWhoQueryByName(void *L) {
     }
     const char *name = Game::Lua::ToString(L, 1);
     if (name == nullptr || *name == '\0') {
-        Game::Lua::PushBoolean(L, 0);
+        Game::Lua::PushBool(L, 0);
         return 1;
     }
     if (OnCooldown()) {
@@ -271,7 +271,7 @@ int __fastcall Script_C_FriendList_SendWhoQueryByName(void *L) {
 // for the rare case where a response packet is lost; in normal play
 // the engine responds within hundreds of milliseconds.
 int __fastcall Script_C_FriendList_IsWhoQueryPending(void *L) {
-    Game::Lua::PushBoolean(L, IsPending() ? 1 : 0);
+    Game::Lua::PushBoolean(L, IsPending());
     return 1;
 }
 

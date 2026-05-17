@@ -82,6 +82,11 @@ extern const lua_strlen_t StrLen;
 extern const lua_pushnumber_t PushNumber;
 extern const lua_pushnil_t PushNil;
 extern const lua_pushboolean_t PushBoolean;
+// Convenience overload — takes a real `bool` so callers don't have to
+// `static_cast<int>(...)` or `condition ? 1 : 0` at every site. The
+// engine's `lua_pushboolean` ABI wants `int` (any non-zero = true), so
+// this just funnels through the raw binding with a single conversion.
+inline void PushBool(void *L, bool b) { PushBoolean(L, static_cast<int>(b)); }
 extern const lua_pushstring_t PushString;
 extern const lua_pushlstring_t PushLString;
 extern const lua_pushvalue_t PushValue;

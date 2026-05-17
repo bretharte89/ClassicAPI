@@ -1,4 +1,4 @@
-// This file is part of ClassicAPI.
+﻿// This file is part of ClassicAPI.
 //
 // ClassicAPI is free software: you can redistribute it and/or modify it under the terms
 // of the GNU Lesser General Public License as published by the Free Software Foundation, either
@@ -37,7 +37,7 @@ static int __fastcall Script_IsBound(void *L) {
 
     const uint8_t *item = Item::Location::Resolve(L, 1);
     const bool bound = (item != nullptr) && ItemIsSoulbound(item);
-    Game::Lua::PushBoolean(L, bound ? 1 : 0);
+    Game::Lua::PushBool(L, bound);
     return 1;
 }
 

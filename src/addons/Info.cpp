@@ -1,4 +1,4 @@
-// This file is part of ClassicAPI.
+﻿// This file is part of ClassicAPI.
 //
 // ClassicAPI is free software: you can redistribute it and/or modify it under the terms
 // of the GNU Lesser General Public License as published by the Free Software Foundation, either
@@ -158,7 +158,7 @@ int __fastcall Script_GetAddOnNotes(void *L) {
 int __fastcall Script_IsAddOnLoadable(void *L) {
     const uint8_t *entry = ResolveAddOnName(L);
     if (entry == nullptr) {
-        Game::Lua::PushBoolean(L, 0);
+        Game::Lua::PushBool(L, 0);
         Game::Lua::PushNil(L);
         return 2;
     }
@@ -180,7 +180,7 @@ int __fastcall Script_IsAddOnLoadable(void *L) {
     const uint8_t ok = canLoad(entry, /*fullCheck=*/1,
                                &status, &depHandle, getAccount());
 
-    Game::Lua::PushBoolean(L, ok ? 1 : 0);
+    Game::Lua::PushBoolean(L, ok);
 
     // Reason: nil when the addon is loadable AND no status code /
     // dep handle was written; otherwise the static string at
@@ -238,12 +238,12 @@ int __fastcall Script_GetAddOnSecurity(void *L) {
 int __fastcall Script_DoesAddOnExist(void *L) {
     const int t = Game::Lua::Type(L, 1);
     if (t == Game::Lua::TYPE_NUMBER) {
-        Game::Lua::PushBoolean(L, ResolveAddOnName(L) != nullptr ? 1 : 0);
+        Game::Lua::PushBool(L, ResolveAddOnName(L) != nullptr);
         return 1;
     }
     if (t == Game::Lua::TYPE_STRING) {
         const char *name = Game::Lua::ToString(L, 1);
-        Game::Lua::PushBoolean(L, AddOnExistsByName(name) ? 1 : 0);
+        Game::Lua::PushBool(L, AddOnExistsByName(name));
         return 1;
     }
     Game::Lua::PushBoolean(L, 0);

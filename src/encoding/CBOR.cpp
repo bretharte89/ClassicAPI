@@ -1,4 +1,4 @@
-// This file is part of ClassicAPI.
+﻿// This file is part of ClassicAPI.
 //
 // ClassicAPI is free software: you can redistribute it and/or modify it under the terms
 // of the GNU Lesser General Public License as published by the Free Software Foundation, either
@@ -226,7 +226,7 @@ bool DecodeValue(void *L, CborValue *it, int depth) {
             bool b;
             if (cbor_value_get_boolean(it, &b) != CborNoError)
                 return false;
-            Game::Lua::PushBoolean(L, b ? 1 : 0);
+            Game::Lua::PushBool(L, b);
             break;
         }
         case CborNullType:

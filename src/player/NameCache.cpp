@@ -1,4 +1,4 @@
-// This file is part of ClassicAPI.
+﻿// This file is part of ClassicAPI.
 //
 // ClassicAPI is free software: you can redistribute it and/or modify it under the terms
 // of the GNU Lesser General Public License as published by the Free Software Foundation, either
@@ -202,8 +202,8 @@ void SaveSettings() {
         if (!out.is_open())
             return;
         out << "# ClassicAPI account-level settings\n";
-        out << "PersistentNameCacheEnabled=" << (g_enabled ? 1 : 0) << "\n";
-        out << "NameCacheScanEnabled=" << (g_scanEnabled ? 1 : 0) << "\n";
+        out << "PersistentNameCacheEnabled=" << g_enabled << "\n";
+        out << "NameCacheScanEnabled=" << g_scanEnabled << "\n";
         if (!out)
             return;
     }
@@ -662,7 +662,7 @@ uint32_t ResolveRaceToken(const char *token) {
 // required args are malformed.
 int __fastcall Script_C_PlayerCache_RememberPlayer(void *L) {
     if (!IsEnabled()) {
-        Game::Lua::PushBoolean(L, 0);
+        Game::Lua::PushBool(L, 0);
         return 1;
     }
     if (!Game::Lua::IsString(L, 1) || !Game::Lua::IsString(L, 2)
@@ -732,7 +732,7 @@ int __fastcall Script_C_PlayerCache_SetEnabled(void *L) {
 
 int __fastcall Script_C_PlayerCache_IsEnabled(void *L) {
     LoadSettingsIfNeeded();
-    Game::Lua::PushBoolean(L, g_enabled ? 1 : 0);
+    Game::Lua::PushBoolean(L, g_enabled);
     return 1;
 }
 
@@ -757,7 +757,7 @@ int __fastcall Script_C_PlayerCache_SetScanEnabled(void *L) {
 
 int __fastcall Script_C_PlayerCache_IsScanEnabled(void *L) {
     LoadSettingsIfNeeded();
-    Game::Lua::PushBoolean(L, g_scanEnabled ? 1 : 0);
+    Game::Lua::PushBool(L, g_scanEnabled);
     return 1;
 }
 

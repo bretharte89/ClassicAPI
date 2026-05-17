@@ -36,7 +36,7 @@ static void __stdcall QuestLoadCallback(void *userData, int success) {
         return;
     const auto questID =
         static_cast<int>(reinterpret_cast<uintptr_t>(userData));
-    Event::Custom::Fire_DD(slot, questID, success ? 1 : 0);
+    Event::Custom::Fire_DD(slot, questID, static_cast<int>(success != 0));
 }
 
 static void RequestAndMaybeNotify(uint32_t questID) {

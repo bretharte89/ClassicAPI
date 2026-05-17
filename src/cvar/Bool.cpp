@@ -1,4 +1,4 @@
-// This file is part of ClassicAPI.
+﻿// This file is part of ClassicAPI.
 //
 // ClassicAPI is free software: you can redistribute it and/or modify it under the terms
 // of the GNU Lesser General Public License as published by the Free Software Foundation, either
@@ -88,7 +88,7 @@ int __fastcall Script_C_CVar_GetCVarBool(void *L) {
 
     const char *value = *reinterpret_cast<const char *const *>(
         cvar + Offsets::OFF_CVAR_VALUE_STR);
-    Game::Lua::PushBoolean(L, StringToBool(value) ? 1 : 0);
+    Game::Lua::PushBool(L, StringToBool(value));
     return 1;
 }
 
