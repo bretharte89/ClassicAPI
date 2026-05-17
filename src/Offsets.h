@@ -1369,8 +1369,8 @@ enum Offsets {
     // writes `0` when no line matched any pattern. Called from macro
     // create/edit/refresh paths.
     //
-    // Hooked by `Spell::AutoRepeat` to teach the engine to recognize
-    // `CastAutoRepeatSpell("<name>")` as a primary-spell pattern, so
+    // Hooked by `Spell::CastNoToggle` to teach the engine to recognize
+    // `CastSpellNoToggle("<name>")` as a primary-spell pattern, so
     // macros using it get tagged in the spell-state cache the same
     // way `CastSpellByName` macros do. Without this, `IsAutoRepeatAction`
     // returns false for macro slots whose only cast is via our function
@@ -1400,6 +1400,18 @@ enum Offsets {
     // spellID input as if it were a name (the `Spell::CastByID`
     // module does this to enable `/cast 5019`-style macros).
     FUN_RESOLVE_SPELL_NAME_TO_SLOT = 0x004B3950,
+
+    // `__fastcall(uint slot, int bookType) -> int isActive`. Returns 1
+    // if the spell at the given (slot, bookType) is currently producing
+    // an active aura on the player (bookType=0) or pet (bookType=1).
+    // Walks the unit descriptor's aura-spellID array at `+0xA4` (48
+    // slots) and checks the active-bit at `+0x164`. The engine's
+    // toggle-aware cast path (`FUN_004B3300`) consults this to decide
+    // whether `/cast Shoot` should send CMSG_CAST_SPELL or
+    // CMSG_CANCEL_AURA. Used by `Spell::CastNoToggle` to suppress the
+    // toggle-off side of `CastSpellNoToggle` on shapeshift / aspect /
+    // stance forms — anything that creates a self-aura.
+    FUN_SPELL_IS_TOGGLE_AURA_ACTIVE = 0x004B36F0,
 
     // MacroEntry struct offsets (verified by tracing FUN_004EFE00).
     // The macro body is an inline null-terminated string at `+0x164`;

@@ -27,10 +27,10 @@ build instructions.
   - [`C_SpellBook.GetCurrentLevelSpells([level])`](#c_spellbookgetcurrentlevelspellslevel)
   - [`C_SpellBook.GetSpellSkillLine(spellID)`](#c_spellbookgetspellskilllinespellid)
   - [`GetSpellSchool(spellID)`](#getspellschoolspellid)
-  - [`CastAutoRepeatSpell(name | spellID)`](#castautorepeatspellname--spellid)
+  - [`CastSpellNoToggle(name | spellID)`](#castspellnotogglename--spellid)
 - [Macros](#macros)
   - [Numeric spellIDs in `/cast` and `CastSpellByName`](#numeric-spellids-in-cast-and-castspellbyname)
-  - [`CastAutoRepeatSpell` as a macro cast line](#castautorepeatspell-as-a-macro-cast-line)
+  - [`CastSpellNoToggle` as a macro cast line](#castspellnotoggle-as-a-macro-cast-line)
 - [GameTooltip](#gametooltip)
   - [`GameTooltip:SetSpellByID(spellID)`](#gametooltipsetspellbyidspellid)
   - [`GameTooltip:SetTalentByID(talentID)`](#gametooltipsettalentbyidtalentid)
@@ -833,50 +833,72 @@ resistance-aware aura libraries, and damage-meter school tagging.
 Previously addons either maintained hardcoded `spellID → school`
 tables or scanned tooltips for the first-line color tag.
 
-### `CastAutoRepeatSpell(name | spellID)`
+### `CastSpellNoToggle(name | spellID)`
 
-Spammable variant of `CastSpellByName` for auto-repeat spells
-(Shoot/Wand/Auto-Shot). Only calls into the engine's cast path when
-no auto-repeat is currently active, so a held keybind doesn't toggle
-the same spell back off the way `CastSpellByName` does.
+Spam-safe variant of `CastSpellByName` that won't toggle off an
+already-active spell. Covers both kinds of vanilla-toggle abilities:
 
-| Engine state               | Behavior            | Return  |
-|----------------------------|---------------------|---------|
-| Nothing auto-repeating     | Starts the cast     | `true` if the spell is now auto-repeating, else `false` (e.g. you passed a non-auto-repeat spell) |
-| Already casting *this* spell | No-op             | `true`  |
-| Already casting *other* spell | No-op            | `false` |
+- **Auto-repeat** — Shoot, Auto-Shot, Wand. Tracked via the engine's
+  active-auto-repeat global.
+- **Self-aura toggles** — shapeshift (Cat/Bear/Travel/Moonkin/
+  Shadowform), stance (Battle/Defensive/Berserker), aspect (Hunter),
+  seal (Paladin), blessing-on-self, etc. Tracked via the unit
+  descriptor's aura array.
 
-Replaces the action-bar loop workaround:
+If either toggle is already on for the requested spell, the call is
+a no-op — exactly what `/cast !SpellName` does in 2.3.2+ clients,
+but expressed as a vanilla Lua call.
+
+| Engine state                  | Behavior            | Return  |
+|-------------------------------|---------------------|---------|
+| Nothing toggled               | Starts the cast     | `true` if the spell is now active, else `false` |
+| This spell already auto-repeating | No-op           | `true`  |
+| This spell's aura already on (form / stance / aspect) | No-op | `true`  |
+| A *different* auto-repeat is active | No-op         | `false` (don't disrupt the other auto-repeat) |
+
+Replaces both the action-bar scan-and-skip pattern and the
+form-already-active check:
 
 ```lua
--- Before
+-- Before (auto-repeat case)
 for i = 1, 120 do
     if IsAutoRepeatAction(i) then return end
 end
 CastSpellByName("Shoot")
 
--- After
-CastAutoRepeatSpell("Shoot")
+-- Before (shapeshift case)
+if not (UnitBuff("player", "Cat Form") or GetShapeshiftFormID() == CAT_FORM) then
+    CastSpellByName("Cat Form")
+end
+
+-- After (both cases)
+CastSpellNoToggle("Shoot")
+CastSpellNoToggle("Cat Form")
 ```
+
+Accepts either a name string or a spellID number:
 
 ```lua
-CastAutoRepeatSpell("Shoot")     -- by name (matches what CastSpellByName accepts)
-CastAutoRepeatSpell(75)          -- by spellID (Auto Shot rank 1)
+CastSpellNoToggle("Shoot")         -- by name (matches what CastSpellByName accepts)
+CastSpellNoToggle(75)              -- by spellID (Auto Shot rank 1)
+CastSpellNoToggle("Aspect of the Hawk")
+CastSpellNoToggle("Battle Stance")
 ```
 
-String input matches the active spell's `Spell.dbc` name case-
-insensitively and tolerates a trailing `(Rank N)` suffix the same
-way `CastSpellByName` itself does — `"Shoot"` and `"Shoot(Rank 1)"`
-both compare equal to a Shoot that's already auto-repeating.
+String input matches case-insensitively and tolerates a trailing
+`(Rank N)` suffix the same way `CastSpellByName` itself does —
+`"Shoot"` and `"Shoot(Rank 1)"` both compare equal to a Shoot that's
+already auto-repeating.
 
-Reads `[VAR_ACTIVE_AUTO_REPEAT_SPELL]` (`0x00CEAC30`) — the same
-dword `IsAutoRepeatAction`'s inner helper at `0x004E55B0` consults.
-Delegates to `Script_CastSpellByName` (`0x004B4AB0`) for the cast
-itself, so resolution semantics (which rank, target rules, etc.)
-are identical to the engine's own global.
+Reads `[VAR_ACTIVE_AUTO_REPEAT_SPELL]` (`0x00CEAC30`) for the auto-
+repeat check, and the engine's `FUN_SPELL_IS_TOGGLE_AURA_ACTIVE`
+(`0x004B36F0`) for the aura-active check. Delegates to
+`Script_CastSpellByName` (`0x004B4AB0`) for the actual cast — same
+resolution semantics (rank picking, target rules, etc.) as the
+engine's own global.
 
 Using this from inside a macro action slot? See
-[`CastAutoRepeatSpell` as a macro cast line](#castautorepeatspell-as-a-macro-cast-line) below for the additional
+[`CastSpellNoToggle` as a macro cast line](#castspellnotoggle-as-a-macro-cast-line) below for the additional
 parser support that makes the slot tag correctly for action-bar UIs.
 
 ## Macros
@@ -923,9 +945,9 @@ resolver at `0x004B3950` — covers `/cast`, `/castsequence` aliases,
 else the engine resolves a spell name. Numeric input with garbage
 trailing characters falls through unchanged.
 
-### `CastAutoRepeatSpell` as a macro cast line
+### `CastSpellNoToggle` as a macro cast line
 
-Putting `CastAutoRepeatSpell("Shoot")` in a macro body now tags the
+Putting `CastSpellNoToggle("Shoot")` in a macro body now tags the
 macro with Shoot's spellID the same way `/cast Shoot` or
 `CastSpellByName("Shoot")` would. Without this, the macro casts
 correctly but vanilla's macro parser doesn't know to associate the
@@ -936,20 +958,21 @@ actionbar, ShaguTweaks, etc.) never light up the slot.
 Recognized forms in a macro body:
 
 ```
-CastAutoRepeatSpell("Shoot")    -- by name (string)
-CastAutoRepeatSpell(5019)       -- not yet — macro parser only recognizes the string form
+CastSpellNoToggle("Shoot")        -- by name (string)
+CastSpellNoToggle("Cat Form")     -- shapeshift / aspect / stance all tag the same way
+CastSpellNoToggle(5019)           -- not yet — macro parser only recognizes the string form
 ```
 
 The numeric form **works for the cast itself** (via the function's
 runtime resolution), but the macro parser only scans for the string
 form when tagging. To get the slot to highlight when using the
-spellID, write `CastAutoRepeatSpell("Shoot")` instead.
+spellID, write `CastSpellNoToggle("Shoot")` instead.
 
 The engine's first-match-wins rule still applies — if your macro is:
 
 ```
 /cast Wand
-CastAutoRepeatSpell("Shoot")
+CastSpellNoToggle("Shoot")
 ```
 
 …the macro is tagged with Wand (the engine recognized `/cast Wand`

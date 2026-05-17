@@ -37,7 +37,7 @@ Full per-function reference: **[docs/API.md](docs/API.md)**.
 | MerchantFrame | `C_MerchantFrame.GetBuybackItemID`, `C_MerchantFrame.GetItemInfo`, `C_MerchantFrame.GetNumJunkItems`, `C_MerchantFrame.IsMerchantItemRefundable`, `C_MerchantFrame.IsSellAllJunkEnabled`, `C_MerchantFrame.SellAllJunkItems` |
 | NameCache | `C_CreatureInfo.GetCreatureID`, `C_PlayerCache.GetPlayerInfoByName`, `C_PlayerCache.IsEnabled`, `C_PlayerCache.IsScanEnabled`, `C_PlayerCache.RememberPlayer`, `C_PlayerCache.SetEnabled`, `C_PlayerCache.SetScanEnabled`, `C_PlayerInfo.GUIDIsCreature`, `C_PlayerInfo.GUIDIsGameObject`, `C_PlayerInfo.GUIDIsPet`, `C_PlayerInfo.GUIDIsPlayer`, `GetPlayerInfoByGUID` |
 | Quest | `C_QuestLog.GetQuestIDFromLogIndex`, `C_QuestLog.GetTitleForQuestID`, `C_QuestLog.RequestLoadQuestByID` |
-| Spell | `C_Spell.GetSpellDescription`, `C_Spell.GetSpellInfo`, `C_Spell.GetSpellLink`, `C_Spell.GetSpellName`, `C_Spell.GetSpellTexture`, `C_Spell.IsSpellHarmful`, `C_Spell.IsSpellHelpful`, `C_Spell.IsSpellPassive`, `C_Spell.IsSpellUsable`, `C_SpellBook.GetCurrentLevelSpells`, `C_SpellBook.GetSpellLevelLearned`, `C_SpellBook.GetSpellSkillLine`, `CastAutoRepeatSpell`, `FindSpellBookSlotByID`, `GetCraftSpellID`, `GetSpellInfo`, `GetSpellLink`, `GetSpellSchool`, `IsHarmfulSpell`, `IsHelpfulSpell`, `IsPassiveSpell`, `IsPlayerSpell`, `IsSpellKnown`, `IsUsableSpell` |
+| Spell | `C_Spell.GetSpellDescription`, `C_Spell.GetSpellInfo`, `C_Spell.GetSpellLink`, `C_Spell.GetSpellName`, `C_Spell.GetSpellTexture`, `C_Spell.IsSpellHarmful`, `C_Spell.IsSpellHelpful`, `C_Spell.IsSpellPassive`, `C_Spell.IsSpellUsable`, `C_SpellBook.GetCurrentLevelSpells`, `C_SpellBook.GetSpellLevelLearned`, `C_SpellBook.GetSpellSkillLine`, `CastSpellNoToggle`, `FindSpellBookSlotByID`, `GetCraftSpellID`, `GetSpellInfo`, `GetSpellLink`, `GetSpellSchool`, `IsHarmfulSpell`, `IsHelpfulSpell`, `IsPassiveSpell`, `IsPlayerSpell`, `IsSpellKnown`, `IsUsableSpell` |
 | State | `IsAssistingRitual`, `IsFalling`, `IsMounted`, `IsStealthed`, `IsSwimming` |
 | Table | `table.wipe` |
 | Talent | `GetTalentIDByIndex`, `GetTalentSpellID` |
@@ -56,7 +56,7 @@ functions, just behavior the stock 1.12 engine didn't have. See the
 |------|--------------|
 | `/cast <spellID>` | `/cast 5019` casts Shoot if known; macro slot tags correctly for action-bar UI |
 | `CastSpellByName("<spellID>")` | Same — numeric strings resolve through the engine's name resolver |
-| `CastAutoRepeatSpell("<name>")` in a macro | Engine's macro parser now recognizes it as a primary-spell line, so the macro slot highlights when its spell is auto-repeating |
+| `CastSpellNoToggle("<name>")` in a macro | Engine's macro parser now recognizes it as a primary-spell line, so the macro slot highlights when its spell is auto-repeating or its self-aura is active |
 
 ### Events
 
