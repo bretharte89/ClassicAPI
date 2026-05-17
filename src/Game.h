@@ -161,6 +161,13 @@ void RegisterIntegerEnum(const char *parent, const char *sub,
 void SetFieldNumber(void *L, const char *key, double value);
 void SetFieldString(void *L, const char *key, const char *value);
 void SetFieldBool(void *L, const char *key, bool value);
+
+// Sets `_G[name] = value` via `lua_rawset` on the globals
+// pseudo-index. `RawSet` over `SetTable` because the globals table has
+// no `__newindex` in vanilla 1.12 — explicit intent and skips a dead
+// metatable check. Used for flat constant globals like
+// `CLASSIC_API_VERSION` and the `LE_ITEM_QUALITY_*` family.
+void SetGlobalNumber(void *L, const char *name, double value);
 } // namespace Lua
 
 // Self-registration for API modules. Each module .cpp declares a file-scope

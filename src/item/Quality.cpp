@@ -103,11 +103,8 @@ static void RegisterLuaFunctions() {
     void *L = Game::Lua::State();
     if (L == nullptr)
         return;
-    for (const auto &c : kQualityConstants) {
-        Game::Lua::PushString(L, c.name);
-        Game::Lua::PushNumber(L, static_cast<double>(c.value));
-        Game::Lua::SetTable(L, Game::Lua::GLOBALS_INDEX);
-    }
+    for (const auto &c : kQualityConstants)
+        Game::Lua::SetGlobalNumber(L, c.name, static_cast<double>(c.value));
     Game::Lua::RegisterTableFunction("C_Item", "GetItemQuality", &Script_C_Item_GetItemQuality);
     Game::Lua::RegisterTableFunction("C_Item", "GetItemQualityByID",
                                      &Script_C_Item_GetItemQualityByID);

@@ -157,6 +157,12 @@ void SetFieldBool(void *L, const char *key, bool value) {
     PushBoolean(L, static_cast<int>(value));
     SetTable(L, -3);
 }
+
+void SetGlobalNumber(void *L, const char *name, double value) {
+    PushString(L, name);
+    PushNumber(L, value);
+    RawSet(L, GLOBALS_INDEX);
+}
 } // namespace Lua
 
 namespace {

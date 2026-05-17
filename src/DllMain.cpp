@@ -43,16 +43,6 @@ static bool __fastcall FrameScript_Initialize_h() {
     Player::NameCache::Flush();
 
     FrameScript_Initialize_o();
-    // Set the `CLASSIC_API_VERSION` global directly via the Lua C API
-    // rather than building a `"foo=N"` source string and routing it
-    // through `FrameScript_Execute`. Faster (no parse), type-true (the
-    // value is pushed as a number, not parsed as a numeric literal),
-    // and avoids the need for any Lua source in our DLL.
-    if (void *L = Game::Lua::State()) {
-        Game::Lua::PushString(L, "CLASSIC_API_VERSION");
-        Game::Lua::PushNumber(L, static_cast<double>(CLASSICAPI_VERSION_VALUE));
-        Game::Lua::SetTable(L, Game::Lua::GLOBALS_INDEX);
-    }
     return true;
 }
 
