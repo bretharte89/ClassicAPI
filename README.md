@@ -18,7 +18,6 @@ Full per-function reference: **[docs/API.md](docs/API.md)**.
 | Namespace | Calls |
 |-----------|-------|
 | AddOns | `C_AddOns.DoesAddOnExist`, `C_AddOns.GetAddOnName`, `C_AddOns.GetAddOnNotes`, `C_AddOns.GetAddOnSecurity`, `C_AddOns.GetAddOnTitle`, `C_AddOns.IsAddOnLoadable` |
-| CharacterList | `C_CharacterList.GetCharacterInfo`, `C_CharacterList.GetCharacters`, `C_CharacterList.GetNumCharacters` |
 | Chat | `GetCurrentChatGUID` |
 | Class | `FillLocalizedClassList` |
 | Combat | `InCombatLockdown` |

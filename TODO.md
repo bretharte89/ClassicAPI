@@ -3062,3 +3062,86 @@ Required three pieces of new infrastructure, all in their own commits:
 - WoW.cfg was considered for persistence and rejected: extending the
   cfg parser is more invasive than a self-managed file under WTF,
   and we already have the `Settings::Account` shape.
+
+## 95. `C_CharacterList.*` — removed; notes for a future pickup
+
+We shipped `C_CharacterList.GetNumCharacters` /
+`GetCharacterInfo(index)` / `GetCharacters()` for a while —
+exposing the realm's character list (name, class, race, level,
+area, sex, GUID) from anywhere in the game, not just the glue
+char-select screen. The implementation was removed because the
+single addon driving the need moved off it; keeping a binding
+nobody calls is dead weight, and the engine-hook surface (the
+char-list teardown function) is the kind of thing better owned by
+whichever DLL actually uses it. The history is preserved in git
+(see commits around `src/charlist/Cache.cpp`).
+
+If another project picks this up, the work is straightforward —
+no novel reversing needed:
+
+### What the binding looked like
+
+Three Lua entry points, all under `C_CharacterList`:
+
+- `GetNumCharacters() -> n`
+- `GetCharacterInfo(index) -> name, localizedRace, localizedClass, level, areaName, englishRace, sex, guid`
+- `GetCharacters() -> { { name=, localizedRace=, englishRace=, localizedClass=, level=, areaName=, sex=, guid= }, ... }`
+
+`guid` was the 64-bit character GUID formatted with our
+`Guid::FormatAsString` helper (16 hex digits, `"0x"` prefix —
+matches `UnitGUID`'s convention). `areaName` was nil when the
+character's last-known area wasn't in `AreaTable.dbc`.
+
+### Why it needed a DLL hook
+
+Vanilla 1.12's `GetCharacterInfo` / `GetNumCharacters` are
+registered on the **glue** FrameScript engine and the underlying
+data at `VAR_CHARLIST_ARRAY` (`0x00B42144`) /
+`VAR_CHARLIST_COUNT` (`0x00B42140`) is freed by the
+char-list teardown function during the glue→world transition. By
+the time addons run in-world, the array is gone and the globals
+are zeroed.
+
+The DLL hook took a snapshot of the records before the engine
+freed them.
+
+### Implementation summary
+
+1. **Hook the teardown.** `FUN_CHARLIST_FREE` at `0x00472090` —
+   `__cdecl void()`, single caller (`FUN_0046AC90`, the
+   glue-shutdown wrapper that runs on world transition). Very
+   quiet hook target. Pre-hook (snapshot before the original runs);
+   the original then zeros the globals.
+
+2. **Iterate the record array.** Flat array, stride `0x120`
+   bytes. Field offsets within each record (derived from
+   `Script_GetCharacterInfo` disassembly at `0x004732A0`):
+
+   | Offset | Field | Type / notes |
+   |--------|-------|---------------|
+   | `+0x00` | GUID | u64 (verified via `Script_RenameCharacter` at `0x00473520`) |
+   | `+0x08` | name | inline `char[]`, max 12 + NUL |
+   | `+0x3C` | areaID | u32, indexes `AreaTable.dbc` |
+   | `+0x100` | raceID | u8, indexes `ChrRaces.dbc` |
+   | `+0x101` | classID | u8, indexes `ChrClasses.dbc` |
+   | `+0x102` | sex | u8 (0/1) |
+   | `+0x108` | level | u8 |
+
+3. **Cache memory-only.** Every game launch hits char-select
+   before world-enter, so the cache is naturally rebuilt every
+   session. No filesystem persistence, no staleness across
+   restarts, no deleted-character bookkeeping (a server-side
+   delete drops the entry from the next `SMSG_CHAR_ENUM`).
+
+4. **Edge case.** If the DLL is injected mid-session
+   post-world-enter, the cache stays empty until the player
+   returns to char-select. Under normal VanillaFixes load order
+   that's not a concern (DLL loads before any Lua runs).
+
+### Why we used a memory-only cache, not the persistent file
+
+`Settings::Account` (the per-account WTF-file mechanism that backs
+`GetSavedCharacterOrder`) is the wrong shape: it persists across
+sessions, which would mean stale entries surviving server-side
+deletes, and the data is already authoritative on each launch.
+Memory-only is simpler and self-correcting.

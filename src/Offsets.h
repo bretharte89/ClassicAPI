@@ -832,40 +832,6 @@ enum Offsets {
     VAR_AREATABLE_COUNT = 0x00C0E04C,
     OFF_AREATABLE_NAMES = 0x2C,
 
-    // Character-select character list. Populated by SMSG_CHAR_ENUM
-    // at glue, freed by `FUN_CHARLIST_FREE` on world-enter. Records
-    // are 0x120 bytes each in a flat array.
-    //
-    // We hook FUN_CHARLIST_FREE to snapshot the records into our own
-    // cache before the engine frees them, so `C_CharacterList.*` can
-    // read the data after the player is in-world (the underlying
-    // engine globals are zeroed at that point).
-    VAR_CHARLIST_COUNT = 0x00B42140,    // int
-    VAR_CHARLIST_ARRAY = 0x00B42144,    // CharRecord *
-    CHARLIST_RECORD_STRIDE = 0x120,
-    // Per-record field offsets, derived from Script_GetCharacterInfo
-    // disassembly (0x004732A0).
-    OFF_CHARRECORD_GUID = 0x00,         // u64 character GUID
-                                        // (verified via
-                                        // Script_RenameCharacter at
-                                        // 0x00473520 reading
-                                        // `*puVar4` / `puVar4[1]`
-                                        // and passing them to the
-                                        // rename-by-GUID helper).
-    OFF_CHARRECORD_NAME = 0x08,         // inline char[] (max 12 + NUL)
-    OFF_CHARRECORD_AREA_ID = 0x3C,      // u32, indexes AreaTable.dbc
-    OFF_CHARRECORD_RACE = 0x100,        // u8, indexes ChrRaces.dbc
-    OFF_CHARRECORD_CLASS = 0x101,       // u8, indexes ChrClasses.dbc
-    OFF_CHARRECORD_SEX = 0x102,         // u8 (0/1)
-    OFF_CHARRECORD_LEVEL = 0x108,       // u8
-
-    // Char-list teardown — `__cdecl void()`, walks the record array
-    // calling a per-entry cleanup, `SMemFree`s the array, zeros the
-    // globals. Only one caller in the entire binary (FUN_0046AC90,
-    // the glue-shutdown wrapper that runs on world transition). Very
-    // quiet hook target.
-    FUN_CHARLIST_FREE = 0x00472090,
-
     // Engine player-info cache — populated by the
     // SMSG_NAME_QUERY_RESPONSE handler (opcode 0x51) at 0x005551A0,
     // which reads (GUID, name[48], realm[256], race, sex, class) from
