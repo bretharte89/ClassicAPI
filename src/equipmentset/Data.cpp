@@ -16,6 +16,8 @@
 #include "Offsets.h"
 #include "Storage.h"
 #include "event/Custom.h"
+#include "item/ID.h"
+#include "item/Location.h"
 
 #include <cstdint>
 #include <cstring>
@@ -57,9 +59,18 @@ void PopulateFromEquipped(Set *set) {
     for (int i = 0; i < SLOT_COUNT; ++i) {
         if (g_ignoredForSave[i]) {
             set->items[i] = GUID_IGNORED;
-        } else {
-            set->items[i] = ReadEquippedGUID(i + 1);
+            set->itemIDs[i] = 0;
+            continue;
         }
+        set->items[i] = ReadEquippedGUID(i + 1);
+        // Capture itemID alongside GUID so the tooltip's missing-items
+        // path can resolve names even after the item leaves inventory.
+        // Resolves to the same CGItem the engine sees in the paperdoll
+        // slot; ID is 0 for empty slots.
+        const uint8_t *item = Item::Location::ResolveEquipmentSlot(i + 1);
+        set->itemIDs[i] = (item != nullptr)
+            ? static_cast<uint32_t>(Item::ID::FromCGItem(item))
+            : 0;
     }
 }
 

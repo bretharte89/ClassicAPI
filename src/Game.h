@@ -188,6 +188,28 @@ void SetFieldBool(void *L, const char *key, bool value);
 // metatable check. Used for flat constant globals like
 // `CLASSIC_API_VERSION` and the `LE_ITEM_QUALITY_*` family.
 void SetGlobalNumber(void *L, const char *name, double value);
+
+// Pushes `_G[globalName]` onto the stack if it resolves to a string
+// (Blizzard's FrameXML globals like `ITEMS_EQUIPPED`, addon-defined
+// localization tables, etc.); otherwise pushes `fallback`. Either way
+// leaves exactly one string at the top of the stack. The canonical
+// pattern is "look up a localized format string with an English
+// fallback for stripped servers / pre-init states":
+//
+//   Game::Lua::PushLocalizedString(L, "ITEMS_EQUIPPED", "%d equipped");
+//   Game::Lua::PushNumber(L, count);
+//   // … then string.format / sprintf-style consume
+void PushLocalizedString(void *L, const char *globalName, const char *fallback);
+
+// Pushes `string.format(_G[globalName] or fallback, n)` — the result
+// of formatting a single integer into a localized string. Leaves the
+// formatted string on top of the stack. Common shape: most
+// FrameXML count-style strings (`ITEMS_EQUIPPED = "%d equipped"`,
+// `ITEM_SLOTS_IGNORED = "%d slot(s) ignored"`, etc.). Callers that
+// need string or float args, or multiple args, can build their own
+// using `PushLocalizedString` + manual `string.format` invocation.
+void PushLocalizedFormatInt(void *L, const char *globalName,
+                            const char *fallback, int n);
 } // namespace Lua
 
 // Self-registration for API modules. Each module .cpp declares a file-scope

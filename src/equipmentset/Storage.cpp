@@ -120,8 +120,10 @@ bool Load(const std::string &path, std::vector<Set> *outSets) {
             const long id = std::strtol(line.c_str() + 4, nullptr, 10);
             current->setID = static_cast<uint32_t>(id > 0 ? id : 0);
             current->icon = DefaultIcon();
-            for (int i = 0; i < SLOT_COUNT; ++i)
+            for (int i = 0; i < SLOT_COUNT; ++i) {
                 current->items[i] = GUID_EMPTY;
+                current->itemIDs[i] = 0;
+            }
             continue;
         }
 
@@ -140,7 +142,10 @@ bool Load(const std::string &path, std::vector<Set> *outSets) {
             continue;
         }
 
-        // Slot line: `slot N guid=0xHEX` or `slot N ignored`
+        // Slot line: `slot N guid=0xHEX [item=ITEMID]` or `slot N ignored`.
+        // The `item=` field is optional — pre-itemID files don't have it.
+        // Backward compat: missing `item=` leaves itemIDs[idx] = 0, which
+        // the tooltip's missing-items path treats as "name unknown".
         if (line.rfind("slot ", 0) == 0) {
             char *endp = nullptr;
             const long slot1Based = std::strtol(line.c_str() + 5, &endp, 10);
@@ -154,11 +159,21 @@ bool Load(const std::string &path, std::vector<Set> *outSets) {
                 current->items[idx] = GUID_IGNORED;
                 continue;
             }
-            // Expect `guid=0x...`
-            std::string r(rest);
-            if (ParseField(r, "guid", &value)) {
-                const uint64_t guid = std::strtoull(value.c_str(), nullptr, 0);
-                current->items[idx] = guid;
+            // Parse `guid=0x...` and optional `item=N`. Both keys can
+            // appear in any order — `ParseField` finds the first `=`,
+            // so we extract one key at a time by clipping the substring
+            // around each one.
+            const std::string r(rest);
+            const auto guidPos = r.find("guid=");
+            if (guidPos != std::string::npos) {
+                const char *p = r.c_str() + guidPos + 5;
+                current->items[idx] = std::strtoull(p, nullptr, 0);
+            }
+            const auto itemPos = r.find("item=");
+            if (itemPos != std::string::npos) {
+                const char *p = r.c_str() + itemPos + 5;
+                current->itemIDs[idx] =
+                    static_cast<uint32_t>(std::strtoul(p, nullptr, 0));
             }
         }
     }
@@ -188,7 +203,10 @@ bool Save(const std::string &path, const std::vector<Set> &sets) {
                     char buf[24];
                     std::snprintf(buf, sizeof(buf), "guid=0x%016llX",
                                   static_cast<unsigned long long>(g));
-                    out << buf << "\n";
+                    out << buf;
+                    if (s.itemIDs[i] != 0)
+                        out << " item=" << s.itemIDs[i];
+                    out << "\n";
                 }
             }
         }

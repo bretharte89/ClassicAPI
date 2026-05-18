@@ -38,6 +38,14 @@ struct Set {
     std::string name;
     std::string icon;
     uint64_t items[SLOT_COUNT];
+    // Captured at save time alongside each slot's GUID. Used by the
+    // tooltip's "missing items" branch — when the GUID isn't currently
+    // resident in the player's inventory we can't recover the itemID
+    // from the live `CGItem` (it's no longer in the client's object
+    // map), so we persist it. Zero for ignored slots, empty slots,
+    // and entries loaded from pre-itemID-format files (the slot line
+    // had no `item=` field).
+    uint32_t itemIDs[SLOT_COUNT];
 };
 
 // Engine convention for SaveEquipmentSet-style "no icon given": modern

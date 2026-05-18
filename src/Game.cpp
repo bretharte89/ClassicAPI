@@ -174,6 +174,30 @@ void SetGlobalNumber(void *L, const char *name, double value) {
     PushNumber(L, value);
     RawSet(L, GLOBALS_INDEX);
 }
+
+void PushLocalizedString(void *L, const char *globalName, const char *fallback) {
+    PushString(L, globalName);
+    GetTable(L, GLOBALS_INDEX);
+    if (Type(L, -1) != TYPE_STRING) {
+        // Replace the non-string at top with the fallback so callers
+        // always see exactly one string at -1.
+        SetTop(L, GetTop(L) - 1);
+        PushString(L, fallback);
+    }
+}
+
+void PushLocalizedFormatInt(void *L, const char *globalName,
+                            const char *fallback, int n) {
+    // Resolve `string.format` from _G. The engine ships it as both a
+    // global and as `string.format`; the global is faster (one
+    // gettable instead of two) and equally available across builds.
+    PushString(L, "format");
+    GetTable(L, GLOBALS_INDEX);
+
+    PushLocalizedString(L, globalName, fallback);
+    PushNumber(L, static_cast<double>(n));
+    Call(L, 2, 1); // format(fmt, n) → string
+}
 } // namespace Lua
 
 namespace {
