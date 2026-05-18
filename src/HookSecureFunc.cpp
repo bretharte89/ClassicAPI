@@ -49,39 +49,48 @@ bool IsUnhookable(const char *name) {
 // Stack contains the wrapper's args (`[arg1..argN]`); the closure's
 // upvalues hold `(orig, callback)`.
 //
-// Sequence:
-//   1. Push orig + copies of args, `lua_call(MULTRET)` — pops them,
-//      pushes orig's results. Stack: `[args..., results...]`.
-//   2. Push callback + copies of args, `lua_call(0)` — pops, pushes
-//      nothing (callback returns are discarded).
-//   3. Remove the original args from the stack so only results
-//      remain. Return `nresults`.
-//
 // Modern `hooksecurefunc` semantics: original runs first, callback
 // runs after with the same args (returns ignored), original's
-// results propagate to the caller. No cap on return count.
+// results propagate to the caller. No cap on return count. A buggy
+// callback must NOT prevent the original's results from reaching
+// the caller — that's why step (3) uses pcall.
+//
+// Stack-shuffling mirrors 3.3.5's `FUN_00817050` so the args sit at
+// the top for both calls without copying them twice; results sink
+// to the bottom and end up as the wrapper's natural return frame.
 int __fastcall HookWrapper(void *L) {
     const int nargs = Game::Lua::GetTop(L);
 
-    // (1) orig(...) — pops orig + nargs copies, pushes results
+    // (1) orig(...) — pops orig + nargs args (copies), pushes results.
+    //     Stack after: `[arg1..argN, res1..resM]`.
     Game::Lua::PushValue(L, Game::Lua::UpvalueIndex(1));
     for (int i = 1; i <= nargs; ++i)
         Game::Lua::PushValue(L, i);
     Game::Lua::Call(L, nargs, Game::Lua::MULTRET);
     const int nresults = Game::Lua::GetTop(L) - nargs;
 
-    // (2) callback(...) — pops callback + nargs copies, pushes 0
+    // (2) Shuffle results below the saved args. Each `Insert(L, 1)`
+    //     moves the current top down to position 1; running it
+    //     nresults times rotates the results block beneath the args.
+    //     Stack after: `[res1..resM, arg1..argN]`.
+    for (int i = 0; i < nresults; ++i)
+        Game::Lua::Insert(L, 1);
+
+    // (3) callback(...) via pcall — errors are caught and dropped so
+    //     the original's return values always reach the caller. This
+    //     is the load-bearing safety property of hooksecurefunc on
+    //     3.x; on 1.12 it just means a buggy hook can't break the
+    //     hooked path. errfunc=0 → no traceback (3.3.5 uses
+    //     `registry["_TRACEBACK"]`, not a 1.12 convention; we'd be
+    //     discarding the formatted message anyway).
     Game::Lua::PushValue(L, Game::Lua::UpvalueIndex(2));
-    for (int i = 1; i <= nargs; ++i)
-        Game::Lua::PushValue(L, i);
-    Game::Lua::Call(L, nargs, 0);
+    Game::Lua::Insert(L, nresults + 1);
+    if (Game::Lua::PCall(L, nargs, 0, 0) != 0) {
+        // pcall failure leaves the error message on top; drop it.
+        Game::Lua::Remove(L, -1);
+    }
 
-    // (3) Remove the original args from the bottom of the stack so
-    //     only `[results...]` remain. lua_remove(L, 1) shifts down
-    //     each call.
-    for (int i = 0; i < nargs; ++i)
-        Game::Lua::Remove(L, 1);
-
+    // Stack: `[res1..resM]` — return the original's results verbatim.
     return nresults;
 }
 
