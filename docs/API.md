@@ -4558,6 +4558,18 @@ Implementation reads the cvar registry directly (engine's
 path for unknown cvars. The `nil` return lets callers distinguish
 "the cvar exists and is falsy" from "no such cvar."
 
+#### Glue-state availability
+
+`C_CVar.GetCVarBool` is also registered on the glue Lua state, and
+the engine's stock `GetCVar` / `SetCVar` / `RegisterCVar` /
+`GetCVarDefault` — which vanilla 1.12 only exposes in-game — are
+mirrored onto glue too. GlueXML patches at the login / realm /
+char-select screens can now read and write CVars directly. CVar
+storage is process-global, so writes on either state are
+immediately visible on the other (a `SetCVar("foo", "1")` from a
+GlueXML script will read back as `"1"` on the in-world side, and
+vice versa).
+
 ## Table
 
 ### `table.wipe(t)`

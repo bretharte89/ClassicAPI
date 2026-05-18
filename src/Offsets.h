@@ -139,6 +139,26 @@ enum Offsets {
     FUN_FIND_CVAR = 0x0063DEC0,
     OFF_CVAR_VALUE_STR = 0x20,
 
+    // Engine-side Lua C functions backing the in-game CVar globals.
+    // Standard `int __fastcall(void *L)` ABI. We don't register them
+    // ourselves in-game — the engine already does at boot — but we
+    // re-register the same pointers on the glue Lua state so login /
+    // char-select GlueXML can read and write CVars too (vanilla 1.12
+    // exposes none of these in glue by default). CVar storage is
+    // process-global, so a write from either state is visible to the
+    // other.
+    FUN_SCRIPT_REGISTER_CVAR = 0x00488B00,
+    FUN_SCRIPT_GET_CVAR = 0x00488BA0,
+    FUN_SCRIPT_SET_CVAR = 0x00488C10,
+    FUN_SCRIPT_GET_CVAR_DEFAULT = 0x00488CF0,
+
+    // `Script_RunScript` — the C function backing `_G.RunScript(code)`
+    // in-game. `int __fastcall(void *L)`. Mirrored onto the glue Lua
+    // state in `src/script/Run.cpp` so GlueXML can also `RunScript("...")`
+    // — useful for slash-command-style debug helpers at the login /
+    // realm / char-select screens.
+    FUN_SCRIPT_RUN_SCRIPT = 0x0048B980,
+
     // Game::ResolveUnitToken — __fastcall(ecx = const char *token) → CGUnit_C *.
     // Returns the unit pointer for "player", "target", "party1", etc. Use this
     // rather than the global at 0x00B41414 — that global holds something

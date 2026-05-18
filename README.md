@@ -48,16 +48,19 @@ Full per-function reference: **[docs/API.md](docs/API.md)**.
 ### GlueXML calls
 
 Registered on the **glue** Lua state (the engine that runs the login,
-realm-select, and character-select screens) — *not* the in-world
-FrameScript engine. In-world addons can't reach these; they exist
-to support GlueXML patches that need a small persistence surface
-across sessions. (Vanilla 1.12 glue ships no general-purpose
-persistence API beyond `GetSavedAccountName`/`SetSavedAccountName`,
-which is saturated by autologin.)
+realm-select, and character-select screens). The persistence entries
+in the first row are *glue-only* — they exist to support GlueXML
+patches that need a small persistence surface across sessions, since
+vanilla 1.12 glue ships no general-purpose persistence API beyond
+`GetSavedAccountName`/`SetSavedAccountName` (saturated by autologin).
+The rest of the table is in-game calls that we also mirror onto
+the glue state because GlueXML had no way to reach them otherwise.
 
 | Group | Calls |
 |-------|-------|
 | CharacterOrder | `GetSavedCharacterOrder`, `SetSavedCharacterOrder` (persist to `WTF\Account\...\ClassicAPI.txt`) |
+| CVar | `GetCVar`, `SetCVar`, `RegisterCVar`, `GetCVarDefault`, `C_CVar.GetCVarBool` (storage is process-global — writes from glue are visible in-world and vice versa) |
+| Script | `RunScript` (compile and run a Lua chunk in the glue state's globals — useful for slash-command-style helpers in GlueXML) |
 
 ### Macros
 

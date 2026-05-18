@@ -97,7 +97,17 @@ void RegisterLuaFunctions() {
                                       &Script_C_CVar_GetCVarBool);
 }
 
-const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
+// Same surface on the glue Lua state — CVar storage is process-global
+// so the polyfill works identically pre-login. `RegisterTableFunction`
+// reads `VAR_LUA_STATE` to pick which state it writes to, which during
+// the glue init hook points at the glue state.
+void RegisterGlueFunctions() {
+    Game::Lua::RegisterTableFunction("C_CVar", "GetCVarBool",
+                                      &Script_C_CVar_GetCVarBool);
+}
+
+const Game::ModuleAutoRegister     _autoreg{&RegisterLuaFunctions};
+const Game::GlueModuleAutoRegister _glueAutoreg{&RegisterGlueFunctions};
 
 } // namespace
 
