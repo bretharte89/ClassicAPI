@@ -1997,7 +1997,11 @@ enum Offsets {
     //   bag subsystem at `0x004F9xxx`.
     //
     //   FUN_BAG_KEYRING_DESC_CHANGE (`0x004F8DB0`) — __thiscall
-    //   `unsigned(void *bagDesc, uint guidLo, void *guidHi, uint *current)`.
+    //   `unsigned(void *bagDesc, uint a1, uint a2, uint a3, uint a4)`.
+    //   Ends with `RET 0x10` — four 4-byte stack args, callee cleans
+    //   16 bytes. (Ghidra showed three stack args; the Octo binary
+    //   actually uses four. Mismatching this leaks 4 bytes of stack
+    //   per call and crashes after a few descriptor updates.)
     //   Bag descriptor update callback. Computes the slot index
     //   from `((int)this - 0x4a8) >> 3`; for slots `0x51..0x70` (the
     //   keyring range) fires `BAG_UPDATE` directly. For non-keyring

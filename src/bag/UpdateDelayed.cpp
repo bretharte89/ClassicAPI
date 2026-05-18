@@ -92,19 +92,21 @@ void __stdcall BagItemToBag_h(int guidLo, int guidHi) {
     g_pending = true;
 }
 
-// `FUN_004F8DB0` — `__thiscall unsigned(this, guidLo, guidHi, *current)`.
-// Bag descriptor change callback. Wired with `__fastcall` + dummy
-// EDX to match the thiscall ABI: ECX takes `this`, EDX unused,
-// stack takes the rest, callee cleans 12 bytes. Same trick
-// `Frame::RegisterEvent` uses in DllMain.
+// `FUN_004F8DB0` — `__thiscall unsigned(this, a1, a2, a3, a4)` in the
+// Octo build. Wired with `__fastcall` + dummy EDX to match the
+// thiscall ABI: ECX takes `this`, EDX unused, stack takes the four
+// dword args, callee cleans 16 bytes (`RET 0x10`). Same trick
+// `Frame::RegisterEvent` uses in DllMain, just with four stack args
+// instead of one — the Octo function is wider than the vanilla
+// signature Ghidra showed when this hook was first written.
 using KeyringDescChange_t = unsigned(__fastcall *)(void *bagDesc, void *edx_unused,
-                                                    unsigned guidLo, void *guidHi,
-                                                    unsigned *currentGuid);
+                                                    unsigned a1, unsigned a2,
+                                                    unsigned a3, unsigned a4);
 KeyringDescChange_t KeyringDescChange_o = nullptr;
 unsigned __fastcall KeyringDescChange_h(void *bagDesc, void *edx,
-                                         unsigned guidLo, void *guidHi,
-                                         unsigned *currentGuid) {
-    const unsigned result = KeyringDescChange_o(bagDesc, edx, guidLo, guidHi, currentGuid);
+                                         unsigned a1, unsigned a2,
+                                         unsigned a3, unsigned a4) {
+    const unsigned result = KeyringDescChange_o(bagDesc, edx, a1, a2, a3, a4);
     g_pending = true;
     return result;
 }
