@@ -87,6 +87,7 @@ build instructions.
   - [`GameTooltip:SetSpellByID(spellID)`](#gametooltipsetspellbyidspellid)
   - [`GameTooltip:SetTalentByID(talentID)`](#gametooltipsettalentbyidtalentid)
   - [`GameTooltip:SetInventoryItemByID(itemID)`](#gametooltipsetinventoryitembyiditemid)
+  - [`GameTooltip:SetEquipmentSet(name)`](#gametooltipsetequipmentsetname)
   - [`GameTooltip:GetItem()`](#gametooltipgetitem)
   - [`GameTooltip:GetSpell()`](#gametooltipgetspell)
   - [`GameTooltip:HasItem()` / `GameTooltip:HasSpell()`](#gametooltiphasitem--gametooltiphasspell)
@@ -1919,6 +1920,70 @@ GameTooltip:Show()
 ```
 
 Equivalent to the function of the same name introduced in 8.0.
+
+### `GameTooltip:SetEquipmentSet(name)`
+
+Fills the tooltip with a summary of the named equipment set: header,
+total item count, and per-bucket counts (equipped / in inventory /
+ignored / missing). Each missing item is listed on its own line by
+name. Mirrors 4.3.4's native `GameTooltip:SetEquipmentSet` at
+`0x0046E690`.
+
+```lua
+GameTooltip:SetOwner(UIParent, "ANCHOR_CURSOR")
+GameTooltip:SetEquipmentSet("MyTank")
+GameTooltip:Show()
+```
+
+```
+MyTank                     (header, white)
+14 items
+12 equipped                (green)
+1 in inventory
+1 slots ignored            (gray)
+Missing: Crown of the Endless Conqueror   (red)
+```
+
+Silent no-op if no set with that name exists. The owner anchor must
+be set before the call — `SetEquipmentSet` only fills the lines, it
+doesn't re-anchor the tooltip frame.
+
+Item classification reuses `Locations::FindGUID` (the same walk
+`GetItemCount` uses), so items in the bank count as "in inventory"
+without requiring the bank window to be open. The 4.3.4 binary did
+the same.
+
+**Localization.** The count lines are formatted through
+[`Game::Lua::PushLocalizedFormatInt`](#) — Blizzard's `ITEMS_VARIABLE_QUANTITY`,
+`ITEMS_EQUIPPED`, `ITEMS_IN_INVENTORY`, `ITEM_SLOTS_IGNORED`, and
+`ITEM_MISSING` FrameXML globals are tried first, with English C-string
+fallbacks for servers stripped of standard GlobalStrings. The
+companion `!!!ClassicAPI` addon ships English defaults for these keys
+so the tooltip works on bare-bones builds where FrameXML hasn't
+populated them.
+
+**Missing-item names.** The on-disk equipment-set format
+(`WTF\Account\<acct>\<realm>\<char>\ClassicAPI_EquipmentSets.txt`)
+persists each slot as both a 64-bit GUID and the itemID at save
+time:
+
+```
+set 1
+  name=MyTank
+  icon=INV_Helmet_03
+  slot 1 guid=0xC00000000A1B2C3D item=51220
+  slot 5 ignored
+```
+
+The GUID is the live handle for items currently in inventory; the
+itemID is the type identifier used when the live `CGItem` isn't
+findable (item sold, mailed, on another character, etc.) — without
+it we couldn't recover the name for missing items. Sets saved
+before the itemID field was added load fine but render their
+missing slots with the count summary `%d missing` instead of named
+lines; re-saving a set repopulates itemIDs.
+
+Equivalent to the function of the same name introduced in 3.1.
 
 ## Globals
 
