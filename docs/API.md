@@ -101,6 +101,9 @@ build instructions.
   - [`C_Container.GetContainerNumFreeSlots(bagID)`](#c_containergetcontainernumfreeslotsbagid)
   - [`C_Container.PlayerHasHearthstone()`](#c_containerplayerhashearthstone)
   - [`C_Container.UseHearthstone()`](#c_containerusehearthstone)
+  - [`C_Item.UseItemByName(itemInfo)`](#c_itemuseitembynameiteminfo)
+- [Action](#action)
+  - [`GetActionInfo(slot)`](#getactioninfoslot)
 - [MerchantFrame](#merchantframe)
   - [`C_MerchantFrame.GetItemInfo(slot)`](#c_merchantframegetiteminfoslot)
   - [`C_MerchantFrame.GetBuybackItemID(slot)`](#c_merchantframegetbuybackitemidslot)
@@ -2966,12 +2969,104 @@ end
 > events (`SPELLCAST_START` / `SPELLCAST_STOP`).
 
 Internally locates the hearthstone with the same walk
-`PlayerHasHearthstone` uses, then dispatches to the engine's existing
-`Script_UseContainerItem` Lua C function with `(bagID, slot)` set up
-on the stack. No new use-item logic is introduced — this is a
-convenience wrapper.
+`PlayerHasHearthstone` uses and hands the resulting `CGItem *` pointer
+to the engine's by-pointer use primitive at `0x005D8D00` — the same
+fallback path `Script_UseContainerItem` ends up at after every special
+cursor-mode branch (repair vendor, spell-cast targeting, drop-on-bag)
+is skipped. Bypassing the dispatcher avoids the Lua-stack roundtrip
+of pushing `(bag, slot)` only for `Script_UseContainerItem` to re-parse
+and re-resolve the same item.
 
 Equivalent to the function of the same name introduced in 9.0.
+
+### `C_Item.UseItemByName(itemInfo)`
+
+Finds the first item in the player's bags matching `itemInfo` and
+uses it. Returns nothing; silently no-ops when:
+
+- the input is `nil`, an empty string, or otherwise unparseable
+- no matching item is in bags
+- the engine refuses the use — cooldown, locked item, level
+  requirement, etc.
+
+`itemInfo` accepts the same shapes as
+[`C_Item.EquipItemByName`](#c_itemequipitembynameiteminfo--dstslot) —
+itemID number, bare `"item:N"` string, full chat link, or a localized
+item name. Name matches are case-insensitive against the cached
+`m_name[0]`.
+
+```lua
+C_Item.UseItemByName("Hearthstone")         -- hearth home
+C_Item.UseItemByName(6948)                  -- same thing, by ID
+C_Item.UseItemByName("Major Healing Potion")
+```
+
+Mirrors 3.3.5's `Script_UseItemByName` structure: locate the item
+directly, then hand the `CGItem *` to the engine's by-pointer use
+primitive at `0x005D8D00`. That primitive dispatches internally based
+on item type (food, potion, on-use spell, scroll, quiver, ...) so a
+single call covers every item category. We skip
+`Script_UseContainerItem` entirely — its branches for repair vendor,
+spell-cast targeting, and drop-on-bag cursor modes don't apply to an
+addon-issued call from a clean cursor.
+
+For target-required items (scrolls, traps), the engine reads
+cursor-target state at call time, which a Lua-side caller can pre-set
+with `TargetUnit("...")`. For self-use items (hearthstone, potions,
+food) the engine substitutes the player even if a different target is
+present, so no pre-setup is needed.
+
+Equivalent to the function of the same name introduced in 3.x.
+
+## Action
+
+### `GetActionInfo(slot)`
+
+Returns the action descriptor for a 1-based action-bar slot, in the
+shape `actionType, id, subType`. Returns `nil` for empty slots.
+
+```lua
+local actionType, id, subType = GetActionInfo(1)
+```
+
+| Slot contents             | Returns                            |
+|---------------------------|------------------------------------|
+| empty                     | `nil`                              |
+| spell                     | `"spell", spellID, "spell"`        |
+| macro                     | `"macro", macroSlot`               |
+| item (by-itemID)          | `"item", itemID`                   |
+| item (by bag-instance)    | `"item", nil`                      |
+
+The 120-slot action table at `0x00BC6980` packs each entry as a
+`uint32` where the top 4 bits are the type tag:
+
+- **`0x0` — spell action.** Entry is the spellID. The third return is
+  always `"spell"` for entries on this table; the engine helper
+  hardcodes pet flag to 0 here. Pet-bar actions live in a separate
+  table — use `PetHasActionBar` + the pet-action helpers for pet
+  slots.
+- **`0x4` — macro or bag-item.** Ambiguous tag, disambiguated by
+  walking the 36-entry macro-slot map at `0x00BDCC60` and checking
+  whether `entry & 0xBFFFFFFF` matches any of those macro IDs. On a
+  hit, the slot is a macro and the matching index becomes the
+  1-based `macroSlot` return. On a miss, the slot is a bag-item
+  reference; we surface the type as `"item"` but return `nil` for
+  the `id` — extracting the itemID from the bag-action hash struct
+  needs more reversing than we've done.
+- **`0x8` — item by itemID.** `entry & 0x7FFFFFFF` is the itemID.
+
+This is the same discrimination [SuperWoWhook][superwowhook] uses in
+its replacement of `GetActionText` (which returns `name, type, id`).
+Without SuperWoWhook the engine's stock `GetActionText` only handles
+items in bags; ClassicAPI's `GetActionInfo` provides the modern-WoW
+shape independently of any other DLL patches.
+
+Equivalent to the function of the same name in retail. Subtype is
+always `"spell"` for spell entries (no pet differentiation on this
+table) and the bag-item itemID path is currently incomplete — see
+the comment in [src/action/Info.cpp](../src/action/Info.cpp).
+
+[superwowhook]: https://github.com/balakethelock/SuperWoW
 
 ## MerchantFrame
 
