@@ -1234,6 +1234,55 @@ enum Offsets {
     FUN_DBCACHE_QUEST_GET_RECORD = 0x00562A40,
     VAR_QUEST_LOG_SELECTED_QUEST_ID = 0x00BB7480,
 
+    // Action bar slot table — `uint[120]` (max slot index `< 0x78`).
+    // Each entry is a packed action descriptor; top 4 bits are the type
+    // tag, low 28 bits are the payload. Tags:
+    //
+    //   0x00000000  spell action; payload = spellID
+    //   0x40000000  bag-item or macro action; payload `entry & 0xBFFFFFFF`
+    //               is a 36-entry slot key. Disambiguate by checking the
+    //               macro-slot map at `VAR_MACRO_SLOT_MAP` — if the
+    //               payload matches any entry there, the slot is a macro
+    //               (and the matching index is its 1-based macro slot);
+    //               otherwise it's a bag-item reference. SuperWoWhook's
+    //               modified `GetActionText` uses exactly this walk to
+    //               surface macros to Lua.
+    //   0x80000000  item-by-ID action; payload (entry & 0x7FFFFFFF) IS
+    //               the itemID. Queries the global item cache directly.
+    //
+    // `entry == 0` means empty. Engine bounds-checks `slot < 0x78` in
+    // every reader (verified at `Script_HasAction = 0x004E70D0`, helpers
+    // at `0x004E5A50`, `0x004E6A50`).
+    VAR_ACTION_TABLE = 0x00BC6980,
+    ACTION_TABLE_MAX_SLOTS = 0x78,
+    // Engine helper used by every action reader to extract the spellID
+    // associated with a slot (spells return directly; bag-items return
+    // their triggered spell; item-by-ID returns the first valid
+    // m_spells[N].SpellID from the item cache). Pet/spell discriminator
+    // returned via the second arg.
+    //   __fastcall uint(uint slot0Based, uint *outPetFlag)
+    FUN_ACTION_SLOT_TO_SPELL = 0x004E5A50,
+    ACTION_TYPE_MASK = 0xF0000000,
+    ACTION_TYPE_SPELL = 0x00000000,
+    // 0x40000000 entries are ambiguous: they're either a bag item or a
+    // macro. Discriminator: walk the 36-entry macro-slot map and check
+    // whether `entry & 0xBFFFFFFF` matches one of those macro IDs. This
+    // is exactly what SuperWoWhook's modified `GetActionText` does to
+    // surface macros to Lua. Engine helper `FUN_004F0EC0` does the same
+    // walk and returns slot-index or -1.
+    ACTION_TYPE_BAG_OR_MACRO = 0x40000000,
+    ACTION_TYPE_ITEM_BY_ID = 0x80000000,
+    ACTION_PAYLOAD_MASK_BAG_OR_MACRO = 0xBFFFFFFF,
+    ACTION_PAYLOAD_MASK_ITEM_BY_ID = 0x7FFFFFFF,
+
+    // Per-character macro-slot map (uint[36]). Entry N holds the macroID
+    // of the macro in slot N (0 = empty slot). The same memory is used
+    // to look up macros by hash in `FUN_004F0E40` (Script_GetMacroInfo)
+    // and by slot in `FUN_004F0EC0` (linear search for "is this entry
+    // value a known macro?").
+    VAR_MACRO_SLOT_MAP = 0x00BDCC60,
+    MACRO_SLOT_MAP_COUNT = 0x24,
+
     // Quest log: 16-byte-stride entry array and active count.
     // Field +0 of each entry is the questID for real quests (a category index
     // for headers); field +8 is the header indicator: non-NULL = header,
