@@ -536,6 +536,30 @@ enum Offsets {
     // an item, swaps with the bag slot). Used by `EquipItemByName` to
     // pick up the source item before dispatching to the equip helpers.
     FUN_SCRIPT_PICKUP_CONTAINER_ITEM = 0x004F9B30,
+    // `CGItem::UseItem` — the engine's actual "use this item" primitive.
+    // It's the fallback dispatch in `Script_UseContainerItem` (the call
+    // site at 0x004FA430 after every special-cursor-mode branch is
+    // skipped), and the function `Script_UseContainerItem` ends up at
+    // for normal hearthstone-style / potion / food / scroll use. We
+    // call it directly from `UseItemByName` so we don't pay a
+    // Lua-stack roundtrip just to re-find the item the engine already
+    // points us at.
+    //
+    // Internally dispatches by item flags / fields:
+    //   - off-target-pickup items (flag 0x200)       → FUN_005EDEA0/FUN_005EDD60
+    //   - bind-on-pickup confirmation needed          → FUN_004E32E0
+    //   - food items (flag 0x4)                       → FUN_005EDC80
+    //   - quiver/ammo (flag 0x2000)                   → FUN_005EEF40
+    //   - default (potions, hearthstone, scrolls, …)  → FUN_006E5A90
+    //
+    //   __thiscall uint(CGItem *item, const uint64_t *targetGuid,
+    //                   int flag)
+    //
+    // `targetGuid` is a pointer to a 64-bit GUID — for self-use items
+    // the engine substitutes the player itself even if a different
+    // target is passed, so passing zero (no target) is fine for most
+    // items. `flag` is 0 in every Script_UseContainerItem call site.
+    FUN_ITEM_USE = 0x005D8D00,
     // `CGPlayer::AutoEquipCursorItem` — `__thiscall(CGPlayer *this, int flag)`.
     // The engine-internal helper that `Script_AutoEquipCursorItem`
     // (`0x0048A040`) is a thin wrapper around: that wrapper just

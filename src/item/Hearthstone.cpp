@@ -37,17 +37,18 @@ bool IsHearthstoneItem(uint32_t itemID) {
 }
 
 // Walks the player's bags 0..4 looking for a hearthstone-equivalent
-// item. Returns `(bagID, slotIndex, itemID)` in the out params, or
-// `(-1, -1, 0)` if none found. Stops on first match — we don't care
-// about duplicates.
+// item. Returns the matched `CGItem *` and its itemID via out params,
+// or `(nullptr, 0)` if none found. Stops on first match — we don't
+// care about duplicates.
 //
 // The `outItemID` lets `PlayerHasHearthstone` return the actual
 // matched itemID (which for a custom-server hearthstone won't be
-// `HEARTHSTONE_ITEM_ID`).
+// `HEARTHSTONE_ITEM_ID`). `outItem` is what `UseHearthstone` needs
+// to hand to the engine's by-pointer use primitive.
 //
 // Each `ResolveBag` call clobbers Lua stack[1]/[2], but we own the
 // stack inside our callback context. `GetBagSlotCount` is stack-free.
-bool FindHearthstone(void *L, int *outBag, int *outSlot, int *outItemID) {
+bool FindHearthstone(void *L, const uint8_t **outItem, int *outItemID) {
     for (int bag = 0; bag <= 4; bag++) {
         const int slotCount = Item::Location::GetBagSlotCount(bag);
         for (int slot = 1; slot <= slotCount; slot++) {
@@ -56,15 +57,13 @@ bool FindHearthstone(void *L, int *outBag, int *outSlot, int *outItemID) {
                 continue;
             const int itemID = Item::ID::FromCGItem(item);
             if (itemID > 0 && IsHearthstoneItem(static_cast<uint32_t>(itemID))) {
-                *outBag = bag;
-                *outSlot = slot;
+                *outItem = item;
                 *outItemID = itemID;
                 return true;
             }
         }
     }
-    *outBag = -1;
-    *outSlot = -1;
+    *outItem = nullptr;
     *outItemID = 0;
     return false;
 }
@@ -83,8 +82,9 @@ bool FindHearthstone(void *L, int *outBag, int *outSlot, int *outItemID) {
 // `C_Container.GetContainerItemID` uses internally. Stops on first
 // match.
 int __fastcall Script_C_Container_PlayerHasHearthstone(void *L) {
-    int bag = -1, slot = -1, itemID = 0;
-    if (!FindHearthstone(L, &bag, &slot, &itemID))
+    const uint8_t *item = nullptr;
+    int itemID = 0;
+    if (!FindHearthstone(L, &item, &itemID))
         return 0;
     Game::Lua::PushNumber(L, static_cast<double>(itemID));
     return 1;
@@ -98,33 +98,24 @@ int __fastcall Script_C_Container_PlayerHasHearthstone(void *L) {
 // actually started (cooldown, in-combat, moving, etc. would fail
 // downstream). The return is "did we have one to try with."
 //
-// Implementation: locate the hearthstone, then invoke the engine's
-// existing `Script_UseContainerItem` Lua C function with `(bagID,
-// slot)` on the stack. That path runs the same secure-action flow a
-// regular `UseContainerItem(bag, slot)` Lua call would, so any spell-
-// queue / GCD / movement-cancel handling is unchanged.
+// Implementation: locate the hearthstone and hand the resulting CGItem
+// pointer to the engine's by-pointer use primitive `FUN_ITEM_USE`.
+// Same path `C_Item.UseItemByName` takes — see comments there for
+// why we skip Script_UseContainerItem's cursor-mode dispatcher.
 int __fastcall Script_C_Container_UseHearthstone(void *L) {
-    int bag = -1, slot = -1, itemID = 0;
-    if (!FindHearthstone(L, &bag, &slot, &itemID)) {
+    const uint8_t *item = nullptr;
+    int itemID = 0;
+    if (!FindHearthstone(L, &item, &itemID)) {
         Game::Lua::PushBoolean(L, 0);
         return 1;
     }
 
-    // Set up the stack so Script_UseContainerItem reads (bag, slot)
-    // from idx 1 / idx 2. Our function takes no Lua args, so anything
-    // on the stack is junk we can clear. Note: ResolveBag inside
-    // FindHearthstone already clobbered the stack — we just need to
-    // shape it correctly for the dispatch.
-    Game::Lua::SetTop(L, 0);
-    Game::Lua::PushNumber(L, static_cast<double>(bag));
-    Game::Lua::PushNumber(L, static_cast<double>(slot));
+    using UseItem_t = unsigned(__thiscall *)(const void *item,
+                                              const uint64_t *targetGuid, int flag);
+    const uint64_t zeroTarget = 0;
+    auto useItem = reinterpret_cast<UseItem_t>(Offsets::FUN_ITEM_USE);
+    useItem(item, &zeroTarget, 0);
 
-    using ScriptFn_t = int(__fastcall *)(void *L);
-    auto fn = reinterpret_cast<ScriptFn_t>(Offsets::FUN_SCRIPT_USE_CONTAINER_ITEM);
-    fn(L);
-
-    // Reset the stack so our boolean push lands at idx 1.
-    Game::Lua::SetTop(L, 0);
     Game::Lua::PushBoolean(L, 1);
     return 1;
 }
