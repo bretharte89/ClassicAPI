@@ -68,6 +68,11 @@ build instructions.
   - [Player input-state events (`PLAYER_STARTED_MOVING` / `LOOKING` / `TURNING` + `STOPPED_*`)](#player-input-state-events)
   - [`GLOBAL_MOUSE_DOWN` / `GLOBAL_MOUSE_UP` events](#global_mouse_down--global_mouse_up-events)
 
+- [Expansion](#expansion)
+  - [`GetClassicExpansionLevel()`](#getclassicexpansionlevel)
+  - [`ClassicExpansionAtLeast(expansionLevel)`](#classicexpansionatleastexpansionlevel)
+  - [`ClassicExpansionAtMost(expansionLevel)`](#classicexpansionatmostexpansionlevel)
+
 - [Faction](#faction)
   - [`GetFactionIDByIndex(factionIndex)`](#getfactionidbyindexfactionindex)
   - [`GetFactionInfoByID(factionID)`](#getfactioninfobyidfactionid)
@@ -1265,6 +1270,55 @@ app while alt-tabbed doesn't fire. UP transitions always fire,
 even if the user alt-tabbed mid-click, so an addon never gets
 left in a "button is held" state.
 
+## Expansion
+
+Helpers shipped by modern Classic Era / Cata Classic for addons that
+want to gate code on which expansion the client targets. We always
+answer as `LE_EXPANSION_CLASSIC` (`0`) — the DLL is built against
+1.12 offsets, so there's nothing to detect. The matching number
+constants (`LE_EXPANSION_*`) are in the [Globals section](#le_expansion_).
+
+### `GetClassicExpansionLevel()`
+
+Returns the live expansion level as a number. Always `0`
+(`LE_EXPANSION_CLASSIC`) here.
+
+```lua
+if GetClassicExpansionLevel() >= LE_EXPANSION_BURNING_CRUSADE then
+    -- never taken on 1.12
+end
+```
+
+### `ClassicExpansionAtLeast(expansionLevel)`
+
+Returns `true` iff `GetClassicExpansionLevel() >= expansionLevel`.
+On 1.12 that reduces to `expansionLevel <= 0`, so only
+`ClassicExpansionAtLeast(LE_EXPANSION_CLASSIC)` (and any negative
+argument) are true; every later expansion answers `false`.
+
+Errors if `expansionLevel` is missing or non-numeric — matches the
+modern signature.
+
+```lua
+if ClassicExpansionAtLeast(LE_EXPANSION_WRATH_OF_THE_LICH_KING) then
+    -- WotLK+ code path; never taken on 1.12
+end
+```
+
+### `ClassicExpansionAtMost(expansionLevel)`
+
+Returns `true` iff `GetClassicExpansionLevel() <= expansionLevel`.
+On 1.12 that reduces to `expansionLevel >= 0`, so the only `false`
+answer is for negative input.
+
+Errors if `expansionLevel` is missing or non-numeric.
+
+```lua
+if ClassicExpansionAtMost(LE_EXPANSION_CLASSIC) then
+    -- vanilla / Classic Era only code path
+end
+```
+
 ## Faction
 
 ### `GetFactionIDByIndex(factionIndex)`
@@ -2006,7 +2060,9 @@ The retail / Classic Era expansion-level enum, exposed as Lua globals
 so addons backporting from later expansions don't have to gate on
 `if LE_EXPANSION_CLASSIC then` (the constant being defined is itself
 the version probe). Values match the modern `Enum.ExpansionLevel`
-table.
+table. The matching helper functions
+(`GetClassicExpansionLevel` / `ClassicExpansionAtLeast` /
+`ClassicExpansionAtMost`) live in the [Expansion section](#expansion).
 
 | Constant                              | Value |
 |---------------------------------------|------:|

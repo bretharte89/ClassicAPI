@@ -12,6 +12,7 @@
 // ClassicAPI. If not, see <https://www.gnu.org/licenses/>.
 
 #include "Game.h"
+#include "expansion/Level.h"
 
 namespace Expansion::Constants {
 
@@ -45,7 +46,7 @@ constexpr ExpansionConstant kExpansionConstants[] = {
     {"LE_EXPANSION_DRAGONFLIGHT",           9},
     {"LE_EXPANSION_WAR_WITHIN",             10},
     {"LE_EXPANSION_MIDNIGHT",               11},
-    {"LE_EXPANSION_LEVEL_CURRENT",          0},
+    {"LE_EXPANSION_LEVEL_CURRENT",          Expansion::kCurrentExpansionLevel},
 };
 
 } // namespace
