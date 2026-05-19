@@ -266,7 +266,7 @@ static int __fastcall Script_GetFactionIDByIndex(void *L) {
     // pseudo-row). Modern WoW (Classic Era 1.15.x) normalizes both to 0
     // in the `factionID` slot of `GetFactionInfo`, so we do the same.
     // Final convention: 0 for any header, nil for OOB, real factionID
-    // for real factions. Matches GetQuestIDFromLogIndex's headers-are-0
+    // for real factions. Matches GetQuestIDForLogIndex's headers-are-0
     // convention and modern WoW's GetFactionInfo[14] semantics.
     const int factionID = Resolver()(idx);
     Game::Lua::PushNumber(L, static_cast<double>(factionID > 0 ? factionID : 0));

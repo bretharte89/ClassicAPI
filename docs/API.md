@@ -174,7 +174,7 @@ build instructions.
   - [`C_PlayerCache.IsScanEnabled()`](#c_playercacheisscanenabled)
 
 - [Quest](#quest)
-  - [`C_QuestLog.GetQuestIDFromLogIndex(index)`](#c_questloggetquestidfromlogindexindex)
+  - [`C_QuestLog.GetQuestIDForLogIndex(index)`](#c_questlogGetQuestIDForLogIndexindex)
   - [`C_QuestLog.RequestLoadQuestByID(questID)`](#c_questlogrequestloadquestbyidquestid)
   - [`C_QuestLog.GetTitleForQuestID(questID)`](#c_questloggettitleforquestidquestid)
 
@@ -3829,7 +3829,7 @@ end
 
 ## Quest
 
-### `C_QuestLog.GetQuestIDFromLogIndex(index)`
+### `C_QuestLog.GetQuestIDForLogIndex(index)`
 
 Returns the questID (Quest.dbc row ID) for the entry at the given 1-based
 quest log index. In 3.3.5 this came as the 9th return of `GetQuestLogTitle`;
@@ -3843,7 +3843,7 @@ in 1.12 it isn't returned at all, even though the engine has it internally.
 for i = 1, GetNumQuestLogEntries() do
     local title, level, questTag, isHeader, isCollapsed, isComplete
         = GetQuestLogTitle(i)
-    local questID = C_QuestLog.GetQuestIDFromLogIndex(i)  -- 0 for headers
+    local questID = C_QuestLog.GetQuestIDForLogIndex(i)  -- 0 for headers
     -- ...
 end
 ```

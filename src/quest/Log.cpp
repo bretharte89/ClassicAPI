@@ -18,9 +18,9 @@
 
 namespace Quest::Log {
 
-static int __fastcall Script_GetQuestIDFromLogIndex(void *L) {
+static int __fastcall Script_GetQuestIDForLogIndex(void *L) {
     if (!Game::Lua::IsNumber(L, 1)) {
-        Game::Lua::Error(L, "Usage: GetQuestIDFromLogIndex(index)");
+        Game::Lua::Error(L, "Usage: GetQuestIDForLogIndex(index)");
         return 0;
     }
 
@@ -48,8 +48,8 @@ static int __fastcall Script_GetQuestIDFromLogIndex(void *L) {
 }
 
 static void RegisterLuaFunctions() {
-    Game::Lua::RegisterTableFunction("C_QuestLog", "GetQuestIDFromLogIndex",
-                                     &Script_GetQuestIDFromLogIndex);
+    Game::Lua::RegisterTableFunction("C_QuestLog", "GetQuestIDForLogIndex",
+                                     &Script_GetQuestIDForLogIndex);
 }
 
 static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
