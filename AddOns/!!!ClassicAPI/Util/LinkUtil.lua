@@ -62,10 +62,10 @@ LinkTypes = {
 LinkUtil = {};
 
 function LinkUtil.FormatLink(linkType, linkDisplayText, ...)
-	local linkFormatTable = { ("|H%s"):format(linkType), ... };
+	local linkFormatTable = { string.format("|H%s", linkType), ... };
 	local returnLink = table.concat(linkFormatTable, ":");
 	if linkDisplayText then
-		return returnLink .. ("|h%s|h"):format(linkDisplayText);
+		return returnLink .. string.format("|h%s|h", linkDisplayText);
 	else
 		return returnLink .. "|h";
 	end
@@ -78,7 +78,7 @@ function LinkUtil.SplitLinkData(linkData)
 end
 
 function LinkUtil.SplitLink(link) -- returns linkText and displayText
-	return link:match("^|H(.+)|h(.*)|h$");
+	return string.match(link, "^|H(.+)|h(.*)|h$");
 end
 
 function LinkUtil.SplitLinkOptions(linkOptions)
@@ -107,16 +107,16 @@ end
 
 
 function ExtractHyperlinkString(linkString)
-	local preString, hyperlinkString, postString = linkString:match("^(.*)|H(.+)|h(.*)$");
+	local preString, hyperlinkString, postString = string.match(linkString, "^(.*)|H(.+)|h(.*)$");
 	return preString ~= nil, preString, hyperlinkString, postString;
 end
 
 function ExtractQuestRewardID(linkString)
-	return linkString:match("^questreward:(%d+)$");
+	return string.match(linkString, "^questreward:(%d+)$");
 end
 
 function GetItemInfoFromHyperlink(link)
-	local strippedItemLink, itemID = link:match("|Hitem:((%d+).-)|h");
+	local strippedItemLink, itemID = string.match(link, "|Hitem:((%d+).-)|h");
 	if itemID then
 		return tonumber(itemID), strippedItemLink;
 	end
@@ -124,7 +124,7 @@ end
 
 function GetAchievementInfoFromHyperlink(link)
 	local linkType, linkData = LinkUtil.SplitLinkData(link);
-	if linkType and linkType:match("|Hachievement") then
+	if linkType and string.match(linkType, "|Hachievement") then
 		local achievementID, _, complete = strsplit(":", linkData);
 		return tonumber(achievementID), complete == "1";
 	end
