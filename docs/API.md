@@ -5336,8 +5336,8 @@ selects.
 | `dispelName` | string | `"Magic"` / `"Curse"` / `"Disease"` / `"Poison"` (from `SpellDispelType.dbc`), or `""` if non-dispellable |
 | `isHelpful` | boolean | true for slot < 32 |
 | `isHarmful` | boolean | true for slot >= 32 |
-| `duration` | number | always `0` — vanilla server doesn't broadcast remaining time |
-| `expirationTime` | number | always `0` (same reason) |
+| `duration` | number | base applied duration in seconds, looked up via `Spell.dbc → SpellDuration.dbc` with level scaling. Talent / glyph duration extensions (Improved PW:F, etc.) aren't reflected here — those are baked into `expirationTime` on the caster's side. Returns 0 for spells flagged "no duration" (passives, paladin auras, infinite buffs) |
+| `expirationTime` | number | populated for `unit == "player"` (read from the engine's player-buff table at `0x00BC6040`; same data `GetPlayerBuffTimeLeft` returns). Always `0` for all other units — vanilla server only broadcasts cast/duration for the local player's own auras. `expirationTime - GetTime()` gives the true remaining time (including any talent extensions) |
 | `charges` / `maxCharges` | number | always `0` — vanilla has stacks, not charges |
 | `timeMod` | number | always `1` — vanilla has no haste-affected auras |
 | `isStealable`, `isBossAura`, `isFromPlayerOrPlayerPet`, `isNameplateOnly`, `nameplateShowAll`, `nameplateShowPersonal`, `canApplyAura`, `shouldConsolidate`, `isRaid` | boolean | always `false` — modern UI concepts vanilla doesn't have |

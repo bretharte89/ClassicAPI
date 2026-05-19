@@ -367,6 +367,70 @@ enum Offsets {
     // it to filter their aura iteration; we call it the same way.
     FUN_SPELL_IS_VISIBLE_AURA = 0x00519860,
 
+    // Player-only aura timing tables. Unlike UNIT_FIELD_AURA (which is
+    // populated for any unit but has no timing info), these are the
+    // local player's own buffs/debuffs with full duration data — the
+    // server broadcasts cast/duration only for the player's own auras.
+    //
+    // VAR_PLAYER_BUFF_TABLE: 48-entry array, 16 bytes each.
+    //   +0x00 (int)   slotCode: -1 = empty; 0..31 = buff entry;
+    //                 32..47 = debuff entry. Doubles as the index
+    //                 into the expiration table.
+    //   +0x04 (int)   spellID — verified via `Script_GetPlayerBuffTexture`
+    //                 at `0x004E4740`, which reads `[entry+0x4]` and
+    //                 bounds-checks against `[VAR_SPELL_RECORD_COUNT]`.
+    //   +0x0A (byte)  flags: bit 0x1 = cancelable
+    //   +0x0C (int)   untalented rank — the value `GetPlayerBuff`
+    //                 returns as its second result. Not the spellID.
+    //
+    // VAR_PLAYER_BUFF_EXPIRATION_TABLE: parallel `int[]` of absolute
+    // expiration timestamps in ms. Same epoch as `FUN_OS_TICKCOUNT_MS`
+    // and (verified) Lua's `GetTime()` (which multiplies tickcount by
+    // 0.001) — so converting `expirationMs * 0.001` gives an absolute
+    // seconds-value that's directly comparable to `GetTime()` on the
+    // Lua side. No epoch reconciliation needed.
+    //
+    // Sourced from `Script_GetPlayerBuff` (`0x004E45D0`) /
+    // `Script_GetPlayerBuffTimeLeft` (`0x004E4930`); the
+    // `FUN_004E4450(buffID)` inner helper does the
+    // `expirationTable[entry.slotCode] - currentMs` math we mirror.
+    VAR_PLAYER_BUFF_TABLE = 0x00BC6040,
+    VAR_PLAYER_BUFF_EXPIRATION_TABLE = 0x00BC5F68,
+    PLAYER_BUFF_TABLE_COUNT = 48,
+    PLAYER_BUFF_ENTRY_STRIDE = 16,
+    OFF_PLAYER_BUFF_SLOT_CODE = 0x00,
+    OFF_PLAYER_BUFF_SPELL_ID = 0x04,
+
+    // `GetTickCount`-style millisecond counter the engine uses as its
+    // time source. Same value Lua's `GetTime()` reads (scaled by
+    // 0.001 to seconds). `__fastcall void → uint32_t` (no args, ms
+    // tick count in EAX).
+    FUN_OS_TICKCOUNT_MS = 0x0042B790,
+
+    // Spell.dbc `m_durationIndex` field — pointer into SpellDuration.dbc.
+    // Verified via `FUN_004E44B0` (`0x004e44b0`) and `FUN_006EA000`
+    // (`0x006ea000`), both of which read `[spellRec + 0x78]` and use
+    // the result as a SpellDuration.dbc index.
+    OFF_SPELL_DURATION_INDEX = 0x78,
+    // Spell.dbc `m_baseLevel` — the spell level used as the anchor in
+    // `(effLevel - baseLevel) * perLevel + base` scaling. Same offset
+    // `0x70` as CGUnit's UNIT_FIELD_LEVEL but in a different struct.
+    OFF_SPELL_BASE_LEVEL = 0x70,
+
+    // SpellDuration.dbc — class instance at `0x00C0D820`, records at
+    // `0x00C0D828`, count at `0x00C0D82C`. Record layout matches the
+    // SpellCastTimes.dbc shape:
+    //   +0x00 (int)  id
+    //   +0x04 (int)  base duration ms (signed; negative + perLevel=0
+    //                means "no real duration" / infinite aura)
+    //   +0x08 (int)  per-level duration scaling ms
+    //   +0x0C (int)  max duration ms (cap)
+    VAR_SPELLDURATION_RECORDS = 0x00C0D828,
+    VAR_SPELLDURATION_COUNT = 0x00C0D82C,
+    OFF_SPELLDURATION_BASE_MS = 0x04,
+    OFF_SPELLDURATION_PER_LEVEL_MS = 0x08,
+    OFF_SPELLDURATION_MAX_MS = 0x0C,
+
     // CGPlayer-side sub-struct, allocated for any player-controlled
     // unit (local self, target, party, raid, inspect targets — all of
     // them). Holds player-specific data that's *not* in the broadcast

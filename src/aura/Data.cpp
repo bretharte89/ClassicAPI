@@ -69,6 +69,119 @@ const char *SpellIconPath(const uint8_t *spellRecord) {
                             OFF_SPELLICON_PATH);
 }
 
+using ResolveUnitToken_t = void *(__fastcall *)(const char *);
+
+// Returns the local player's CGUnit pointer, or nullptr pre-login.
+const uint8_t *LocalPlayer() {
+    auto fn = reinterpret_cast<ResolveUnitToken_t>(
+        static_cast<uintptr_t>(Offsets::FUN_RESOLVE_UNIT_TOKEN));
+    return static_cast<const uint8_t *>(fn("player"));
+}
+
+// Looks up the player-buff-table entry for a given spellID. The table
+// at `VAR_PLAYER_BUFF_TABLE` mirrors the local player's auras with
+// timing data (which UNIT_FIELD_AURA lacks for all units). Returns
+// nullptr when the spell isn't in any populated entry.
+//
+// Only meaningful when the caller is building data for the local
+// player — every entry here belongs to "player". Caller is expected
+// to gate on that.
+const uint8_t *FindPlayerBuffEntry(uint32_t spellID) {
+    auto *base = reinterpret_cast<const uint8_t *>(
+        static_cast<uintptr_t>(Offsets::VAR_PLAYER_BUFF_TABLE));
+    for (int i = 0; i < Offsets::PLAYER_BUFF_TABLE_COUNT; ++i) {
+        const uint8_t *entry = base + i * Offsets::PLAYER_BUFF_ENTRY_STRIDE;
+        const int slotCode = *reinterpret_cast<const int *>(
+            entry + Offsets::OFF_PLAYER_BUFF_SLOT_CODE);
+        if (slotCode < 0)
+            continue;
+        const uint32_t entrySpell = *reinterpret_cast<const uint32_t *>(
+            entry + Offsets::OFF_PLAYER_BUFF_SPELL_ID);
+        if (entrySpell == spellID)
+            return entry;
+    }
+    return nullptr;
+}
+
+// Reads the absolute expiration timestamp (in seconds, GetTime-epoch)
+// for a player-buff entry, or 0 if the entry has expired / has no
+// timing. The engine stores ms-since-tickcount-epoch which matches
+// what Lua's `GetTime()` returns (engineMs * 0.001), so converting
+// `expirationMs * 0.001` lands directly on the same timeline addons
+// compare against on the Lua side. No epoch reconciliation needed.
+double PlayerBuffExpirationSeconds(const uint8_t *entry) {
+    if (entry == nullptr)
+        return 0.0;
+    const int slotCode = *reinterpret_cast<const int *>(
+        entry + Offsets::OFF_PLAYER_BUFF_SLOT_CODE);
+    if (slotCode < 0)
+        return 0.0;
+    auto *expirationTable = reinterpret_cast<const int *>(
+        static_cast<uintptr_t>(Offsets::VAR_PLAYER_BUFF_EXPIRATION_TABLE));
+    const int expirationMs = expirationTable[slotCode];
+    if (expirationMs <= 0)
+        return 0.0;
+    return static_cast<double>(static_cast<uint32_t>(expirationMs)) * 0.001;
+}
+
+// Computes the spell's base duration in seconds via Spell.dbc →
+// SpellDuration.dbc lookup with level scaling. Returns 0 for spells
+// without a real duration (the sentinel `base < 0 && perLevel == 0`
+// path the engine uses for infinite auras like passives, paladin
+// auras, racials).
+//
+// Doesn't include talent / glyph / aura-extension modifiers — those
+// are caster-side and the engine applies them when computing the
+// expiration timestamp. So `expirationTime - GetTime()` reflects the
+// *true* remaining time; this `duration` is the base value modern
+// addons use for "X / Y" timer rendering.
+double SpellBaseDurationSeconds(uint32_t spellID, int unitLevel) {
+    const uint8_t *spell = SpellRecord(spellID);
+    if (spell == nullptr)
+        return 0.0;
+    const int durIdx = *reinterpret_cast<const int *>(
+        spell + Offsets::OFF_SPELL_DURATION_INDEX);
+    if (durIdx <= 0)
+        return 0.0;
+    const uint8_t *durRec = DBC::Record(Offsets::VAR_SPELLDURATION_RECORDS,
+                                        Offsets::VAR_SPELLDURATION_COUNT,
+                                        static_cast<uint32_t>(durIdx));
+    if (durRec == nullptr)
+        return 0.0;
+    const int base = *reinterpret_cast<const int *>(
+        durRec + Offsets::OFF_SPELLDURATION_BASE_MS);
+    const int perLevel = *reinterpret_cast<const int *>(
+        durRec + Offsets::OFF_SPELLDURATION_PER_LEVEL_MS);
+    const int maxMs = *reinterpret_cast<const int *>(
+        durRec + Offsets::OFF_SPELLDURATION_MAX_MS);
+    // Engine's "infinite duration" sentinel — matches the check in
+    // `FUN_004E44B0`'s "no real duration" branch at `0x004e455c`.
+    if (base < 0 && perLevel < 1)
+        return 0.0;
+    const int spellBaseLevel = *reinterpret_cast<const int *>(
+        spell + Offsets::OFF_SPELL_BASE_LEVEL);
+    int effLevel = unitLevel;
+    if (effLevel < spellBaseLevel)
+        effLevel = spellBaseLevel;
+    int durationMs = (effLevel - spellBaseLevel) * perLevel + base;
+    if (maxMs > 0 && durationMs > maxMs)
+        durationMs = maxMs;
+    if (durationMs <= 0)
+        return 0.0;
+    return static_cast<double>(durationMs) * 0.001;
+}
+
+// Reads the player's level from UNIT_FIELD_LEVEL. Returns 0 when
+// unresolved (pre-login, no descriptor) — caller should treat that
+// as "skip level scaling".
+int PlayerLevel(const uint8_t *player) {
+    auto *desc = Descriptor(player);
+    if (desc == nullptr)
+        return 0;
+    return *reinterpret_cast<const int *>(
+        desc + Offsets::OFF_UNIT_FIELD_LEVEL);
+}
+
 } // namespace
 
 uint32_t ReadSpellID(const uint8_t *unit, int slot) {
@@ -204,11 +317,37 @@ void Push(void *L, const uint8_t *unit, int slot) {
     Game::Lua::SetFieldBool(L, "isHelpful", isHelpful);
     Game::Lua::SetFieldBool(L, "isHarmful", !isHelpful);
 
-    // Numeric fields modern always sets — 0 for "not applicable" to
-    // match modern semantics (`if data.duration > 0` etc. still
-    // works the same on vanilla).
-    Game::Lua::SetFieldNumber(L, "duration", 0);
-    Game::Lua::SetFieldNumber(L, "expirationTime", 0);
+    // Timing fields. Vanilla doesn't broadcast cast time / duration
+    // for ANY unit's auras except the local player's — for everyone
+    // else (target, party, raid, mouseover) `expirationTime` stays 0
+    // and addons have to track expiry themselves via aura-add events.
+    // For the player we read the engine's `VAR_PLAYER_BUFF_TABLE`
+    // (same data `GetPlayerBuffTimeLeft` returns), which gives us a
+    // real expiration timestamp.
+    //
+    // `duration` comes from Spell.dbc → SpellDuration.dbc with
+    // level scaling. That's the *base* value; talent / glyph
+    // duration-extension modifiers (Improved PW:F, etc.) are
+    // already baked into the expiration timestamp on the
+    // caster's side, so `expirationTime - GetTime()` reflects the
+    // true remaining time even when `duration` doesn't include
+    // the talent boost. We populate `duration` for any unit (the
+    // base value is identical regardless of who's affected); only
+    // `expirationTime` is player-gated.
+    double duration = 0.0;
+    double expirationTime = 0.0;
+    const uint8_t *player = LocalPlayer();
+    if (spellID != 0) {
+        const int unitLevel = (unit != nullptr) ? PlayerLevel(unit) : 0;
+        duration = SpellBaseDurationSeconds(spellID, unitLevel);
+    }
+    if (unit != nullptr && unit == player) {
+        const uint8_t *entry = FindPlayerBuffEntry(spellID);
+        if (entry != nullptr)
+            expirationTime = PlayerBuffExpirationSeconds(entry);
+    }
+    Game::Lua::SetFieldNumber(L, "duration", duration);
+    Game::Lua::SetFieldNumber(L, "expirationTime", expirationTime);
     Game::Lua::SetFieldNumber(L, "charges", 0);
     Game::Lua::SetFieldNumber(L, "maxCharges", 0);
     Game::Lua::SetFieldNumber(L, "timeMod", 1);
