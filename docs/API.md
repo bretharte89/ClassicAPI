@@ -409,35 +409,47 @@ C_AddOns.DoesAddOnExist("garbage")     -- false
 
 ### `GetSavedCharacterOrder(realm)` / `SetSavedCharacterOrder(realm, order)` — GlueXML only
 
-> **GlueXML scope.** These globals are registered on the **glue**
-> Lua state (the engine that runs login / realm-select /
-> character-select), not the in-world FrameScript engine. In-world
-> addons can't see them — `/script GetSavedCharacterOrder("X")`
-> from inside the world will error on a nil global. They exist
-> specifically to support GlueXML patches that reorder the
-> character-select list and need to persist that order across
-> sessions; 1.12 glue ships no general-purpose persistence API
-> (just `GetSavedAccountName`/`SetSavedAccountName`, which is
-> saturated by the autologin system).
+Persists a user-chosen ordering for the character-select list, per realm,
+per account. Designed for GlueXML mods that add drag-to-reorder to the
+character-select screen — but since the storage is a plain text file
+you can also pre-populate it by hand.
 
-- `GetSavedCharacterOrder(realm) -> string` — returns the saved
-  order string for `realm`, or `""` if none. Never returns `nil`.
-- `SetSavedCharacterOrder(realm, order)` — writes the order
-  string. Calling with `order == ""` clears the realm's entry.
+> **Only callable from the login / character-select screens** (the
+> "glue" Lua state). Calling them from an in-world addon errors with
+> "attempt to call nil" — they aren't registered there.
 
-Both args are opaque UTF-8 strings. The caller picks the encoding
-for `order`; the DLL stores it verbatim. The expected pattern
-(matching the anniversary-client reorder UI) is a pipe-delimited
-list of character names: `"Thrall|Jaina|Sylvanas"`.
+- `GetSavedCharacterOrder(realm)` — returns the saved order for
+  `realm` as a string, or `""` if none has been saved. Never `nil`.
+- `SetSavedCharacterOrder(realm, order)` — writes the order string.
+  Pass `""` to clear the saved entry for that realm.
 
-Persistence: `WTF\Account\<account>\ClassicAPI.txt`, one
-`CharacterOrder.<realm>=<order>` line per realm. Account scope is
-implicit via the file path (so switching autologin accounts on the
-glue screen automatically isolates per-account orderings); realm
-scope is explicit via the line key. The same file is shared with
-the persistent name cache settings — see [`Settings::Account`
-in the source](../src/settings/Account.h) — no file-level
-coordination needed at the call site.
+The `order` value is a pipe-delimited list of character names, e.g.
+`"Thrall|Jaina|Sylvanas"`. Names are matched case-sensitively against
+what `GetCharacterInfo` returns.
+
+#### Storage file
+
+Saved to `WTF\Account\<ACCOUNT>\ClassicAPI.txt`, one line per realm:
+
+```ini
+CharacterOrder.Octo=Thrall|Jaina|Sylvanas
+CharacterOrder.AnotherRealm=Foo|Bar
+```
+
+`<ACCOUNT>` is the account name the launcher logged in with
+(uppercase, the same folder name WoW uses for SavedVariables). The
+realm key on each line is whatever string was passed as `realm` —
+typically the result of `GetServerName()`. This file is shared with
+other ClassicAPI account-scoped settings, so don't be surprised to
+see unrelated `Key=Value` lines in it; leave them alone.
+
+You can pre-populate the file by hand if you don't have a GlueXML mod
+that calls `SetSavedCharacterOrder`. Just create or edit
+`ClassicAPI.txt` in the correct account folder before launching the
+game — any GlueXML code that reads `GetSavedCharacterOrder(realm)`
+will see your saved order.
+
+#### Addon example
 
 ```lua
 -- GlueXML, e.g. CharacterSelect.lua: persist the user's drag-reordered list
@@ -456,15 +468,6 @@ if saved ~= "" then
     end
 end
 ```
-
-> **How it works.** ClassicAPI hooks `FUN_0046ABB0` — the engine's
-> master glue-init function, which runs once per glue boot (initial
-> launch and every world→glue return on logout). After the engine
-> registers its own 109 glue functions, our hook adds these two on
-> the same Lua state via the engine's own
-> `FrameScript_RegisterFunction`. The glue Lua state is torn down
-> and recreated on every world transition; we re-register each
-> cycle automatically.
 
 ## Chat
 
