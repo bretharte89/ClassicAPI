@@ -1378,6 +1378,30 @@ enum Offsets {
     // at 0x004DF9A9 and by the helper at 0x004DF150 used by IsUnitOnQuest.
     VAR_QUEST_LOG_ENTRIES = 0x00BB71C0,
     VAR_QUEST_LOG_ENTRY_COUNT = 0x00BB7478,
+    OFF_QUEST_LOG_ENTRY_STRIDE = 0x10,
+    OFF_QUEST_LOG_ENTRY_QUEST_ID = 0x0,
+    OFF_QUEST_LOG_ENTRY_HEADER_PTR = 0x8,
+
+    // The single chokepoint that rebuilds the quest log from the
+    // player's authoritative quest-slot data at `[CGPlayer + 0xE68 +
+    // 0x28]` (a 0xF0-byte block holding the engine's quest sync state).
+    // Called by the engine after every quest state change that needs
+    // the Lua-visible log refreshed — accept, abandon, completion,
+    // objective updates, login bulk sync. Signature:
+    //
+    //   __fastcall void FUN_QUEST_LOG_REBUILD(int param_1)
+    //
+    // If `param_1 == 0`, the function just fires QUEST_LOG_UPDATE
+    // (event ID 0x134) via `FUN_00703E50` and returns — a no-op
+    // rebuild signal. If non-zero, it `memset`s the entry array,
+    // walks the player's slot data, repopulates `VAR_QUEST_LOG_ENTRIES`
+    // / `VAR_QUEST_LOG_ENTRY_COUNT`, then fires QUEST_LOG_UPDATE.
+    //
+    // Hooked by `Quest::Accepted` to snapshot the log pre-/post-rebuild
+    // and fire `QUEST_ACCEPTED(logIndex, questID)` for the diff. Single
+    // quiet target in the `0x004DExxx` quest region — no known DLL
+    // collisions.
+    FUN_QUEST_LOG_REBUILD = 0x004DE510,
 
     // Player and pet spellbooks — flat int32 arrays indexed by 0-based slot.
     // Each entry is a spellID (0 for unused slots). Engine bounds-checks

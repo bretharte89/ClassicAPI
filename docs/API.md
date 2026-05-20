@@ -182,6 +182,7 @@ build instructions.
   - [`C_QuestLog.GetQuestIDForLogIndex(index)`](#c_questlogGetQuestIDForLogIndexindex)
   - [`C_QuestLog.RequestLoadQuestByID(questID)`](#c_questlogrequestloadquestbyidquestid)
   - [`C_QuestLog.GetTitleForQuestID(questID)`](#c_questloggettitleforquestidquestid)
+  - [`QUEST_ACCEPTED` event](#quest_accepted-event)
 
 - [Spell](#spell)
   - [`GetSpellInfo(spellID)` / `GetSpellInfo(slot, bookType)`](#getspellinfospellid--getspellinfoslot-booktype)
@@ -3974,6 +3975,39 @@ C_QuestLog.RequestLoadQuestByID(215)
 ```
 
 Equivalent to the function of the same name introduced in 5.0.
+
+### `QUEST_ACCEPTED` event
+
+Fires once per quest the player just accepted, with two payload args:
+the 1-based quest log index and the questID. Matches the Cata/WotLK
+signature `QUEST_ACCEPTED(questLogIndex, questID)`. Polyfills modern
+WoW's event of the same name (added in 3.1.0).
+
+```lua
+local f = CreateFrame("Frame")
+f:RegisterEvent("QUEST_ACCEPTED")
+f:SetScript("OnEvent", function()
+    -- 1.12: event payload is in `arg1`, `arg2`, ... globals
+    if event == "QUEST_ACCEPTED" then
+        local questLogIndex, questID = arg1, arg2
+        -- ...
+    end
+end)
+```
+
+Fires for every path that adds a quest to the local log — NPC accept,
+party-shared quest accept, auto-grant from quest items — by hooking
+the single engine chokepoint (`FUN_QUEST_LOG_REBUILD` at `0x004DE510`)
+that rebuilds the Lua-visible quest log from the player's
+authoritative slot data after any quest state change.
+
+**Does not fire on initial login / character entry**, even though the
+same engine function runs the bulk-sync there. Suppression is
+heuristic: if a single rebuild call adds more than one quest, it's
+treated as a resync and skipped. Human input speed can't accept two
+quests within the same engine tick, so single-add is always a real
+user accept. A brand-new character's very first quest accept
+(`0 → 1` entries) fires correctly.
 
 ## Spell
 
