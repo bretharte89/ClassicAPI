@@ -83,17 +83,18 @@ functions, just behavior the stock 1.12 engine didn't have. See the
 | `EQUIPMENT_SETS_CHANGED` | *(none)* |
 | `EQUIPMENT_SWAP_PENDING` | `setID` |
 | `EQUIPMENT_SWAP_FINISHED` | `success, setID` |
-| `PLAYER_STARTED_MOVING` | *(none)* |
-| `PLAYER_STOPPED_MOVING` | *(none)* |
-| `PLAYER_STARTED_LOOKING` | *(none)* |
-| `PLAYER_STOPPED_LOOKING` | *(none)* |
-| `PLAYER_STARTED_TURNING` | *(none)* |
-| `PLAYER_STOPPED_TURNING` | *(none)* |
+| `FACTION_STANDING_CHANGED` | `factionID, newStanding, repGained` |
 | `GLOBAL_MOUSE_DOWN` | `button` |
 | `GLOBAL_MOUSE_UP` | `button` |
-| `FACTION_STANDING_CHANGED` | `factionID, newStanding, repGained` |
 | `ITEM_DATA_LOAD_RESULT` | `itemID, success` |
 | `MODIFIER_STATE_CHANGED` | `keyName, down` |
+| `PLAYER_STARTED_LOOKING` | *(none)* |
+| `PLAYER_STOPPED_LOOKING` | *(none)* |
+| `PLAYER_STARTED_MOVING` | *(none)* |
+| `PLAYER_STOPPED_MOVING` | *(none)* |
+| `PLAYER_STARTED_TURNING` | *(none)* |
+| `PLAYER_STOPPED_TURNING` | *(none)* |
+| `QUEST_ACCEPTED` | `questLogIndex, questID` |
 | `QUEST_DATA_LOAD_RESULT` | `questID, success` |
 
 ### Globals
