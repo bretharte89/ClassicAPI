@@ -442,6 +442,10 @@ end
 function EventTraceFrame_OnSearchChanged(editBox)
     if (not _EventTraceFrame) then return; end
     local text = editBox:GetText() or "";
+    local clearBtn = getglobal("EventTraceFrameSearchClear");
+    if (clearBtn) then
+        if (text == "") then clearBtn:Hide(); else clearBtn:Show(); end
+    end
     if (text == "") then text = nil; end
     if (text == _EventTraceFrame.searchText) then return; end
     _EventTraceFrame.searchText = text;

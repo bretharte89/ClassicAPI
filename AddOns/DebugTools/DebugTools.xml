@@ -211,8 +211,43 @@
                 </Anchors>
                 <Scripts>
                     <OnTextChanged>EventTraceFrame_OnSearchChanged(this);</OnTextChanged>
-                    <OnEscapePressed>this:ClearFocus(); this:SetText("");</OnEscapePressed>
+                    <!-- Escape unfocuses but preserves text — clearing is
+                         the X button's job. Modern WoW behaves the same. -->
+                    <OnEscapePressed>this:ClearFocus();</OnEscapePressed>
                 </Scripts>
+                <Frames>
+                    <!-- Embedded clear button: anchored inside the editbox
+                         at the right edge, visible only while there's text.
+                         Declared as a child so sibling z-order puts it
+                         above the editbox's own backdrop textures. -->
+                    <Button name="$parentClear" hidden="true">
+                        <Size x="14" y="14"/>
+                        <Anchors>
+                            <Anchor point="RIGHT">
+                                <Offset x="-4" y="0"/>
+                            </Anchor>
+                        </Anchors>
+                        <Layers>
+                            <Layer level="OVERLAY">
+                                <FontString name="$parentLabel" inherits="GameFontNormalSmall" text="X">
+                                    <Anchors>
+                                        <Anchor point="CENTER"/>
+                                    </Anchors>
+                                </FontString>
+                            </Layer>
+                        </Layers>
+                        <Scripts>
+                            <OnClick>
+                                local eb = getglobal("EventTraceFrameSearch");
+                                eb:SetText("");
+                                eb:ClearFocus();
+                            </OnClick>
+                        </Scripts>
+                        <HighlightTexture file="Interface\Buttons\UI-Common-MouseHilight" setAllPoints="true" alphaMode="ADD">
+                            <Color r="1" g="1" b="1" a=".5"/>
+                        </HighlightTexture>
+                    </Button>
+                </Frames>
             </EditBox>
         </Frames>
         <Scripts>
