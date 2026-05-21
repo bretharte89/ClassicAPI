@@ -426,6 +426,21 @@ enum Offsets {
     OFF_PLAYER_BUFF_SLOT_CODE = 0x00,
     OFF_PLAYER_BUFF_SPELL_ID = 0x04,
 
+    // CMSG_CANCEL_AURA sender — `__fastcall(int spellID)`. Builds an
+    // opcode-0x136 packet (`{opcode=0x136, spellID}`) and ships it.
+    // Used directly by `CancelSpellByID` / `CancelSpellByName` to
+    // skip `Script_CancelPlayerBuff`'s client-side gates (the
+    // per-entry cancelable flag at `[+0x0A]` and the fallback
+    // AttributesEx `0x04` check) and let the server be the source
+    // of truth for what's cancelable.
+    //
+    // **Crash hazard**: bounds-checks `spellID` against Spell.dbc
+    // count and sets the record pointer to NULL on OOR, then
+    // unconditionally dereferences `[record + 0x1C]`. Callers MUST
+    // pre-validate via `Spell::Lookup::RecordForID(spellID)` (which
+    // also catches empty record slots) before calling.
+    FUN_CANCEL_AURA_SEND = 0x006E7040,
+
     // `GetTickCount`-style millisecond counter the engine uses as its
     // time source. Same value Lua's `GetTime()` reads (scaled by
     // 0.001 to seconds). `__fastcall void → uint32_t` (no args, ms

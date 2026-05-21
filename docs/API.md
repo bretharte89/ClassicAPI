@@ -208,6 +208,7 @@ build instructions.
   - [`C_SpellBook.GetSpellSkillLine(spellID)`](#c_spellbookgetspellskilllinespellid)
   - [`GetSpellSchool(spellID)`](#getspellschoolspellid)
   - [`CastSpellNoToggle(name | spellID)`](#castspellnotogglename--spellid)
+  - [`C_Spell.CancelSpellByID(spellID)` / `CancelSpellByName(name)`](#c_spellcancelspellbyidspellid--cancelspellbynamename)
 
 - [State](#state)
   - [`IsMounted()`](#ismounted)
@@ -4691,6 +4692,41 @@ engine's own global.
 Using this from inside a macro action slot? See
 [`CastSpellNoToggle` as a macro cast line](#castspellnotoggle-as-a-macro-cast-line) below for the additional
 parser support that makes the slot tag correctly for action-bar UIs.
+
+### `C_Spell.CancelSpellByID(spellID)` / `CancelSpellByName(name)`
+
+Cancel a buff on the player by spellID or by spell name. Modern WoW's
+`CancelUnitBuff` reduces to these two primitives internally; both are
+player-only (vanilla server only accepts `CMSG_CANCEL_AURA` for the
+local player's own auras).
+
+```lua
+C_Spell.CancelSpellByID(2378)      -- Cancel "Find Herbs"
+CancelSpellByName("Cat Form")       -- Drop shapeshift
+```
+
+| Function | Arg | Behavior |
+|----------|-----|----------|
+| `C_Spell.CancelSpellByID(spellID)` | spellID (number) | Sends `CMSG_CANCEL_AURA` for `spellID` directly. No client-side check that the buff is actually present — server validates and silently no-ops if not. |
+| `CancelSpellByName(name)` | name (string, case-insensitive) | Walks the player's buff range (`UnitBuff` slots 0..31) for the first aura whose Spell.dbc localized name matches, then cancels by its spellID. Buff-only — debuffs are skipped. |
+
+Calls `FUN_006E7040` (`0x006E7040`) directly with the spellID. This
+**bypasses** `Script_CancelPlayerBuff`'s client-side gates — the
+per-buff cancelable flag at `[entry+0x0A] & 0x01` and the fallback
+`AttributesEx & 0x04` check on the spell record. Trade-off: the server
+is now the sole authority on what's cancelable. Non-cancelable auras
+(proc-buffs, certain world buffs) still get rejected — just server-side
+instead of client-side, which is the same effective behavior as
+modern WoW's `C_Spell.CancelSpellByID`.
+
+For invalid input (non-positive spellID, OOR, or a Spell.dbc empty
+slot), both functions silently no-op. No `lua_error`, no event fired.
+
+Spell name matching is case-insensitive via `_stricmp`. Rank-suffixed
+input (e.g. `"Power Word: Fortitude(Rank 4)"`) is **not** parsed —
+pass the plain name. Multi-rank buffs match on first-found; if you
+have multiple ranks of the same buff active (unusual but possible with
+e.g. paladin blessings before talent merge), the first slot wins.
 
 ## State
 
