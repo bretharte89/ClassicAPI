@@ -1414,6 +1414,14 @@ enum Offsets {
     VAR_MACRO_SLOT_MAP = 0x00BDCC60,
     MACRO_SLOT_MAP_COUNT = 0x24,
 
+    // Macro slot → `MacroEntry *` resolver — `__fastcall(uint slot0Based)`.
+    // Returns the MacroEntry struct pointer for the given 0-based slot,
+    // or NULL when the slot is empty / out of range. Same accessor
+    // `Script_GetMacroInfo` uses; we call it directly to read the
+    // engine's cached primary-spell ID at `entry + OFF_MACRO_PRIMARY_SPELL`
+    // without re-parsing the body. See `Macro::Spell::Script_GetMacroSpell`.
+    FUN_MACRO_SLOT_TO_ENTRY = 0x004F0E40,
+
     // Quest log: 16-byte-stride entry array and active count.
     // Field +0 of each entry is the questID for real quests (a category index
     // for headers); field +8 is the header indicator: non-NULL = header,

@@ -159,6 +159,7 @@ build instructions.
 - [Macros](#macros)
   - [Numeric spellIDs in `/cast` and `CastSpellByName`](#numeric-spellids-in-cast-and-castspellbyname)
   - [`CastSpellNoToggle` as a macro cast line](#castspellnotoggle-as-a-macro-cast-line)
+  - [`GetMacroSpell(macroSlot)`](#getmacrospellmacroslot)
 
 - [MerchantFrame](#merchantframe)
   - [`C_MerchantFrame.GetItemInfo(slot)`](#c_merchantframegetiteminfoslot)
@@ -3373,6 +3374,44 @@ didn't find any of its own patterns).
 Macro tagging happens at macro edit/save time. Existing macros need
 to be opened in the Macro UI and re-saved once after dropping in the
 new DLL to pick up the new parser behavior.
+
+### `GetMacroSpell(macroSlot)`
+
+Returns `(name, rank, spellID)` for the spell a macro's first `/cast`
+/ `/castsequence` / `CastSpellByName(...)` directive resolves to, or
+nothing when the macro slot is empty, contains no cast directive, or
+the directive's name doesn't resolve to a spell the player knows.
+
+```lua
+-- macro slot 1's body: "/cast Fireball(Rank 5)"
+local name, rank, id = GetMacroSpell(1)
+-- name = "Fireball", rank = "Rank 5", id = 25306
+
+-- macro slot 2's body: "/cast Fireball"  (no explicit rank)
+local name, rank, id = GetMacroSpell(2)
+-- name = "Fireball", rank = "Rank 5", id = 25306  (the highest known rank)
+
+-- macro slot 3's body: only /script lines or no cast
+GetMacroSpell(3)
+-- (no returns)
+```
+
+No body parsing happens at call time — the vanilla engine already
+walks every macro body at create / edit / refresh and caches the
+resolved spellID on the macro struct. We just read the cache and
+look the name + rank up in `Spell.dbc`. Result: O(1) per call.
+
+`CastSpellNoToggle("<name>")` macros are also recognized — the
+parser hook from the [`CastSpellNoToggle`](#castspellnotoggle-as-a-macro-cast-line)
+section tags them with the same spellID a `/cast` line would, so
+`GetMacroSpell` sees them too.
+
+> **Re-save existing macros once after dropping in the DLL.** The
+> spellID cache is populated at edit time. Macros that existed
+> before ClassicAPI loaded (or that use `CastSpellNoToggle` and were
+> last edited under stock 1.12) will have a stale `0` cache —
+> opening them in the Macro UI and clicking Okay re-runs the parser
+> and the new behavior takes effect.
 
 ## MerchantFrame
 

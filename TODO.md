@@ -2712,17 +2712,19 @@ interpolates against engine ticks for the live value. Type names are
 uses `"FATIGUE"` for the off-map one; we preserve what the engine
 actually returns).
 
-## 87. `GetMacroSpell(macroIndex)` — easy
+## 87. `GetMacroSpell(macroIndex)` — DONE
 
-Reads the spell name out of a macro's body. Useful for macros
-that contain `/cast SpellName` — addons can match the contained
-spell against `IsSpellInRange` etc.
-
-Vanilla has `GetMacroInfo(slot) → name, iconTexture, body` — we
-just need to parse `body` for `/cast`/`/use` directives and
-return the first one. Pure Lua-side string parsing, but easier
-to ship as a C helper for performance (called every frame by
-some addons).
+Implemented in [src/macro/Spell.cpp](src/macro/Spell.cpp). Turned out to
+be a one-read job: the vanilla engine already walks every macro body
+at create / edit / refresh via `FUN_MACRO_PARSE_PRIMARY_SPELL`
+(`0x004EFE00`) and caches the resolved spellID on the macro struct at
+`+OFF_MACRO_PRIMARY_SPELL` (`+0x564`). `GetMacroSpell` reads the cache
+via `FUN_MACRO_SLOT_TO_ENTRY` (`0x004F0E40`), translates `0` /
+`0xFFFFFFFF` sentinels to "no match," and looks up name + rank from
+`Spell.dbc` for the resolved ID. Returns `(name, rank, spellID)`
+matching modern's 3-tuple. `CastSpellNoToggle("<name>")` macros are
+also recognized because `Spell::CastNoToggle` already hooks the same
+parser to register that pattern.
 
 ## 88. `PLAYER_EQUIPMENT_CHANGED(equipmentSlot, hasCurrent)` event
 
