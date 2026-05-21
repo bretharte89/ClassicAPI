@@ -121,15 +121,16 @@ offsets (currently just `+0x9C` for title) live in `Cache.h` alongside
 the `Lookup`/`Peek` wrappers, so additional cached fields like
 description and objectives can be added there as we trace them.
 
-## 7. `UnitAuraBySlot` / `UnitAuraSlots` — medium
+## ~~7. `UnitAuraBySlot` / `UnitAuraSlots`~~ — DROPPED (obviated by `C_UnitAuras`)
 
-Lua addon stubs these out entirely (commented as needing `LibAura`), so
-`AuraUtil.ForEachAura` is broken in the addon as written. The per-unit aura
-array is in memory; `UnitAura(idx)` already iterates it. Adding slot-stable
-accessors is a thin wrapper over the same internal call. Worth doing because
-modern addon code assumes these exist.
-
-References: `Util/Aura.lua:311-321` (commented out), `Util/AuraUtil.lua:42-67`.
+Modern's slot system was a Shadowlands-era continuation-token pattern
+for huge aura sets — pointless on vanilla where the per-unit aura
+array caps at 48 and `C_UnitAuras.GetUnitAuras(unit, [filter])`
+returns all of them in one call. `GetAuraDataByIndex` /
+`GetUnitAuraBySpellID` / `GetPlayerAuraBySpellID` cover the
+lookup-by-index and lookup-by-spellID consumer patterns. The
+`Util/Aura.lua` / `Util/AuraUtil.lua` files referenced by the
+original TODO no longer exist in the repo.
 
 ## ~~8. `GetItemInfo` for uncached items~~ — DONE (via #12 + #13)
 
