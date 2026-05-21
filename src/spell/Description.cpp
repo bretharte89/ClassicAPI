@@ -13,6 +13,7 @@
 
 #include "Game.h"
 #include "Offsets.h"
+#include "spell/Arg.h"
 #include "spell/Lookup.h"
 
 #include <cstdint>
@@ -25,11 +26,7 @@ using FormatSpellDescription_t = void(__fastcall *)(const void *spellRecord, cha
                                                     int reserved6);
 
 static int __fastcall Script_GetSpellDescription(void *L) {
-    if (!Game::Lua::IsNumber(L, 1)) {
-        Game::Lua::Error(L, "Usage: C_Spell.GetSpellDescription(spellID)");
-        return 0;
-    }
-    const int spellID = static_cast<int>(Game::Lua::ToNumber(L, 1));
+    const int spellID = Spell::Arg::ResolveSpellID(L, 1);
     const uint8_t *record = Spell::Lookup::RecordForID(spellID);
     if (record == nullptr)
         return 0; // nil for invalid / out-of-range spell IDs

@@ -15,6 +15,7 @@
 #include "Offsets.h"
 #include "item/ID.h"
 #include "item/Location.h"
+#include "spell/Arg.h"
 #include "spell/Lookup.h"
 
 #include <cstdint>
@@ -239,11 +240,7 @@ int __fastcall Script_IsUsableSpell(void *L) {
 // Returns proper booleans (`isUsable`, `insufficientPower`) per the
 // `C_Spell.*` convention, not 1/nil pairs.
 int __fastcall Script_C_Spell_IsSpellUsable(void *L) {
-    if (!Game::Lua::IsNumber(L, 1)) {
-        Game::Lua::Error(L, "Usage: C_Spell.IsSpellUsable(spellID)");
-        return 0;
-    }
-    const int spellID = static_cast<int>(Game::Lua::ToNumber(L, 1));
+    const int spellID = Spell::Arg::ResolveSpellID(L, 1);
     Usability r = ComputeUsability(L, spellID);
     Game::Lua::PushBool(L, r.usable);
     Game::Lua::PushBool(L, r.noMana);

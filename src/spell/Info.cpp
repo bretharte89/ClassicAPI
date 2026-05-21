@@ -13,6 +13,7 @@
 
 #include "Game.h"
 #include "Offsets.h"
+#include "spell/Arg.h"
 #include "spell/Lookup.h"
 
 #include <cstdint>
@@ -254,12 +255,7 @@ static void SetFieldBool(void *L, const char *key, bool value) {
 }
 
 static int __fastcall Script_C_GetSpellInfo(void *L) {
-    if (!Game::Lua::IsNumber(L, 1)) {
-        Game::Lua::Error(L, "Usage: C_Spell.GetSpellInfo(spellID)");
-        return 0;
-    }
-    const int spellID = static_cast<int>(Game::Lua::ToNumber(L, 1));
-
+    const int spellID = Spell::Arg::ResolveSpellID(L, 1);
     SpellInfoData info;
     if (!ReadSpellInfo(spellID, info))
         return 0; // nil for unknown spellID
@@ -285,11 +281,7 @@ static int __fastcall Script_C_GetSpellInfo(void *L) {
 }
 
 static int __fastcall Script_C_GetSpellName(void *L) {
-    if (!Game::Lua::IsNumber(L, 1)) {
-        Game::Lua::Error(L, "Usage: C_Spell.GetSpellName(spellID)");
-        return 0;
-    }
-    const int spellID = static_cast<int>(Game::Lua::ToNumber(L, 1));
+    const int spellID = Spell::Arg::ResolveSpellID(L, 1);
     const uint8_t *record = Spell::Lookup::RecordForID(spellID);
     if (record == nullptr)
         return 0; // nil for unknown spellID
@@ -303,11 +295,7 @@ static int __fastcall Script_C_GetSpellName(void *L) {
 }
 
 static int __fastcall Script_C_GetSpellTexture(void *L) {
-    if (!Game::Lua::IsNumber(L, 1)) {
-        Game::Lua::Error(L, "Usage: C_Spell.GetSpellTexture(spellID)");
-        return 0;
-    }
-    const int spellID = static_cast<int>(Game::Lua::ToNumber(L, 1));
+    const int spellID = Spell::Arg::ResolveSpellID(L, 1);
     const uint8_t *record = Spell::Lookup::RecordForID(spellID);
     if (record == nullptr)
         return 0;
@@ -369,11 +357,7 @@ static int __fastcall Script_GetSpellLink(void *L) {
 // only the link string (modern omits the spellID echo since the caller
 // already had it on hand to call this).
 static int __fastcall Script_C_GetSpellLink(void *L) {
-    if (!Game::Lua::IsNumber(L, 1)) {
-        Game::Lua::Error(L, "Usage: C_Spell.GetSpellLink(spellID)");
-        return 0;
-    }
-    const int spellID = static_cast<int>(Game::Lua::ToNumber(L, 1));
+    const int spellID = Spell::Arg::ResolveSpellID(L, 1);
     if (spellID <= 0)
         return 0;
 
@@ -436,11 +420,7 @@ static int __fastcall Script_IsPassiveSpell(void *L) {
 // Takes a spellID only — `C_Spell.*` calls don't accept the spellbook
 // slot+bookType shape.
 static int __fastcall Script_C_IsSpellPassive(void *L) {
-    if (!Game::Lua::IsNumber(L, 1)) {
-        Game::Lua::Error(L, "Usage: C_Spell.IsSpellPassive(spellID)");
-        return 0;
-    }
-    return PushIsPassive(L, static_cast<int>(Game::Lua::ToNumber(L, 1)));
+    return PushIsPassive(L, Spell::Arg::ResolveSpellID(L, 1));
 }
 
 // `IsPlayerSpell(spellID)` — returns true if the player currently
@@ -596,23 +576,13 @@ static int __fastcall Script_IsHelpfulSpell(void *L) {
 // `C_Spell.IsSpellHarmful(spellID)` — direct-by-ID modern signature.
 // No spellbook-slot variant; takes a numeric spellID only.
 static int __fastcall Script_C_Spell_IsSpellHarmful(void *L) {
-    if (!Game::Lua::IsNumber(L, 1)) {
-        Game::Lua::Error(L, "Usage: C_Spell.IsSpellHarmful(spellID)");
-        return 0;
-    }
-    const int spellID = static_cast<int>(Game::Lua::ToNumber(L, 1));
-    Game::Lua::PushBool(L, ComputeIsHarmful(spellID));
+    Game::Lua::PushBool(L, ComputeIsHarmful(Spell::Arg::ResolveSpellID(L, 1)));
     return 1;
 }
 
 // `C_Spell.IsSpellHelpful(spellID)` — direct-by-ID modern signature.
 static int __fastcall Script_C_Spell_IsSpellHelpful(void *L) {
-    if (!Game::Lua::IsNumber(L, 1)) {
-        Game::Lua::Error(L, "Usage: C_Spell.IsSpellHelpful(spellID)");
-        return 0;
-    }
-    const int spellID = static_cast<int>(Game::Lua::ToNumber(L, 1));
-    Game::Lua::PushBool(L, ComputeIsHelpful(spellID));
+    Game::Lua::PushBool(L, ComputeIsHelpful(Spell::Arg::ResolveSpellID(L, 1)));
     return 1;
 }
 
