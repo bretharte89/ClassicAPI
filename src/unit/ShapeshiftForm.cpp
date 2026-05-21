@@ -84,11 +84,15 @@ int __fastcall Script_GetShapeshiftFormID(void *L) {
 // `CMSG_CANCEL_AURA` for the spellID that owns that aura.
 //
 // Mirrors 3.3.5's `Script_CancelShapeshiftForm` inner (`FUN_00726CE0`),
-// which does the same effect-array scan + form-id match. Vanilla
-// 1.12.1 doesn't ship the function — the canonical workaround was
-// to re-`CastSpellByName(currentFormName)` to toggle, but that
-// requires the addon to know which form is active. Modern's no-arg
-// shape is far easier to use.
+// which does the same effect-array scan + form-id match.
+//
+// **Warrior stances are not cancelable.** Vanilla treats warriors as
+// always-in-a-stance — the engine doesn't expose a "no stance" state
+// and right-clicking the active stance in the stance bar does
+// nothing. The server rejects the cancel even when the request is
+// well-formed, so this function is a no-op for stances regardless of
+// approach. All other shapeshift forms (druid, shaman, priest, rogue)
+// are real visible buffs on the aura array and cancel cleanly.
 //
 // No-op if the player isn't in a form, can't be resolved, or no
 // matching aura is found.

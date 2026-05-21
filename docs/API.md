@@ -4962,11 +4962,18 @@ if GetShapeshiftFormID() ~= 0 then
 end
 ```
 
-Covers every form vanilla and Turtle WoW define: druid forms, warrior
-stances, hunter aspects-that-are-shapeshifts, shaman Ghost Wolf, rogue
-Stealth, priest Shadowform / Spirit of Redemption. No form table
-hardcoding — the implementation finds whichever buff currently provides
-the active form by scanning `Spell.dbc` effects.
+Covers druid forms (Cat / Bear / Travel / Aquatic / Moonkin / Dire
+Bear / Tree of Life), shaman Ghost Wolf, priest Shadowform / Spirit of
+Redemption, and rogue Stealth. No form table hardcoding — the
+implementation finds whichever buff currently provides the active form
+by scanning `Spell.dbc` effects.
+
+> **Does not cover warrior stances.** Vanilla treats warriors as
+> *always* in a stance — the engine has no "no stance" state and
+> right-clicking the active stance in the stance bar does nothing. The
+> server rejects the cancel packet for stances, so this function is a
+> no-op when called as a warrior. Switch stances with the normal stance
+> spells instead.
 
 Vanilla 1.12 doesn't ship `CancelShapeshiftForm` (added in later
 expansions). The classic workaround was
