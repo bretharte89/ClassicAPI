@@ -2326,7 +2326,7 @@ end)
 ```
 
 The "secure" label refers to taint-propagation behavior introduced in
-3.0 for protected-frame manipulation. Vanilla 1.12 has no taint
+2.0 for protected-frame manipulation. Vanilla 1.12 has no taint
 system, so the function is functionally equivalent to a plain
 "after-hook" — just preserves modern API parity for addons being
 backported from later expansions.
