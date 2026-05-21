@@ -105,7 +105,6 @@ functions, just behavior the stock 1.12 engine didn't have. See the
 |-------|-----------|
 | Version | `CLASSIC_API_VERSION` |
 | Expansion | `LE_EXPANSION_LEVEL_CURRENT`, `LE_EXPANSION_CLASSIC` … `LE_EXPANSION_MIDNIGHT` |
-| Item inventory location | `ITEM_INVENTORY_BAG_BIT_OFFSET`, `ITEM_INVENTORY_BANK_BAG_OFFSET`, `ITEM_INVENTORY_LOCATION_BAGS`, `ITEM_INVENTORY_LOCATION_BANK`, `ITEM_INVENTORY_LOCATION_PLAYER` |
 | Item quality | `LE_ITEM_QUALITY_POOR` … `LE_ITEM_QUALITY_WOWTOKEN` |
 | Unit stat | `LE_UNIT_STAT_STRENGTH` … `LE_UNIT_STAT_SPIRIT` |
 | Addon security | `Enum.AddOnSecurityStatus.{Secure,Insecure,Banned,NotAvailable}` |
