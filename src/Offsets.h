@@ -2538,6 +2538,7 @@ enum Offsets {
     OFF_SPELL_RECORD_EFFECT_MISC_VALUE = 0x1A8,       // int32[3]
     SPELL_RECORD_EFFECT_COUNT = 3,
     SPELL_AURA_MOD_SHAPESHIFT = 36,
+    SPELL_AURA_MOUNTED = 78,
 
     // Gossip menu data. Populated by the SMSG_GOSSIP_MESSAGE packet
     // handler at 0x004E26E0 and reset by FUN_004E26A0 each time a new

@@ -212,6 +212,7 @@ build instructions.
 
 - [State](#state)
   - [`IsMounted()`](#ismounted)
+  - [`Dismount()`](#dismount)
   - [`IsStealthed()`](#isstealthed)
   - [`IsFalling()`](#isfalling)
   - [`IsSwimming()`](#isswimming)
@@ -4750,6 +4751,27 @@ if not IsMounted() then
     CastSpellByName("Summon Dreadsteed")
 end
 ```
+
+### `Dismount()`
+
+Dismisses the player's currently summoned mount. No-op when the
+player isn't mounted.
+
+```lua
+if IsMounted() then Dismount() end
+```
+
+Walks the player's buff range for an aura whose `Spell.dbc` effects
+include `SPELL_AURA_MOUNTED` (`78`), then sends `CMSG_CANCEL_AURA` for
+that spellID via the same direct sender [`C_Spell.CancelSpellByID`](#c_spellcancelspellbyidspellid--cancelspellbynamename) uses. By the
+time the server processes the cancel, `IsMounted()` will return
+`false`.
+
+Vanilla 1.12 ships no equivalent — addons that wanted programmatic
+dismount had to find the mount buff in `GetPlayerBuff` and call
+`CancelPlayerBuff` on its 0-based index. Modern's no-arg shape is
+simpler and doesn't depend on the addon knowing where in the buff
+table the mount lives.
 
 ### `IsStealthed()`
 

@@ -19,6 +19,8 @@
 
 #include "Game.h"
 #include "Offsets.h"
+#include "aura/Data.h"
+#include "spell/Lookup.h"
 
 #include <cstdint>
 
@@ -27,6 +29,7 @@ namespace Unit::State {
 namespace {
 
 using ResolveUnitToken_t = void *(__fastcall *)(const char *token);
+using CancelAuraSend_t = void(__fastcall *)(int spellID);
 
 const uint8_t *Player() {
     auto fn = reinterpret_cast<ResolveUnitToken_t>(Offsets::FUN_RESOLVE_UNIT_TOKEN);
@@ -63,6 +66,48 @@ int __fastcall Script_IsMounted(void *L) {
     auto *desc = PlayerDescriptor();
     Game::Lua::PushBool(L, MountDisplayID(desc) != 0);
     return 1;
+}
+
+// `Dismount()` — drops the player's current mount. Walks the buff
+// range scanning for a spell with `SPELL_AURA_MOUNTED` (`78`) in any
+// effect slot, then sends `CMSG_CANCEL_AURA` for that spellID via
+// the same direct sender `CancelSpellByID` uses.
+//
+// Vanilla 1.12 doesn't ship `Dismount` or any equivalent; mods that
+// wanted programmatic dismount had to call `CancelPlayerBuff` on the
+// right buff index by walking `GetPlayerBuff` themselves.
+//
+// No-op if the player isn't mounted (early-outs on the
+// `UNIT_FIELD_MOUNTDISPLAYID` check before walking auras).
+int __fastcall Script_Dismount(void *L) {
+    auto *desc = PlayerDescriptor();
+    if (MountDisplayID(desc) == 0)
+        return 0;
+
+    auto *player = Player();
+    if (player == nullptr)
+        return 0;
+
+    for (int slot = 0; slot < Offsets::UNIT_AURA_BUFF_COUNT; ++slot) {
+        if (!Aura::Data::IsSlotPopulated(player, slot))
+            continue;
+        const uint32_t spellID = Aura::Data::ReadSpellID(player, slot);
+        const uint8_t *record = Spell::Lookup::RecordForID(static_cast<int>(spellID));
+        if (record == nullptr)
+            continue;
+
+        auto *auraTypes = reinterpret_cast<const int32_t *>(
+            record + Offsets::OFF_SPELL_RECORD_EFFECT_APPLY_AURA_NAME);
+        for (int eff = 0; eff < Offsets::SPELL_RECORD_EFFECT_COUNT; ++eff) {
+            if (auraTypes[eff] != Offsets::SPELL_AURA_MOUNTED)
+                continue;
+            auto fn = reinterpret_cast<CancelAuraSend_t>(
+                static_cast<uintptr_t>(Offsets::FUN_CANCEL_AURA_SEND));
+            fn(static_cast<int>(spellID));
+            return 0;
+        }
+    }
+    return 0;
 }
 
 // `IsStealthed()` — true iff the player is currently stealthed
@@ -155,6 +200,7 @@ int __fastcall Script_IsAssistingRitual(void *L) {
 
 static void RegisterLuaFunctions() {
     Game::Lua::RegisterGlobalFunction("IsMounted", &Script_IsMounted);
+    Game::Lua::RegisterGlobalFunction("Dismount", &Script_Dismount);
     Game::Lua::RegisterGlobalFunction("IsStealthed", &Script_IsStealthed);
     Game::Lua::RegisterGlobalFunction("IsFalling", &Script_IsFalling);
     Game::Lua::RegisterGlobalFunction("IsSwimming", &Script_IsSwimming);
