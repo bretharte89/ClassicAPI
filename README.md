@@ -97,6 +97,7 @@ functions, just behavior the stock 1.12 engine didn't have. See the
 | `PLAYER_STOPPED_TURNING` | *(none)* |
 | `QUEST_ACCEPTED` | `questLogIndex, questID` |
 | `QUEST_DATA_LOAD_RESULT` | `questID, success` |
+| `UPDATE_SHAPESHIFT_FORM` | *(none)* |
 
 ### Globals
 
