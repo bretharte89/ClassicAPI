@@ -2699,20 +2699,18 @@ Step 4 needs the engine's unit position read primitive — we have
 no offset for that yet. CGUnit has a position field at some
 descriptor offset; finding it is an hour's work.
 
-## 86. `GetMirrorTimerInfo(index)` / `GetMirrorTimerProgress(label)` — medium
+## 86. `GetMirrorTimerInfo(index)` / `GetMirrorTimerProgress(label)` — DONE
 
-Mirror timers are the "BREATH" (underwater) / "FATIGUE" (out of
-map) / "EXHAUSTION" (sliding into invisible wall) bars at the
-top of the screen. WoW exposes three slots (1..3) via these two
-functions; each returns the timer's label, current value,
-maxValue, and tick rate.
-
-In vanilla, the engine already implements the timers (the
-breath bar exists in 1.12) — the question is whether the Lua
-side exposes them. Spot-check `raw_globals.txt` for
-`GetMirrorTimerInfo` — if it's there, this is already done. If
-not, the engine state behind the existing UI needs a Lua-facing
-wrapper.
+Implemented in [src/unit/MirrorTimer.cpp](src/unit/MirrorTimer.cpp).
+The vanilla engine fires `MIRROR_TIMER_START` / `_PAUSE` / `_STOP`
+events with the full payload but doesn't cache the state, so we hook
+the SMSG handler at `FUN_005E7990`, peek the packet via cursor
+save/restore on the CDataStore at `+0x14`, and build a 3-slot side
+cache. `GetMirrorTimerInfo` returns the snapshot; `GetMirrorTimerProgress`
+interpolates against engine ticks for the live value. Type names are
+`"EXHAUSTION"` / `"BREATH"` / `"FEIGNDEATH"` (engine wording — modern
+uses `"FATIGUE"` for the off-map one; we preserve what the engine
+actually returns).
 
 ## 87. `GetMacroSpell(macroIndex)` — easy
 

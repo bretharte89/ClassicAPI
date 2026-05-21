@@ -214,6 +214,7 @@ build instructions.
   - [`IsFalling()`](#isfalling)
   - [`IsSwimming()`](#isswimming)
   - [`IsAssistingRitual()`](#isassistingritual)
+  - [`GetMirrorTimerInfo(index)` / `GetMirrorTimerProgress(label)`](#getmirrortimerinfoindex--getmirrortimerprogresslabel)
 
 - [Table](#table)
   - [`table.wipe(t)`](#tablewipet)
@@ -4772,6 +4773,59 @@ Local-player only — the `+0xB4` pointer lives on the CGPlayer
 object, not in the broadcast descriptor, so the function can't
 report state for `target` / `party*` / etc. Returns `false` when
 called before the player object is initialized (login screen).
+
+### `GetMirrorTimerInfo(index)` / `GetMirrorTimerProgress(label)`
+
+Modern (3.0+) readers for the BREATH (drowning) / EXHAUSTION
+(off-map) / FEIGNDEATH (hunter Feign Death) bar state. The vanilla
+engine fires the `MIRROR_TIMER_START` / `_PAUSE` / `_STOP` events
+with the full packet payload but doesn't cache anything internally;
+ClassicAPI hooks the SMSG handler at `0x005E7990` and builds a
+3-slot side cache so these accessors work.
+
+`GetMirrorTimerInfo(index)` — `index` is 1, 2, or 3 (slot id). Returns
+`(timer, value, maxValue, scale, paused, label)` for an active slot,
+or nothing if that slot is empty:
+
+| Return | Type | Meaning |
+|--------|------|---------|
+| `timer` | string | Engine type-name: `"EXHAUSTION"`, `"BREATH"`, or `"FEIGNDEATH"` |
+| `value` | number | The snapshot value from the last server packet (ms). Not live-interpolated — see `GetMirrorTimerProgress` for that |
+| `maxValue` | number | Timer's max (ms) |
+| `scale` | number | Server-set rate. **Negative** = depleting (vanilla sends `-1` for breath, draining 60000 ms over 60 s of real time); **positive** = filling. Modern's docs describe the opposite convention — vanilla's wire format predates that flip |
+| `paused` | boolean | `true` if the engine has frozen the timer |
+| `label` | string | Localized display label, e.g. `"Breath"`. For FEIGNDEATH, the spell name |
+
+`GetMirrorTimerProgress(label)` — `label` is the engine type-name
+(`"BREATH"` etc.). Returns the **live interpolated** value in
+milliseconds, computed each call from the snapshot + elapsed
+real-time ticks. Returns `0` when no matching timer is active.
+
+```lua
+local f = CreateFrame("Frame")
+f:RegisterEvent("MIRROR_TIMER_START")
+f:SetScript("OnEvent", function()
+    -- pull whichever slot the engine just populated
+    for i = 1, 3 do
+        local timer, value, maxv, scale, paused, label = GetMirrorTimerInfo(i)
+        if timer then
+            DEFAULT_CHAT_FRAME:AddMessage(format("%s: %d / %d (%s)",
+                label, value, maxv, paused and "paused" or "running"))
+        end
+    end
+end)
+
+-- Smooth bar updates: poll progress in OnUpdate
+local function OnUpdate(self)
+    self:SetValue(GetMirrorTimerProgress("BREATH"))
+end
+```
+
+> **Modern uses `"FATIGUE"`, vanilla uses `"EXHAUSTION"`.** The engine
+> type-name string for the off-map timer is `"EXHAUSTION"` in 1.12 —
+> we surface what the engine actually returns rather than translating
+> to modern's name. Addons backporting `"FATIGUE"`-keyed code need to
+> handle either string.
 
 ## Table
 

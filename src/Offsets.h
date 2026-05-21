@@ -2531,4 +2531,47 @@ enum Offsets {
     FUN_GOSSIP_SELECT_AVAILABLE_QUEST = 0x004E24B0,
     FUN_GOSSIP_SELECT_ACTIVE_QUEST = 0x004E2600,
     FUN_SCRIPT_CLOSE_GOSSIP = 0x004E2B20,
+
+    // CDataStore primitive readers — `__thiscall void(this, void *out)`.
+    // Read at the current cursor (`+0x14`) and advance it by the value
+    // size. We call these directly from `Unit::MirrorTimer` to peek
+    // packet contents before the SMSG handler consumes them, then
+    // restore the cursor so the original handler reads the same bytes.
+    FUN_DATASTORE_READ_U32 = 0x00418E30,
+    FUN_DATASTORE_READ_U8 = 0x00418CB0,
+    OFF_DATASTORE_CURSOR = 0x14,
+
+    // Engine millisecond tick (returns `ulonglong` but truncating to
+    // `uint32_t` is fine for the time deltas we need — the high
+    // 32 bits only matter after 49 days of uptime). Same source the
+    // Lua `GetTime()` function reads, just in milliseconds rather
+    // than the seconds Lua sees. Returns either `GetTickCount()` or
+    // a higher-resolution timer depending on the engine's clock-
+    // selection flag at `0x00884C80`.
+    FUN_ENGINE_TICK_MS = 0x0042B750,
+
+    // Mirror timer (BREATH / FATIGUE-style) SMSG handler. Dispatches
+    // opcodes `0x1D9` (START), `0x1DA` (PAUSE), `0x1DB` (STOP) — but
+    // the vanilla engine doesn't cache any timer state, just reads
+    // the packet and immediately fires the corresponding
+    // MIRROR_TIMER_* Lua event. Our hook (`Unit::MirrorTimer`) peeks
+    // the packet via cursor save/restore on the CDataStore and
+    // builds a side cache that `GetMirrorTimerInfo` /
+    // `GetMirrorTimerProgress` can read back.
+    //
+    //   __fastcall void(?, int opcode, ?, void *dataStore)
+    //
+    // The helper at `FUN_MIRROR_TIMER_TYPE_NAME` returns the
+    // engine's static type-name string for IDs 0..2 (`"EXHAUSTION"`,
+    // `"BREATH"`, `"FEIGNDEATH"`); `FUN_MIRROR_TIMER_LABEL` builds
+    // the localized display label by looking up `{TYPE}_LABEL` in
+    // the engine's localized strings, or substituting the spell
+    // name when the type is FEIGNDEATH and a spellID is non-zero.
+    FUN_SMSG_MIRROR_TIMER_HANDLER = 0x005E7990,
+    FUN_MIRROR_TIMER_TYPE_NAME = 0x005E7AE0,
+    FUN_MIRROR_TIMER_LABEL = 0x005E7B10,
+    SMSG_OPCODE_MIRROR_TIMER_START = 0x1D9,
+    SMSG_OPCODE_MIRROR_TIMER_PAUSE = 0x1DA,
+    SMSG_OPCODE_MIRROR_TIMER_STOP = 0x1DB,
+    MIRROR_TIMER_SLOT_COUNT = 3,
 };
