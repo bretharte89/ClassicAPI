@@ -203,6 +203,7 @@ build instructions.
   - [`IsSpellKnown(spellID, [isPet])`](#isspellknownspellid-ispet)
   - [`IsUsableSpell(spell)` / `IsUsableSpell(slot, bookType)`](#isusablespellspell--isusablespellslot-booktype)
   - [`C_Spell.IsSpellUsable(spellID)`](#c_spellisspellusablespellid)
+  - [`C_Spell.GetSpellCooldown(spellIdentifier)`](#c_spellgetspellcooldownspellidentifier)
   - [`IsHarmfulSpell(spell)` / `IsHelpfulSpell(spell)`](#isharmfulspellspell--ishelpfulspellspell)
   - [`C_Spell.IsSpellHarmful(spellID)` / `C_Spell.IsSpellHelpful(spellID)`](#c_spellisspellharmfulspellid--c_spellisspellhelpfulspellid)
   - [`C_SpellBook.GetSpellLevelLearned(spellID)`](#c_spellbookgetspelllevellearnedspellid)
@@ -4466,6 +4467,44 @@ local usable, noMana = C_Spell.IsSpellUsable(133)
 -- usable=false, noMana=true  → drink up
 -- usable=false, noMana=false → unknown spell, dead, or other block
 ```
+
+### `C_Spell.GetSpellCooldown(spellIdentifier)`
+
+Returns a `SpellCooldownInfo` table for the given spellID, name,
+name(rank), or `|Hspell:N|h` hyperlink, or `nil` if the spell isn't
+in `Spell.dbc`. Modern table-shape variant of vanilla's
+`GetSpellCooldown(slot, bookType)` — accepts a spellID directly
+without forcing the caller to resolve a spellbook slot first.
+
+```lua
+local info = C_Spell.GetSpellCooldown(1953)   -- Blink
+-- on cooldown:   { startTime=728565.79, duration=15, isEnabled=true, modRate=1 }
+-- off cooldown:  { startTime=0,         duration=0,  isEnabled=true, modRate=1 }
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `startTime` | number | Engine tick count (seconds) when the cooldown began. Same epoch as `GetTime()`, so `info.startTime + info.duration` is the absolute time the cooldown ends. `0` when no cooldown active. |
+| `duration` | number | Cooldown length in seconds; `0` when no cooldown active. |
+| `isEnabled` | boolean | `false` when the cooldown is "on hold" (e.g. some channeled abilities). `true` for normal cooldowns. |
+| `modRate` | number | Always `1.0` — vanilla has no haste-on-cooldown mechanic. |
+
+Modern-only fields (`activeCategory`, `timeUntilEndOfStartRecovery`,
+`isOnGCD`) read as `nil` since they have no vanilla source.
+
+Identifier resolution:
+
+- **number** → used directly as a spellID.
+- **`|Hspell:N|h` hyperlink** → spellID parsed out of the link
+  payload. Useful for `C_Spell.GetSpellCooldown(GetSpellLink(id))`.
+- **name string** → resolved via the engine's
+  `FUN_RESOLVE_SPELL_NAME_TO_BOOK_ID` (the same chain
+  `CastSpellByName` uses). Respects `(Rank N)` suffixes; only matches
+  spells in the **player's known spellbook**, not arbitrary
+  Spell.dbc rows.
+
+Returns `nil` if the resolved spellID is `0` or doesn't have a
+`Spell.dbc` row.
 
 ### `C_Item.GetWeaponEnchantInfo()`
 

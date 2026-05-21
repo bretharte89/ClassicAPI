@@ -1539,13 +1539,21 @@ enum Offsets {
     VAR_PLAYER_SPELL_BITMAP = 0x00B710FC,
 
     // Per-spell cooldown query. `__fastcall(int spellID, int bookType,
-    // int *outStart, int *outDuration, int *outEnable)`. Same path
+    // int *outDuration, int *outStart, int *outEnable)`. Same path
     // `Script_GetSpellCooldown` (`0x004B40A0`) uses internally after
     // resolving the (slot, bookType) Lua args to a spellID — we
     // bypass the slot resolution and pass spellID directly with
     // `bookType=0` (player) since that's the standard
     // `IsUsableSpell(spellID)` use case. `outDuration > 0` means the
     // spell is currently on cooldown.
+    //
+    // **Argument order**: verified via `Script_C_Spell_GetSpellCooldown`
+    // round-trip test (Blink, spellID 1953) — the third arg receives
+    // the cooldown duration (e.g. 15000 ms for Blink), the fourth
+    // receives the engine tick count at start (`FUN_OS_TICKCOUNT_MS`).
+    // Both are 0 when no cooldown is active. The CMaNGOS-leaning
+    // documentation in other emulator projects has these reversed —
+    // don't trust it for this entry.
     FUN_SPELL_QUERY_COOLDOWN = 0x006E2EA0,
 
     // Spell.dbc reagent fields. Per CMaNGOS vanilla `SpellEntry` —

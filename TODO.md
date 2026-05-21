@@ -1090,29 +1090,22 @@ slot-and-bookType return shape, not for knowledge queries.
 See [src/spell/Info.cpp](src/spell/Info.cpp) and
 `VAR_PLAYER_SPELL_BITMAP` in [src/Offsets.h](src/Offsets.h).
 
-## 48. `GetSpellCooldown(spellID)` overload — easy
+## ~~48. `GetSpellCooldown(spellID)` overload~~ — DONE (via `C_Spell.GetSpellCooldown`)
 
-Modern signature accepts a spellID directly. 1.12 only has
-`GetSpellCooldown(slot, bookType)` which forces callers to first
-resolve a spellID into a spellbook slot (and fails for spellIDs not
-in the spellbook — talent passives, recipes, etc.).
+Shipped as the modern table-shape variant in
+[src/spell/Cooldown.cpp](src/spell/Cooldown.cpp): `C_Spell.GetSpellCooldown(spellIdentifier)`
+accepts number / name / name(rank) / `|Hspell:N|h` link and returns
+a `SpellCooldownInfo` table. The original goal — "query cooldowns by
+spellID without forcing the caller to resolve a spellbook slot first"
+— is covered.
 
-The engine clearly tracks cooldowns by spellID internally (the
-existing slot-based version reads spellbook[slot] and feeds the
-spellID to a downstream cooldown manager). Cross-binary technique
-applies cleanly:
-
-1. Find `Script_GetSpellCooldown` in 5.4.8 — the modern overload
-   that takes spellID directly.
-2. Decode it to identify the cooldown manager's data structure
-   (likely a hashmap/array indexed by spellID with `(start, duration,
-   enable)` triple per entry).
-3. Search 1.12 for the same access pattern.
-4. Wrap as a global `GetSpellCooldown(spellIDOrSlot, [bookType])` that
-   detects the arg shape and routes accordingly.
-
-Useful for any cooldown-tracking addon that wants to query talent
-abilities or off-spellbook spells.
+Reads the engine's per-spell cooldown manager at
+`FUN_SPELL_QUERY_COOLDOWN` (`0x006E2EA0`), which `Script_GetSpellCooldown`
+also goes through internally after its slot-resolution step. Fixed
+the `(*outDuration, *outStart)` argument order while doing this —
+the typedef in `Spell::Usable` had them reversed (worked anyway
+because both fields are 0 off-cooldown, but the var names were
+backward).
 
 ## ~~49. `IsUsableSpell(spell)` / `C_Spell.IsSpellUsable(spellID)`~~ — DONE
 

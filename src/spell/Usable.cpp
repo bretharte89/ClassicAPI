@@ -63,19 +63,20 @@ const uint8_t *PlayerDescriptor() {
 // for the player spellbook (bookType=0). Returns true if the spell
 // has an active cooldown.
 //
-// `__fastcall(spellID, bookType, *start, *duration, *enable)` —
-// duration is the engine's raw value (milliseconds; the Lua-side
-// `Script_GetSpellCooldown` multiplies by 0.001 before pushing).
-// We don't care about the unit, just `> 0` vs `== 0`.
+// `__fastcall(spellID, bookType, *duration, *start, *enable)` —
+// duration is the engine's raw cooldown length in milliseconds (the
+// Lua-side `Script_GetSpellCooldown` multiplies by 0.001 before
+// pushing), start is the absolute engine tick count when the
+// cooldown began. Both are 0 when no cooldown is active.
 using QueryCooldown_t = void(__fastcall *)(int spellID, int bookType,
-                                            int *outStart,
                                             int *outDuration,
+                                            int *outStart,
                                             int *outEnable);
 
 bool IsOnCooldown(int spellID) {
     auto fn = reinterpret_cast<QueryCooldown_t>(Offsets::FUN_SPELL_QUERY_COOLDOWN);
-    int start = 0, duration = 0, enable = 0;
-    fn(spellID, 0 /* bookType=player */, &start, &duration, &enable);
+    int duration = 0, start = 0, enable = 0;
+    fn(spellID, 0 /* bookType=player */, &duration, &start, &enable);
     return duration > 0;
 }
 
