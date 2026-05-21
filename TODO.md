@@ -460,12 +460,12 @@ Non-zero = equippable. Lives in `item/Equipment.cpp` alongside
 Synchronous; returns `false` on cache miss without firing a load.
 Namespaced under `C_Item` to match Classic Era 1.15.x.
 
-## 27. `IsEquippedItem(item)` — easy
+## ~~27. `IsEquippedItem(item)`~~ — DONE
 
-Boolean: is the item currently equipped on the player? Walk equipment
-slots 1..19 via the same `Item::Location::ResolveEquipmentSlot` chain
-the existing accessors use, then `Item::ID::FromCGItem` for each one
-and compare to the input itemID. Returns true on first match.
+Shipped as `C_Item.IsEquippedItem` in
+[src/item/Equipment.cpp](src/item/Equipment.cpp). Walks equipment
+slots 1..19, reads each CGItem's itemID, returns true on first match
+against the input (accepts itemID, `item:NNN` link, or chat link).
 
 ## ~~28. `C_Item.GetItemCount(itemInfo, [includeBank], [includeUses])`~~ — DONE
 
