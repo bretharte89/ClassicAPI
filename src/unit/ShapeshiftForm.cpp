@@ -13,7 +13,9 @@
 
 #include "Game.h"
 #include "Offsets.h"
+#include "aura/Data.h"
 #include "event/Custom.h"
+#include "spell/Lookup.h"
 
 #include <cstdint>
 
@@ -22,6 +24,7 @@ namespace Unit::ShapeshiftForm {
 namespace {
 
 using ResolveUnitToken_t = void *(__fastcall *)(const char *token);
+using CancelAuraSend_t = void(__fastcall *)(int spellID);
 
 // Read the local player's current shapeshift form byte. Returns
 // `-1` if the player CGUnit / descriptor isn't resolvable (yet) —
@@ -74,8 +77,60 @@ int __fastcall Script_GetShapeshiftFormID(void *L) {
     return 1;
 }
 
+// `CancelShapeshiftForm()` — drops whatever shapeshift the player is
+// currently in. Walks the player's buff slots, scans each spell's
+// `EffectApplyAuraName[3]` for `SPELL_AURA_MOD_SHAPESHIFT` paired with
+// an `EffectMiscValue` matching the current form byte, and sends a
+// `CMSG_CANCEL_AURA` for the spellID that owns that aura.
+//
+// Mirrors 3.3.5's `Script_CancelShapeshiftForm` inner (`FUN_00726CE0`),
+// which does the same effect-array scan + form-id match. Vanilla
+// 1.12.1 doesn't ship the function — the canonical workaround was
+// to re-`CastSpellByName(currentFormName)` to toggle, but that
+// requires the addon to know which form is active. Modern's no-arg
+// shape is far easier to use.
+//
+// No-op if the player isn't in a form, can't be resolved, or no
+// matching aura is found.
+int __fastcall Script_CancelShapeshiftForm(void *L) {
+    const int form = ReadCurrentForm();
+    if (form <= 0)
+        return 0;
+
+    auto resolve = reinterpret_cast<ResolveUnitToken_t>(Offsets::FUN_RESOLVE_UNIT_TOKEN);
+    auto *player = static_cast<const uint8_t *>(resolve("player"));
+    if (player == nullptr)
+        return 0;
+
+    for (int slot = 0; slot < Offsets::UNIT_AURA_BUFF_COUNT; ++slot) {
+        if (!Aura::Data::IsSlotPopulated(player, slot))
+            continue;
+        const uint32_t spellID = Aura::Data::ReadSpellID(player, slot);
+        const uint8_t *record = Spell::Lookup::RecordForID(static_cast<int>(spellID));
+        if (record == nullptr)
+            continue;
+
+        auto *auraTypes = reinterpret_cast<const int32_t *>(
+            record + Offsets::OFF_SPELL_RECORD_EFFECT_APPLY_AURA_NAME);
+        auto *miscValues = reinterpret_cast<const int32_t *>(
+            record + Offsets::OFF_SPELL_RECORD_EFFECT_MISC_VALUE);
+        for (int eff = 0; eff < Offsets::SPELL_RECORD_EFFECT_COUNT; ++eff) {
+            if (auraTypes[eff] != Offsets::SPELL_AURA_MOD_SHAPESHIFT)
+                continue;
+            if (miscValues[eff] != form)
+                continue;
+            auto fn = reinterpret_cast<CancelAuraSend_t>(
+                static_cast<uintptr_t>(Offsets::FUN_CANCEL_AURA_SEND));
+            fn(static_cast<int>(spellID));
+            return 0;
+        }
+    }
+    return 0;
+}
+
 void RegisterLuaFunctions() {
     Game::Lua::RegisterGlobalFunction("GetShapeshiftFormID", &Script_GetShapeshiftFormID);
+    Game::Lua::RegisterGlobalFunction("CancelShapeshiftForm", &Script_CancelShapeshiftForm);
 }
 
 const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};

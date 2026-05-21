@@ -2522,6 +2522,23 @@ enum Offsets {
     OFF_SPELL_RECORD_CREATED_ITEM = 0x19C,
     SPELL_RECIPE_MAX_REAGENTS = 8,
 
+    // Spell.dbc effect arrays — three effects per spell. Derived
+    // from `Script_CastShapeshiftForm` (`0x004B4810`): the form-toggle
+    // check reads `spellRec[+0x16C + i*4]` for the per-effect aura
+    // type, and `spellRec[+0x1A8 + i*4]` for that effect's misc
+    // value. Cross-checked against 3.3.5's `FUN_00726CE0`
+    // (`Script_CancelShapeshiftForm`'s inner), which does the same
+    // pair of reads against `0x24` (= `SPELL_AURA_MOD_SHAPESHIFT`)
+    // and a form-id compare.
+    //
+    // `EffectApplyAuraName[i]` is the SPELL_AURA_* code (0 = none /
+    // not an aura effect); `EffectMiscValue[i]` is effect-specific
+    // (form ID for shapeshift, channel index for periodic, etc.).
+    OFF_SPELL_RECORD_EFFECT_APPLY_AURA_NAME = 0x16C,  // int32[3]
+    OFF_SPELL_RECORD_EFFECT_MISC_VALUE = 0x1A8,       // int32[3]
+    SPELL_RECORD_EFFECT_COUNT = 3,
+    SPELL_AURA_MOD_SHAPESHIFT = 36,
+
     // Gossip menu data. Populated by the SMSG_GOSSIP_MESSAGE packet
     // handler at 0x004E26E0 and reset by FUN_004E26A0 each time a new
     // gossip window opens. Two parallel storage arrays:

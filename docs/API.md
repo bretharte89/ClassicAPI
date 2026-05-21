@@ -218,6 +218,7 @@ build instructions.
   - [`IsAssistingRitual()`](#isassistingritual)
   - [`GetMirrorTimerInfo(index)` / `GetMirrorTimerProgress(label)`](#getmirrortimerinfoindex--getmirrortimerprogresslabel)
   - [`GetShapeshiftFormID()`](#getshapeshiftformid)
+  - [`CancelShapeshiftForm()`](#cancelshapeshiftform)
   - [`UPDATE_SHAPESHIFT_FORM` event](#update_shapeshift_form-event)
 
 - [Table](#table)
@@ -4948,6 +4949,42 @@ needing an event listener.
 Vanilla 1.12 has only `GetShapeshiftFormInfo(index)` (1-based bar
 index); `GetShapeshiftFormID` exposes the DBC ID directly so callers
 can write `if formID == CAT_FORM` without iterating the bar.
+
+### `CancelShapeshiftForm()`
+
+Cancels the player's current shapeshift form, dropping them back to
+caster (or whatever neutral state the class uses). No-op when the
+player isn't shifted.
+
+```lua
+if GetShapeshiftFormID() ~= 0 then
+    CancelShapeshiftForm()
+end
+```
+
+Covers every form vanilla and Turtle WoW define: druid forms, warrior
+stances, hunter aspects-that-are-shapeshifts, shaman Ghost Wolf, rogue
+Stealth, priest Shadowform / Spirit of Redemption. No form table
+hardcoding — the implementation finds whichever buff currently provides
+the active form by scanning `Spell.dbc` effects.
+
+Vanilla 1.12 doesn't ship `CancelShapeshiftForm` (added in later
+expansions). The classic workaround was
+`CastSpellByName(currentFormName)` to toggle, which required the addon
+to know the active form's name *and* its rank. This wrapper is no-arg
+to match modern's shape.
+
+**Implementation**: reads the current form byte (descriptor `+0x212`,
+same source as [`GetShapeshiftFormID()`](#getshapeshiftformid)), walks
+the player's buff slots (0..31), looks up each spell's
+`Spell.dbc[spellID]` effect arrays, and on the first effect whose
+`EffectApplyAuraName` is `SPELL_AURA_MOD_SHAPESHIFT` (`36`) and whose
+`EffectMiscValue` matches the current form ID, sends `CMSG_CANCEL_AURA`
+via the engine's direct sender at [`FUN_006E7040`](../src/Offsets.h#L428).
+
+Mirrors 3.3.5a's `Script_CancelShapeshiftForm` inner (`FUN_00726CE0`),
+which does the same effect-array scan + form-id match before issuing
+its cancel packet. Vanilla just lacks the public Lua surface.
 
 ### `UPDATE_SHAPESHIFT_FORM` event
 
