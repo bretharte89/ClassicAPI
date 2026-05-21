@@ -4818,12 +4818,6 @@ that spellID via the same direct sender [`C_Spell.CancelSpellByID`](#c_spellcanc
 time the server processes the cancel, `IsMounted()` will return
 `false`.
 
-Vanilla 1.12 ships no equivalent — addons that wanted programmatic
-dismount had to find the mount buff in `GetPlayerBuff` and call
-`CancelPlayerBuff` on its 0-based index. Modern's no-arg shape is
-simpler and doesn't depend on the addon knowing where in the buff
-table the mount lives.
-
 ### `IsStealthed()`
 
 Returns `true` if the player is currently in Stealth (Rogue) or
@@ -5047,12 +5041,6 @@ by scanning `Spell.dbc` effects.
 > server rejects the cancel packet for stances, so this function is a
 > no-op when called as a warrior. Switch stances with the normal stance
 > spells instead.
-
-Vanilla 1.12 doesn't ship `CancelShapeshiftForm` (added in later
-expansions). The classic workaround was
-`CastSpellByName(currentFormName)` to toggle, which required the addon
-to know the active form's name *and* its rank. This wrapper is no-arg
-to match modern's shape.
 
 **Implementation**: reads the current form byte (descriptor `+0x212`,
 same source as [`GetShapeshiftFormID()`](#getshapeshiftformid)), walks
