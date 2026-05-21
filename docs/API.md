@@ -4188,7 +4188,7 @@ local link = GetSpellLink(133)
 DEFAULT_CHAT_FRAME:AddMessage("Cast " .. link .. "!")
 
 -- Walking the spellbook to print every learned spell:
-for slot = 1, GetNumSpellTabs() and 100 or 100 do
+for slot = 1, 1000 do
     local link, id = GetSpellLink(slot, "spell")
     if not link then break end
     -- ...
