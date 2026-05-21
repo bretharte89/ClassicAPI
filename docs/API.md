@@ -147,6 +147,8 @@ build instructions.
   - [`C_Item.DoesItemExist(itemLocation)` / `C_Item.DoesItemExistByID(item)`](#c_itemdoesitemexititemlocation--c_itemdoesitemexistbyiditem)
   - [`C_Item.GetItemName(itemLocation)` / `C_Item.GetItemNameByID(item)`](#c_itemgetitemnameitemlocation--c_itemgetitemnamebyiditem)
   - [`C_Item.GetItemQuality(itemLocation)` / `C_Item.GetItemQualityByID(item)`](#c_itemgetitemqualityitemlocation--c_itemgetitemqualitybyiditem)
+  - [`C_Item.GetItemSetID(itemLocation)` / `C_Item.GetItemSetIDByID(item)`](#c_itemgetitemsetiditemlocation--c_itemgetitemsetidbyiditem)
+  - [`C_Item.GetItemSetInfo(setID)`](#c_itemgetitemsetinfosetid)
   - [`C_Item.GetItemSellPrice(itemLocation)` / `C_Item.GetItemSellPriceByID(item)`](#c_itemgetitemsellpriceitemlocation--c_itemgetitemsellpricebyiditem)
   - [`C_Item.GetCurrentItemLevel(itemLocation)` / `C_Item.GetDetailedItemLevelInfo(item)`](#c_itemgetcurrentitemlevelitemlocation--c_itemgetdetaileditemlevelinfoitem)
   - [`C_Item.GetItemMaxStackSize(itemLocation)` / `C_Item.GetItemMaxStackSizeByID(item)`](#c_itemgetitemmaxstacksizeitemlocation--c_itemgetitemmaxstacksizebyiditem)
@@ -3102,6 +3104,63 @@ if C_Item.GetItemQualityByID(itemID) >= LE_ITEM_QUALITY_RARE then
     -- highlight rare-or-better drop
 end
 ```
+
+### `C_Item.GetItemSetID(itemLocation)` / `C_Item.GetItemSetIDByID(item)`
+
+Returns the `ItemSet.dbc` ID for the item if it's part of an
+equipment set (e.g., `181` for any Magister's Regalia piece), or
+`nil` if the item isn't part of any set / the item isn't cached /
+the slot is empty.
+
+```lua
+local setID = C_Item.GetItemSetIDByID(16682)   -- Magister's Regalia: 181
+local setID = C_Item.GetItemSetIDByID(6948)    -- Hearthstone: nil
+
+-- by itemLocation (worn or in-bag)
+local chestSet = C_Item.GetItemSetID({ equipmentSlotIndex = 5 })
+```
+
+This is the 16th return of modern WoW's `GetItemInfo` (the `setID`
+field). Single `uint32` read at cache record `+0x1C0`
+(`m_itemSet`). Same cache-warm pattern as the other `*ByID` getters
+— cache misses return `nil` and fire a background load; call
+`C_Item.RequestLoadItemDataByID(itemID)` if you need synchronous-
+after-event resolution.
+
+### `C_Item.GetItemSetInfo(setID)`
+
+Returns a table describing the item set, or `nil` if `setID`
+doesn't resolve to an `ItemSet.dbc` row.
+
+```lua
+local info = C_Item.GetItemSetInfo(181)
+-- {
+--   setID = 181,
+--   name = "Magister's Regalia",
+--   requiredSkill = 0,
+--   requiredSkillRank = 0,
+--   items = { 16685, 16683, 16686, 16684, 16687, 16689, 16688, 16682 },
+--   bonuses = {
+--     { spellID = 29091, threshold = 2 },   -- 2-piece bonus
+--     { spellID = 27867, threshold = 6 },   -- 6-piece bonus
+--     { spellID = 18679, threshold = 8 },   -- 8-piece bonus
+--     { spellID = 30777, threshold = 4 },   -- 4-piece bonus
+--   },
+-- }
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `setID` | number | Echo of the input. |
+| `name` | string | Localized set name. |
+| `requiredSkill` | number | Skill line ID required to use the set; `0` if none. |
+| `requiredSkillRank` | number | Required rank in that skill line; `0` if none. |
+| `items` | array | itemIDs in the set. Empty slots filtered, so `#info.items` is the real item count. Order is the engine's own (matches the set's order in the DBC; not necessarily slot-sorted). |
+| `bonuses` | array | `{ spellID, threshold }` tables for each non-empty set-bonus slot. `threshold` is the number of equipped set pieces required to grant `spellID`. Order is the DBC's; bonuses with the same threshold are not normalized. |
+
+Reads `ItemSet.dbc` directly — no cache warm-up needed (DBCs load at
+boot). Returns `nil` for `setID == 0`, out-of-range IDs, or rows
+that don't exist.
 
 ### `C_Item.GetItemSellPrice(itemLocation)` / `C_Item.GetItemSellPriceByID(item)`
 

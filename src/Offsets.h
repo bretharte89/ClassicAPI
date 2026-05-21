@@ -887,6 +887,15 @@ enum Offsets {
     // (Found via xref scan for `mov reg, [reg+0x1D0]` in `.text`.)
     OFF_ITEMSTATS_BAG_FAMILY = 0x1D0,
 
+    // `m_itemSet` — ItemSet.dbc row ID for items that belong to an
+    // armor / equipment set. 0 for items not part of any set.
+    // Position derived by counting fields up through `m_block` per
+    // VanillaHelpers's `ItemStats_C` (m_block at +0x1BC; m_itemSet
+    // is the next u32). Verified against `m_bagFamily` already
+    // confirmed at +0x1D0 — m_itemSet sits 16 bytes earlier with
+    // `m_maxDurability`, `m_area`, `m_map` between the two.
+    OFF_ITEMSTATS_ITEM_SET = 0x1C0,
+
     // Item-spell tables — five parallel arrays starting at +0x11C in
     // each `ItemStats_C` record. Each item has up to 5 spell slots
     // (vanilla server data uses ≤2 for most items: e.g. Hearthstone
@@ -958,6 +967,35 @@ enum Offsets {
     VAR_ITEMDISPLAYINFO_RECORDS = 0x00C0DC10,
     VAR_ITEMDISPLAYINFO_COUNT = 0x00C0DC14,
     OFF_ITEMDISPLAYINFO_ICON = 0x14,
+
+    // ItemSet.dbc — armor/equipment set definitions referenced by
+    // `ItemStats_C::m_itemSet`. Standard 5-DWORD class shape at
+    // 0x00C0DBB8 (records-ptr at +0x08, count at +0x0C). 45 columns,
+    // 0xB4-byte record stride. Field layout derived from the per-
+    // record reader at `FUN_0057BBA0`:
+    //
+    //   +0x00 (4)    ID
+    //   +0x04 (32)   Name[8]   — localized strings, 8 LOCALES (not 9
+    //                            like Spell.dbc / ChrRaces.dbc — clamp
+    //                            VAR_LOCALE_INDEX to 0..7 before reading)
+    //   +0x24 (4)    unused / flags
+    //   +0x28 (68)   ItemID[17]      — items in the set (zero = empty slot)
+    //   +0x6C (32)   SetSpellID[8]   — bonus spells granted by the set
+    //   +0x8C (32)   SetThreshold[8] — pieces needed for each SetSpellID
+    //                                  (e.g. {2, 4, 6, 8, 0, 0, 0, 0})
+    //   +0xAC (4)    RequiredSkill   — skill line ID, 0 for none
+    //   +0xB0 (4)    RequiredSkillRank
+    VAR_ITEMSET_RECORDS = 0x00C0DBC0,
+    VAR_ITEMSET_COUNT = 0x00C0DBC4,
+    OFF_ITEMSET_NAMES = 0x04,
+    OFF_ITEMSET_ITEM_IDS = 0x28,
+    OFF_ITEMSET_SPELL_IDS = 0x6C,
+    OFF_ITEMSET_THRESHOLDS = 0x8C,
+    OFF_ITEMSET_REQUIRED_SKILL = 0xAC,
+    OFF_ITEMSET_REQUIRED_SKILL_RANK = 0xB0,
+    ITEMSET_MAX_ITEMS = 17,
+    ITEMSET_MAX_BONUSES = 8,
+    ITEMSET_LOCALE_COUNT = 8,
 
     // INVTYPE_* string table — array of char* indexed by m_inventoryType.
     // Index 0 is empty (0=INVTYPE_NON_EQUIP), indices 1..28 are valid
