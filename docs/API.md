@@ -96,6 +96,7 @@ build instructions.
   - [`GameTooltip:GetItem()`](#gametooltipgetitem)
   - [`GameTooltip:GetSpell()`](#gametooltipgetspell)
   - [`GameTooltip:HasItem()` / `GameTooltip:HasSpell()`](#gametooltiphasitem--gametooltiphasspell)
+  - [`GameTooltip:GetUnitGUID()` / `GameTooltip:HasUnit()`](#gametooltipgetunitguid--gametooltiphasunit)
 
 - [Globals](#globals)
   - [`CLASSIC_API_VERSION`](#classic_api_version)
@@ -1898,6 +1899,42 @@ end
 
 Equivalent to the functions of the same name introduced in 3.0
 (`HasItem`) and 6.0 (`HasSpell`).
+
+### `GameTooltip:GetUnitGUID()` / `GameTooltip:HasUnit()`
+
+`GetUnitGUID()` returns `(guidString, name)` for whichever unit the
+tooltip is currently displaying, or nothing if it isn't showing a
+unit. `guidString` is the canonical `"0xHHHHHHHHLLLLLLLL"` format
+returned by [`UnitGUID(unit)`](#unitguidunit). `name` is the unit's
+display name — the same string that appears in the tooltip header,
+or one of the engine's `"UNKNOWNOBJECT"` / `"Unknown Being"` fallbacks
+for a remote unit whose info hasn't been queried yet.
+
+`HasUnit()` is a boolean companion — returns `true` if the tooltip is
+currently displaying a unit.
+
+```lua
+GameTooltip:SetUnit("target")
+local guid, name = GameTooltip:GetUnitGUID()
+-- guid = "0xF130001234..." (Creature) or "0x000000...ABC123" (Player)
+-- name = "Hogger"
+
+if GameTooltip:HasUnit() then
+    -- cheap predicate, no name-resolution work
+end
+```
+
+> **Why not match modern's `GetUnit()` signature?** Modern WoW's
+> `GetUnit()` returns `(name, unitToken)` where `unitToken` is the
+> exact `"target"` / `"focus"` / `"mouseover"` / etc. string passed
+> to `SetUnit`. Vanilla 1.12 drops the token at the
+> `Script_GameTooltip_SetUnit` boundary — it converts the token to a
+> 64-bit GUID and discards the original string. Reconstructing a
+> plausible token by walking known tokens and reverse-matching by
+> GUID is possible but lossy (multiple tokens can refer to the same
+> GUID — `"target"` and `"raid1"` simultaneously, for instance), so
+> we expose the GUID directly instead, which is what addons actually
+> need for cross-referencing with `UnitGUID`, the NameCache, etc.
 
 ### `GameTooltip:SetTalentByID(talentID)`
 

@@ -13,6 +13,9 @@
 
 #include "Game.h"
 #include "Offsets.h"
+#include "guid/Guid.h"
+
+#include <cstdint>
 
 namespace Unit::Tooltip {
 
@@ -58,8 +61,104 @@ static int __fastcall Script_GameTooltipSetUnitAura(void *L) {
     return fn(L);
 }
 
+// Vanilla 1.12 drops the unit-token string at the `Script_GameTooltip_SetUnit`
+// boundary: the token is resolved to a 64-bit GUID via TokenToGUID, the GUID
+// is passed to the inner `FUN_00529FE0` builder, and the original string is
+// discarded. The builder writes the GUID into `[tooltip + 0x368]` / `+0x36C`
+// and the shared `FUN_00530050` clear zeroes both at the start of every
+// `SetX` call — same gating pattern HasSpell / HasItem use.
+//
+// Modern `GameTooltip:GetUnit()` returns `(name, unitToken)`, but the token
+// can't be recovered exactly in vanilla — multiple unit tokens (`"target"`,
+// `"focus"`, `"mouseover"` etc.) can point at the same GUID at any given
+// moment, and the engine doesn't remember which one was used. The GUID is
+// what addons actually need for cross-referencing (it threads through
+// `UnitGUID`, the NameCache, item-link unique IDs, etc.); exposing it
+// directly as `GetUnitGUID()` avoids inventing a faux token that wouldn't
+// match the original Lua input anyway.
+
+using ObjectResolveByGUID_t = void *(__fastcall *)(int type, const char *debugName,
+                                                   uint32_t guidLo, uint32_t guidHi,
+                                                   int priority);
+using ObjectGetName_t = const char *(__fastcall *)(void *obj, void *edx_unused, int *outFlags);
+
+static const char *ResolveUnitName(uint32_t guidLo, uint32_t guidHi) {
+    auto resolve = reinterpret_cast<ObjectResolveByGUID_t>(
+        Offsets::FUN_OBJECT_RESOLVE_BY_GUID);
+    void *obj = resolve(Offsets::OBJ_TYPE_UNIT, "GameTooltip:GetUnitGUID",
+                        guidLo, guidHi, 0x172);
+    if (obj == nullptr)
+        return nullptr;
+    // `FUN_OBJECT_GET_NAME` is __thiscall — wire as __fastcall with the
+    // ignored EDX slot. Returns a const char* (the canonical display
+    // name for the object); falls back to engine `"UNKNOWNOBJECT"` /
+    // `"Unknown Being"` literals when the unit's name isn't cached.
+    auto getName = reinterpret_cast<ObjectGetName_t>(Offsets::FUN_OBJECT_GET_NAME);
+    return getName(obj, nullptr, nullptr);
+}
+
+// `GameTooltip:GetUnitGUID()` → (guidString, name) for whichever unit
+// the tooltip is currently displaying, or nothing if it isn't showing
+// a unit. `guidString` is the canonical `"0xHHHHHHHHLLLLLLLL"` format
+// matching `UnitGUID(unit)`. `name` is the unit's display name (may
+// be `"UNKNOWNOBJECT"` for a remote unit whose info hasn't been
+// queried yet — same fallback the engine uses internally).
+static int __fastcall Script_GameTooltipGetUnitGUID(void *L) {
+    if (Game::Lua::Type(L, 1) != Game::Lua::TYPE_TABLE) {
+        Game::Lua::Error(L, "Usage: GameTooltip:GetUnitGUID()");
+        return 0;
+    }
+    void *tooltipObj = Game::Lua::ResolveObject(L, 1);
+    if (tooltipObj == nullptr)
+        return 0;
+
+    const auto *base = static_cast<const uint8_t *>(tooltipObj);
+    const uint32_t guidLo = *reinterpret_cast<const uint32_t *>(
+        base + Offsets::OFF_TOOLTIP_UNIT_GUID_LO);
+    const uint32_t guidHi = *reinterpret_cast<const uint32_t *>(
+        base + Offsets::OFF_TOOLTIP_UNIT_GUID_HI);
+    if (guidLo == 0 && guidHi == 0)
+        return 0;
+
+    const uint64_t guid = (static_cast<uint64_t>(guidHi) << 32) | guidLo;
+    char buf[Guid::STRING_SIZE];
+    Game::Lua::PushString(L, Guid::FormatAsString(guid, buf, sizeof buf));
+
+    const char *name = ResolveUnitName(guidLo, guidHi);
+    if (name != nullptr)
+        Game::Lua::PushString(L, name);
+    else
+        Game::Lua::PushNil(L);
+    return 2;
+}
+
+// `GameTooltip:HasUnit()` — boolean companion to `GetUnitGUID`. Returns
+// true iff the tooltip is currently showing a unit (i.e., the stored
+// GUID is non-zero, which the shared tooltip-clear zeroes on every
+// new `SetX` call).
+static int __fastcall Script_GameTooltipHasUnit(void *L) {
+    if (Game::Lua::Type(L, 1) != Game::Lua::TYPE_TABLE) {
+        Game::Lua::Error(L, "Usage: GameTooltip:HasUnit()");
+        return 0;
+    }
+    void *tooltipObj = Game::Lua::ResolveObject(L, 1);
+    if (tooltipObj == nullptr) {
+        Game::Lua::PushBool(L, false);
+        return 1;
+    }
+    const auto *base = static_cast<const uint8_t *>(tooltipObj);
+    const uint32_t guidLo = *reinterpret_cast<const uint32_t *>(
+        base + Offsets::OFF_TOOLTIP_UNIT_GUID_LO);
+    const uint32_t guidHi = *reinterpret_cast<const uint32_t *>(
+        base + Offsets::OFF_TOOLTIP_UNIT_GUID_HI);
+    Game::Lua::PushBool(L, guidLo != 0 || guidHi != 0);
+    return 1;
+}
+
 static const Game::Lua::FrameMethodEntry g_methods[] = {
     {"SetUnitAura", &Script_GameTooltipSetUnitAura},
+    {"GetUnitGUID", &Script_GameTooltipGetUnitGUID},
+    {"HasUnit", &Script_GameTooltipHasUnit},
 };
 
 static void RegisterLuaFunctions() {

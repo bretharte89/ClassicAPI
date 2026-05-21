@@ -70,6 +70,14 @@ enum Offsets {
     OFF_TOOLTIP_ITEM_GUID_HI = 0x384,
     OFF_TOOLTIP_ITEM_ID = 0x398,
     OFF_TOOLTIP_SPELL_ID = 0x39C,
+    // Unit GUID written by the inner unit-tooltip builder
+    // (FUN_00529FE0) when `tooltip:SetUnit(token)` resolves the token
+    // to a non-zero GUID. Cleared by the same `FUN_00530050` clear
+    // that handles the item/spell IDs above, so `(lo|hi) == 0` means
+    // "no unit currently displayed" — same gating pattern HasSpell /
+    // HasItem use.
+    OFF_TOOLTIP_UNIT_GUID_LO = 0x368,
+    OFF_TOOLTIP_UNIT_GUID_HI = 0x36C,
 
     // CGItem → fully-dressed item link string. __fastcall(ecx = CGItem *)
     // → const char *. Reads the item's itemID, quality, permanent
@@ -568,8 +576,26 @@ enum Offsets {
     // (returns CGContainer*). Engine passes `"ItemMgr"` as debugName
     // and `0x172` as priority for both call sites we've decoded.
     FUN_OBJECT_RESOLVE_BY_GUID = 0x00468460,
+    // The type arg is a bitmask of object-type bits, not an enum
+    // index — `1<<1` for items, `1<<2` for containers, `1<<3` for
+    // units, matching what `FUN_00529FE0` passes for SetUnit (`ECX=8`).
     OBJ_TYPE_ITEM = 2,
     OBJ_TYPE_CONTAINER = 4,
+    OBJ_TYPE_UNIT = 8,
+
+    // `CGObject::GetName` — returns the display-name `const char *` for
+    // a resolved CGObject (CGUnit / CGPlayer / CGCreature). Internally
+    // does a NameCache lookup for players and reads the creature-info
+    // cache for NPCs; falls back to `"UNKNOWNOBJECT"` / `"Unknown Being"`
+    // when neither resolves. The same path `FUN_00609370` (the wrapped
+    // "name + PvP-rank decoration" helper used by the SetUnit tooltip
+    // builder) calls internally.
+    //
+    //   __thiscall const char *(void *obj, int *outFlags /* may be 0 */)
+    //
+    // Caller-owned `outFlags` receives metadata about the lookup; we
+    // pass `nullptr` since we just want the name.
+    FUN_OBJECT_GET_NAME = 0x00609210,
     // Bank gate. The engine writes the active banker NPC's GUID here
     // when the bank window opens (8-byte qword) and zeroes it on close.
     // `GetItemBySlot` returns null for slots 39..68 if this GUID is zero,
