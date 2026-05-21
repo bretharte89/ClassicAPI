@@ -554,8 +554,6 @@ Sparse class IDs (vanilla skips classID 6 — Death Knight didn't
 exist yet — and a few others) have NULL records and are silently
 skipped.
 
-Equivalent to the function of the same name introduced in 3.0.
-
 ## Combat
 
 ### `InCombatLockdown()`
@@ -629,8 +627,6 @@ Goes through the same bag-resolve chain
 [`C_Container.GetContainerItemID`](#c_containergetcontaineritemidbagindex-slotindex)
 uses (engine's `PackBagSlot` → `GetItemBySlot`), then reads the same
 durability fields off the descriptor.
-
-Equivalent to the function of the same name introduced in 10.0.
 
 ### `C_Container.GetContainerItemRepairCost(containerIndex, slotIndex)`
 
@@ -713,8 +709,6 @@ internally and counts slots that resolve to a null `CGItem *` (i.e.,
 empty). Cross-checked in-game against a manual
 `C_Container.GetContainerItemID` walk; counts match.
 
-Equivalent to the function of the same name introduced in 3.0.
-
 ### `C_Container.PlayerHasHearthstone()`
 
 Returns the itemID of the hearthstone if one is in the player's bags,
@@ -755,8 +749,6 @@ Walks bags 0..4 via the same chain
 [`C_Container.GetContainerItemID`](#c_containergetcontaineritemidbagindex-slotindex)
 uses internally. Stops on first match.
 
-Equivalent to the function of the same name introduced in 9.0.
-
 ### `C_Container.UseHearthstone()`
 
 Locates the hearthstone in bags and uses it. Returns `true` if the
@@ -789,8 +781,6 @@ cursor-mode branch (repair vendor, spell-cast targeting, drop-on-bag)
 is skipped. Bypassing the dispatcher avoids the Lua-stack roundtrip
 of pushing `(bag, slot)` only for `Script_UseContainerItem` to re-parse
 and re-resolve the same item.
-
-Equivalent to the function of the same name introduced in 9.0.
 
 ### `C_Item.UseItemByName(itemInfo)`
 
@@ -828,8 +818,6 @@ cursor-target state at call time, which a Lua-side caller can pre-set
 with `TargetUnit("...")`. For self-use items (hearthstone, potions,
 food) the engine substitutes the player even if a different target is
 present, so no pre-setup is needed.
-
-Equivalent to the function of the same name introduced in 3.x.
 
 ## CVar
 
@@ -1385,8 +1373,6 @@ local name = GetFactionInfoByID(574)  -- Caer Darrow (faction that can't be enco
 -- name = "Caer Darrow" — works even if you never had rep with it
 ```
 
-Equivalent to the function of the same name introduced in 3.0.
-
 ### `GetFactionParentID(factionID)`
 
 Returns the parent factionID for a faction in a hierarchy (e.g.
@@ -1407,9 +1393,6 @@ have the slot.
 Reads `Faction.dbc` `ParentFactionID` at record `+0x48` directly —
 no displayed-list dependency, works for any faction in the DBC
 regardless of whether the player has rep with it.
-
-Equivalent to the function of the same name introduced in 3.0 (as
-the 13th return of `GetFactionInfoByID`).
 
 ### `C_Reputation.GetFactionStandings()`
 
@@ -1469,8 +1452,6 @@ if data then
 end
 ```
 
-Equivalent to the function of the same name introduced in 10.x.
-
 Implementation reads the watched `RepListID` from the player's
 `+0xE68` sub-struct, indexes the per-faction rep slot array at
 `0x00B73290` to recover the factionID, then runs the shared
@@ -1522,8 +1503,6 @@ shared `ReadFactionData` chain — no Lua-side round-trip through
 `Script_GetFactionInfo`. `isHeader` / `isCollapsed` come from the
 displayed-list header array at `0x00B736C0` (count at `0x00B736B0`)
 and the per-character bitmask at `0x0084A0A4`.
-
-Equivalent to the function of the same name introduced in 10.x.
 
 ### `C_Reputation.SetWatchedFactionByID(factionID)`
 
@@ -1767,8 +1746,6 @@ existing `Script_GameTooltip_SetHyperlink` (registry slot 12).
 > caveat, just with `C_Item.RequestLoadItemData(itemLocation)` /
 > `Item:OnItemLoad`-style continuation.
 
-Equivalent to the function of the same name introduced in 8.0.
-
 ### `GameTooltip:SetUnitAura(unit, index, [filter])`
 
 Modern unified-aura method. 1.12 splits this into `SetUnitBuff` and
@@ -1789,8 +1766,6 @@ Pure dispatcher — no engine changes; the underlying logic is whatever
 the modern call shape (which most aura libraries backport from)
 without conditionally splitting on filter.
 
-Equivalent to the function of the same name introduced in 6.0.
-
 ### `GameTooltip:SetSpellByID(spellID)`
 
 Renders a spell tooltip for any `spellID`, including spells the player has
@@ -1803,8 +1778,6 @@ GameTooltip:SetOwner(UIParent, "ANCHOR_CURSOR")
 GameTooltip:SetSpellByID(133)  -- Fireball
 GameTooltip:Show()
 ```
-
-Equivalent to the function of the same name introduced in 3.0.
 
 ### `GameTooltip:GetItem()`
 
@@ -1855,9 +1828,6 @@ resolver finds any CGItem the client has loaded.
 Returns nothing for: non-item tooltip, uncached itemID on the
 no-GUID path (fires a background cache warmup), or empty name.
 
-Equivalent to the function of the same name introduced in 3.0,
-with the added `itemID` third return.
-
 ### `GameTooltip:GetSpell()`
 
 Returns `(name, rank, spellID)` for whichever spell the tooltip is
@@ -1881,8 +1851,6 @@ slot is blank — most racials, talent passives, and proc-triggered
 spells. This matches the modern semantics where the rank position is
 always populated.
 
-Equivalent to the function of the same name introduced in 3.0.
-
 ### `GameTooltip:HasItem()` / `GameTooltip:HasSpell()`
 
 Boolean companions to `GetItem` / `GetSpell`. Return `true` if the
@@ -1897,9 +1865,6 @@ if GameTooltip:HasItem() then
     -- only do the GetItem work when we actually need it
 end
 ```
-
-Equivalent to the functions of the same name introduced in 3.0
-(`HasItem`) and 6.0 (`HasSpell`).
 
 ### `GameTooltip:GetUnitGUID()` / `GameTooltip:HasUnit()`
 
@@ -1980,8 +1945,6 @@ GameTooltip:SetTalentByID(2065)                   -- works regardless of player 
 GameTooltip:Show()
 ```
 
-Equivalent to the function of the same name introduced in 5.0.
-
 ### `GameTooltip:SetInventoryItemByID(itemID)`
 
 Renders the tooltip for the **equipped instance** of `itemID` —
@@ -2018,8 +1981,6 @@ else
 end
 GameTooltip:Show()
 ```
-
-Equivalent to the function of the same name introduced in 8.0.
 
 ### `GameTooltip:SetEquipmentSet(name)`
 
@@ -2082,8 +2043,6 @@ it we couldn't recover the name for missing items. Sets saved
 before the itemID field was added load fine but render their
 missing slots with the count summary `%d missing` instead of named
 lines; re-saving a set repopulates itemIDs.
-
-Equivalent to the function of the same name introduced in 3.1.
 
 ## Globals
 
@@ -2561,8 +2520,6 @@ Reads ITEM_FIELD_DURABILITY (+0xA0) and ITEM_FIELD_MAXDURABILITY
 — same descriptor [`C_Item.IsBound`](#c_itemisbounditemlocation) reads
 FLAGS from. No DBC indirection.
 
-Equivalent to the function of the same name introduced in 3.0.
-
 ### `GetInventoryItemRepairCost(invSlot)`
 
 Returns the cost in copper to repair the player's equipped item at
@@ -2942,8 +2899,6 @@ if OffhandHasWeapon() then
 end
 ```
 
-Equivalent to the function of the same name introduced in 3.0.
-
 ### `C_Item.IsEquippableItem(item)`
 
 Returns `true` if `item` can be equipped in any character-pane slot,
@@ -2964,9 +2919,6 @@ first and re-check on `ITEM_DATA_LOAD_RESULT`.
 C_Item.IsEquippableItem(12640)  -- Lionheart Helm → true
 C_Item.IsEquippableItem(6948)   -- Hearthstone → false
 ```
-
-Equivalent to the function of the same name introduced in 1.10
-(global in 4.3.4, namespaced under `C_Item` in modern Classic Era).
 
 ### `C_Item.IsEquippedItem(item)`
 
@@ -3001,8 +2953,6 @@ if C_Item.IsEquippedItem(itemLink) then ...
 -- By localized name:
 if C_Item.IsEquippedItem("Thunderfury, Blessed Blade of the Windseeker") then ...
 ```
-
-Equivalent to the function of the same name introduced in 3.x.
 
 ### `C_Item.EquipItemByName(itemInfo [, dstSlot])`
 
@@ -3052,10 +3002,6 @@ C_Item.EquipItemByName("Linen Cloth", 17)
 -- From a chat link:
 C_Item.EquipItemByName(itemLink)
 ```
-
-Equivalent to the function of the same name (as a global) introduced
-in 3.x. The `C_Item.` namespace placement matches Dragonflight-era
-addon conventions.
 
 ### `C_Item.DoesItemExist(itemLocation)` / `C_Item.DoesItemExistByID(item)`
 
@@ -3470,8 +3416,6 @@ Reads directly from the 28-byte merchant entry at
 array `Script_GetMerchantItemInfo` walks). Compared to the existing
 [`GetMerchantItemID`](#getitemid--companions-to-the-engines-getitemlink-family),
 this returns the wider modern struct shape in one call.
-
-Equivalent to the function of the same name introduced in 10.x.
 
 ### `C_MerchantFrame.GetBuybackItemID(slot)`
 
@@ -4016,8 +3960,6 @@ end)
 C_QuestLog.RequestLoadQuestByID(215)
 ```
 
-Equivalent to the function of the same name introduced in 5.0.
-
 ### `QUEST_ACCEPTED` event
 
 Fires once per quest the player just accepted, with two payload args:
@@ -4135,8 +4077,6 @@ local info = C_Spell.GetSpellInfo(133)
 > them. Including them costs nothing and helps addons backporting from
 > 3.3.5 where the same data was returned positionally.
 
-Equivalent to the function of the same name introduced in 4.0.
-
 ### `C_Spell.GetSpellName(spellID)`
 
 Returns the localized name of `spellID`, or `nil` if the spell ID is out
@@ -4148,8 +4088,6 @@ the locale lookup.
 ```lua
 local name = C_Spell.GetSpellName(133)  -- "Fireball"
 ```
-
-Equivalent to the function of the same name introduced in 10.0.
 
 ### `C_Spell.GetSpellTexture(spellID)`
 
@@ -4166,8 +4104,6 @@ of range or the icon record is empty.
 local path = C_Spell.GetSpellTexture(133)
 -- path = "Interface\\Icons\\Spell_Fire_FlameBolt"
 ```
-
-Equivalent to the function of the same name introduced in 10.0.
 
 ### `FindSpellBookSlotByID(spellID)`
 
@@ -4248,8 +4184,6 @@ had it on hand to make the call.
 local link = C_Spell.GetSpellLink(133)  -- "|cff71d5ff|Hspell:133:0|h[Fireball]|h|r"
 ```
 
-Equivalent to the function of the same name introduced in 4.0.
-
 ### `C_Spell.GetSpellDescription(spellID)`
 
 Returns the formatted spell description for any `spellID` — including
@@ -4271,8 +4205,6 @@ local desc = C_Spell.GetSpellDescription(133)  -- Fireball Rank 1
 -- "Hurls a fiery ball that causes 14 to 22 Fire damage and an additional
 --  2 Fire damage over 4 sec."
 ```
-
-Equivalent to the function of the same name introduced in 4.0.
 
 > **No caster scaling.** Values reflect the spell's base rank — caster
 > level / spell power / talents are not applied. Modern WoW behaves the
@@ -4298,11 +4230,6 @@ IsPassiveSpell(133)    -- false (Fireball)
 IsPassiveSpell(1, "spell")   -- true/false depending on slot 1
 ```
 
-Equivalent to the function of the same name introduced in 3.0. Modern
-WoW renamed it to [`C_Spell.IsSpellPassive(spellID)`](#c_spellisspellpassivespellid)
-(word order flipped) when it moved into the `C_Spell` namespace; we
-ship both forms.
-
 ### `C_Spell.IsSpellPassive(spellID)`
 
 Modern table-namespace form of [`IsPassiveSpell`](#ispassivespellspellid--ispassivespellslot-booktype).
@@ -4312,8 +4239,6 @@ don't accept the older spellbook slot + bookType shape.
 ```lua
 C_Spell.IsSpellPassive(6603)   -- true (Auto Attack)
 ```
-
-Equivalent to the function of the same name introduced in 10.0.
 
 ### `IsPlayerSpell(spellID)`
 
@@ -4350,8 +4275,6 @@ Reads a single bit from the engine's spell-knowledge bitmap at
 The same lookup the engine itself does internally. No spellbook walk,
 no talent walk, no profession-window dependency.
 
-Equivalent to the function of the same name introduced in 5.0.
-
 ### `IsSpellKnown(spellID, [isPet])`
 
 Returns `true` if the given spellID is currently in the player's (or
@@ -4387,8 +4310,6 @@ Verified to match 3.3.5's `Script_IsSpellKnown` semantics — that
 function does the same spellbook walk in its inner helper at
 `0x0053B4E0` (player array `[0x00BE6D88]`, pet array `[0x00BE7D98]`,
 same shape just different addresses).
-
-Equivalent to the function of the same name introduced in 3.0.
 
 ### `IsUsableSpell(spell)` / `IsUsableSpell(slot, bookType)`
 
@@ -4435,8 +4356,6 @@ IsUsableSpell(1, "spell")    -- player spellbook slot 1
 > offsets (+0x110 / +0x130) and cooldown helper (`0x006E2EA0`) are
 > the components to verify.
 
-Equivalent to the function of the same name introduced in 3.0.
-
 ### `C_Spell.IsSpellUsable(spellID)`
 
 Modern table-namespace form. Same logic as
@@ -4450,8 +4369,6 @@ local usable, noMana = C_Spell.IsSpellUsable(133)
 -- usable=false, noMana=true  → drink up
 -- usable=false, noMana=false → unknown spell, dead, or other block
 ```
-
-Equivalent to the function of the same name introduced in 10.x.
 
 ### `C_Item.GetWeaponEnchantInfo()`
 
@@ -4526,9 +4443,6 @@ set. Both return `false` for invalid spellIDs.
 > for addons gating on "is this castable on me?" logic. Compute
 > precise modern semantics by also inspecting effect implicit
 > targets if you need them.
-
-Equivalent to the functions of the same name introduced in 3.x
-(when WoW first exposed them as globals).
 
 ### `C_Spell.IsSpellHarmful(spellID)` / `C_Spell.IsSpellHelpful(spellID)`
 
@@ -4757,8 +4671,6 @@ if not IsMounted() then
     CastSpellByName("Summon Dreadsteed")
 end
 ```
-
-Equivalent to the function of the same name introduced in 1.10.
 
 ### `IsStealthed()`
 
@@ -4994,8 +4906,6 @@ right call for calendar / log-timestamp / cooldown-sync use cases.
 > first minute rollover we observe, the anchor lands at the rollover
 > boundary and the timestamp is accurate to within a second of the
 > engine's clock for as long as the session continues.
-
-Equivalent to the function of the same name introduced in 3.0.
 
 ### `C_Timer.After(seconds, callback)`
 
@@ -5324,8 +5234,6 @@ UnitIsAFK("npc")      -- always false
 > engine reads when rendering the `<AFK>` prefix above a player's
 > head. Verified against the in-game nameplate behavior.
 
-Equivalent to the function of the same name introduced in 3.0.
-
 ### `UnitIsDND(unit)`
 
 Returns `true` if the unit is currently in DND mode ("Do Not Disturb",
@@ -5337,8 +5245,6 @@ UnitIsDND("player")
 UnitIsDND("target")
 ```
 
-Equivalent to the function of the same name introduced in 3.0.
-
 ### `UnitIsFeignDeath(unit)`
 
 Returns `true` if the unit is feigning death (Hunter's `Feign Death`).
@@ -5349,8 +5255,6 @@ in object updates.
 ```lua
 UnitIsFeignDeath("target")   -- true if a feigning hunter
 ```
-
-Equivalent to the function of the same name introduced in 3.0.
 
 ### `UnitIsInMyGuild(unitOrName)`
 
