@@ -617,14 +617,15 @@ the local player when a global at `[0x00B6E5CC]` is set (probably a
 "hide my own AFK indicator" preference toggle). Verified in-game
 on a non-Turtle stock 1.12.1 server.
 
-## 32. `IsCurrentSpell(spellID)` — easy
+## ~~32. `IsCurrentSpell(spellID)`~~ — DONE (as `C_Spell.IsCurrentSpell`)
 
-Boolean: is the player currently casting / channeling this spell?
-Needs a runtime "current cast spellID" global the engine maintains
-for the spell-button UI. Likely lives near the cast bar state — a
-short trace through `Script_GetCurrentCastingInfo`-style functions
-(if any exist) or the cast-bar timer logic. Worth doing because
-modern action-bar addons gate "highlight the active button" on this.
+Shipped in [src/spell/IsCurrent.cpp](src/spell/IsCurrent.cpp) under
+the modern `C_Spell.IsCurrentSpell(spellIdentifier)` name. Checks
+three slots: `VAR_CURRENT_CAST_SPELL` (`0x00CECA88` — cast bar),
+`VAR_QUEUED_CAST_SPELL` (`0x00CECAA8` — mid-GCD queue), and the
+player's `UNIT_FIELD_CHANNEL_SPELL` (`+0x228` — channels). Accepts
+the full spellIdentifier shape (number / link / known-spellbook
+name) via `Spell::Arg::ResolveSpellID`.
 
 ## 33. `C_Reputation.*` cluster — partial DONE
 

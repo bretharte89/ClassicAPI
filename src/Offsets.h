@@ -1617,6 +1617,24 @@ enum Offsets {
     // exposed as a 1-line getter at `0x006E9FD0`.
     VAR_ACTIVE_AUTO_REPEAT_SPELL = 0x00CEAC30,
 
+    // Currently-casting spellID. Written by the cast-start helper at
+    // `FUN_006E4AD0` (`__fastcall(spellID, targetState)`) — when a
+    // new cast begins, the function pushes the previous active
+    // spellID into `VAR_QUEUED_CAST_SPELL` and writes the new one
+    // here. Read by `Script_SpellStopCasting` via its
+    // `is-currently-casting` predicate at `FUN_006E3D30` (returns
+    // `DAT_00CECA88 != 0`) and the spellID-returning getter at
+    // `FUN_006E3D10`. Non-zero means "the cast bar is showing this
+    // spell"; cleared to 0 when the cast finishes or is cancelled.
+    VAR_CURRENT_CAST_SPELL = 0x00CECA88,
+    // Previous / queued cast — holds the spellID that was active
+    // before the latest one superseded it (mid-GCD queueing in
+    // vanilla). When the current cast ends, `FUN_006E4AD0(0, ...)`
+    // restores this into `VAR_CURRENT_CAST_SPELL`. Modern
+    // `C_Spell.IsCurrentSpell` covers both "casting now" and "queued
+    // to cast next", so we check this slot too.
+    VAR_QUEUED_CAST_SPELL = 0x00CECAA8,
+
     // `Script_CastSpellByName` — engine's Lua wrapper for the
     // `CastSpellByName(name [, onSelf])` global. `int __fastcall(void *L)`
     // — standard Lua C function ABI. Reads `name` from stack[1] (string)

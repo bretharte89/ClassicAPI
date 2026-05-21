@@ -204,6 +204,7 @@ build instructions.
   - [`IsUsableSpell(spell)` / `IsUsableSpell(slot, bookType)`](#isusablespellspell--isusablespellslot-booktype)
   - [`C_Spell.IsSpellUsable(spellID)`](#c_spellisspellusablespellid)
   - [`C_Spell.GetSpellCooldown(spellIdentifier)`](#c_spellgetspellcooldownspellidentifier)
+  - [`C_Spell.IsCurrentSpell(spellIdentifier)`](#c_spelliscurrentspellspellidentifier)
   - [`IsHarmfulSpell(spell)` / `IsHelpfulSpell(spell)`](#isharmfulspellspell--ishelpfulspellspell)
   - [`C_Spell.IsSpellHarmful(spellID)` / `C_Spell.IsSpellHelpful(spellID)`](#c_spellisspellharmfulspellid--c_spellisspellhelpfulspellid)
   - [`C_SpellBook.GetSpellLevelLearned(spellID)`](#c_spellbookgetspelllevellearnedspellid)
@@ -4518,6 +4519,32 @@ Modern-only fields (`activeCategory`, `timeUntilEndOfStartRecovery`,
 
 Returns `nil` if the resolved spellID is `0` or doesn't have a
 `Spell.dbc` row.
+
+### `C_Spell.IsCurrentSpell(spellIdentifier)`
+
+Returns `true` if the spell is currently being cast, queued mid-GCD,
+or channeled by the player; `false` otherwise (including for
+unresolvable identifiers).
+
+```lua
+C_Spell.IsCurrentSpell(11366)              -- true while casting Pyroblast
+C_Spell.IsCurrentSpell("Pyroblast")        -- same, via name
+C_Spell.IsCurrentSpell(GetSpellLink(7620)) -- true while channeling Fishing
+```
+
+Useful for action-bar addons that want to highlight the active /
+queued button — modern action bars gate the "currently casting" glow
+on this. Reads three engine slots and returns true on any match:
+
+- `VAR_CURRENT_CAST_SPELL` (`0x00CECA88`) — cast-bar spellID. Written
+  by `FUN_006E4AD0` when a new cast begins; cleared on cast end.
+- `VAR_QUEUED_CAST_SPELL` (`0x00CECAA8`) — spell that was active when
+  a new cast superseded it mid-GCD. Restored to current when the new
+  cast ends, so checking it here covers the "queued to cast next"
+  half of modern's documented semantics.
+- `UNIT_FIELD_CHANNEL_SPELL` (descriptor `+0x228`) on the player —
+  covers channeled abilities (Fishing, Drain Soul, Ritual of
+  Summoning, etc.).
 
 ### `C_Item.GetWeaponEnchantInfo()`
 
