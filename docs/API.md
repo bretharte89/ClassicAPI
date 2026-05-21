@@ -1902,22 +1902,26 @@ Equivalent to the functions of the same name introduced in 3.0
 
 ### `GameTooltip:GetUnitGUID()` / `GameTooltip:HasUnit()`
 
-`GetUnitGUID()` returns `(guidString, name)` for whichever unit the
+`GetUnitGUID()` returns `(name, guidString)` for whichever unit the
 tooltip is currently displaying, or nothing if it isn't showing a
-unit. `guidString` is the canonical `"0xHHHHHHHHLLLLLLLL"` format
-returned by [`UnitGUID(unit)`](#unitguidunit). `name` is the unit's
-display name — the same string that appears in the tooltip header,
-or one of the engine's `"UNKNOWNOBJECT"` / `"Unknown Being"` fallbacks
-for a remote unit whose info hasn't been queried yet.
+unit. Return order mirrors modern's `GameTooltip:GetUnit()` (name
+first) — so addons porting from
+`local name, unit = ttip:GetUnit()` can swap to `GetUnitGUID` and
+keep their existing destructuring. `name` is the unit's display name
+— the same string that appears in the tooltip header, or one of the
+engine's `"UNKNOWNOBJECT"` / `"Unknown Being"` fallbacks for a remote
+unit whose info hasn't been queried yet. `guidString` is the
+canonical `"0xHHHHHHHHLLLLLLLL"` format returned by
+[`UnitGUID(unit)`](#unitguidunit).
 
 `HasUnit()` is a boolean companion — returns `true` if the tooltip is
 currently displaying a unit.
 
 ```lua
 GameTooltip:SetUnit("target")
-local guid, name = GameTooltip:GetUnitGUID()
--- guid = "0xF130001234..." (Creature) or "0x000000...ABC123" (Player)
+local name, guid = GameTooltip:GetUnitGUID()
 -- name = "Hogger"
+-- guid = "0xF130001234..." (Creature) or "0x000000...ABC123" (Player)
 
 if GameTooltip:HasUnit() then
     -- cheap predicate, no name-resolution work

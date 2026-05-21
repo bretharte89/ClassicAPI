@@ -97,12 +97,15 @@ static const char *ResolveUnitName(uint32_t guidLo, uint32_t guidHi) {
     return getName(obj, nullptr, nullptr);
 }
 
-// `GameTooltip:GetUnitGUID()` → (guidString, name) for whichever unit
+// `GameTooltip:GetUnitGUID()` → (name, guidString) for whichever unit
 // the tooltip is currently displaying, or nothing if it isn't showing
-// a unit. `guidString` is the canonical `"0xHHHHHHHHLLLLLLLL"` format
-// matching `UnitGUID(unit)`. `name` is the unit's display name (may
-// be `"UNKNOWNOBJECT"` for a remote unit whose info hasn't been
-// queried yet — same fallback the engine uses internally).
+// a unit. Return order matches modern's `GameTooltip:GetUnit()` shape
+// (name first), so addons porting from `local name, unit = ttip:GetUnit()`
+// can swap to `GetUnitGUID` and keep their existing destructuring.
+// `name` is the unit's display name (may be `"UNKNOWNOBJECT"` for a
+// remote unit whose info hasn't been queried yet — same fallback the
+// engine uses internally). `guidString` is the canonical
+// `"0xHHHHHHHHLLLLLLLL"` format matching `UnitGUID(unit)`.
 static int __fastcall Script_GameTooltipGetUnitGUID(void *L) {
     if (Game::Lua::Type(L, 1) != Game::Lua::TYPE_TABLE) {
         Game::Lua::Error(L, "Usage: GameTooltip:GetUnitGUID()");
@@ -120,15 +123,15 @@ static int __fastcall Script_GameTooltipGetUnitGUID(void *L) {
     if (guidLo == 0 && guidHi == 0)
         return 0;
 
-    const uint64_t guid = (static_cast<uint64_t>(guidHi) << 32) | guidLo;
-    char buf[Guid::STRING_SIZE];
-    Game::Lua::PushString(L, Guid::FormatAsString(guid, buf, sizeof buf));
-
     const char *name = ResolveUnitName(guidLo, guidHi);
     if (name != nullptr)
         Game::Lua::PushString(L, name);
     else
         Game::Lua::PushNil(L);
+
+    const uint64_t guid = (static_cast<uint64_t>(guidHi) << 32) | guidLo;
+    char buf[Guid::STRING_SIZE];
+    Game::Lua::PushString(L, Guid::FormatAsString(guid, buf, sizeof buf));
     return 2;
 }
 
