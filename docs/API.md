@@ -198,6 +198,7 @@ build instructions.
   - [`GetSpellLink(spellID)` / `GetSpellLink(slot, bookType)`](#getspelllinkspellid--getspelllinkslot-booktype)
   - [`C_Spell.GetSpellLink(spellID)`](#c_spellgetspelllinkspellid)
   - [`C_Spell.GetSpellDescription(spellID)`](#c_spellgetspelldescriptionspellid)
+  - [`C_Spell.GetSpellReagents(spellID)`](#c_spellgetspellreagentsspellid)
   - [`IsPassiveSpell(spellID)` / `IsPassiveSpell(slot, bookType)`](#ispassivespellspellid--ispassivespellslot-booktype)
   - [`C_Spell.IsSpellPassive(spellID)`](#c_spellisspellpassivespellid)
   - [`IsPlayerSpell(spellID)`](#isplayerspellspellid)
@@ -4373,6 +4374,29 @@ local desc = C_Spell.GetSpellDescription(133)  -- Fireball Rank 1
 > same way when called outside a unit context. If you need the
 > "currently displayed" tooltip text with caster scaling, use
 > `GameTooltip:SetSpellByID` and read line strings from there.
+
+### `C_Spell.GetSpellReagents(spellID)`
+
+Returns the spell's reagent list as an array of
+`{ itemID = N, count = M }` tables, one entry per non-empty reagent
+slot. Returns an empty array `{}` for spells that consume no
+reagents, or `nil` for invalid spell IDs.
+
+```lua
+local list = C_Spell.GetSpellReagents(23028)  -- Arcane Brilliance
+-- list = { { itemID = 17020, count = 1 } }   -- 1× Arcane Powder
+
+-- Crafting recipe:
+local list = C_Spell.GetSpellReagents(2538)
+-- Cooking-style: { { itemID = ..., count = ... }, ... }
+```
+
+Reads directly from `Spell.dbc` at the documented reagent offsets
+(`+0xA8` for itemIDs, `+0xC8` for counts — verified empirically
+from the engine's tooltip-builder; the CMaNGOS-style schema
+documented in some emulator sources places these at `+0x110` /
+`+0x130`, which is wrong for 1.12.1). Iteration stops at the first
+empty slot, matching how the engine walks its own reagent loop.
 
 ### `IsPassiveSpell(spellID)` / `IsPassiveSpell(slot, bookType)`
 

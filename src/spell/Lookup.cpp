@@ -57,7 +57,7 @@ int NthRecipeReagentItemID(const uint8_t *spellRecord, int reagentIndex1) {
     if (spellRecord == nullptr || reagentIndex1 < 1)
         return 0;
     auto *reagents = reinterpret_cast<const uint32_t *>(
-        spellRecord + Offsets::OFF_SPELL_RECORD_REAGENTS);
+        spellRecord + Offsets::OFF_SPELL_REAGENT_ID);
     int found = 0;
     for (int i = 0; i < Offsets::SPELL_RECIPE_MAX_REAGENTS; ++i) {
         const int itemID = static_cast<int>(reagents[i]);

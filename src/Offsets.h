@@ -1590,15 +1590,26 @@ enum Offsets {
     // itemID and the lookup silently fails.
     FUN_ITEM_QUERY_COOLDOWN = 0x006E2ED0,
 
-    // Spell.dbc reagent fields. Per CMaNGOS vanilla `SpellEntry` —
-    // Reagent[8] at +0x110 (itemIDs), ReagentCount[8] at +0x130
-    // (counts). Used by `IsUsableSpell` to check that the player has
-    // each non-zero reagent in their bags. Unlike the unit-field
-    // offsets, spell-record offsets DO match the CMaNGOS-documented
-    // layout in 1.12.1 (verified previously: PowerType=+0x7C and
-    // ManaCost=+0x80 both match).
-    OFF_SPELL_REAGENT_ID = 0x110,
-    OFF_SPELL_REAGENT_COUNT = 0x130,
+    // Spell.dbc reagent fields. Reagent[8] (itemIDs) at +0xA8;
+    // ReagentCount[8] (counts) at +0xC8. Verified empirically by
+    // decompiling `BuildSpellTooltip` at 0x0052E610 — its reagent-
+    // loop iterates `localSpellRec + 0x2A` (dword arithmetic, byte
+    // +0xA8) as itemIDs and indexes `[+8]` (dword 0x32, byte +0xC8)
+    // for counts. Walked by both the tradeskill / craft scraper's
+    // `Spell::Lookup::NthRecipeReagentItemID` and `IsUsableSpell`'s
+    // reagent gate.
+    //
+    // **Don't trust CMaNGOS for these offsets.** A prior version of
+    // this entry placed reagents at +0x110 / +0x130 per CMaNGOS
+    // vanilla `SpellEntry`, but 1.12.1's actual record layout
+    // diverges from CMaNGOS for reagent fields — those offsets read
+    // unrelated data that's always 0 for normal spells, so
+    // IsUsableSpell's reagent check silently passed every spell.
+    // The "verified previously" PowerType=+0x7C / ManaCost=+0x80
+    // CMaNGOS alignment held for earlier fields but breaks before
+    // the reagent block.
+    OFF_SPELL_REAGENT_ID = 0xA8,
+    OFF_SPELL_REAGENT_COUNT = 0xC8,
     SPELL_MAX_REAGENTS = 8,
 
     // Per-spell *runtime* state cache, indexed by spellID via a hash
@@ -2599,7 +2610,11 @@ enum Offsets {
     // with craft).
     VAR_TRADESKILL_ENTRIES = 0x00BDDFC0,
     VAR_TRADESKILL_COUNT = 0x00BDE04C,
-    OFF_SPELL_RECORD_REAGENTS = 0xA8,        // int32 itemID[8]
+    // Spell.dbc "produced item" field for crafting recipes — the
+    // itemID this spell creates when cast. Reagent itemIDs and
+    // counts live at `OFF_SPELL_REAGENT_ID` / `OFF_SPELL_REAGENT_COUNT`
+    // above (shared with all spells that consume reagents, not just
+    // recipes).
     OFF_SPELL_RECORD_CREATED_ITEM = 0x19C,
     SPELL_RECIPE_MAX_REAGENTS = 8,
 

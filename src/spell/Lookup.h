@@ -54,7 +54,7 @@ int FindSpellbookSlot(int spellID, int *outBookType);
 int RecipeSlotSpellID(uintptr_t entriesVar, uintptr_t countVar, int slotIndex0);
 
 // Walks the recipe's reagent itemID array at
-// `spellRecord + OFF_SPELL_RECORD_REAGENTS` and returns the itemID
+// `spellRecord + OFF_SPELL_REAGENT_ID` and returns the itemID
 // of the Nth (1-based) non-zero reagent. Returns 0 if the spell
 // record is null, the reagent index is < 1, or we hit a 0 slot
 // before reaching N — matching the engine's
