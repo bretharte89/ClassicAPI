@@ -505,6 +505,18 @@ enum Offsets {
     // exists on the +0xE68 sub-struct here.
     OFF_CGPLAYER_INFO = 0xE68,
 
+    // CGObject's `GetPosition` virtual — vtable slot 5 (offset 0x14).
+    // Signature: `__thiscall(this, float outBuf[3]) → float *position`.
+    // The returned float* may equal outBuf (the object filled it
+    // directly) or point at a cached position field on the object
+    // (CGPlayer keeps its own copy). Either way, dereference the
+    // pointer for x/y/z. Used by `Script_CheckInteractDistance` for
+    // its squared-distance compute; same vtable layout for CGUnit,
+    // CGPlayer, CGGameObject, etc. since they share the CGObject
+    // base. Bytes verified via the call-site disassembly at
+    // `0x0048BACF` / `0x0048BADC`.
+    OFF_CGOBJECT_VTBL_GET_POSITION = 0x14,
+
     // Quest list array inside the `+0xE68` sub-struct. 20 fixed
     // slots of 0xC (12) bytes each — `questID` at slot+0x00, and
     // some flags/state in the remaining 8 bytes. Walked by

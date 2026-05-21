@@ -262,6 +262,7 @@ build instructions.
   - [`UnitIsInMyGuild(unitOrName)`](#unitisinmyguildunitorname)
   - [`UnitIsPossessed(unit)`](#unitispossessedunit)
   - [`UnitStandState(unit)`](#unitstandstateunit)
+  - [`UnitInRange(unit)`](#unitinrangeunit)
 
 - [UnitAuras](#unitauras)
   - [`C_UnitAuras.GetAuraDataByIndex(unit, index [, filter])`](#c_unitaurasgetauradatabyindexunit-index--filter)
@@ -5783,6 +5784,40 @@ UnitStandState("party1")    -- 0 if the slot is empty
 1.12 has `IsSitOrStanding()` (local-player boolean) but no
 unit-token form; `UnitStandState` fills the gap and exposes the
 full enum.
+
+### `UnitInRange(unit)`
+
+Returns `(inRange, checkedRange)` — whether `unit` is within 40 yards
+of the player, plus a flag indicating whether the range check could
+actually be performed.
+
+```lua
+local inRange, checked = UnitInRange("party1")
+if checked and not inRange then
+    -- partymate is loaded but >40 yards away → skip the heal
+end
+```
+
+| Return | Meaning |
+|--------|---------|
+| `inRange` | `true` if the unit's world position is within 40 yards of the player's. `false` if out of range OR if `checkedRange` is `false`. |
+| `checkedRange` | `true` when a position-based range check was performed. `false` when the unit's position isn't available — either the token didn't resolve (empty `partyN` slot, no target, raid member in a different zone, etc.) or `unit == "player"` (see below). |
+
+Reads the world position via the `CGObject::GetPosition` vtable
+virtual (slot 5, offset `+0x14`) — same path
+`CheckInteractDistance` uses. Squared-distance compare against
+`40 * 40 = 1600`.
+
+> **`UnitInRange("player")` returns `(false, false)`** by design,
+> matching modern WoW's behavior. The function is meant for healing-
+> frame "is *another* unit in range" checks; querying yourself is
+> meaningless. We short-circuit before the position read so the
+> result is unambiguous (`checkedRange=false`).
+
+Works for any synced unit (party/raid members in your zone, target,
+mouseover, etc.). For raid members in a different zone or otherwise
+not in the engine's sync window, the position virtual returns null
+and the function reports `(false, false)`.
 
 ### `UnitClassBase(unit)`
 
