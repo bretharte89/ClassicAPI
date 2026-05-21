@@ -184,6 +184,7 @@ build instructions.
   - [`C_QuestLog.GetQuestIDForLogIndex(index)`](#c_questlogGetQuestIDForLogIndexindex)
   - [`C_QuestLog.RequestLoadQuestByID(questID)`](#c_questlogrequestloadquestbyidquestid)
   - [`C_QuestLog.IsOnQuest(questID)`](#c_questlogisonquestquestid)
+  - [`C_QuestLog.IsUnitOnQuest(unit, questID)`](#c_questlogisunitonquestunit-questid)
   - [`C_QuestLog.GetTitleForQuestID(questID)`](#c_questloggettitleforquestidquestid)
   - [`QUEST_ACCEPTED` event](#quest_accepted-event)
 
@@ -4001,6 +4002,32 @@ Cheaper than the engine's `IsUnitOnQuest(logIndex, unit)`, which
 requires the addon to walk the log to find the matching index first
 and resolves a unit token even when the answer is just about the
 player. Same answer in a single call.
+
+### `C_QuestLog.IsUnitOnQuest(unit, questID)`
+
+Returns `true` if the unit has `questID` in their quest list. Modern
+arg order — `unit` first, `questID` second — and questID-keyed rather
+than log-index-keyed like vanilla's `IsUnitOnQuest(logIndex, unit)`.
+
+```lua
+if C_QuestLog.IsUnitOnQuest("party1", 215) then
+    -- partymate is also on Jungle Secrets
+end
+```
+
+For `unit == "player"` equivalent to
+[`C_QuestLog.IsOnQuest(questID)`](#c_questlogisonquestquestid). For
+other tokens (party/raid members, target), the unit must be in the
+engine's sync range — the data comes from `SMSG_QUESTGIVER_QUEST_DETAILS`
+broadcasts, which only reach you while the other player is within
+the client's sync window. Returns `false` for NPCs, units out of
+range, and units that haven't synced their quest list yet.
+
+Returns `false` (no `lua_error`) for invalid input: non-string unit,
+non-number / non-positive questID, unresolvable token, or unit that's
+not player-controlled (i.e., a creature). The
+`UNIT_FLAG_PLAYER_CONTROLLED` gate is mandatory — without it the
+`+0xE68` deref would AV on any NPC.
 
 ### `C_QuestLog.GetTitleForQuestID(questID)`
 

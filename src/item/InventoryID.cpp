@@ -13,6 +13,7 @@
 
 #include "Game.h"
 #include "Offsets.h"
+#include "unit/Flags.h"
 
 #include <cstdint>
 
@@ -48,25 +49,6 @@ int ItemIDForLocalPlayer(void *playerPtr, int slot1Based) {
         instance + Offsets::OFF_INSTANCE_BLOCK_ITEM_ID));
 }
 
-// Tests `UnitPlayerControlled`: `[unit + OFF_UNIT_DESCRIPTOR] +
-// OFF_UNIT_FIELD_FLAGS` & `UNIT_FLAG_PLAYER_CONTROLLED`. Same logic
-// `Script_UnitPlayerControlled` at `0x00516410` uses. Necessary because
-// the visible-items helper at `FUN_UNIT_GET_VISIBLE_ITEM` reads
-// `[unit + 0xE68]` without a null check — that offset only holds a
-// valid array pointer for player-controlled units; for NPCs it's
-// uninitialized memory that becomes a near-arbitrary pointer when the
-// helper does `lea` math on it, then crashes when we deref `+8`.
-bool IsPlayerControlled(void *unitPtr) {
-    auto *unit = static_cast<const uint8_t *>(unitPtr);
-    auto *fields = *reinterpret_cast<const uint8_t *const *>(
-        unit + Offsets::OFF_UNIT_DESCRIPTOR);
-    if (fields == nullptr)
-        return false;
-    const uint32_t flags = *reinterpret_cast<const uint32_t *>(
-        fields + Offsets::OFF_UNIT_FIELD_FLAGS);
-    return (flags & Offsets::UNIT_FLAG_PLAYER_CONTROLLED) != 0;
-}
-
 // For non-local-player units, the engine maintains a "visible items"
 // array on the CGUnit fed by the broadcast UpdateField range. Equipment
 // slots 1..19 (1-based) read directly from `[unit + 0xE68] + 0x118 +
@@ -74,8 +56,9 @@ bool IsPlayerControlled(void *unitPtr) {
 // addressable for non-local units — the helper returns NULL for slots
 // outside [0, 18] (0-based).
 //
-// Caller must have already gated on `IsPlayerControlled` — the engine
-// helper assumes a valid visible-items array and crashes otherwise.
+// Caller must have already gated on `Unit::Flags::IsPlayerControlled`
+// — the engine helper assumes a valid visible-items array and crashes
+// otherwise.
 int ItemIDForOtherUnit(void *unitPtr, int slot1Based) {
     auto getVisibleItem = reinterpret_cast<GetVisibleItem_t>(
         Offsets::FUN_UNIT_GET_VISIBLE_ITEM);
@@ -123,7 +106,8 @@ static int __fastcall Script_GetInventoryItemID(void *L) {
     int itemID = 0;
     if (unitPtr == playerPtr) {
         itemID = ItemIDForLocalPlayer(playerPtr, slot);
-    } else if (IsPlayerControlled(unitPtr)) {
+    } else if (Unit::Flags::IsPlayerControlled(
+                   static_cast<const uint8_t *>(unitPtr))) {
         itemID = ItemIDForOtherUnit(unitPtr, slot);
     } else {
         // NPC / creature — no visible-items array. Returning nil here

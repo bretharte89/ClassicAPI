@@ -11,6 +11,8 @@
 // You should have received a copy of the GNU Lesser General Public License along with
 // ClassicAPI. If not, see <https://www.gnu.org/licenses/>.
 
+#include "Flags.h"
+
 #include "Game.h"
 #include "Offsets.h"
 
@@ -19,6 +21,18 @@
 #include <cstring>
 
 namespace Unit::Flags {
+
+bool IsPlayerControlled(const uint8_t *unit) {
+    if (unit == nullptr)
+        return false;
+    auto *fields = *reinterpret_cast<const uint8_t *const *>(
+        unit + Offsets::OFF_UNIT_DESCRIPTOR);
+    if (fields == nullptr)
+        return false;
+    const uint32_t unitFlags = *reinterpret_cast<const uint32_t *>(
+        fields + Offsets::OFF_UNIT_FIELD_FLAGS);
+    return (unitFlags & Offsets::UNIT_FLAG_PLAYER_CONTROLLED) != 0;
+}
 
 namespace {
 
@@ -50,20 +64,7 @@ bool TestPlayerFlag(void *L, uint32_t flagMask) {
 
     auto resolve = reinterpret_cast<ResolveUnitToken_t>(Offsets::FUN_RESOLVE_UNIT_TOKEN);
     auto *unit = static_cast<const uint8_t *>(resolve(token));
-    if (unit == nullptr)
-        return false;
-
-    auto *fields = *reinterpret_cast<const uint8_t *const *>(
-        unit + Offsets::OFF_UNIT_DESCRIPTOR);
-    if (fields == nullptr)
-        return false;
-
-    // Gate on player-controlled — `[unit + 0xE68]` is uninitialized
-    // for creatures/NPCs and reading it would either return garbage
-    // or crash on the +8 deref.
-    const uint32_t unitFlags = *reinterpret_cast<const uint32_t *>(
-        fields + Offsets::OFF_UNIT_FIELD_FLAGS);
-    if ((unitFlags & Offsets::UNIT_FLAG_PLAYER_CONTROLLED) == 0)
+    if (!IsPlayerControlled(unit))
         return false;
 
     auto *playerInfo = *reinterpret_cast<const uint8_t *const *>(
@@ -133,15 +134,7 @@ int __fastcall Script_UnitIsFeignDeath(void *L) {
 // Returns 0 if the unit isn't player-controlled, isn't a player, or
 // hasn't had its guild data synced.
 uint32_t ReadGuildKey(const uint8_t *unit) {
-    if (unit == nullptr)
-        return 0;
-    auto *fields = *reinterpret_cast<const uint8_t *const *>(
-        unit + Offsets::OFF_UNIT_DESCRIPTOR);
-    if (fields == nullptr)
-        return 0;
-    const uint32_t unitFlags = *reinterpret_cast<const uint32_t *>(
-        fields + Offsets::OFF_UNIT_FIELD_FLAGS);
-    if ((unitFlags & Offsets::UNIT_FLAG_PLAYER_CONTROLLED) == 0)
+    if (!IsPlayerControlled(unit))
         return 0;
     auto *info = *reinterpret_cast<const uint8_t *const *>(
         unit + Offsets::OFF_CGPLAYER_INFO);

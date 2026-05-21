@@ -504,6 +504,27 @@ enum Offsets {
     // (see OFF_UNIT_FIELD_CHANNEL_SPELL below); PLAYER_FLAGS only
     // exists on the +0xE68 sub-struct here.
     OFF_CGPLAYER_INFO = 0xE68,
+
+    // Quest list array inside the `+0xE68` sub-struct. 20 fixed
+    // slots of 0xC (12) bytes each — `questID` at slot+0x00, and
+    // some flags/state in the remaining 8 bytes. Walked by
+    // `Script_IsUnitOnQuest` (`0x004DFE10`) which iterates by byte
+    // offset over `[0, 0xF0)` with `0xC` stride and compares each
+    // entry's `+0` against the target questID. The engine writes
+    // this from `SMSG_QUESTGIVER_QUEST_DETAILS` / quest sync packets,
+    // so it covers any synced player-controlled unit (self + nearby
+    // party / raid in sync range), not just the local player.
+    //
+    // **Crash hazard**: same as visible items at `+0x118` — for NPCs
+    // (CGCreature_C objects) the `+0xE68` slot is uninitialized.
+    // Callers MUST gate on `UNIT_FLAG_PLAYER_CONTROLLED` before
+    // dereferencing. The engine's `Script_IsUnitOnQuest` is protected
+    // because its GUID-by-type filter (`FUN_00468460(0x10, ...)`)
+    // rejects non-player GUIDs upstream; `FUN_RESOLVE_UNIT_TOKEN`
+    // doesn't have that filter, so we gate explicitly.
+    OFF_CGPLAYER_INFO_QUEST_LIST = 0x28,
+    CGPLAYER_INFO_QUEST_LIST_STRIDE = 0xC,
+    CGPLAYER_INFO_QUEST_LIST_MAX = 20,
     OFF_PLAYER_INFO_FLAGS = 0x08,
     PLAYER_FLAG_AFK = 0x02,
     PLAYER_FLAG_DND = 0x04,

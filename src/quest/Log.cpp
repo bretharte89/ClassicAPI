@@ -13,10 +13,39 @@
 
 #include "Game.h"
 #include "Offsets.h"
+#include "unit/Flags.h"
 
 #include <cstdint>
 
 namespace Quest::Log {
+
+namespace {
+
+using ResolveUnitToken_t = void *(__fastcall *)(const char *token);
+
+// Walks the unit's `+0xE68` sub-struct quest list (20 slots, stride
+// 0xC) and returns true on first match. Mirrors the engine's loop in
+// `Script_IsUnitOnQuest` (`0x004DFE10`).
+bool UnitHasQuest(const uint8_t *unit, int target) {
+    if (target <= 0 || !Unit::Flags::IsPlayerControlled(unit))
+        return false;
+
+    auto *info = *reinterpret_cast<const uint8_t *const *>(
+        unit + Offsets::OFF_CGPLAYER_INFO);
+    if (info == nullptr)
+        return false;
+
+    auto *base = info + Offsets::OFF_CGPLAYER_INFO_QUEST_LIST;
+    for (int i = 0; i < Offsets::CGPLAYER_INFO_QUEST_LIST_MAX; ++i) {
+        const int questID = *reinterpret_cast<const int *>(
+            base + i * Offsets::CGPLAYER_INFO_QUEST_LIST_STRIDE);
+        if (questID == target)
+            return true;
+    }
+    return false;
+}
+
+} // namespace
 
 static int __fastcall Script_GetQuestIDForLogIndex(void *L) {
     if (!Game::Lua::IsNumber(L, 1)) {
@@ -87,11 +116,42 @@ static int __fastcall Script_IsOnQuest(void *L) {
     return 1;
 }
 
+// `C_QuestLog.IsUnitOnQuest(unit, questID)` — true iff `unit` has
+// `questID` in their quest list. Walks the unit's `+0xE68` quest
+// sub-struct (`Script_IsUnitOnQuest`'s data source). For `"player"`
+// equivalent to `IsOnQuest`; for other tokens (target / party / raid
+// members) requires the unit to be in the engine's sync range so
+// their quest data has been broadcast.
+//
+// Returns `false` for invalid input (non-string unit, non-number /
+// non-positive questID, unresolvable token, or units missing the
+// `+0xE68` sub-struct).
+static int __fastcall Script_IsUnitOnQuest(void *L) {
+    if (!Game::Lua::IsString(L, 1) || !Game::Lua::IsNumber(L, 2)) {
+        Game::Lua::PushBool(L, false);
+        return 1;
+    }
+    const char *token = Game::Lua::ToString(L, 1);
+    const int target = static_cast<int>(Game::Lua::ToNumber(L, 2));
+    if (token == nullptr || target <= 0) {
+        Game::Lua::PushBool(L, false);
+        return 1;
+    }
+
+    auto resolve = reinterpret_cast<ResolveUnitToken_t>(
+        static_cast<uintptr_t>(Offsets::FUN_RESOLVE_UNIT_TOKEN));
+    auto *unit = static_cast<const uint8_t *>(resolve(token));
+    Game::Lua::PushBool(L, UnitHasQuest(unit, target));
+    return 1;
+}
+
 static void RegisterLuaFunctions() {
     Game::Lua::RegisterTableFunction("C_QuestLog", "GetQuestIDForLogIndex",
                                      &Script_GetQuestIDForLogIndex);
     Game::Lua::RegisterTableFunction("C_QuestLog", "IsOnQuest",
                                      &Script_IsOnQuest);
+    Game::Lua::RegisterTableFunction("C_QuestLog", "IsUnitOnQuest",
+                                     &Script_IsUnitOnQuest);
 }
 
 static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
