@@ -216,6 +216,7 @@ build instructions.
   - [`IsSwimming()`](#isswimming)
   - [`IsAssistingRitual()`](#isassistingritual)
   - [`GetMirrorTimerInfo(index)` / `GetMirrorTimerProgress(label)`](#getmirrortimerinfoindex--getmirrortimerprogresslabel)
+  - [`GetShapeshiftFormID()`](#getshapeshiftformid)
 
 - [Table](#table)
   - [`table.wipe(t)`](#tablewipet)
@@ -4865,6 +4866,51 @@ end
 > we surface what the engine actually returns rather than translating
 > to modern's name. Addons backporting `"FATIGUE"`-keyed code need to
 > handle either string.
+
+### `GetShapeshiftFormID()`
+
+Returns the player's current shapeshift form as the integer ID from
+vanilla 1.12.1's `SpellShapeshiftForm.dbc`. Returns `0` when the
+player isn't shifted.
+
+| Class | Form IDs |
+|-------|----------|
+| Druid | `1` Cat, `2` Tree, `3` Travel, `4` Aquatic, `5` Bear, `8` Dire Bear, `31` Moonkin |
+| Warrior | `17` Battle, `18` Defensive, `19` Berserker |
+| Shaman | `16` Ghost Wolf |
+| Rogue | `30` Stealth |
+| Priest | `28` Shadowform, `32` Spirit of Redemption |
+
+**Turtle WoW** extends the DBC with custom rows that aren't present
+on Blizzard 1.12.1:
+
+| ID | Name | Notes |
+|----|------|-------|
+| `9` | Tree of Life Form | Restoration druid endgame form |
+| `11` | Swift Travel Form | Mounted-speed travel form |
+
+> **Vanilla numbering ≠ modern numbering.** Modern WoW renumbered the
+> table — e.g. modern uses `17` for Travel and `35` for Tree of Life,
+> where 1.12.1 uses `3` (Travel) and Turtle uses `9` (Tree of Life).
+> Don't copy named constants from a modern addon and expect them to
+> match.
+
+```lua
+if GetShapeshiftFormID() == 0 then
+    CastSpellByName("Cat Form")
+end
+```
+
+Reads byte 2 of `UNIT_BYTES_1` (descriptor `+0x212`) on the local
+player — the same byte vanilla's `Script_GetShapeshiftFormInfo`
+compares against each form-spell's effect-encoded form ID to answer
+"is this form active". The engine updates the byte from
+`SMSG_UPDATE_OBJECT` aura/form packets, so the value is live without
+needing an event listener.
+
+Vanilla 1.12 has only `GetShapeshiftFormInfo(index)` (1-based bar
+index); `GetShapeshiftFormID` exposes the DBC ID directly so callers
+can write `if formID == CAT_FORM` without iterating the bar.
 
 ## Table
 
