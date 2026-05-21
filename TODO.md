@@ -812,22 +812,12 @@ top-level factions, `nil` for invalid IDs. Verified in-game:
 See [src/faction/Info.cpp](src/faction/Info.cpp) and
 `OFF_FACTION_PARENT_ID` in [src/Offsets.h](src/Offsets.h).
 
-## 40. `UnitRaceBase(unit)` — easy
+## ~~40. `UnitRaceBase(unit)`~~ — DONE
 
-Sibling to TODO #22 `UnitClassBase` — locale-independent race string
-(`"Human"`, `"Orc"`, `"Dwarf"`, `"NightElf"`, `"Scourge"`, `"Tauren"`,
-`"Gnome"`, `"Troll"`). 1.12's `UnitRace(unit)` returns the localized
-display name only; addons currently match against locale-specific
-strings or maintain their own race-byte → name maps.
-
-Read from `UNIT_FIELD_BYTES_0` (byte 0 = race). Same `[unit + 0x110]`
-descriptor path `InCombatLockdown` already uses (see
-`OFF_UNIT_DESCRIPTOR` / `OFF_UNIT_FIELD_FLAGS` for the pattern). The
-9 race strings are static — encode as a small table.
-
-Modern WoW added `UnitRace`'s second return as the locale-independent
-form in 5.0; we surface it via this distinct call rather than
-modifying `UnitRace`'s 1.12 signature.
+Shipped as sibling to `UnitClassBase` in
+[src/unit/RaceBase.cpp](src/unit/RaceBase.cpp). Reads byte 0 of
+`UNIT_FIELD_BYTES_0` (descriptor `+0x78`) and looks up
+`ChrRaces.dbc::Filename`. Returns `(raceFile, raceID)`.
 
 ## 41. `GetActiveTalentGroup()` / `GetCurrentSpec()` — easy
 

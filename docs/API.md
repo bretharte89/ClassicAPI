@@ -252,6 +252,7 @@ build instructions.
   - [`UnitTokenFromGUID(guid)`](#unittokenfromguidguid)
   - [`GetUnitSpeed(unit)`](#getunitspeedunit)
   - [`UnitClassBase(unit)`](#unitclassbaseunit)
+  - [`UnitRaceBase(unit)`](#unitracebaseunit)
   - [`UnitIsAFK(unit)`](#unitisafkunit)
   - [`UnitIsDND(unit)`](#unitisdndunit)
   - [`UnitIsFeignDeath(unit)`](#unitisfeigndeathunit)
@@ -5705,6 +5706,27 @@ Returns `(nil, nil)` for:
 
 Throws a Lua error on missing / non-string `unit` argument — same
 shape as `UnitClass` itself.
+
+### `UnitRaceBase(unit)`
+
+Returns `(raceFile, raceID)` — the locale-independent race token
+plus the numeric raceID. The token is one of `"Human"`, `"Orc"`,
+`"Dwarf"`, `"NightElf"`, `"Scourge"`, `"Tauren"`, `"Gnome"`,
+`"Troll"`; the raceID is `1..8` for those values respectively.
+
+```lua
+local token, id = UnitRaceBase("player")    -- "Human", 1
+local token = UnitRaceBase("target")        -- works for any synced unit
+```
+
+Sibling to [`UnitClassBase`](#unitclassbaseunit). Same problem
+(vanilla's `UnitRace(unit)` returns a localized name — `"Mensch"`,
+`"Orc"`, etc.); same solution (locale-independent token straight
+from the DBC). Reads byte 0 of `UNIT_FIELD_BYTES_0` (descriptor
+`+0x78`) and looks up `ChrRaces.dbc::Filename` (`+0x3C`).
+
+Returns `(nil, nil)` for unresolvable units and non-player units
+(creature race bytes don't index `ChrRaces.dbc`).
 
 ## UnitAuras
 
