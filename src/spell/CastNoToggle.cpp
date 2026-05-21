@@ -284,16 +284,63 @@ int ScanMacroBodyForOurPattern(const char *body) {
     return 0;
 }
 
-void __fastcall MacroParse_h(int macroEntry) {
-    MacroParse_o(macroEntry);
+// The vanilla parser's per-line stack buffer is 256 bytes. When a
+// macro line exceeds that, the parser's local at `[EBP-4]` (the saved
+// entry pointer) and the saved return address get clobbered with body
+// bytes — observed in a crash with `entry@[EBP-4]` reading as ASCII
+// `"onTi"` (fragment of `"expirationTime"` from a long `/run` line).
+// The bound-check on the line-read function reads correctly in
+// Ghidra, so the overflow path is somewhere we couldn't isolate from
+// static analysis — we settle for a conservative pre-check that
+// skips the original entirely when any line is long enough to risk
+// the bug.
+//
+// 240 (not 256) leaves a safety margin: the parser writes a NUL
+// terminator and may walk one or two bytes past in its loop logic,
+// so we keep clear of the boundary. Macros that hit this branch
+// can't have a `/cast` line anyway (`/cast SpellName(Rank N)` is
+// well under 100 bytes), so losing the engine's `/cast` /
+// `CastSpellByName` tagging is no loss. We still run our own
+// `CastSpellNoToggle` pattern scan since it bound-checks its own
+// extraction.
+bool BodyHasLongLine(const char *body) {
+    if (body == nullptr)
+        return false;
+    constexpr int kMaxSafeLineBytes = 240;
+    int lineLen = 0;
+    for (; *body != '\0'; ++body) {
+        if (*body == '\n') {
+            lineLen = 0;
+        } else if (++lineLen > kMaxSafeLineBytes) {
+            return true;
+        }
+    }
+    return false;
+}
 
+void __fastcall MacroParse_h(int macroEntry) {
+    const char *body = reinterpret_cast<const char *>(
+        macroEntry + Offsets::OFF_MACRO_BODY);
     int *cacheField = reinterpret_cast<int *>(
         macroEntry + Offsets::OFF_MACRO_PRIMARY_SPELL);
+
+    if (BodyHasLongLine(body)) {
+        // Skip the engine parser entirely — it overflows on lines
+        // longer than its 256-byte buffer. Mark the cache as "no
+        // recognized cast" (0); our own scan below may still tag it
+        // if it's a `CastSpellNoToggle("...")` macro.
+        *cacheField = 0;
+        const int spellID = ScanMacroBodyForOurPattern(body);
+        if (spellID > 0)
+            *cacheField = spellID;
+        return;
+    }
+
+    MacroParse_o(macroEntry);
+
     if (*cacheField != 0)
         return;
 
-    const char *body = reinterpret_cast<const char *>(
-        macroEntry + Offsets::OFF_MACRO_BODY);
     const int spellID = ScanMacroBodyForOurPattern(body);
     if (spellID > 0)
         *cacheField = spellID;
