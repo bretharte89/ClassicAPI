@@ -4093,6 +4093,30 @@ user accept. A brand-new character's very first quest accept
 
 ## Spell
 
+> **All `C_Spell.*` functions in this section accept any spell
+> identifier**, not just a numeric `spellID`. The first argument can be:
+>
+> - **number** — spellID, used directly.
+> - **`|Hspell:N|h` hyperlink** — extracted by parsing for the
+>   embedded `spell:N` payload, so
+>   `C_Spell.X(GetSpellLink(id))` round-trips cleanly.
+> - **spell name** — case-sensitive lookup through the engine's name
+>   resolver (`FUN_RESOLVE_SPELL_NAME_TO_BOOK_ID`, the same chain
+>   `CastSpellByName` uses). Tolerates `(Rank N)` suffixes via the
+>   engine's parser. Bounded to spells in the **player's known
+>   spellbook** — not arbitrary Spell.dbc rows.
+>
+> Unrecognized identifiers (garbage strings, nil, tables, etc.) return
+> `nil` rather than raising a Lua usage error — matches modern WoW's
+> permissive `C_Spell.*` convention. Function entries below write
+> `(spellID)` in the signature for brevity but the broader shape is
+> accepted everywhere.
+>
+> The legacy globals in this section (`GetSpellInfo`, `IsPassiveSpell`,
+> `IsHarmfulSpell`, `IsUsableSpell`, etc.) keep their existing
+> `(slot, bookType)` overload — only the `C_Spell.*` namespace is
+> broadened.
+
 ### `GetSpellInfo(spellID)` / `GetSpellInfo(slot, bookType)`
 
 Returns the same nine values as 3.3.5's `GetSpellInfo`, **plus a 10th
@@ -4331,8 +4355,8 @@ IsPassiveSpell(1, "spell")   -- true/false depending on slot 1
 ### `C_Spell.IsSpellPassive(spellID)`
 
 Modern table-namespace form of [`IsPassiveSpell`](#ispassivespellspellid--ispassivespellslot-booktype).
-Same return semantics, but takes a spellID only — `C_Spell.*` calls
-don't accept the older spellbook slot + bookType shape.
+Same return semantics; doesn't accept the legacy
+`(slot, bookType)` shape.
 
 ```lua
 C_Spell.IsSpellPassive(6603)   -- true (Auto Attack)
@@ -4470,11 +4494,11 @@ local usable, noMana = C_Spell.IsSpellUsable(133)
 
 ### `C_Spell.GetSpellCooldown(spellIdentifier)`
 
-Returns a `SpellCooldownInfo` table for the given spellID, name,
-name(rank), or `|Hspell:N|h` hyperlink, or `nil` if the spell isn't
-in `Spell.dbc`. Modern table-shape variant of vanilla's
-`GetSpellCooldown(slot, bookType)` — accepts a spellID directly
-without forcing the caller to resolve a spellbook slot first.
+Returns a `SpellCooldownInfo` table for the given spell, or `nil` if
+the identifier doesn't resolve to a `Spell.dbc` row. Modern
+table-shape variant of vanilla's `GetSpellCooldown(slot, bookType)` —
+accepts a spellID directly without forcing the caller to resolve a
+spellbook slot first.
 
 ```lua
 local info = C_Spell.GetSpellCooldown(1953)   -- Blink
@@ -4491,17 +4515,6 @@ local info = C_Spell.GetSpellCooldown(1953)   -- Blink
 
 Modern-only fields (`activeCategory`, `timeUntilEndOfStartRecovery`,
 `isOnGCD`) read as `nil` since they have no vanilla source.
-
-Identifier resolution:
-
-- **number** → used directly as a spellID.
-- **`|Hspell:N|h` hyperlink** → spellID parsed out of the link
-  payload. Useful for `C_Spell.GetSpellCooldown(GetSpellLink(id))`.
-- **name string** → resolved via the engine's
-  `FUN_RESOLVE_SPELL_NAME_TO_BOOK_ID` (the same chain
-  `CastSpellByName` uses). Respects `(Rank N)` suffixes; only matches
-  spells in the **player's known spellbook**, not arbitrary
-  Spell.dbc rows.
 
 Returns `nil` if the resolved spellID is `0` or doesn't have a
 `Spell.dbc` row.
@@ -4582,9 +4595,9 @@ set. Both return `false` for invalid spellIDs.
 
 ### `C_Spell.IsSpellHarmful(spellID)` / `C_Spell.IsSpellHelpful(spellID)`
 
-Same classification logic as the globals above, but exposed in the
-modern `C_Spell` namespace. Both take a numeric `spellID` only —
-no `(slot, bookType)` form.
+Same classification logic as the globals above, exposed in the modern
+`C_Spell` namespace. Don't accept the legacy `(slot, bookType)`
+shape.
 
 ```lua
 C_Spell.IsSpellHarmful(133)     -- true (Fireball)
