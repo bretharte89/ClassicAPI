@@ -47,9 +47,51 @@ static int __fastcall Script_GetQuestIDForLogIndex(void *L) {
     return 1;
 }
 
+// `C_QuestLog.IsOnQuest(questID)` — true iff `questID` is currently
+// in the player's quest log (incomplete OR ready-to-turn-in; the log
+// holds both). Walks `VAR_QUEST_LOG_ENTRIES` and matches against each
+// real entry's questID field. Headers are skipped via the `+8`
+// header-pointer gate documented above.
+//
+// Returns `false` for non-positive or non-number input (no
+// `lua_error` — modern semantics).
+static int __fastcall Script_IsOnQuest(void *L) {
+    if (!Game::Lua::IsNumber(L, 1)) {
+        Game::Lua::PushBool(L, false);
+        return 1;
+    }
+    const int target = static_cast<int>(Game::Lua::ToNumber(L, 1));
+    if (target <= 0) {
+        Game::Lua::PushBool(L, false);
+        return 1;
+    }
+
+    const int total = *reinterpret_cast<const int *>(
+        static_cast<uintptr_t>(Offsets::VAR_QUEST_LOG_ENTRY_COUNT));
+    auto *base = reinterpret_cast<const uint8_t *>(
+        static_cast<uintptr_t>(Offsets::VAR_QUEST_LOG_ENTRIES));
+    for (int i = 0; i < total; ++i) {
+        auto *entry = base + i * Offsets::OFF_QUEST_LOG_ENTRY_STRIDE;
+        if (*reinterpret_cast<const void *const *>(
+                entry + Offsets::OFF_QUEST_LOG_ENTRY_HEADER_PTR) != nullptr) {
+            continue; // header row
+        }
+        const int questID = *reinterpret_cast<const int *>(
+            entry + Offsets::OFF_QUEST_LOG_ENTRY_QUEST_ID);
+        if (questID == target) {
+            Game::Lua::PushBool(L, true);
+            return 1;
+        }
+    }
+    Game::Lua::PushBool(L, false);
+    return 1;
+}
+
 static void RegisterLuaFunctions() {
     Game::Lua::RegisterTableFunction("C_QuestLog", "GetQuestIDForLogIndex",
                                      &Script_GetQuestIDForLogIndex);
+    Game::Lua::RegisterTableFunction("C_QuestLog", "IsOnQuest",
+                                     &Script_IsOnQuest);
 }
 
 static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};

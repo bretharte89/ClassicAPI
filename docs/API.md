@@ -183,6 +183,7 @@ build instructions.
 - [Quest](#quest)
   - [`C_QuestLog.GetQuestIDForLogIndex(index)`](#c_questlogGetQuestIDForLogIndexindex)
   - [`C_QuestLog.RequestLoadQuestByID(questID)`](#c_questlogrequestloadquestbyidquestid)
+  - [`C_QuestLog.IsOnQuest(questID)`](#c_questlogisonquestquestid)
   - [`C_QuestLog.GetTitleForQuestID(questID)`](#c_questloggettitleforquestidquestid)
   - [`QUEST_ACCEPTED` event](#quest_accepted-event)
 
@@ -3977,6 +3978,29 @@ f:SetScript("OnEvent", function()
 end)
 C_QuestLog.RequestLoadQuestByID(2)
 ```
+
+### `C_QuestLog.IsOnQuest(questID)`
+
+Returns `true` if `questID` is currently in the player's quest log
+(either still in progress or ready to turn in — both states live in
+the log). Returns `false` for invalid input (non-positive, non-number,
+or simply not in the log).
+
+```lua
+if C_QuestLog.IsOnQuest(215) then
+    -- player has "Jungle Secrets" accepted
+end
+```
+
+Walks the same `VAR_QUEST_LOG_ENTRIES` array
+[`C_QuestLog.GetQuestIDForLogIndex`](#c_questlogGetQuestIDForLogIndexindex)
+reads and matches against each real entry's questID, skipping the
+zone/category header rows.
+
+Cheaper than the engine's `IsUnitOnQuest(logIndex, unit)`, which
+requires the addon to walk the log to find the matching index first
+and resolves a unit token even when the answer is just about the
+player. Same answer in a single call.
 
 ### `C_QuestLog.GetTitleForQuestID(questID)`
 
