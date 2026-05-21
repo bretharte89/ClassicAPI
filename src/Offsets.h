@@ -1556,6 +1556,28 @@ enum Offsets {
     // don't trust it for this entry.
     FUN_SPELL_QUERY_COOLDOWN = 0x006E2EA0,
 
+    // Per-item cooldown query — `bool __fastcall(uint itemID,
+    // int *outDuration, int *outStart, uint *outEnable)`. Looks up
+    // the item's `ItemStats_C` record via the cache, finds the slot
+    // with trigger = ON_USE (`OFF_ITEMSTATS_SPELL_TRIGGER[i] == 0`),
+    // and queries that spell's cooldown via the shared
+    // `FUN_006E13E0` against the player-spell manager
+    // (`DAT_00CECAEC`). Returns `true` when a cooldown is active.
+    //
+    // Same `(*outDuration, *outStart, *outEnable)` order as
+    // `FUN_SPELL_QUERY_COOLDOWN`, so the unit conversion is
+    // identical: multiply both by 0.001 to convert engine ms →
+    // `GetTime()`-compatible seconds.
+    //
+    // **Calling convention gotcha**: the Ghidra decomp labels the
+    // first arg `uint *` because the ItemStats cache lookup uses
+    // it both as a hash key and as the cached-entry field-0 match
+    // target (a `uint *` typed slot). The actual fastcall value is
+    // the itemID integer itself, NOT a pointer to it — passing
+    // `&itemID` makes ItemStats interpret the stack address as the
+    // itemID and the lookup silently fails.
+    FUN_ITEM_QUERY_COOLDOWN = 0x006E2ED0,
+
     // Spell.dbc reagent fields. Per CMaNGOS vanilla `SpellEntry` —
     // Reagent[8] at +0x110 (itemIDs), ReagentCount[8] at +0x130
     // (counts). Used by `IsUsableSpell` to check that the player has

@@ -31,6 +31,7 @@ build instructions.
 
 - [Container](#container)
   - [`C_Container.GetContainerItemID(bagIndex, slotIndex)`](#c_containergetcontaineritemidbagindex-slotindex)
+  - [`GetItemCooldown(itemInfo)` / `C_Container.GetItemCooldown(itemID)`](#getitemcooldowniteminfo--c_containergetitemcooldownitemid)
   - [`C_Container.GetContainerItemDurability(containerIndex, slotIndex)`](#c_containergetcontaineritemdurabilitycontainerindex-slotindex)
   - [`C_Container.GetContainerItemRepairCost(containerIndex, slotIndex)`](#c_containergetcontaineritemrepaircostcontainerindex-slotindex)
   - [`C_Container.GetContainerNumFreeSlots(bagID)`](#c_containergetcontainernumfreeslotsbagid)
@@ -609,6 +610,43 @@ for slot = 1, 16 do
     end
 end
 ```
+
+### `GetItemCooldown(itemInfo)` / `C_Container.GetItemCooldown(itemID)`
+
+Returns `(startTime, duration, enable)` for the cooldown of the
+spell triggered by the item's ON_USE effect. Direct-by-ID variant of
+vanilla's `GetContainerItemCooldown(bag, slot)` — no slot reference
+required.
+
+```lua
+-- Hearthstone (6948), right after using it:
+/dump GetItemCooldown(6948)
+-- 732120.014, 3600, 1  (startTime in GetTime() seconds, 60 min duration, ready)
+
+-- Item with no ON_USE effect (or invalid itemID) returns all zeros.
+/dump GetItemCooldown(2589)   -- Linen Cloth → 0, 0, 0
+```
+
+| Field | Notes |
+|-------|-------|
+| `startTime` | `GetTime()`-compatible seconds when the cooldown started. `0` if no cooldown. |
+| `duration` | Cooldown length in seconds. `0` if no cooldown. |
+| `enable` | `1` for "ready or counting down" (normal state); `0` for "used but cooldown hasn't started yet" (the potion-in-combat case). |
+
+**Input shapes**:
+
+- `GetItemCooldown(itemInfo)` — accepts itemID, `item:N` / chat-link
+  hyperlink, numeric string, or item name (resolved via the shared
+  `Item::Arg` helper, same chain `C_Item.GetItemCount` etc. use).
+- `C_Container.GetItemCooldown(itemID)` — modern signature accepts
+  number / hyperlink but **not** spell name (per Blizzard's spec
+  "will not accept an itemlink or name", but link parsing falls out
+  of the shared `Item::Arg::Resolve` for free, so we accept it).
+
+Routes through `FUN_ITEM_QUERY_COOLDOWN` (`0x006E2ED0`) which finds
+the item's ON_USE spell slot in its `ItemStats_C` record and queries
+that spell's cooldown via the same manager player-spell cooldowns
+use.
 
 ### `C_Container.GetContainerItemDurability(containerIndex, slotIndex)`
 
