@@ -17,10 +17,44 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 
 namespace Unit::Identity {
 
 using TokenToGUID_t = uint64_t(__fastcall *)(const char *token);
+
+// FUN_TOKEN_TO_GUID's `"player"` path resolves the GUID by looking the
+// local player up in the engine's object manager: it calls FUN_00468550
+// to read `[VAR_LOCAL_PLAYER_PTR + 0xC0]`, then `FUN_00468460(type=0x10,
+// guid)` against the object manager — and returns 0 if that lookup
+// misses, even though `+0xC0` already holds the right GUID. The
+// object-manager entry can drop transiently (zone transitions, brief
+// CGPlayer rebuilds) while `+0xC0` stays valid, so for the bare
+// `"player"` token we read the canonical pointer directly. Modern
+// WoW's `UnitGUID("player")` doesn't gate on object-manager state
+// either. Suffixed tokens (`"playertarget"` and the like) still go
+// through the engine so the chained `.target` walk works.
+//
+// This does NOT help at addon file-load time on first login. The
+// engine populates `+0xC0` from SMSG_UPDATE_OBJECT processing in the
+// main loop, which happens AFTER `FrameScript_Initialize` (and the
+// addon load pass it triggers) finishes. The engine itself gates its
+// own post-init player setup at the tail of FrameScript_Initialize on
+// `FUN_00468550() != 0` for the same reason — the GUID isn't ready
+// yet. Addons that need the player GUID at boot must wait for
+// `PLAYER_LOGIN`. See the trace notes in commit history.
+static uint64_t ResolveTokenGUID(const char *token) {
+    if (token != nullptr && _stricmp(token, "player") == 0) {
+        auto *player = *reinterpret_cast<uint8_t *const *>(
+            static_cast<uintptr_t>(Offsets::VAR_LOCAL_PLAYER_PTR));
+        if (player == nullptr)
+            return 0;
+        return *reinterpret_cast<const uint64_t *>(
+            player + Offsets::OFF_LOCAL_PLAYER_GUID);
+    }
+    auto fn = reinterpret_cast<TokenToGUID_t>(Offsets::FUN_TOKEN_TO_GUID);
+    return fn(token);
+}
 
 // `UnitGUID(unit)` — returns the unit's 64-bit GUID formatted as a
 // hex string `"0xHHHHHHHHLLLLLLLL"` (16 hex digits, hi dword first).
@@ -57,8 +91,7 @@ static int __fastcall Script_UnitGUID(void *L) {
     if (token == nullptr)
         return 0;
 
-    auto fn = reinterpret_cast<TokenToGUID_t>(Offsets::FUN_TOKEN_TO_GUID);
-    const uint64_t guid = fn(token);
+    const uint64_t guid = ResolveTokenGUID(token);
     if (guid == 0)
         return 0;
 
@@ -99,10 +132,8 @@ static int __fastcall Script_UnitTokenFromGUID(void *L) {
     if (guidStr == nullptr || !Guid::Parse(guidStr, &target) || target == 0)
         return 0;
 
-    auto fn = reinterpret_cast<TokenToGUID_t>(Offsets::FUN_TOKEN_TO_GUID);
-
     auto check = [&](const char *token) -> bool {
-        if (fn(token) != target)
+        if (ResolveTokenGUID(token) != target)
             return false;
         Game::Lua::PushString(L, token);
         return true;
