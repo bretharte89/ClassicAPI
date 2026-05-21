@@ -40,6 +40,7 @@
 
 #include "Game.h"
 #include "Offsets.h"
+#include "spell/Arg.h"
 #include "spell/Lookup.h"
 
 #include <cstdint>
@@ -226,14 +227,6 @@ const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
 using MacroParse_t = void(__fastcall *)(int macroEntry);
 MacroParse_t MacroParse_o = nullptr;
 
-using NameToSpellID_t = int(__fastcall *)(const char *name, int *outIsPet);
-
-int ResolveNameViaEngine(const char *name) {
-    auto fn = reinterpret_cast<NameToSpellID_t>(
-        static_cast<uintptr_t>(Offsets::FUN_RESOLVE_SPELL_NAME_TO_BOOK_ID));
-    int isPet = 0;
-    return fn(name, &isPet);
-}
 
 // Scan a macro body for `CastSpellNoToggle("<name>")` and return the
 // resolved spellID, or 0 if no recognized invocation is present.
@@ -268,7 +261,7 @@ int ScanMacroBodyForOurPattern(const char *body) {
                             char name[128];
                             std::memcpy(name, p, n);
                             name[n] = '\0';
-                            const int spellID = ResolveNameViaEngine(name);
+                            const int spellID = Spell::Arg::NameToSpellID(name);
                             if (spellID > 0)
                                 return spellID;
                         }
