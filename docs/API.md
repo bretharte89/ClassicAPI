@@ -240,6 +240,7 @@ build instructions.
 
 - [Unit](#unit)
   - [`UnitGUID(unit)`](#unitguidunit)
+  - [`UnitTokenFromGUID(guid)`](#unittokenfromguidguid)
   - [`GetUnitSpeed(unit)`](#getunitspeedunit)
   - [`UnitClassBase(unit)`](#unitclassbaseunit)
   - [`UnitIsAFK(unit)`](#unitisafkunit)
@@ -5228,6 +5229,44 @@ which is independent of unit visibility.
 > we match the engine's existing convention here. Unit tokens that
 > resolve to "no current unit" (like `"target"` with nothing
 > targeted) return nil cleanly via the GUID = 0 check.
+
+### `UnitTokenFromGUID(guid)`
+
+Best-effort reverse lookup: given a GUID string in the
+`"0xHHHHHHHHLLLLLLLL"` format `UnitGUID` returns, walk the engine's
+known unit tokens and return the first one currently mapped to that
+GUID, or `nil` if none of them point at it.
+
+The search order matches modern retail with post-1.12 tokens
+omitted (`vehicle`, `nameplateN`, `arenaN`, `arenapetN`, `bossN`,
+`focus`, `softenemy`, `softfriend`, `softinteract` all post-date
+vanilla and the engine's resolver doesn't recognize them):
+
+```
+player → pet → party1..4 → partypet1..4 → raid1..40
+       → raidpet1..40 → target → npc → mouseover
+```
+
+```lua
+local name, guid = GameTooltip:GetUnitGUID()
+local token = UnitTokenFromGUID(guid)
+if token then
+    -- can now feed `token` to UnitHealth / UnitClass / etc.
+end
+```
+
+> **The return is inherently unstable.** Multiple tokens can map to
+> the same GUID at once (your target IS your party1, your pet IS
+> your raidpet5 if you're in a raid), and the mapping changes every
+> time `SMSG_GROUP_LIST` fires, the player tabs target, or a party
+> member loads in. Modern's API has the same warning. If you cache a
+> result, re-verify with `UnitGUID(token) == originalGuid` before
+> reusing it.
+>
+> Returns `nil` for malformed GUID strings, zero GUIDs, and GUIDs
+> that don't match any currently-resolvable token — including
+> ex-targets, ex-mouseover units, distant players seen in the chat
+> log, etc. The engine simply doesn't address those by token.
 
 ### `GetUnitSpeed(unit)`
 

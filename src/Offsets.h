@@ -211,6 +211,23 @@ enum Offsets {
     // input it's the right primitive.
     FUN_TOKEN_TO_GUID = 0x00515970,
 
+    // Party / raid roster counts and the party GUID array referenced
+    // in the `FUN_TOKEN_TO_GUID` dispatch comment above. Used by
+    // `UnitTokenFromGUID` to cap its candidate iteration — solo
+    // players skip all 88 group tokens; a 5-person party scans 4
+    // slots instead of 40.
+    //
+    // - `VAR_PARTY_GUIDS` — 4-slot QWORD array (one GUID per party
+    //   member, low+high dwords). Walked by `Script_GetNumPartyMembers`
+    //   (`FUN_004E86D0`) at `0x004E86D0` to compute the count.
+    // - `VAR_RAID_MEMBER_COUNT` — single int maintained by the
+    //   engine's raid-roster handler. Read directly by
+    //   `Script_GetNumRaidMembers` (`FUN_004BB530`).
+    VAR_PARTY_GUIDS = 0x00BC6F48,
+    PARTY_MAX_SLOTS = 4,
+    VAR_RAID_MEMBER_COUNT = 0x00B713E0,
+    RAID_MAX_SLOTS = 40,
+
     // Chat-event dispatcher — single choke point through which all
     // CHAT_MSG_* events fire after the SMSG_MESSAGECHAT packet handler
     // (opcode 0x96 → FUN_0049D560) parses the wire data. Called with

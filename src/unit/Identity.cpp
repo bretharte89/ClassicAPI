@@ -16,6 +16,7 @@
 #include "guid/Guid.h"
 
 #include <cstdint>
+#include <cstdio>
 
 namespace Unit::Identity {
 
@@ -66,8 +67,101 @@ static int __fastcall Script_UnitGUID(void *L) {
     return 1;
 }
 
+// `UnitTokenFromGUID(guid)` — best-effort reverse lookup: given a unit
+// GUID, return the first unit token currently mapped to that GUID, or
+// nil if none of the known tokens point at it.
+//
+// The search walks the modern retail token order with post-vanilla
+// tokens dropped (no `vehicle`, `nameplateN`, `arenaN`, `arenapetN`,
+// `bossN`, `focus`, `softenemy`, `softfriend`, `softinteract` —
+// those all post-date 1.12 and `FUN_TOKEN_TO_GUID` would raise
+// "Unknown unit name" for them). Order:
+//
+//   player → pet → party1..4 → partypet1..4 → raid1..40
+//          → raidpet1..40 → target → npc → mouseover
+//
+// The result is inherently unstable — multiple tokens can map to the
+// same GUID at once (your target IS your mouseover IS your party1), and
+// the mapping changes across frames as `SMSG_GROUP_LIST` /
+// `SMSG_AURA_UPDATE` etc. fire. Same caveat as modern's API; addons
+// that cache the return should re-verify with `UnitGUID(token)`
+// before each use.
+//
+// Returns `nil` if the input string isn't a parseable GUID, or the
+// GUID is zero, or no token currently maps to it.
+static int __fastcall Script_UnitTokenFromGUID(void *L) {
+    if (!Game::Lua::IsString(L, 1)) {
+        Game::Lua::Error(L, "Usage: UnitTokenFromGUID(\"unitGUID\")");
+        return 0;
+    }
+    const char *guidStr = Game::Lua::ToString(L, 1);
+    uint64_t target = 0;
+    if (guidStr == nullptr || !Guid::Parse(guidStr, &target) || target == 0)
+        return 0;
+
+    auto fn = reinterpret_cast<TokenToGUID_t>(Offsets::FUN_TOKEN_TO_GUID);
+
+    auto check = [&](const char *token) -> bool {
+        if (fn(token) != target)
+            return false;
+        Game::Lua::PushString(L, token);
+        return true;
+    };
+
+    if (check("player")) return 1;
+    if (check("pet")) return 1;
+
+    // Cap each indexed-token scan at the actual populated slot
+    // count, read straight out of engine memory. Solo skips all 88
+    // group tokens; a 5-person party scans 8 instead of 88. Raid
+    // and party are NOT mutually exclusive — in a 40-man raid the
+    // engine still tracks the player's 5-person subgroup in the
+    // party array, so we iterate both independently when both have
+    // populated slots.
+    //
+    // Party count = number of non-zero GUIDs in the 4-slot party
+    // GUID array. Same walk `Script_GetNumPartyMembers` does
+    // internally (`FUN_004E86D0`), inlined here.
+    const auto *partyGuids = reinterpret_cast<const uint64_t *>(
+        static_cast<uintptr_t>(Offsets::VAR_PARTY_GUIDS));
+    int partyCount = 0;
+    for (int i = 0; i < Offsets::PARTY_MAX_SLOTS; ++i) {
+        if (partyGuids[i] != 0)
+            ++partyCount;
+    }
+    int raidCount = *reinterpret_cast<const int *>(
+        static_cast<uintptr_t>(Offsets::VAR_RAID_MEMBER_COUNT));
+    if (raidCount > Offsets::RAID_MAX_SLOTS)
+        raidCount = Offsets::RAID_MAX_SLOTS;
+
+    char buf[16];
+    for (int i = 1; i <= partyCount; ++i) {
+        std::snprintf(buf, sizeof buf, "party%d", i);
+        if (check(buf)) return 1;
+    }
+    for (int i = 1; i <= partyCount; ++i) {
+        std::snprintf(buf, sizeof buf, "partypet%d", i);
+        if (check(buf)) return 1;
+    }
+    for (int i = 1; i <= raidCount; ++i) {
+        std::snprintf(buf, sizeof buf, "raid%d", i);
+        if (check(buf)) return 1;
+    }
+    for (int i = 1; i <= raidCount; ++i) {
+        std::snprintf(buf, sizeof buf, "raidpet%d", i);
+        if (check(buf)) return 1;
+    }
+
+    if (check("target")) return 1;
+    if (check("npc")) return 1;
+    if (check("mouseover")) return 1;
+
+    return 0;
+}
+
 static void RegisterLuaFunctions() {
     Game::Lua::RegisterGlobalFunction("UnitGUID", &Script_UnitGUID);
+    Game::Lua::RegisterGlobalFunction("UnitTokenFromGUID", &Script_UnitTokenFromGUID);
 }
 
 static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
