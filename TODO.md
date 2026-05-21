@@ -3145,3 +3145,80 @@ freed them.
 sessions, which would mean stale entries surviving server-side
 deletes, and the data is already authoritative on each launch.
 Memory-only is simpler and self-correcting.
+
+## 96. EditBox `OnArrowPressed` script handler (+ `SetCursorPosition`) — medium
+
+The 1.12 EditBox widget offers two arrow-key modes via the
+`ignoreArrows` attribute, and both are bad for a developer console:
+
+- `ignoreArrows="true"` — widget consumes all four arrows and uses
+  UP/DOWN to walk its internal `AddHistoryLine` ring. LEFT/RIGHT
+  then can't move the text cursor. This is what
+  `ChatFrameEditBoxTemplate` does, which is why you can't move the
+  cursor inside a WoW chat input.
+- `ignoreArrows="false"` — LEFT/RIGHT move the cursor; UP/DOWN do
+  nothing, and there's no Lua-visible event when UP/DOWN are
+  pressed. The focused EditBox consumes key events before the
+  parent's `OnKeyDown` can fire, and no `OnArrowPressed` handler
+  exists on the 1.12 widget (verified in
+  `Blizzard-WoW-Interface/1.12.1/FrameXML/UI.xsd` — no element,
+  and zero hits across all of Blizzard's 1.12 FrameXML).
+
+So Lua-driven history navigation is impossible: there's no way to
+intercept UP/DOWN without also losing LEFT/RIGHT.
+
+### Driving use case
+
+`Octo/Interface/GlueXML/GlueConsole.lua` — the in-glue Lua console
+used during glue-side development. Wants the obvious developer-
+console UX: UP/DOWN to walk through recently-submitted commands,
+LEFT/RIGHT to edit. An in-game Lua console (probable future
+addition) wants the same thing.
+
+### What the binding should expose
+
+Mirror modern WoW's `OnArrowPressed` script handler:
+
+```lua
+editBox:SetScript("OnArrowPressed", function(self, key)
+  -- key = "UP" | "DOWN" | "LEFT" | "RIGHT"
+end)
+```
+
+Fires when an arrow key is pressed while the EditBox has focus,
+regardless of `ignoreArrows`. The widget's normal handling still
+runs after — for `ignoreArrows="false"`, LEFT/RIGHT continue to
+move the cursor; for `ignoreArrows="true"`, the built-in history
+walk still happens (or we can drop the built-in history entirely
+once Lua can drive it). The XML element also needs to be
+registered under `EditBoxType` so `<OnArrowPressed>...</OnArrowPressed>`
+parses alongside `SetScript`.
+
+### Pair with `SetCursorPosition` / `GetCursorPosition`
+
+After UP swaps a history line into the editbox, the Lua side
+wants to drop the cursor at end-of-text rather than position 0.
+3.3.5 exposes `editBox:SetCursorPosition(n)` and
+`editBox:GetCursorPosition()`
+([Blizzard-WoW-Interface/3.3.5/FrameXML/AutoComplete.lua:249,289](file:///c:/WoW/Blizzard-WoW-Interface/3.3.5/FrameXML/AutoComplete.lua));
+1.12 has neither (zero hits anywhere in
+`Blizzard-WoW-Interface/1.12.1`). Same widget, presumably the
+same internal cursor field — worth exposing in the same change as
+`OnArrowPressed` since the navigation UX is broken without it
+(history line appears with cursor at column 0).
+
+### Engine side — not yet researched
+
+Likely path: hook the EditBox key-handler dispatch (whatever
+function decides "is this key consumed by the widget? does it
+affect the text? move the cursor?"). When key ∈ {UP, DOWN, LEFT,
+RIGHT} and the EditBox has focus, fire the new `OnArrowPressed`
+script before the default behavior runs.
+
+`SetCursorPosition` is presumably a thin write to a cursor-index
+field on the EditBox struct (plus whatever invalidation forces
+the caret to redraw at the new position). `GetCursorPosition` is
+the matching read. Both should be straightforward once the field
+offset is identified — 3.3.5's `Script_*` equivalents are a good
+starting point for what the parameter shape and bounds-clamp
+behavior should be.
