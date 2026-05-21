@@ -1163,6 +1163,22 @@ enum Offsets {
     // observing `0xEE00 → 0xEE05` on `/sit` over a chair (the medium-
     // chair sit value 5).
     OFF_UNIT_FIELD_BYTES_1 = 0x210,
+
+    // `__fastcall(void)` engine helper that refreshes the bonus
+    // action bar from the local player's current shapeshift form
+    // (byte 2 of `UNIT_BYTES_1`, descriptor `+0x212`). Reads the form
+    // byte, looks up SpellShapeshiftForm.dbc's `bonusActionBar`
+    // column, stores it into `DAT_00BC6E88`, and fires
+    // `UPDATE_BONUS_ACTIONBAR` (event id `0xD9`).
+    //
+    // Called from two sites: once during post-login init from
+    // `FUN_004908C0`, and on every relevant UNIT_BYTES_1 broadcast
+    // update (the unrooted call at `0x005DE01B`, inside the
+    // local-player UpdateField dispatch). Hooked to synthesize
+    // modern `UPDATE_SHAPESHIFT_FORM` — the cached-byte gate in our
+    // hook filters out the non-form recomputes (this fires for any
+    // UNIT_BYTES_1 update, not just form changes).
+    FUN_BONUS_ACTIONBAR_UPDATE = 0x004E4FC0,
     // Inner watched-faction setter — `__fastcall(ecx = factionID) → void`.
     // The engine's `Script_SetWatchedFactionIndex` (0x004D6B60) is a
     // thin Lua-side wrapper that takes a 1-based displayed-list index,

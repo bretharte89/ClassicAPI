@@ -217,6 +217,7 @@ build instructions.
   - [`IsAssistingRitual()`](#isassistingritual)
   - [`GetMirrorTimerInfo(index)` / `GetMirrorTimerProgress(label)`](#getmirrortimerinfoindex--getmirrortimerprogresslabel)
   - [`GetShapeshiftFormID()`](#getshapeshiftformid)
+  - [`UPDATE_SHAPESHIFT_FORM` event](#update_shapeshift_form-event)
 
 - [Table](#table)
   - [`table.wipe(t)`](#tablewipet)
@@ -4911,6 +4912,44 @@ needing an event listener.
 Vanilla 1.12 has only `GetShapeshiftFormInfo(index)` (1-based bar
 index); `GetShapeshiftFormID` exposes the DBC ID directly so callers
 can write `if formID == CAT_FORM` without iterating the bar.
+
+### `UPDATE_SHAPESHIFT_FORM` event
+
+Fires whenever the local player's shapeshift form changes — entering
+or leaving cat / bear / travel / stance / shadowform / stealth /
+ghost wolf / etc. No payload; call
+[`GetShapeshiftFormID()`](#getshapeshiftformid) from the handler to
+read the new form.
+
+Polyfills the modern singular event. Vanilla 1.12 has only the plural
+`UPDATE_SHAPESHIFT_FORMS` (fires when the *list* of available forms
+changes — learning a new form, not changing into one). The singular
+"current form changed" event was added in a later expansion.
+
+```lua
+local f = CreateFrame("Frame")
+f:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
+f:SetScript("OnEvent", function()
+    if event == "UPDATE_SHAPESHIFT_FORM" then
+        print("now in form", GetShapeshiftFormID())
+    end
+end)
+```
+
+**Implementation notes**
+
+Hooks the engine's bonus-action-bar refresh helper at `0x004E4FC0`,
+which the engine calls every time the local player's `UNIT_BYTES_1`
+descriptor field is broadcast and from `FUN_004908C0` at post-login
+init. After the original runs, the post-hook reads byte 2 of
+`UNIT_BYTES_1` (descriptor `+0x212` — the form ID) and fires
+`UPDATE_SHAPESHIFT_FORM` only when the value differs from the last
+seen — filtering out the spurious recomputes for other `UNIT_BYTES_1`
+bytes (standstate, etc.) the engine also routes through this helper.
+
+The cached "last form" sentinel uses `-1` for "player descriptor not
+yet resolvable" so transient resolution failures during early login
+don't get misread as leaving a form.
 
 ## Table
 

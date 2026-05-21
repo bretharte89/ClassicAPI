@@ -13,6 +13,7 @@
 
 #include "Game.h"
 #include "Offsets.h"
+#include "event/Custom.h"
 
 #include <cstdint>
 
@@ -21,6 +22,25 @@ namespace Unit::ShapeshiftForm {
 namespace {
 
 using ResolveUnitToken_t = void *(__fastcall *)(const char *token);
+
+// Read the local player's current shapeshift form byte. Returns
+// `-1` if the player CGUnit / descriptor isn't resolvable (yet) —
+// distinct from `0` (resolved but not shapeshifted) so the hook
+// can tell "transient unresolved" from "left a form" and not fire
+// a bogus change event during early-login windows.
+int ReadCurrentForm() {
+    auto resolve = reinterpret_cast<ResolveUnitToken_t>(Offsets::FUN_RESOLVE_UNIT_TOKEN);
+    auto *player = static_cast<const uint8_t *>(resolve("player"));
+    if (player == nullptr)
+        return -1;
+    auto *fields = *reinterpret_cast<const uint8_t *const *>(
+        player + Offsets::OFF_UNIT_DESCRIPTOR);
+    if (fields == nullptr)
+        return -1;
+    const uint32_t bytes1 = *reinterpret_cast<const uint32_t *>(
+        fields + Offsets::OFF_UNIT_FIELD_BYTES_1);
+    return static_cast<int>((bytes1 >> 16) & 0xFF);
+}
 
 // `GetShapeshiftFormID()` — returns the player's current shapeshift
 // form ID from vanilla 1.12.1's `SpellShapeshiftForm.dbc`:
@@ -49,21 +69,8 @@ using ResolveUnitToken_t = void *(__fastcall *)(const char *token);
 // key behavior on the DBC ID directly (`if formID == CAT_FORM then`)
 // without needing to iterate the bar.
 int __fastcall Script_GetShapeshiftFormID(void *L) {
-    auto resolve = reinterpret_cast<ResolveUnitToken_t>(Offsets::FUN_RESOLVE_UNIT_TOKEN);
-    auto *player = static_cast<const uint8_t *>(resolve("player"));
-    if (player == nullptr) {
-        Game::Lua::PushNumber(L, 0);
-        return 1;
-    }
-    auto *fields = *reinterpret_cast<const uint8_t *const *>(
-        player + Offsets::OFF_UNIT_DESCRIPTOR);
-    if (fields == nullptr) {
-        Game::Lua::PushNumber(L, 0);
-        return 1;
-    }
-    const uint32_t bytes1 = *reinterpret_cast<const uint32_t *>(
-        fields + Offsets::OFF_UNIT_FIELD_BYTES_1);
-    Game::Lua::PushNumber(L, static_cast<double>((bytes1 >> 16) & 0xFF));
+    const int form = ReadCurrentForm();
+    Game::Lua::PushNumber(L, form < 0 ? 0.0 : static_cast<double>(form));
     return 1;
 }
 
@@ -73,6 +80,49 @@ void RegisterLuaFunctions() {
 
 const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
 
+// `UPDATE_SHAPESHIFT_FORM` — synthesized payload-less event that
+// fires whenever the local player's form byte changes, matching
+// modern WoW's semantics. Vanilla 1.12 has only the plural
+// `UPDATE_SHAPESHIFT_FORMS` (which modern uses for "available forms
+// list changed"); the singular per-form-change variant is added by
+// later expansions and was not present here.
+//
+// Hook target: `FUN_BONUS_ACTIONBAR_UPDATE` (0x004E4FC0). The engine
+// calls this every time it refreshes the bonus action bar — once
+// post-login from `FUN_004908C0`, and per-update from the
+// local-player UpdateField dispatch at `0x005DE01B`. It runs AFTER
+// the descriptor's form byte is written, so reading the byte from
+// the post-hook gives the new value.
+//
+// The byte-comparison gate matters: this engine helper also fires
+// `UPDATE_BONUS_ACTIONBAR` when other UNIT_BYTES_1 bytes change
+// (standstate, etc.), and we don't want to spam the event for
+// non-form updates. We also distinguish "unresolved" (-1) from "0
+// no-form" so transient resolve failures during login don't look
+// like leaving a form.
+constexpr const char *kEventName = "UPDATE_SHAPESHIFT_FORM";
+const Event::Custom::AutoReserve _reserve{kEventName};
+
+int s_lastForm = -1;
+
+using BonusActionBarUpdate_t = void(__fastcall *)();
+BonusActionBarUpdate_t BonusActionBarUpdate_o = nullptr;
+
+void __fastcall BonusActionBarUpdate_h() {
+    BonusActionBarUpdate_o();
+    const int current = ReadCurrentForm();
+    if (current < 0 || current == s_lastForm)
+        return;
+    s_lastForm = current;
+    const int slot = Event::Custom::Lookup(kEventName);
+    Event::Custom::Fire(slot, "");
+}
+
 } // namespace
+
+static const Game::HookAutoRegister _hookreg{
+    Offsets::FUN_BONUS_ACTIONBAR_UPDATE,
+    reinterpret_cast<void *>(&BonusActionBarUpdate_h),
+    reinterpret_cast<void **>(&BonusActionBarUpdate_o)};
 
 } // namespace Unit::ShapeshiftForm
