@@ -59,9 +59,6 @@ build instructions.
   - [`C_EquipmentSet.IgnoreSlotForSave(slot)` / `UnignoreSlotForSave` / `IsSlotIgnoredForSave` / `ClearIgnoredSlotsForSave`](#c_equipmentsetignoreslotforsaveslot--unignoreslotforsave--isslotignoredforsave--clearignoredslotsforsave)
   - [`C_EquipmentSet.EquipmentSetContainsLockedItems(setID)`](#c_equipmentsetequipmentsetcontainslockeditemssetid)
   - [`C_EquipmentSet.UseEquipmentSet(setID)`](#c_equipmentsetuseequipmentsetsetid)
-  - [`EQUIPMENT_SETS_CHANGED` event](#equipment_sets_changed-event)
-  - [`EQUIPMENT_SWAP_PENDING` event](#equipment_swap_pending-event)
-  - [`EQUIPMENT_SWAP_FINISHED` event](#equipment_swap_finished-event)
 
 - [Events](#events)
   - [`C_EventUtils.IsEventValid(eventName)`](#c_eventutilsiseventvalideventname)
@@ -69,6 +66,14 @@ build instructions.
   - [`HEARTHSTONE_BOUND` event](#hearthstone_bound-event)
   - [Player input-state events (`PLAYER_STARTED_MOVING` / `LOOKING` / `TURNING` + `STOPPED_*`)](#player-input-state-events)
   - [`GLOBAL_MOUSE_DOWN` / `GLOBAL_MOUSE_UP` events](#global_mouse_down--global_mouse_up-events)
+  - [`EQUIPMENT_SETS_CHANGED` event](#equipment_sets_changed-event)
+  - [`EQUIPMENT_SWAP_PENDING` event](#equipment_swap_pending-event)
+  - [`EQUIPMENT_SWAP_FINISHED` event](#equipment_swap_finished-event)
+  - [`FACTION_STANDING_CHANGED` event](#faction_standing_changed-event)
+  - [`MODIFIER_STATE_CHANGED` event](#modifier_state_changed-event)
+  - [`QUEST_ACCEPTED` event](#quest_accepted-event)
+  - [`QUEST_TURNED_IN` event](#quest_turned_in-event)
+  - [`UPDATE_SHAPESHIFT_FORM` event](#update_shapeshift_form-event)
 
 - [Expansion](#expansion)
   - [`GetClassicExpansionLevel()`](#getclassicexpansionlevel)
@@ -84,7 +89,6 @@ build instructions.
   - [`C_Reputation.GetFactionDataByIndex(factionSortIndex)`](#c_reputationgetfactiondatabyindexfactionsortindex)
   - [`C_Reputation.SetWatchedFactionByID(factionID)`](#c_reputationsetwatchedfactionbyidfactionid)
   - [`C_Reputation.GetLastStandingChange()`](#c_reputationgetlaststandingchange)
-  - [`FACTION_STANDING_CHANGED` event](#faction_standing_changed-event)
 
 - [FriendList](#friendlist)
   - [`C_FriendList.SendWhoQueryByName(name)`](#c_friendlistsendwhoquerybynamename)
@@ -127,7 +131,6 @@ build instructions.
   - [`IsLeftControlKeyDown()` / `IsRightControlKeyDown()`](#isleftcontrolkeydown--isrightcontrolkeydown)
   - [`IsLeftAltKeyDown()` / `IsRightAltKeyDown()`](#isleftaltkeydown--isrightaltkeydown)
   - [`IsModifierKeyDown()`](#ismodifierkeydown)
-  - [`MODIFIER_STATE_CHANGED` event](#modifier_state_changed-event)
 
 - [Item](#item)
   - [`C_Item.IsBound(itemLocation)`](#c_itemisbounditemlocation)
@@ -194,7 +197,6 @@ build instructions.
   - [`C_QuestLog.GetTitleForQuestID(questID)`](#c_questloggettitleforquestidquestid)
   - [`C_QuestLog.IsQuestDataCachedByID(questID)`](#c_questlogisquestdatacachedbyidquestid)
   - [`GetQuestLogLeaderBoardID(objectiveIndex [, questIndex])`](#getquestlogleaderboardidobjectiveindex--questindex)
-  - [`QUEST_ACCEPTED` event](#quest_accepted-event)
 
 - [Spell](#spell)
   - [`GetSpellInfo(spellID)` / `GetSpellInfo(slot, bookType)`](#getspellinfospellid--getspellinfoslot-booktype)
@@ -233,7 +235,6 @@ build instructions.
   - [`GetMirrorTimerInfo(index)` / `GetMirrorTimerProgress(label)`](#getmirrortimerinfoindex--getmirrortimerprogresslabel)
   - [`GetShapeshiftFormID()`](#getshapeshiftformid)
   - [`CancelShapeshiftForm()`](#cancelshapeshiftform)
-  - [`UPDATE_SHAPESHIFT_FORM` event](#update_shapeshift_form-event)
 
 - [Table](#table)
   - [`table.wipe(t)`](#tablewipet)
@@ -1150,34 +1151,6 @@ trinkets 13/14, weapons 16/17), all 2-cycles.
 > old cursor-based path actually fired more (one per pickup, one
 > per equip, one per cursor-clear).
 
-### `EQUIPMENT_SETS_CHANGED` event
-
-Fires (with no payload) after any mutation: `Create`, `Save`,
-`Modify`, `Delete`, and the four `*IgnoredSlot*` calls. Addon UI
-should re-read its set list / button state when this fires.
-
-### `EQUIPMENT_SWAP_PENDING` event
-
-Fires with a single payload arg — `setID` — at the **start** of
-`UseEquipmentSet`, right after the set-exists check passes and
-before any pickup/equip work begins. Modern addons use this to
-gate "swap in progress" UI state (grey out the set button, show
-a spinner, etc.) until `EQUIPMENT_SWAP_FINISHED` arrives.
-
-Doesn't fire if `UseEquipmentSet` is called with an unknown
-setID — in that case only `EQUIPMENT_SWAP_FINISHED(false, setID)`
-fires.
-
-### `EQUIPMENT_SWAP_FINISHED` event
-
-Fires at the end of every `UseEquipmentSet` call with two payload
-args: `success` (1 if the set existed and we dispatched the swap, 0
-if the setID was unknown) and `setID`. Note this is "we ran the
-dispatch" success — not "every item ended up in its target slot."
-Items that were in the bank or that couldn't complete a swap cycle
-in one pass still report success=1. Listen for this if you want to
-re-paint the character pane / refresh tooltips after a swap.
-
 ## Events
 
 ### `C_EventUtils.IsEventValid(eventName)`
@@ -1357,6 +1330,239 @@ honored when WoW is the foreground window — clicking in another
 app while alt-tabbed doesn't fire. UP transitions always fire,
 even if the user alt-tabbed mid-click, so an addon never gets
 left in a "button is held" state.
+
+### `EQUIPMENT_SETS_CHANGED` event
+
+Fires (with no payload) after any mutation: `Create`, `Save`,
+`Modify`, `Delete`, and the four `*IgnoredSlot*` calls. Addon UI
+should re-read its set list / button state when this fires.
+
+### `EQUIPMENT_SWAP_PENDING` event
+
+Fires with a single payload arg — `setID` — at the **start** of
+`UseEquipmentSet`, right after the set-exists check passes and
+before any pickup/equip work begins. Modern addons use this to
+gate "swap in progress" UI state (grey out the set button, show
+a spinner, etc.) until `EQUIPMENT_SWAP_FINISHED` arrives.
+
+Doesn't fire if `UseEquipmentSet` is called with an unknown
+setID — in that case only `EQUIPMENT_SWAP_FINISHED(false, setID)`
+fires.
+
+### `EQUIPMENT_SWAP_FINISHED` event
+
+Fires at the end of every `UseEquipmentSet` call with two payload
+args: `success` (1 if the set existed and we dispatched the swap, 0
+if the setID was unknown) and `setID`. Note this is "we ran the
+dispatch" success — not "every item ended up in its target slot."
+Items that were in the bank or that couldn't complete a swap cycle
+in one pass still report success=1. Listen for this if you want to
+re-paint the character pane / refresh tooltips after a swap.
+
+### `FACTION_STANDING_CHANGED` event
+
+Fires once per reputation change with `(factionID, newStanding, repGained)`:
+
+| arg1 (`factionID`)    | Faction.dbc row ID of the faction whose standing changed |
+| arg2 (`newStanding`)  | New total standing value (post-change `barValue`)        |
+| arg3 (`repGained`)    | Signed delta — positive on gain, negative on loss        |
+
+Polyfills the modern event of the same name. Vanilla 1.12 exposes only
+`CHAT_MSG_COMBAT_FACTION_CHANGE`, whose `arg1` is the localized chat
+string (`"Your Stormwind reputation has increased by 100."`) — addons
+have to parse the text and reverse-resolve the faction name back to
+an ID. This event lets addons skip that work.
+
+Does **not** fire for the initial faction sync at login or `/reload`
+— matches modern semantics. Only fires when a real reputation gain or
+loss arrives from the server (`SMSG_SET_FACTION_STANDING`).
+
+```lua
+local f = CreateFrame("Frame")
+f:RegisterEvent("FACTION_STANDING_CHANGED")
+f:SetScript("OnEvent", function()
+    -- in vanilla 1.12 OnEvent receives no args; engine sets `event`
+    -- and `arg1..argN` as globals before invoking the handler.
+    if event == "FACTION_STANDING_CHANGED" then
+        local name = GetFactionInfoByID(arg1)
+        print(string.format("%s: %+d  (now %d)", name, arg3, arg2))
+    end
+end)
+```
+
+`repGained` is signed: positive for gains, negative for the rare loss
+case (e.g. killing a Goblin Commodity Exchange NPC drops your rep
+with Booty Bay).
+
+**Implementation notes**
+
+Hooks the engine's per-rep-change notify dispatcher at `0x0062C5F0`
+— the chokepoint called once per `(factionID, signedDelta)` from
+the per-slot setter at `0x004D6330`, gated by "value-actually-changed
+AND notify-flag-set". The setter has already written the new delta
+into the per-slot storage by the time the hook fires, so we read the
+total back via `FUN_REPUTATION_GET_STANDING(factionID)` (`0x004D6370`)
+to produce the `newStanding` payload.
+
+The hook calls the original before firing our event so the engine's
+`CHAT_MSG_COMBAT_FACTION_CHANGE` still fires first — no behavior
+change for addons that depended on the chat text. A per-call
+snapshot of `(factionID, newStanding, repGained)` is captured before
+forwarding, which [`C_Reputation.GetLastStandingChange`](#c_reputationgetlaststandingchange)
+exposes — so addons can read the structured payload from inside the
+chat event without re-parsing the localized string.
+
+### `MODIFIER_STATE_CHANGED` event
+
+Fires on every modifier-key press and release with `(key, down)`:
+
+| arg1 (`key`) | `LSHIFT`, `RSHIFT`, `LCTRL`, `RCTRL`, `LALT`, `RALT` |
+| arg2 (`down`) | `1` on press, `0` on release |
+
+Only transitions fire — key autorepeat does not. Matches 2.4.3+
+semantics.
+
+```lua
+local f = CreateFrame("Frame")
+f:RegisterEvent("MODIFIER_STATE_CHANGED")
+f:SetScript("OnEvent", function()
+    -- in vanilla 1.12 OnEvent receives no args; engine sets `event` and
+    -- `arg1..argN` as globals before invoking the handler.
+    if event == "MODIFIER_STATE_CHANGED" and arg1 == "LSHIFT" then
+        print("left shift", arg2 == 1 and "down" or "up")
+    end
+end)
+```
+
+**Implementation notes**
+
+L/R modifier distinction doesn't exist anywhere in the 1.12 engine's
+own state — its `IsShiftKeyDown` chain bottoms out at
+`GetKeyState(VK_SHIFT)` (the merged virtual key, `0x10`), never the
+L/R-aware `VK_LSHIFT` / `VK_RSHIFT`. The OS-level keystate *does* have
+the distinction; we capture it by installing a `WH_GETMESSAGE` Win32
+thread hook on the engine's message-pump thread, decoding each
+`WM_KEY{,SYS}{DOWN,UP}` message (using `MapVirtualKeyA(scancode,
+MAPVK_VSC_TO_VK_EX)` to resolve `VK_SHIFT` to L/R and the `KF_EXTENDED`
+bit in `lParam` for `VK_CONTROL` / `VK_MENU`), and maintaining a
+6-bit cached bitmap that the seven query functions read.
+
+The thread-message hook is per-thread, not per-`HWND` — it survives
+renderer-state changes that recreate WoW's main window (e.g. toggling
+vertical sync), where an `SetWindowLongPtr`-style `WNDPROC` subclass
+would be left dangling.
+
+### `QUEST_ACCEPTED` event
+
+Fires once per quest the player just accepted, with two payload args:
+the 1-based quest log index and the questID. Matches the Cata/WotLK
+signature `QUEST_ACCEPTED(questLogIndex, questID)`. Polyfills modern
+WoW's event of the same name (added in 3.1.0).
+
+```lua
+local f = CreateFrame("Frame")
+f:RegisterEvent("QUEST_ACCEPTED")
+f:SetScript("OnEvent", function()
+    -- 1.12: event payload is in `arg1`, `arg2`, ... globals
+    if event == "QUEST_ACCEPTED" then
+        local questLogIndex, questID = arg1, arg2
+        -- ...
+    end
+end)
+```
+
+Fires for every path that adds a quest to the local log — NPC accept,
+party-shared quest accept, auto-grant from quest items — by hooking
+the single engine chokepoint (`FUN_QUEST_LOG_REBUILD` at `0x004DE510`)
+that rebuilds the Lua-visible quest log from the player's
+authoritative slot data after any quest state change.
+
+**Does not fire on initial login / character entry**, even though the
+same engine function runs the bulk-sync there. Suppression is
+heuristic: if a single rebuild call adds more than one quest, it's
+treated as a resync and skipped. Human input speed can't accept two
+quests within the same engine tick, so single-add is always a real
+user accept. A brand-new character's very first quest accept
+(`0 → 1` entries) fires correctly.
+
+### `QUEST_TURNED_IN` event
+
+Fires when the server confirms a quest turn-in
+(SMSG_QUESTGIVER_QUEST_COMPLETE, opcode `0x191`). Payload
+`(questID, xpReward, moneyReward)` matches modern WoW exactly —
+`xpReward` is the experience awarded (0 at max level or for
+non-XP-bearing quests), `moneyReward` is in copper.
+
+```lua
+local f = CreateFrame("Frame")
+f:RegisterEvent("QUEST_TURNED_IN")
+f:SetScript("OnEvent", function()
+    if event == "QUEST_TURNED_IN" then
+        local questID, xp, money = arg1, arg2, arg3
+        -- ...
+    end
+end)
+```
+
+Polyfilled by hooking the per-opcode SMSG handler at `FUN_005DC400`
+(found via the CMSG side: `Script_GetQuestReward` →
+`FUN_005015B0` → `FUN_005EADC0` sends opcode `0x18E`
+CMSG_QUESTGIVER_CHOOSE_REWARD; SMSG response is opcode `0x191`).
+The hook saves the packet stream's read cursor (`stream+0x14`),
+peeks the first 4 uint32s of the body (questID, unknown, xp,
+money), restores the cursor, then calls the original — which
+re-reads the same data without seeing our peek. Side-effect-free.
+
+Does NOT fire on quest abandon, on `QUEST_FINISHED` window
+transitions (which fire on Detail → Progress → Reward → Close —
+not a clean turn-in signal), or on server-reject paths (bag-full,
+quest invalidated, etc.). Only fires on a real successful turn-in.
+
+> **Why not key off `QUEST_FINISHED`?** Native vanilla `QUEST_FINISHED`
+> fires on every quest-window state transition, including reads,
+> aborts, and player-side close. The SMSG_QUESTGIVER_QUEST_COMPLETE
+> packet, by contrast, is server-authoritative — the server only
+> sends it after committing the turn-in (XP / money / item awards
+> done, quest removed from log). Hooking the packet handler gives
+> us the same signal modern WoW's event uses.
+
+### `UPDATE_SHAPESHIFT_FORM` event
+
+Fires whenever the local player's shapeshift form changes — entering
+or leaving cat / bear / travel / stance / shadowform / stealth /
+ghost wolf / etc. No payload; call
+[`GetShapeshiftFormID()`](#getshapeshiftformid) from the handler to
+read the new form.
+
+Polyfills the modern singular event. Vanilla 1.12 has only the plural
+`UPDATE_SHAPESHIFT_FORMS` (fires when the *list* of available forms
+changes — learning a new form, not changing into one). The singular
+"current form changed" event was added in a later expansion.
+
+```lua
+local f = CreateFrame("Frame")
+f:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
+f:SetScript("OnEvent", function()
+    if event == "UPDATE_SHAPESHIFT_FORM" then
+        print("now in form", GetShapeshiftFormID())
+    end
+end)
+```
+
+**Implementation notes**
+
+Hooks the engine's bonus-action-bar refresh helper at `0x004E4FC0`,
+which the engine calls every time the local player's `UNIT_BYTES_1`
+descriptor field is broadcast and from `FUN_004908C0` at post-login
+init. After the original runs, the post-hook reads byte 2 of
+`UNIT_BYTES_1` (descriptor `+0x212` — the form ID) and fires
+`UPDATE_SHAPESHIFT_FORM` only when the value differs from the last
+seen — filtering out the spurious recomputes for other `UNIT_BYTES_1`
+bytes (standstate, etc.) the engine also routes through this helper.
+
+The cached "last form" sentinel uses `-1` for "player descriptor not
+yet resolvable" so transient resolution failures during early login
+don't get misread as leaving a form.
 
 ## Expansion
 
@@ -1661,59 +1867,6 @@ state is cleared as soon as the dispatch returns.
 This is a ClassicAPI-only call; modern WoW has no equivalent (modern
 addons get the factionID from `FACTION_STANDING_CHANGED` directly, so
 they don't need a separate getter).
-
-### `FACTION_STANDING_CHANGED` event
-
-Fires once per reputation change with `(factionID, newStanding, repGained)`:
-
-| arg1 (`factionID`)    | Faction.dbc row ID of the faction whose standing changed |
-| arg2 (`newStanding`)  | New total standing value (post-change `barValue`)        |
-| arg3 (`repGained`)    | Signed delta — positive on gain, negative on loss        |
-
-Polyfills the modern event of the same name. Vanilla 1.12 exposes only
-`CHAT_MSG_COMBAT_FACTION_CHANGE`, whose `arg1` is the localized chat
-string (`"Your Stormwind reputation has increased by 100."`) — addons
-have to parse the text and reverse-resolve the faction name back to
-an ID. This event lets addons skip that work.
-
-Does **not** fire for the initial faction sync at login or `/reload`
-— matches modern semantics. Only fires when a real reputation gain or
-loss arrives from the server (`SMSG_SET_FACTION_STANDING`).
-
-```lua
-local f = CreateFrame("Frame")
-f:RegisterEvent("FACTION_STANDING_CHANGED")
-f:SetScript("OnEvent", function()
-    -- in vanilla 1.12 OnEvent receives no args; engine sets `event`
-    -- and `arg1..argN` as globals before invoking the handler.
-    if event == "FACTION_STANDING_CHANGED" then
-        local name = GetFactionInfoByID(arg1)
-        print(string.format("%s: %+d  (now %d)", name, arg3, arg2))
-    end
-end)
-```
-
-`repGained` is signed: positive for gains, negative for the rare loss
-case (e.g. killing a Goblin Commodity Exchange NPC drops your rep
-with Booty Bay).
-
-**Implementation notes**
-
-Hooks the engine's per-rep-change notify dispatcher at `0x0062C5F0`
-— the chokepoint called once per `(factionID, signedDelta)` from
-the per-slot setter at `0x004D6330`, gated by "value-actually-changed
-AND notify-flag-set". The setter has already written the new delta
-into the per-slot storage by the time the hook fires, so we read the
-total back via `FUN_REPUTATION_GET_STANDING(factionID)` (`0x004D6370`)
-to produce the `newStanding` payload.
-
-The hook calls the original before firing our event so the engine's
-`CHAT_MSG_COMBAT_FACTION_CHANGE` still fires first — no behavior
-change for addons that depended on the chat text. A per-call
-snapshot of `(factionID, newStanding, repGained)` is captured before
-forwarding, which [`C_Reputation.GetLastStandingChange`](#c_reputationgetlaststandingchange)
-exposes — so addons can read the structured payload from inside the
-chat event without re-parsing the localized string.
 
 ## FriendList
 
@@ -2492,46 +2645,6 @@ Returns `1` if **any** of the six modifier keys is down, `nil`
 otherwise. Equivalent to
 `IsShiftKeyDown() or IsControlKeyDown() or IsAltKeyDown()` but in one
 call.
-
-### `MODIFIER_STATE_CHANGED` event
-
-Fires on every modifier-key press and release with `(key, down)`:
-
-| arg1 (`key`) | `LSHIFT`, `RSHIFT`, `LCTRL`, `RCTRL`, `LALT`, `RALT` |
-| arg2 (`down`) | `1` on press, `0` on release |
-
-Only transitions fire — key autorepeat does not. Matches 2.4.3+
-semantics.
-
-```lua
-local f = CreateFrame("Frame")
-f:RegisterEvent("MODIFIER_STATE_CHANGED")
-f:SetScript("OnEvent", function()
-    -- in vanilla 1.12 OnEvent receives no args; engine sets `event` and
-    -- `arg1..argN` as globals before invoking the handler.
-    if event == "MODIFIER_STATE_CHANGED" and arg1 == "LSHIFT" then
-        print("left shift", arg2 == 1 and "down" or "up")
-    end
-end)
-```
-
-**Implementation notes**
-
-L/R modifier distinction doesn't exist anywhere in the 1.12 engine's
-own state — its `IsShiftKeyDown` chain bottoms out at
-`GetKeyState(VK_SHIFT)` (the merged virtual key, `0x10`), never the
-L/R-aware `VK_LSHIFT` / `VK_RSHIFT`. The OS-level keystate *does* have
-the distinction; we capture it by installing a `WH_GETMESSAGE` Win32
-thread hook on the engine's message-pump thread, decoding each
-`WM_KEY{,SYS}{DOWN,UP}` message (using `MapVirtualKeyA(scancode,
-MAPVK_VSC_TO_VK_EX)` to resolve `VK_SHIFT` to L/R and the `KF_EXTENDED`
-bit in `lParam` for `VK_CONTROL` / `VK_MENU`), and maintaining a
-6-bit cached bitmap that the seven query functions read.
-
-The thread-message hook is per-thread, not per-`HWND` — it survives
-renderer-state changes that recreate WoW's main window (e.g. toggling
-vertical sync), where an `SetWindowLongPtr`-style `WNDPROC` subclass
-would be left dangling.
 
 ## Item
 
@@ -4364,39 +4477,6 @@ A separate function keeps the existing call wire-compatible.
 > first, skip zero slots, then the item array. 1-based `objectiveIndex`
 > counts only non-empty slots.
 
-### `QUEST_ACCEPTED` event
-
-Fires once per quest the player just accepted, with two payload args:
-the 1-based quest log index and the questID. Matches the Cata/WotLK
-signature `QUEST_ACCEPTED(questLogIndex, questID)`. Polyfills modern
-WoW's event of the same name (added in 3.1.0).
-
-```lua
-local f = CreateFrame("Frame")
-f:RegisterEvent("QUEST_ACCEPTED")
-f:SetScript("OnEvent", function()
-    -- 1.12: event payload is in `arg1`, `arg2`, ... globals
-    if event == "QUEST_ACCEPTED" then
-        local questLogIndex, questID = arg1, arg2
-        -- ...
-    end
-end)
-```
-
-Fires for every path that adds a quest to the local log — NPC accept,
-party-shared quest accept, auto-grant from quest items — by hooking
-the single engine chokepoint (`FUN_QUEST_LOG_REBUILD` at `0x004DE510`)
-that rebuilds the Lua-visible quest log from the player's
-authoritative slot data after any quest state change.
-
-**Does not fire on initial login / character entry**, even though the
-same engine function runs the bulk-sync there. Suppression is
-heuristic: if a single rebuild call adds more than one quest, it's
-treated as a resync and skipped. Human input speed can't accept two
-quests within the same engine tick, so single-add is always a real
-user accept. A brand-new character's very first quest accept
-(`0 → 1` entries) fires correctly.
-
 ## Spell
 
 > **All `C_Spell.*` functions in this section accept any spell
@@ -5461,44 +5541,6 @@ via the engine's direct sender at [`FUN_006E7040`](../src/Offsets.h#L428).
 Mirrors 3.3.5a's `Script_CancelShapeshiftForm` inner (`FUN_00726CE0`),
 which does the same effect-array scan + form-id match before issuing
 its cancel packet. Vanilla just lacks the public Lua surface.
-
-### `UPDATE_SHAPESHIFT_FORM` event
-
-Fires whenever the local player's shapeshift form changes — entering
-or leaving cat / bear / travel / stance / shadowform / stealth /
-ghost wolf / etc. No payload; call
-[`GetShapeshiftFormID()`](#getshapeshiftformid) from the handler to
-read the new form.
-
-Polyfills the modern singular event. Vanilla 1.12 has only the plural
-`UPDATE_SHAPESHIFT_FORMS` (fires when the *list* of available forms
-changes — learning a new form, not changing into one). The singular
-"current form changed" event was added in a later expansion.
-
-```lua
-local f = CreateFrame("Frame")
-f:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
-f:SetScript("OnEvent", function()
-    if event == "UPDATE_SHAPESHIFT_FORM" then
-        print("now in form", GetShapeshiftFormID())
-    end
-end)
-```
-
-**Implementation notes**
-
-Hooks the engine's bonus-action-bar refresh helper at `0x004E4FC0`,
-which the engine calls every time the local player's `UNIT_BYTES_1`
-descriptor field is broadcast and from `FUN_004908C0` at post-login
-init. After the original runs, the post-hook reads byte 2 of
-`UNIT_BYTES_1` (descriptor `+0x212` — the form ID) and fires
-`UPDATE_SHAPESHIFT_FORM` only when the value differs from the last
-seen — filtering out the spurious recomputes for other `UNIT_BYTES_1`
-bytes (standstate, etc.) the engine also routes through this helper.
-
-The cached "last form" sentinel uses `-1` for "player descriptor not
-yet resolvable" so transient resolution failures during early login
-don't get misread as leaving a form.
 
 ## Table
 

@@ -2449,6 +2449,32 @@ enum Offsets {
     // sync (`== 0`) from a real re-bind (`== 1`).
     VAR_BIND_POINT_VALID = 0x00C4D4E0,
 
+    // SMSG_QUESTGIVER_QUEST_COMPLETE handler (opcode 0x191). Server
+    // sends this after the client claims a quest reward via CMSG_QUESTGIVER_CHOOSE_REWARD
+    // (opcode 0x18E, sent from `Script_GetQuestReward` → `FUN_005EADC0`).
+    // Packet body, read in order via `FUN_PACKET_READ_UINT32`:
+    //   [0] questID
+    //   [1] unknown / flags
+    //   [2] xpReward
+    //   [3] moneyReward
+    //   [4] numItems  (plus per-item itemID/count for each)
+    //
+    //   __thiscall(void *player, void *packetStream)
+    //
+    // Registered via `FUN_005AB650(0x191, ...)` alongside 8 other quest
+    // opcodes that all dispatch through `FUN_005E59B0`'s switch — we
+    // hook the per-opcode handler directly to keep our gate narrow.
+    // Hooked by `Quest::TurnedIn` to fire `QUEST_TURNED_IN(questID, xp, money)`.
+    FUN_QUEST_GIVER_QUEST_COMPLETE_HANDLER = 0x005DC400,
+
+    // Packet-stream uint32 reader. `__thiscall(stream, uint32 *out)` —
+    // reads 4 bytes from `stream + base + cursor`, advances cursor by
+    // 4. Cursor lives at `stream + OFF_PACKET_STREAM_CURSOR`; save and
+    // restore it to peek without consuming. Same reader the engine's
+    // own packet handlers (FUN_005DC400, FUN_005ED3C0, etc.) use.
+    FUN_PACKET_READ_UINT32 = 0x00418E30,
+    OFF_PACKET_STREAM_CURSOR = 0x14,
+
     // Engine session globals used by `EquipmentSet::Storage` to build
     // the per-character WTF path. Same layout VanillaMinimapTracking
     // uses for its own persistence file. Account is the value WoW
