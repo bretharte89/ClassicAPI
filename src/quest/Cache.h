@@ -49,5 +49,22 @@ constexpr int OFF_REWARD_ITEMS = 0x3C;
 constexpr int OFF_CHOICE_ITEMS = 0x5C;
 constexpr int REWARD_COUNT = 4;
 constexpr int CHOICE_COUNT = 6;
+// Objective arrays — four uint32[4] parallel slabs carrying
+// SMSG_QUEST_QUERY_RESPONSE's RequiredNPCOrGo / Count / Item / Count
+// fields verbatim. NPC-or-GO is **signed**: positive = creature
+// entry, negative = gameobject entry (engine strips the sign bit
+// before the cache lookup). Empty slots hold 0 — `Script_GetQuestLogLeaderBoard`
+// at 0x004E0110 skips zero entries when matching its 1-based objIdx
+// arg, walking the NPC/GO array first then the item array (total max 8
+// objectives). Verified by decoding the four `[esi + edi*4 + 0x14XC]`
+// reads and the cache-instance routing in that function:
+//   - 0xC0E354 (creature cache) for positive 0x149C → "monster"
+//   - 0xC0E318 (gameobject cache) for negative 0x149C → "object"
+//   - 0xC0E2A0 (item cache) for 0x14BC → "item"
+constexpr int OFF_REQUIRED_NPC_OR_GO = 0x149C;        // int32[4]
+constexpr int OFF_REQUIRED_NPC_OR_GO_COUNT = 0x14AC;  // uint32[4]
+constexpr int OFF_REQUIRED_ITEM = 0x14BC;             // uint32[4]
+constexpr int OFF_REQUIRED_ITEM_COUNT = 0x14CC;       // uint32[4]
+constexpr int OBJECTIVE_COUNT = 4;
 
 } // namespace Quest::Cache

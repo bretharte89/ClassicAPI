@@ -191,6 +191,7 @@ build instructions.
   - [`C_QuestLog.IsOnQuest(questID)`](#c_questlogisonquestquestid)
   - [`C_QuestLog.IsUnitOnQuest(unit, questID)`](#c_questlogisunitonquestunit-questid)
   - [`C_QuestLog.GetTitleForQuestID(questID)`](#c_questloggettitleforquestidquestid)
+  - [`GetQuestLogLeaderBoardID(objectiveIndex [, questIndex])`](#getquestlogleaderboardidobjectiveindex--questindex)
   - [`QUEST_ACCEPTED` event](#quest_accepted-event)
 
 - [Spell](#spell)
@@ -4253,6 +4254,59 @@ f:SetScript("OnEvent", function()
 end)
 C_QuestLog.RequestLoadQuestByID(215)
 ```
+
+### `GetQuestLogLeaderBoardID(objectiveIndex [, questIndex])`
+
+Companion to vanilla's `GetQuestLogLeaderBoard` — returns `(id, kind)`
+for the same objective the existing call formats text for. `id` is
+always positive (the raw `RequiredNPCOrGo` field is signed, but the
+sign is folded into `kind` instead); `kind` is one of `"monster"`,
+`"object"`, or `"item"`. Returns nothing for: out-of-range
+`objectiveIndex`, header rows, quests whose static data hasn't been
+cached yet, or event-text-only objectives that have no entry ID.
+
+Arg shape matches the engine's actual `Script_GetQuestLogLeaderBoard`
+(its usage string says `(index)` but the function also accepts the
+2-arg form): with `questIndex` provided, looks up the entry at
+that 1-based quest-log slot; without it, falls back to whichever
+quest is currently selected via `SelectQuestLogEntry`.
+
+```lua
+-- Selected quest path (pairs with GetQuestLogLeaderBoard's selected mode)
+SelectQuestLogEntry(13)
+local text, kind, done = GetQuestLogLeaderBoard(1)
+local id              = GetQuestLogLeaderBoardID(1)
+-- text = "Young Stranglethorn Tiger slain: 4/10"
+-- kind = "monster"
+-- id   = 2630   (the creature template / entry)
+
+-- Explicit-quest path
+local text, kind = GetQuestLogLeaderBoard(1, 13)
+local id, k2     = GetQuestLogLeaderBoardID(1, 13)
+-- kind == k2 always
+```
+
+The ID is the same key `creaturecache.wdb` / `gameobjectcache.wdb` /
+`itemcache.wdb` use, so cross-referencing against the existing item
+or creature caches is direct — no localized-text parsing required.
+
+Why not just expose this on `GetQuestLogLeaderBoard` itself? Modifying
+the engine's existing return tuple would silently break addons that
+destructure positionally (`local text, type, done = GetQuestLogLeaderBoard(...)`).
+A separate function keeps the existing call wire-compatible.
+
+> **Source**: the cached quest record (returned by `Quest::Cache::Peek`)
+> carries the SMSG_QUEST_QUERY_RESPONSE objective arrays inline at
+> fixed offsets:
+> - `+0x149C` — `int32 RequiredNPCOrGo[4]` (positive = creature entry,
+>   negative = gameobject entry)
+> - `+0x14AC` — `uint32 RequiredNPCOrGoCount[4]`
+> - `+0x14BC` — `uint32 RequiredItem[4]`
+> - `+0x14CC` — `uint32 RequiredItemCount[4]`
+>
+> Iteration mirrors the engine at `0x004E0110`: walk the NPC/GO array
+> first, skip zero slots, then the item array. 1-based `objectiveIndex`
+> counts only non-empty slots.
 
 ### `QUEST_ACCEPTED` event
 
