@@ -98,6 +98,7 @@ build instructions.
   - [`GameTooltip:GetSpell()`](#gametooltipgetspell)
   - [`GameTooltip:HasItem()` / `GameTooltip:HasSpell()`](#gametooltiphasitem--gametooltiphasspell)
   - [`GameTooltip:GetUnitGUID()` / `GameTooltip:HasUnit()`](#gametooltipgetunitguid--gametooltiphasunit)
+  - [`GameTooltip:GetGameObject()` / `GameTooltip:HasGameObject()`](#gametooltipgetgameobject--gametooltiphasgameobject)
 
 - [Globals](#globals)
   - [`CLASSIC_API_VERSION`](#classic_api_version)
@@ -1960,6 +1961,47 @@ end
 > GUID — `"target"` and `"raid1"` simultaneously, for instance), so
 > we expose the GUID directly instead, which is what addons actually
 > need for cross-referencing with `UnitGUID`, the NameCache, etc.
+
+### `GameTooltip:GetGameObject()` / `GameTooltip:HasGameObject()`
+
+`GetGameObject()` returns `(name, id, guid)` for whichever gameobject
+the tooltip is currently displaying, or nothing if it isn't showing
+one. `name` is the cached display name (or `""` until the gameobject
+cache has loaded the record). `id` is the gameobject's template /
+entry — same key `gameobjectcache.wdb` uses, and what the server
+sent in the spawn packet. `guid` is the canonical
+`"0xHHHHHHHHLLLLLLLL"` format.
+
+`HasGameObject()` is the boolean companion — returns `true` if the
+tooltip is currently displaying a gameobject (single `uint32` read,
+no resolution work).
+
+```lua
+-- Mouse over a chest, vein, signpost, etc. then:
+local name, id, guid = GameTooltip:GetGameObject()
+-- name = "Iron Deposit"
+-- id   = 1731
+-- guid = "0xF110000006C30000..."
+
+if GameTooltip:HasGameObject() then
+    -- cheap predicate
+end
+```
+
+There is **no Lua-callable `SetGameObject` method** in vanilla 1.12
+— gameobjects only populate the tooltip via in-world mouseover. The
+engine's hover handler at `FUN_00492890` dispatches to a tooltip
+populator (`0x0052AA20`) that writes the GUID into
+`tooltip+0x370/+0x374`, right between the unit slot (`+0x368`) and
+the item slot (`+0x380`). The shared tooltip-clear zeroes the same
+slot on every subsequent `SetX`, so these methods follow the same
+gating pattern as `HasUnit` / `HasSpell` / `HasItem`.
+
+Returns nothing for: tooltip not showing a gameobject, or the
+gameobject has left the engine's visibility window (object manager
+evicted it). `HasGameObject()` stays true in the latter case —
+the tooltip-frame slot still has the GUID, even though the live
+object has been freed.
 
 ### `GameTooltip:SetTalentByID(talentID)`
 

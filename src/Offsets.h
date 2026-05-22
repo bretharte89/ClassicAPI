@@ -65,6 +65,12 @@ enum Offsets {
     //   - BuildSpellTooltip (0x0052E610) writes +0x39C (spellID) at
     //                       0x0052E6D5 (param_7==0 branch — skipped for
     //                       the next-rank tooltip side-build).
+    //   - BuildUnitTooltip  (FUN_00529FE0) writes +0x368/+0x36C (unit
+    //                       GUID) — see SetUnit block below.
+    //   - BuildGameObjectTooltip (0x0052AA20) writes +0x370/+0x374
+    //                       (gameobject GUID) at 0x0052AA52 / 0x0052AA59.
+    //                       Only call site is the in-world hover handler
+    //                       FUN_00492890; no Lua `SetGameObject` method.
     //   - Clear             (0x00530050) zeroes all of them.
     OFF_TOOLTIP_ITEM_GUID_LO = 0x380, // 0 for SetItemByID (no CGItem)
     OFF_TOOLTIP_ITEM_GUID_HI = 0x384,
@@ -78,6 +84,13 @@ enum Offsets {
     // HasItem use.
     OFF_TOOLTIP_UNIT_GUID_LO = 0x368,
     OFF_TOOLTIP_UNIT_GUID_HI = 0x36C,
+    // GameObject GUID written by the in-world hover tooltip populator
+    // (FUN_0052AA20) — there is no Lua-callable `SetGameObject` method
+    // in vanilla, so this slot only ever fills when the player mouses
+    // over a gameobject in the world (nodes, chests, doors, etc.).
+    // Same clear/gating semantics as the unit GUID slot.
+    OFF_TOOLTIP_GAMEOBJECT_GUID_LO = 0x370,
+    OFF_TOOLTIP_GAMEOBJECT_GUID_HI = 0x374,
 
     // CGItem → fully-dressed item link string. __fastcall(ecx = CGItem *)
     // → const char *. Reads the item's itemID, quality, permanent
@@ -647,6 +660,7 @@ enum Offsets {
     OBJ_TYPE_ITEM = 2,
     OBJ_TYPE_CONTAINER = 4,
     OBJ_TYPE_UNIT = 8,
+    OBJ_TYPE_GAMEOBJECT = 0x20, // 1<<5; passed by FUN_0052AA20 (hover-tooltip populator).
 
     // `CGObject::GetName` — returns the display-name `const char *` for
     // a resolved CGObject (CGUnit / CGPlayer / CGCreature). Internally
@@ -661,6 +675,18 @@ enum Offsets {
     // Caller-owned `outFlags` receives metadata about the lookup; we
     // pass `nullptr` since we just want the name.
     FUN_OBJECT_GET_NAME = 0x00609210,
+    // `CGGameObject_C::GetName` — gameobject-specific name getter.
+    // Returns `*(obj+0x214)+0x08` (the cached GameObjectStats_C record's
+    // name field) if the record has loaded, or the engine's empty-string
+    // sentinel `DAT_00882748` otherwise. Used by the hover tooltip
+    // populator at FUN_0052AA20.
+    //
+    //   __fastcall const char *(void *gameObject)
+    //
+    // The polymorphic `FUN_OBJECT_GET_NAME` above is unit-cache-only
+    // (routes through NameCache / creature cache) and returns the
+    // "UNKNOWNOBJECT" sentinel for gameobjects.
+    FUN_GAMEOBJECT_GET_NAME = 0x005F8100,
     // Bank gate. The engine writes the active banker NPC's GUID here
     // when the bank window opens (8-byte qword) and zeroes it on close.
     // `GetItemBySlot` returns null for slots 39..68 if this GUID is zero,
