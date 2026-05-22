@@ -65,9 +65,20 @@ static int __fastcall Script_RequestLoadQuestByID(void *L) {
     return 0;
 }
 
+static int __fastcall Script_IsQuestDataCachedByID(void *L) {
+    const int questID =
+        Game::Lua::IsNumber(L, 1) ? static_cast<int>(Game::Lua::ToNumber(L, 1)) : 0;
+    const bool cached =
+        (questID > 0) && (Quest::Cache::Peek(static_cast<uint32_t>(questID)) != nullptr);
+    Game::Lua::PushBool(L, cached);
+    return 1;
+}
+
 static void RegisterLuaFunctions() {
     Game::Lua::RegisterTableFunction("C_QuestLog", "RequestLoadQuestByID",
                                      &Script_RequestLoadQuestByID);
+    Game::Lua::RegisterTableFunction("C_QuestLog", "IsQuestDataCachedByID",
+                                     &Script_IsQuestDataCachedByID);
     // Event name reserved at file scope via `AutoReserve`.
 }
 

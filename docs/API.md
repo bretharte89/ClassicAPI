@@ -192,6 +192,7 @@ build instructions.
   - [`C_QuestLog.IsOnQuest(questID)`](#c_questlogisonquestquestid)
   - [`C_QuestLog.IsUnitOnQuest(unit, questID)`](#c_questlogisunitonquestunit-questid)
   - [`C_QuestLog.GetTitleForQuestID(questID)`](#c_questloggettitleforquestidquestid)
+  - [`C_QuestLog.IsQuestDataCachedByID(questID)`](#c_questlogisquestdatacachedbyidquestid)
   - [`GetQuestLogLeaderBoardID(objectiveIndex [, questIndex])`](#getquestlogleaderboardidobjectiveindex--questindex)
   - [`QUEST_ACCEPTED` event](#quest_accepted-event)
 
@@ -4289,6 +4290,25 @@ f:SetScript("OnEvent", function()
     end
 end)
 C_QuestLog.RequestLoadQuestByID(215)
+```
+
+### `C_QuestLog.IsQuestDataCachedByID(questID)`
+
+Returns `true` if the quest's static data is currently in the
+client-side quest cache, `false` otherwise. Pure cache probe — no
+server query, no side effects. Pair with
+`C_QuestLog.RequestLoadQuestByID` when you need to ensure the data
+is loaded before checking.
+
+Returns `false` (not error) for invalid input — non-number,
+non-positive, or non-existent questIDs all yield `false`, matching
+the `C_Item.IsItemDataCachedByID` shape.
+
+```lua
+if not C_QuestLog.IsQuestDataCachedByID(questID) then
+    C_QuestLog.RequestLoadQuestByID(questID)
+    -- listen for QUEST_DATA_LOAD_RESULT, or re-check on a timer
+end
 ```
 
 ### `GetQuestLogLeaderBoardID(objectiveIndex [, questIndex])`
