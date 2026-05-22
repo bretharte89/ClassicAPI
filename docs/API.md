@@ -132,6 +132,7 @@ build instructions.
   - [`C_Item.GetItemID(itemLocation)`](#c_itemgetitemiditemlocation)
   - [`GetInventoryItemID(unit, slot)`](#getinventoryitemidunit-slot)
   - [`GetInventoryItemDurability(invSlot)`](#getinventoryitemdurabilityinvslot)
+  - [`GetInventoryItemsForSlot(slot, returnTable [, transmogrify])`](#getinventoryitemsforslotslot-returntable--transmogrify)
   - [`GetInventoryItemRepairCost(invSlot)`](#getinventoryitemrepaircostinvslot)
   - [`C_Item.GetItemFamily(item)`](#c_itemgetitemfamilyitem)
   - [`C_Item.GetItemCount(itemInfo, [includeBank], [includeUses])`](#c_itemgetitemcountiteminfo-includebank-includeuses)
@@ -2535,6 +2536,59 @@ end
 -- Inspect a party member without parsing a hyperlink:
 local headID = GetInventoryItemID("party1", INVSLOT_HEAD)
 ```
+
+### `GetInventoryItemsForSlot(slot, returnTable [, transmogrify])`
+
+Populates `returnTable` with every item in the player's equipment
+and bags that's eligible to be equipped in `slot` (1..19). Returned
+table is keyed by the packed [ItemLocation
+bitfield](#equipmentset) — same encoding
+`C_EquipmentSet.GetItemLocations` uses — with the itemLink as the
+value. Returns the same `returnTable` reference for chaining.
+
+```lua
+local t = {}
+GetInventoryItemsForSlot(16, t)   -- mainhand
+for loc, link in pairs(t) do
+    -- loc is a number like 0x00300103; link is "|c…|Hitem:…|h[…]|h|r"
+end
+```
+
+| slot | Eligible InventoryTypes |
+|------|-------------------------|
+| 1 HEAD, 2 NECK, …, 10 HANDS | The slot's matching InventoryType |
+| 11, 12 FINGER | INVTYPE_FINGER (11) — items appear under both ring slots |
+| 13, 14 TRINKET | INVTYPE_TRINKET (12) |
+| 15 BACK | INVTYPE_CLOAK (16) |
+| 16 MAINHAND | INVTYPE_WEAPON (13), INVTYPE_2HWEAPON (17), INVTYPE_WEAPONMAINHAND (21) |
+| 17 OFFHAND | INVTYPE_WEAPON (13), INVTYPE_SHIELD (14), INVTYPE_WEAPONOFFHAND (22), INVTYPE_HOLDABLE (23) |
+| 18 RANGED | INVTYPE_RANGED (15), INVTYPE_THROWN (25), INVTYPE_RANGEDRIGHT (26) |
+| 5 CHEST | INVTYPE_CHEST (5), INVTYPE_ROBE (20) |
+| 19 TABARD | INVTYPE_TABARD (19) |
+
+Compatibility check is a single bitwise AND against a static
+`invType → slotMask` table — same shape and values as 3.3.5's table
+at `DAT_00A2D288` (used by `Script_GetInventoryItemsForSlot` via
+`FUN_007082B0`), with two adjustments for vanilla:
+
+- 2H weapons (`INVTYPE_2HWEAPON`) confined to the mainhand slot
+  only. 3.3.5 allowed offhand for the titanic-grip era; vanilla has
+  no such mechanic and the server would reject the equip anyway.
+- `INVTYPE_WEAPONMAINHAND` / `WEAPONOFFHAND` confined to their
+  literal slot rather than the looser "either hand" 3.3.5 allowed.
+
+The `transmogrify` arg is accepted and ignored. Stock 1.12 has no
+transmog system to query against, and the modern flag's effect
+(broader cross-eligibility for visual swaps) reduces to the
+regular equip check here. Private servers like Turtle WoW layer
+their own transmog systems on top of vanilla; this function
+doesn't currently plumb the flag through to any of them.
+
+> **Bank items aren't included.** Vanilla's `GetItemBySlot` gates
+> bank slots on a banker GUID that's only set while the bank window
+> is open; modern WoW behaves the same way (bank shows up only when
+> the bank UI is open). We don't walk bank slots — addons that want
+> bank inclusion need their own bank scan with the bank UI open.
 
 ### `GetInventoryItemDurability(invSlot)`
 
