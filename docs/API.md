@@ -66,6 +66,7 @@ build instructions.
 - [Events](#events)
   - [`C_EventUtils.IsEventValid(eventName)`](#c_eventutilsiseventvalideventname)
   - [`BAG_UPDATE_DELAYED` event](#bag_update_delayed-event)
+  - [`HEARTHSTONE_BOUND` event](#hearthstone_bound-event)
   - [Player input-state events (`PLAYER_STARTED_MOVING` / `LOOKING` / `TURNING` + `STOPPED_*`)](#player-input-state-events)
   - [`GLOBAL_MOUSE_DOWN` / `GLOBAL_MOUSE_UP` events](#global_mouse_down--global_mouse_up-events)
 
@@ -1234,6 +1235,41 @@ event handlers.
 > `__thiscall` with an awkward register-arg shape. Keyring updates
 > currently won't trigger `BAG_UPDATE_DELAYED`. Player bag (0..4)
 > and bank (5..10) updates work normally — the 95% case.
+
+### `HEARTHSTONE_BOUND` event
+
+Fires (with no payload) every time the player binds their
+hearthstone at an innkeeper. Polyfills modern WoW's event of the
+same name — addons listen to `HEARTHSTONE_BOUND` and re-read
+`GetBindLocation()` to refresh whatever bind-location UI they show.
+
+```lua
+local f = CreateFrame("Frame")
+f:RegisterEvent("HEARTHSTONE_BOUND")
+f:SetScript("OnEvent", function()
+    local newLocation = GetBindLocation()
+    -- update UI...
+end)
+```
+
+Fires **every time** the player confirms a bind, including when the
+new bind is at the same inn as before. The event is driven by the
+bind ACTION (server's SMSG_BINDPOINTUPDATE), not by the area name
+changing — matches modern semantics.
+
+Implemented by hooking the BINDPOINTUPDATE packet handler at
+`FUN_005ED3C0`. The handler runs in two distinct cases:
+
+1. **Initial post-login sync** — the engine has just zeroed the
+   "bind valid" flag during character-entry init (`FUN_005E2510`),
+   and this packet repopulates it. We detect this by reading the
+   flag *before* the original handler runs; if it's `0`, this is
+   the sync and we suppress the event.
+2. **Innkeeper rebind** — the flag is already `1`. Fire.
+
+Character switch is handled automatically: the character-entry init
+re-zeroes the flag, so each new character's first update is also
+treated as sync and suppressed.
 
 ### Player input-state events
 

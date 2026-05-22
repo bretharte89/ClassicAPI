@@ -2424,6 +2424,31 @@ enum Offsets {
     // `RET 0x4` (callee cleans the one stack arg).
     FUN_WORLD_TICK = 0x0066FD50,
 
+    // SMSG_BINDPOINTUPDATE handler. The server sends this packet on
+    // initial login (to sync the player's current bind) and again
+    // every time the player binds at a new innkeeper. The handler
+    // deserializes `float x, y, z; uint32 mapID; uint32 areaID` into
+    // the corresponding globals below and sets `VAR_BIND_POINT_VALID`
+    // to 1.
+    //
+    //   __fastcall(void *packetBuffer)
+    //
+    // Single caller (the packet dispatcher's jump table for opcode
+    // 0x155) — quiet hook target, no contention with other DLLs.
+    // Hooked by `Player::HearthstoneBound` to fire `HEARTHSTONE_BOUND`
+    // every time the user re-binds at an innkeeper. Gating off the
+    // bind-valid flag's transition distinguishes "initial sync" (the
+    // one we suppress) from "user rebound at an inn" (the one we
+    // fire on — even when the area string stays the same, since the
+    // bind ACTION is what fires the event).
+    FUN_BINDPOINT_UPDATE_HANDLER = 0x005ED3C0,
+    // "Bind point is valid" flag. Set to 1 by the BINDPOINTUPDATE
+    // handler after the packet has been fully parsed. Zeroed by
+    // `FUN_005E2510` (the per-character-entry init routine).
+    // Reading this BEFORE the handler runs distinguishes initial
+    // sync (`== 0`) from a real re-bind (`== 1`).
+    VAR_BIND_POINT_VALID = 0x00C4D4E0,
+
     // Engine session globals used by `EquipmentSet::Storage` to build
     // the per-character WTF path. Same layout VanillaMinimapTracking
     // uses for its own persistence file. Account is the value WoW

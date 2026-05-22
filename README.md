@@ -87,6 +87,7 @@ functions, just behavior the stock 1.12 engine didn't have. See the
 | `FACTION_STANDING_CHANGED` | `factionID, newStanding, repGained` |
 | `GLOBAL_MOUSE_DOWN` | `button` |
 | `GLOBAL_MOUSE_UP` | `button` |
+| `HEARTHSTONE_BOUND` | *(none)* |
 | `ITEM_DATA_LOAD_RESULT` | `itemID, success` |
 | `MODIFIER_STATE_CHANGED` | `keyName, down` |
 | `PLAYER_STARTED_LOOKING` | *(none)* |
