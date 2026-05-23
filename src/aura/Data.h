@@ -57,6 +57,13 @@ int FindNthSlot(const uint8_t *unit, int oneBasedIndex, Filter filter);
 int FindSlotBySpellID(const uint8_t *unit, uint32_t spellID,
                       const Filter *filter);
 
+// Finds the absolute slot of a populated aura whose locale-resolved
+// spell name exactly matches `spellName`. Case-sensitive. Otherwise
+// same semantics as `FindSlotBySpellID`. Returns -1 if not found
+// or if `spellName` is null/empty.
+int FindSlotBySpellName(const uint8_t *unit, const char *spellName,
+                        const Filter *filter);
+
 // Display stack count for the given slot (engine stores stacks-1,
 // we add 1). Returns 0 if the unit is null.
 int ReadStacks(const uint8_t *unit, int slot);

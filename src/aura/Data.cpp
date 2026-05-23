@@ -18,6 +18,7 @@
 #include "dbc/Lookup.h"
 
 #include <cstdint>
+#include <cstring>
 
 namespace Aura::Data {
 
@@ -244,6 +245,26 @@ int FindSlotBySpellID(const uint8_t *unit, uint32_t spellID,
         if (!IsSlotPopulated(unit, slot))
             continue;
         if (ReadSpellID(unit, slot) == spellID)
+            return slot;
+    }
+    return -1;
+}
+
+int FindSlotBySpellName(const uint8_t *unit, const char *spellName,
+                        const Filter *filter) {
+    if (unit == nullptr || spellName == nullptr || *spellName == '\0')
+        return -1;
+    const int start = (filter != nullptr && *filter == Filter::Harmful)
+                          ? Offsets::UNIT_AURA_BUFF_COUNT
+                          : 0;
+    const int end = (filter != nullptr && *filter == Filter::Helpful)
+                        ? Offsets::UNIT_AURA_BUFF_COUNT
+                        : Offsets::UNIT_AURA_TOTAL;
+    for (int slot = start; slot < end; ++slot) {
+        if (!IsSlotPopulated(unit, slot))
+            continue;
+        const char *name = LocalizedSpellName(SpellRecord(ReadSpellID(unit, slot)));
+        if (name != nullptr && std::strcmp(name, spellName) == 0)
             return slot;
     }
     return -1;

@@ -148,6 +148,30 @@ int __fastcall Script_GetUnitAuraBySpellID(void *L) {
     return 1;
 }
 
+int __fastcall Script_GetAuraDataBySpellName(void *L) {
+    const char *unitToken = ArgUnit(L, 1);
+    const char *spellName = ArgUnit(L, 2);
+    const char *filterStr = ArgOptString(L, 3);
+    if (unitToken == nullptr || spellName == nullptr || *spellName == '\0') {
+        Game::Lua::PushNil(L);
+        return 1;
+    }
+    const uint8_t *unit = ResolveUnit(unitToken);
+    Data::Filter f;
+    const Data::Filter *fp = nullptr;
+    if (filterStr != nullptr) {
+        f = ParseFilter(filterStr);
+        fp = &f;
+    }
+    const int slot = Data::FindSlotBySpellName(unit, spellName, fp);
+    if (slot < 0) {
+        Game::Lua::PushNil(L);
+        return 1;
+    }
+    Data::Push(L, unit, slot);
+    return 1;
+}
+
 int __fastcall Script_GetPlayerAuraBySpellID(void *L) {
     const int spellID = ArgInt(L, 1);
     if (spellID <= 0) {
@@ -290,6 +314,8 @@ static void RegisterLuaFunctions() {
                                      &Script_GetUnitAuraBySpellID);
     Game::Lua::RegisterTableFunction("C_UnitAuras", "GetPlayerAuraBySpellID",
                                      &Script_GetPlayerAuraBySpellID);
+    Game::Lua::RegisterTableFunction("C_UnitAuras", "GetAuraDataBySpellName",
+                                     &Script_GetAuraDataBySpellName);
     Game::Lua::RegisterTableFunction("C_UnitAuras", "GetUnitAuras",
                                      &Script_GetUnitAuras);
     Game::Lua::RegisterTableFunction("C_UnitAuras", "GetAuraDispelTypeColor",

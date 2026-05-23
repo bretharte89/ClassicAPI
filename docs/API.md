@@ -278,6 +278,7 @@ build instructions.
   - [`C_UnitAuras.GetBuffDataByIndex(unit, index)` / `GetDebuffDataByIndex(unit, index)`](#c_unitaurasgetbuffdatabyindexunit-index--getdebuffdatabyindexunit-index)
   - [`C_UnitAuras.GetUnitAuraBySpellID(unit, spellID [, filter])`](#c_unitaurasgetunitaurabyspellidunit-spellid--filter)
   - [`C_UnitAuras.GetPlayerAuraBySpellID(spellID)`](#c_unitaurasgetplayeraurabyspellidspellid)
+  - [`C_UnitAuras.GetAuraDataBySpellName(unit, spellName [, filter])`](#c_unitaurasgetauradatabyspellnameunit-spellname--filter)
   - [`C_UnitAuras.GetUnitAuras(unit [, filter])`](#c_unitaurasgetunitaurasunit--filter)
   - [`C_UnitAuras.GetAuraDispelTypeColor(dispelName)`](#c_unitaurasgetauradispeltypecolordispelname)
 
@@ -6291,6 +6292,29 @@ if d then print("yes, with", d.applications, "stacks") end
 
 Shorthand for `GetUnitAuraBySpellID("player", spellID)` — the most
 common consumer pattern (WeakAuras-style aura tracking).
+
+### `C_UnitAuras.GetAuraDataBySpellName(unit, spellName [, filter])`
+
+Linear-searches `unit`'s aura array for the first populated slot
+whose locale-resolved `name` matches `spellName` exactly. Returns
+the `AuraData` for that slot or `nil` if not found. Case-sensitive
+— matches modern semantics. Without a filter, searches both
+ranges (helpful first, then harmful).
+
+```lua
+local d = C_UnitAuras.GetAuraDataBySpellName("player", "Inner Fire")
+if d then print(d.applications, "stacks of Inner Fire") end
+
+-- restrict to debuffs:
+local poison = C_UnitAuras.GetAuraDataBySpellName(
+    "target", "Mind-numbing Poison", "HARMFUL")
+```
+
+Uses the same `name` field the other `C_UnitAuras.*` functions
+populate (locale-applied `Spell.dbc` name). If the player is on
+a non-English client, pass the localized name — addons that
+hard-code English names should use `GetUnitAuraBySpellID`
+instead for portability.
 
 ### `C_UnitAuras.GetUnitAuras(unit [, filter])`
 
