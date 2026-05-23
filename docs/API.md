@@ -157,6 +157,7 @@ build instructions.
   - [`C_Item.GetItemSetInfo(setID)`](#c_itemgetitemsetinfosetid)
   - [`C_Item.GetItemSellPrice(itemLocation)` / `C_Item.GetItemSellPriceByID(item)`](#c_itemgetitemsellpriceitemlocation--c_itemgetitemsellpricebyiditem)
   - [`C_Item.GetCurrentItemLevel(itemLocation)` / `C_Item.GetDetailedItemLevelInfo(item)`](#c_itemgetcurrentitemlevelitemlocation--c_itemgetdetaileditemlevelinfoitem)
+  - [`GetAverageItemLevel()`](#getaverageitemlevel)
   - [`C_Item.GetItemMaxStackSize(itemLocation)` / `C_Item.GetItemMaxStackSizeByID(item)`](#c_itemgetitemmaxstacksizeitemlocation--c_itemgetitemmaxstacksizebyiditem)
   - [`C_Item.GetItemLink(itemLocation)`](#c_itemgetitemlinkitemlocation)
   - [`C_Item.GetItemInventoryType(itemLocation)` / `C_Item.GetItemInventoryTypeByID(item)`](#c_itemgetiteminventorytypeitemlocation--c_itemgetiteminventorytypebyiditem)
@@ -3442,6 +3443,59 @@ current level, callers that care about the extra returns will see
 ```lua
 local ilvl = C_Item.GetCurrentItemLevel({equipmentSlotIndex = INVSLOT_HEAD})
 ```
+
+### `GetAverageItemLevel()`
+
+Returns `(avgItemLevel, avgItemLevelEquipped)` — modern WoW's
+2-tuple shape. `avgItemLevelEquipped` is the arithmetic mean over
+the player's currently-worn equipment slots; `avgItemLevel` is the
+same metric but extended to include best-per-slot upgrades found
+anywhere in the player's bags and bank.
+
+Slots considered: `INVSLOT_HEAD..INVSLOT_TABARD` (1..19) minus
+shirt (4) and tabard (19) = 17 candidate slots. Bag-walk uses the
+same `invType → slotMask` mapping as `GetInventoryItemsForSlot`.
+
+```lua
+local overall, equipped = GetAverageItemLevel()
+-- overall:  best-per-slot ilvl across equipped + bags + bank
+-- equipped: ilvl of currently-worn items only
+```
+
+**Fixed denominator.** Empty slots count toward the denominator
+(contributing 0 to the sum). Removing a piece of gear always
+lowers `avgItemLevelEquipped` — matches modern's behavior
+(verified against retail Wow.exe at `552.4375 × 16 = 8839`
+exactly). Vanilla addons of the GearScore era used populated-only
+count; this implementation deliberately differs.
+
+**Max-of-two-divisors fairness.** A 2H weapon wielder has an
+intentionally empty offhand (slot 17) — counting it as 0 in a
+17-divisor sum would unfairly penalize them. We compute a second
+candidate excluding slot 17 from both numerator and denominator
+(16 slots), and return the max. Sword+shield characters typically
+win the all-17 path; 2H wielders win the no-OH path. Same trick
+the 4.3.4 client uses at `FUN_0097E0F0`'s tail.
+
+**No double-counting.** Each bag/bank item is assigned to **one**
+candidate slot via greedy fit — a trinket in your bag fills one
+trinket slot (the empty/lower-best one), not both. Without this
+gate, moving a trinket from equipped to bag would inflate the
+"overall" count and drag the average down (because the same item
+would count for both trinket slots).
+
+**Bank is walked** even if the bank window has never been opened
+this session — the GUID array at `invMgr + 0x04` is populated
+from server data at login. Bypasses the bank-window gate on
+`GetItemBySlot` the same way `C_Item.GetItemCount` does.
+
+Limitations:
+- Items not yet in the ItemStats cache are skipped from the
+  running totals and a warmup is queued; the next call after
+  `ITEM_DATA_LOAD_RESULT` lands picks them up.
+- The full 4.3.4 weapon `qsort` dance — handling 2H-equipped vs.
+  1H + OH-in-bag comparisons — is not replicated. Edge case in
+  vanilla where you'd notice a difference is narrow.
 
 ### `C_Item.GetItemMaxStackSize(itemLocation)` / `C_Item.GetItemMaxStackSizeByID(item)`
 
