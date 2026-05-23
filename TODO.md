@@ -2722,14 +2722,94 @@ unblock dozens of addons that gate refresh logic on it.
 Vanilla fires `UNIT_INVENTORY_CHANGED` for the player when any
 slot changes, but doesn't say WHICH slot. Implementation: cache
 the player invMgr's GUID array for slots 0..18 at our hook
-point (likely `UNIT_INVENTORY_CHANGED` for `"player"`), diff
-against last snapshot, and fire `PLAYER_EQUIPMENT_CHANGED(slot,
-hasItem)` once per changed slot via `Event::Custom`. Hook can
-piggyback on `Frame::RegisterEvent` or be its own
-`UNIT_INVENTORY_CHANGED`-fired callback if we want lower
-latency.
+point, diff against last snapshot, and fire
+`PLAYER_EQUIPMENT_CHANGED(slot, hasItem)` once per changed slot
+via `Event::Custom`.
 
-Bonus: same diff also feeds `EQUIPMENT_SETS_CHANGED` /
+### Investigation history (2026-05-22)
+
+User strongly prefers an event-driven hook over per-frame
+polling. Multiple promising targets tried; **none fired on
+user-driven equip/unequip actions in the Octo build**.
+
+**`FUN_004F8DB0`** (the bag/inventory descriptor-change callback)
+— our existing `BAG_UPDATE_DELAYED` hook target. Empirically only
+called for backpack contents (offsets `0x560..0x5D9`, slots
+23..38) and keyring (offsets `0x730..0x829`, slots 81..112). The
+`FUN_004F8CC0` registration setup confirms there is **no
+registered per-slot descriptor-change callback for equipment
+slots 0..18** (offsets `0x4A8..0x53F`). Equipment slot descriptor
+writes happen silently during SMSG_UPDATE_OBJECT processing.
+
+**Three direct `push 0xBA; call FUN_00703F50` sites** found for
+`UNIT_INVENTORY_CHANGED`:
+- `0x004C710B` and `0x004C72DB` (both in `FUN_004C7180`,
+  `__cdecl(uint guidLo, uint guidHi)`, 5 callers in the
+  `0x5D8xxx-0x5D9Bxx` SMSG region).
+- `0x004C8504` (in `FUN_004C84F0`, 0 direct callers — vtable or
+  dead).
+
+**Two `mov edx, 0xBA; call FUN_00515E50` sites** at `0x0051BD73`
+and `0x005D85FE`. `FUN_00515E50(guid, eventID)` is the
+**unit-event firer** — walks the GUID→token reverse resolver
+(`FUN_00515C50`) and fires `(eventID, "%s", token)` for each
+matching unit token. 37 callers across many event IDs — direct
+hook is too generic / high traffic.
+
+`FUN_005D8440` (containing `0x5D85FE`) is the item-update
+post-processor — `__fastcall(void *cgItem)`, 2 callers, fires
+UNIT_INVENTORY_CHANGED via `FUN_00515E50(itemGUID, 0xBA)` for
+the affected item.
+
+**Hook attempts that did NOT fire on equip/unequip:**
+- `FUN_004F8DB0` via `Bag::InvDescChange` dispatcher subscription
+  — slot range is backpack + keyring only, never equipment.
+- `FUN_004C7180` direct hook — function's preconditions
+  (visible-item filter, slot-range gate) bail before FIRE_EVENT
+  on plain bag↔equipment swaps.
+- `FUN_005D8440` direct hook — debug log never printed despite
+  the user confirming `UNIT_INVENTORY_CHANGED` fires.
+
+**Open question:** if all three known 0xBA-firing functions are
+hooked and none of our hooks trigger on equip, then either:
+(a) the hooks aren't being installed for some reason (collision?
+some Octo modification?), or (b) the event fires through a
+mechanism we haven't found — possibly via the LUA-side
+`FrameScript_FireEvent("UNIT_INVENTORY_CHANGED", "player")`
+called from another function we haven't traced.
+
+**Next steps to try:**
+- Add `_classicapi_DumpHook` or similar diagnostic that confirms
+  the hook is actually in place after `MH_EnableHook` returns.
+  Maybe Octo or another DLL is unhooking us.
+- Search the binary for `"UNIT_INVENTORY_CHANGED"` string
+  references — if the event name is referenced in code (not just
+  in the boot-time table), there's a string-based firing path
+  we missed.
+- Investigate the `mov ecx, 0xBA` sites at `0x60341B` and
+  `0x604F77` — both call `FUN_005AB650`/`FUN_005AB670` (packet
+  handler registration), so `0xBA` there is a server OPCODE, not
+  an event ID. Confirm and rule out.
+- Try hooking one tier higher: `FUN_005AB650(opcode, handler)`
+  callers in the SMSG_UPDATE_OBJECT region might give us the
+  actual update path.
+- Alternative architecture: skip event-driven entirely and use
+  `Tick::WorldTick` polling. Per-frame cost is 19 itemID reads
+  + 19 compares (~negligible). User pushback on polling was
+  philosophical, not perf-based; might be acceptable as a
+  fallback if a clean hook can't be found.
+
+### Side benefit shipped during this investigation
+
+`Bag::InvDescChange` shared dispatcher (`src/bag/InvDescChange.{h,cpp}`)
+modeled on `Tick::WorldTick::AutoSubscribe`. `Bag::UpdateDelayed`
+now subscribes to it instead of owning the `FUN_004F8DB0` hook
+directly. **Currently has a single subscriber so adds no value
+on its own — revert if not needed for resumed work.**
+
+### Bonus (deferred until base event works)
+
+Same diff feeds `EQUIPMENT_SETS_CHANGED` /
 `EQUIPMENT_SWAP_FINISHED` for our existing `C_EquipmentSet`
 module — currently those fire only on user-side mutations, not
 on inventory changes that affect a set's "equipped count".
