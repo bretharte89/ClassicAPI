@@ -2,6 +2,7 @@ do
 	local ColorMixin = ColorMixin
 	for _, classColor in pairs(RAID_CLASS_COLORS) do
 		Mixin(classColor, ColorMixin)
+		classColor.a = 1
 		classColor.colorStr = classColor:GenerateHexColor();
 	end
 end
