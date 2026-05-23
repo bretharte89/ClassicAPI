@@ -111,6 +111,7 @@ build instructions.
   - [`LE_ITEM_QUALITY_*`](#le_item_quality_)
   - [`LE_UNIT_STAT_*`](#le_unit_stat_)
   - [`Enum.AddOnSecurityStatus`](#enumaddonsecuritystatus)
+  - [`Enum.PowerType`](#enumpowertype)
 
 - [Gossip](#gossip)
   - [`C_GossipInfo.GetText()`](#c_gossipinfogettext)
@@ -273,6 +274,8 @@ build instructions.
   - [`UnitIsPossessed(unit)`](#unitispossessedunit)
   - [`UnitStandState(unit)`](#unitstandstateunit)
   - [`UnitInRange(unit)`](#unitinrangeunit)
+  - [`UnitPower(unit [, powerType])` / `UnitPowerMax(unit [, powerType])`](#unitpowerunit--powertype--unitpowermaxunit--powertype)
+  - [`UnitPowerType(unit)`](#unitpowertypeunit)
 
 - [UnitAuras](#unitauras)
   - [`C_UnitAuras.GetAuraDataByIndex(unit, index [, filter])`](#c_unitaurasgetauradatabyindexunit-index--filter)
@@ -2455,6 +2458,28 @@ Blizzard's `Enum.AddOnSecurityStatus`:
 if C_AddOns.GetAddOnSecurity(name) == Enum.AddOnSecurityStatus.Secure then
     -- it's a Blizzard_* addon
 end
+```
+
+### `Enum.PowerType`
+
+The integer enum `UnitPowerType` returns and `UnitPower` /
+`UnitPowerMax` accept. Vanilla 1.12 only defines slots 0..4 — the
+WotLK additions (Runes, Runic Power) and post-WotLK extensions
+aren't included. Slot 4 is `Happiness` (vanilla pet happiness),
+not modern's `ComboPoints` reuse of the same number.
+
+| Value | Field        | Notes |
+|------:|--------------|-------|
+| `-2`  | `HealthCost` | Sentinel for "use HEALTH instead of POWER". |
+| `-1`  | `None`       | Sentinel for "unit's primary power" (= omit the arg). |
+| `0`   | `Mana`       | |
+| `1`   | `Rage`       | |
+| `2`   | `Focus`      | |
+| `3`   | `Energy`     | |
+| `4`   | `Happiness`  | Pet happiness — vanilla-specific. |
+
+```lua
+local rage = UnitPower("player", Enum.PowerType.Rage)
 ```
 
 ## Gossip
@@ -6265,6 +6290,100 @@ from the DBC). Reads byte 0 of `UNIT_FIELD_BYTES_0` (descriptor
 
 Returns `(nil, nil)` for unresolvable units and non-player units
 (creature race bytes don't index `ChrRaces.dbc`).
+
+### `UnitPower(unit [, powerType])` / `UnitPowerMax(unit [, powerType])`
+
+Modern multi-power-type getters. Vanilla 1.12 only ships
+`UnitMana(unit)` / `UnitManaMax(unit)` which return whichever
+primary power the unit happens to have (mana for casters, energy
+for rogues, rage for warriors, etc.); these add the explicit
+`powerType` arg so addons can read a specific power slot without
+caring what the unit's primary is.
+
+```lua
+local mana    = UnitPower("player", 0)   -- explicit mana
+local energy  = UnitPower("player", 3)   -- explicit energy
+local primary = UnitPower("player")      -- whatever the player's primary is
+local maxMana = UnitPowerMax("target", 0)
+```
+
+`powerType` values (matches modern WoW's enum):
+
+| value | type |
+|---|---|
+| `0` | MANA |
+| `1` | RAGE |
+| `2` | FOCUS |
+| `3` | ENERGY |
+| `4` | HAPPINESS |
+
+These match the [`Enum.PowerType`](#globals) namespace published
+alongside — `UnitPower("player", Enum.PowerType.Mana)` is the
+idiomatic modern shape.
+
+Omitting `powerType` (or passing `-1` / any out-of-range value)
+falls back to the unit's primary power, read from
+`UNIT_FIELD_BYTES_0` byte 3 (descriptor `+0x7B`) — same source the
+vanilla engine uses internally. Same fallback the 3.3.5 client's
+`Script_UnitPower` uses for its `type == 7` sentinel.
+
+Returns `0` for invalid units, unresolvable tokens, or power types
+outside the 0..4 vanilla range (Runes / Runic Power are WotLK
+additions that don't have descriptor slots in the 1.12 unit
+layout).
+
+Display-divisor applied. Vanilla stores some power types at a
+scaled value internally and divides before exposing them through
+Lua — same trick `Script_UnitMana` (`0x00517670`) uses, reading
+the divisor table at `0x0086F978`:
+
+| type | divisor |
+|---|---|
+| `0` MANA | 1 |
+| `1` RAGE | **10** (raw `0..1000` → display `0..100`) |
+| `2` FOCUS | 1 |
+| `3` ENERGY | 1 |
+| `4` HAPPINESS | 1000 |
+
+So a fresh warrior reads `UnitPower("player", 1)` = `0..100`, not
+`0..1000`. Matches retail Classic.
+
+Direct descriptor reads — `desc[+0x44 + type*4]` for current power,
+`desc[+0x5C + type*4]` for max, divided by the table entry for the
+type. No engine call, no Lua-stack roundtrip.
+
+### `UnitPowerType(unit)`
+
+Vanilla 1.12 ships this returning just the integer power type;
+this implementation extends it to the modern 2-tuple
+`(powerType, powerToken)`. Strict-superset signature — addons
+that destructure only the first return are unaffected.
+
+```lua
+local pt, token = UnitPowerType("player")
+-- e.g. (0, "MANA") for a paladin, (1, "RAGE") for a warrior
+```
+
+Token strings match modern WoW exactly:
+
+| value | token |
+|---|---|
+| `0` | `"MANA"` |
+| `1` | `"RAGE"` |
+| `2` | `"FOCUS"` |
+| `3` | `"ENERGY"` |
+| `4` | `"HAPPINESS"` |
+| `5` | `"RUNES"` |
+| `6` | `"RUNIC_POWER"` |
+
+5/6 are post-WotLK power types that can't appear on a 1.12 unit's
+descriptor; they're included in the table for symmetry with the
+modern enum in case a private server pushes one through.
+
+Chains to the engine's original `Script_UnitPowerType` at
+`0x00517940` to preserve its full unit-resolution flow (object-
+manager lookup with pet / totem / vehicle fallbacks), then reads
+the just-pushed integer and appends the token string.
 
 ## UnitAuras
 

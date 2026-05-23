@@ -1,0 +1,222 @@
+// This file is part of ClassicAPI.
+//
+// ClassicAPI is free software: you can redistribute it and/or modify it under the terms
+// of the GNU Lesser General Public License as published by the Free Software Foundation, either
+// version 3 of the License, or (at your option) any later version.
+//
+// ClassicAPI is distributed in the hope that it will be useful, but WITHOUT ANY
+// WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+// PURPOSE. See the GNU Lesser General Public License for more details.
+
+// Modern power-API polyfill: `UnitPower(unit [, type])`,
+// `UnitPowerMax(unit [, type])`, and an extended `UnitPowerType(unit)`
+// that returns the modern 2-tuple `(powerType, powerToken)`.
+//
+// Shape modeled on 3.3.5's `Script_UnitPower` (`0x0060ED40` in the
+// Frostmourne client) and `Script_UnitPowerMax` (`0x0060EF40`). The
+// 1.12 descriptor layout shifts the field offsets but the algorithm
+// is the same: read POWER[type] / MAXPOWER[type] off the unit's
+// descriptor, defaulting `type` to the unit's primary power (the
+// `UNIT_FIELD_BYTES_0` byte 3 at `descriptor + 0x7B`), then divide
+// by the per-power-type display divisor (`VAR_UNIT_POWER_DIVISOR_TABLE`)
+// before pushing. Rage internally stores 0..1000 but displays 0..100
+// (divisor 10); happiness uses divisor 1000. Same divisor logic
+// vanilla's own `Script_UnitMana` (`0x00517670`) applies.
+//
+// Vanilla 1.12 already has `UnitPowerType(unit)` returning just the
+// integer; we override it via the same `RegisterGlobalFunction` path,
+// chain to the engine's original (`0x00517940`) to keep its pet /
+// totem fallbacks intact, then append the modern `powerToken` string
+// as a second return. Strict-superset signature: addons doing
+// `local pt = UnitPowerType("player")` still get the integer in the
+// same position; modern addons destructuring `(pt, token)` get both.
+
+#include "Game.h"
+#include "Offsets.h"
+
+#include <cstdint>
+
+namespace Unit::Power {
+
+namespace {
+
+using ResolveUnitToken_t = void *(__fastcall *)(const char *token);
+
+const uint8_t *Descriptor(const uint8_t *unit) {
+    if (unit == nullptr)
+        return nullptr;
+    return *reinterpret_cast<const uint8_t *const *>(
+        unit + Offsets::OFF_CGUNIT_OBJECT_FIELDS);
+}
+
+const uint8_t *ResolveUnit(const char *token) {
+    if (token == nullptr)
+        return nullptr;
+    auto fn = reinterpret_cast<ResolveUnitToken_t>(Offsets::FUN_RESOLVE_UNIT_TOKEN);
+    return static_cast<const uint8_t *>(fn(token));
+}
+
+// Per-power-type display divisor. Vanilla stores rage as 0..1000
+// internally and displays 0..100 (divide by 10); happiness is
+// stored at 1000x scale. Same table the engine's own `Script_UnitMana`
+// (`0x00517670`) reads at `VAR_UNIT_POWER_DIVISOR_TABLE`.
+uint32_t PowerDivisor(int type) {
+    if (type < 0)
+        return 1;
+    auto *table = reinterpret_cast<const uint32_t *>(
+        static_cast<uintptr_t>(Offsets::VAR_UNIT_POWER_DIVISOR_TABLE));
+    return table[type];
+}
+
+// Modern power-type tokens. Vanilla descriptor byte values 0..4 map
+// to MANA/RAGE/FOCUS/ENERGY/HAPPINESS. 5/6 (Runes / Runic Power)
+// can't appear on a 1.12 unit but we map them anyway in case a
+// private server pushes one through.
+const char *PowerTypeToken(int type) {
+    switch (type) {
+    case 0: return "MANA";
+    case 1: return "RAGE";
+    case 2: return "FOCUS";
+    case 3: return "ENERGY";
+    case 4: return "HAPPINESS";
+    case 5: return "RUNES";
+    case 6: return "RUNIC_POWER";
+    }
+    return "UNKNOWN";
+}
+
+// `Enum.PowerType` — modern Blizzard-style enum table. Slot 4 is
+// `Happiness` in 1.12 (pet happiness 0..3); modern retail relabels
+// slot 4 as `ComboPoints`. We use the vanilla name since this
+// polyfill ships against the 1.12 engine — addons that need the
+// modern label can `Enum.PowerType.Happiness` and add their own
+// alias.
+constexpr Game::Lua::EnumIntegerEntry kPowerTypeEntries[] = {
+    {"HealthCost", -2}, // sentinel for "use HEALTH instead of POWER"
+    {"None",       -1},
+    {"Mana",        0},
+    {"Rage",        1},
+    {"Focus",       2},
+    {"Energy",      3},
+    {"Happiness",   4},
+};
+
+// Resolves the (unit, type) args to a `(descriptor, type)` pair.
+// Returns true on success. `type` is normalized to 0..4 on return —
+// if the caller omitted it (or passed -1 / 7 / any out-of-range
+// sentinel), we substitute the unit's primary power type from its
+// `UNIT_FIELD_BYTES_0` byte 3 (descriptor `+0x7B`).
+//
+// Returns false (and leaves out params untouched) if the unit token
+// is missing/invalid, the unit isn't resolvable, or the resolved
+// power type is post-WotLK (5/6) — vanilla 1.12 descriptors don't
+// carry POWER fields for those slots.
+bool ResolveArgs(void *L, const uint8_t **outDesc, int *outType) {
+    if (!Game::Lua::IsString(L, 1))
+        return false;
+    const char *token = Game::Lua::ToString(L, 1);
+    const uint8_t *unit = ResolveUnit(token);
+    const uint8_t *desc = Descriptor(unit);
+    if (desc == nullptr)
+        return false;
+
+    int type = -1;
+    if (Game::Lua::IsNumber(L, 2))
+        type = static_cast<int>(Game::Lua::ToNumber(L, 2));
+    if (type < Offsets::UNIT_POWER_MIN_TYPE ||
+        type > Offsets::UNIT_POWER_MAX_TYPE) {
+        // Out of vanilla-valid range (or unspecified) → use the
+        // unit's primary power type from descriptor +0x7B.
+        type = *(desc + Offsets::OFF_UNIT_DESCRIPTOR_POWER_TYPE_BYTE);
+    }
+    if (type < Offsets::UNIT_POWER_MIN_TYPE ||
+        type > Offsets::UNIT_POWER_MAX_TYPE)
+        return false;
+    *outDesc = desc;
+    *outType = type;
+    return true;
+}
+
+// `UnitPower("unit" [, powerType])` — returns the current power
+// value for the given type. Defaults to the unit's primary power
+// when `powerType` is omitted or set to the modern -1 sentinel.
+// Returns 0 for invalid units or unsupported types (DK powers in
+// vanilla).
+static int __fastcall Script_UnitPower(void *L) {
+    if (!Game::Lua::IsString(L, 1)) {
+        Game::Lua::Error(L, "Usage: UnitPower(\"unit\" [, type])");
+        return 0;
+    }
+    const uint8_t *desc;
+    int type;
+    if (!ResolveArgs(L, &desc, &type)) {
+        Game::Lua::PushNumber(L, 0.0);
+        return 1;
+    }
+    const uint32_t raw = *reinterpret_cast<const uint32_t *>(
+        desc + Offsets::OFF_UNIT_FIELD_POWER1 + type * 4);
+    const uint32_t divisor = PowerDivisor(type);
+    Game::Lua::PushNumber(L, static_cast<double>(raw / divisor));
+    return 1;
+}
+
+// `UnitPowerMax("unit" [, powerType])` — returns the max power
+// for the given type. Same arg shape and fallback semantics as
+// `UnitPower`.
+static int __fastcall Script_UnitPowerMax(void *L) {
+    if (!Game::Lua::IsString(L, 1)) {
+        Game::Lua::Error(L, "Usage: UnitPowerMax(\"unit\" [, type])");
+        return 0;
+    }
+    const uint8_t *desc;
+    int type;
+    if (!ResolveArgs(L, &desc, &type)) {
+        Game::Lua::PushNumber(L, 0.0);
+        return 1;
+    }
+    const uint32_t raw = *reinterpret_cast<const uint32_t *>(
+        desc + Offsets::OFF_UNIT_FIELD_MAXPOWER1 + type * 4);
+    const uint32_t divisor = PowerDivisor(type);
+    Game::Lua::PushNumber(L, static_cast<double>(raw / divisor));
+    return 1;
+}
+
+// `UnitPowerType(unit)` — extended to return `(powerType, powerToken)`.
+// Vanilla 1.12's implementation pushes only the integer; we chain
+// to the engine's original (`0x00517940`) to preserve its full
+// resolution chain (object-manager lookup with pet / totem
+// fallbacks) and then append the token string.
+//
+// The original returns 1 if it pushed a value, 0 on the usage-error
+// path. We propagate the latter unchanged; in the former case we
+// read the just-pushed integer back off the top of the stack and
+// push the modern token alongside it. Lua callers that consume
+// only the first return are unaffected.
+constexpr uintptr_t kVanillaUnitPowerType = 0x00517940;
+
+static int __fastcall Script_UnitPowerType(void *L) {
+    using Orig_t = int(__fastcall *)(void *L);
+    auto orig = reinterpret_cast<Orig_t>(kVanillaUnitPowerType);
+    const int n = orig(L);
+    if (n != 1)
+        return n;
+    const int powerType = static_cast<int>(Game::Lua::ToNumber(L, -1));
+    Game::Lua::PushString(L, PowerTypeToken(powerType));
+    return 2;
+}
+
+static void RegisterLuaFunctions() {
+    Game::Lua::RegisterGlobalFunction("UnitPower", &Script_UnitPower);
+    Game::Lua::RegisterGlobalFunction("UnitPowerMax", &Script_UnitPowerMax);
+    Game::Lua::RegisterGlobalFunction("UnitPowerType", &Script_UnitPowerType);
+    Game::Lua::RegisterIntegerEnum(
+        "Enum", "PowerType",
+        kPowerTypeEntries,
+        sizeof(kPowerTypeEntries) / sizeof(kPowerTypeEntries[0]));
+}
+
+static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
+
+} // namespace
+
+} // namespace Unit::Power

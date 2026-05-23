@@ -324,7 +324,39 @@ enum Offsets {
     // external emulator field tables.
     OFF_UNIT_FIELD_HEALTH = 0x40,
     OFF_UNIT_FIELD_POWER1 = 0x44,
+    // POWER1..5 are 4 bytes each, contiguous from +0x44:
+    //   +0x44 mana / +0x48 rage / +0x4C focus / +0x50 energy / +0x54 happiness.
+    OFF_UNIT_FIELD_MAXHEALTH = 0x58,
+    OFF_UNIT_FIELD_MAXPOWER1 = 0x5C,
+    // MAXPOWER1..5 are 4 bytes each, contiguous from +0x5C (same
+    // mana/rage/focus/energy/happiness order as POWER1..5). Vanilla
+    // 1.12 has 5 power types; the WotLK additions (Runes / Runic Power)
+    // don't exist in this descriptor layout.
+    UNIT_POWER_MIN_TYPE = 0,
+    UNIT_POWER_MAX_TYPE = 4, // happiness; types 5/6 only valid post-WotLK
+
+    // Per-power-type display divisor. Raw descriptor values get
+    // divided by this before they're surfaced through Lua. Vanilla
+    // 1.12 stores rage as 0..1000 (internally) and divides by 10 to
+    // show 0..100; happiness is stored at 1000x scale and divides
+    // by 1000. Engine reads from `Script_UnitMana` at
+    // `0x006E7130 + type * 4` (= `0x0086F978`). Same trick the
+    // 3.3.5/4.x clients use; the table is per-client, the design is
+    // stable.
+    //
+    //   [0] = 1     MANA
+    //   [1] = 10    RAGE
+    //   [2] = 1     FOCUS
+    //   [3] = 1     ENERGY
+    //   [4] = 1000  HAPPINESS
+    VAR_UNIT_POWER_DIVISOR_TABLE = 0x0086F978,
     OFF_UNIT_FIELD_LEVEL = 0x70,
+    // UNIT_FIELD_BYTES_0 dword at +0x78; byte 3 (= +0x7B) is the unit's
+    // primary power type (one of UNIT_POWER_MIN_TYPE..MAX_TYPE).
+    // Verified at `0x005179E6` in vanilla's `Script_UnitPowerType`:
+    //   mov edx, [eax + 0x110]
+    //   movzx eax, byte ptr [edx + 0x7B]
+    OFF_UNIT_DESCRIPTOR_POWER_TYPE_BYTE = 0x7B,
     OFF_UNIT_FIELD_FLAGS = 0xA0,
     UNIT_FLAG_PLAYER_CONTROLLED = 0x08,
     // Bit 19 of UNIT_FIELD_FLAGS — `Script_UnitAffectingCombat` at
