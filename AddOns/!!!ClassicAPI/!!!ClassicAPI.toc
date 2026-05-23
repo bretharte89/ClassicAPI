@@ -26,3 +26,4 @@ Util\FrameWatcher.lua
 Util\TimedCallback.lua
 Util\EquipmentManager.lua
 Util\PlayerUtil.lua
+Util\SlashCommandsRegistry.lua
