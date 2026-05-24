@@ -35,9 +35,13 @@ jobs:
           $toc = Join-Path $stage '!!!ClassicAPI/!!!ClassicAPI.toc'
           (Get-Content $toc) -replace '^## Version:.*', "## Version: $version" |
             Set-Content $toc
-          Compress-Archive -Path "$stage/*" -DestinationPath "$stage.zip"
+          Compress-Archive -Path "$stage/*" -DestinationPath "ClassicAPI-Bundle-$tag.zip"
+          Compress-Archive -Path "$stage/!!!ClassicAPI" -DestinationPath "ClassicAPI-AddOnOnly-$tag.zip"
 
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
-          files: ClassicAPI-${{ github.ref_name }}.zip
+          files: |
+            ClassicAPI-Bundle-${{ github.ref_name }}.zip
+            ClassicAPI-AddOnOnly-${{ github.ref_name }}.zip
+            ClassicAPI-${{ github.ref_name }}/ClassicAPI.dll
