@@ -44,4 +44,24 @@ bool FromBag(const void *cgItem, int bagID, int slotInBag, int dstPaperdollSlot)
 
 bool FromPaperdoll(const void *cgItem, int srcPaperdollSlot, int dstPaperdollSlot);
 
+// General bag-to-bag swap — neither side is constrained to the
+// paperdoll. Same engine helper (`FUN_INVENTORY_SWAP`), which routes
+// to opcode 0x10D (same-container slot swap, e.g. backpack ↔ backpack)
+// or 0x10C (cross-container swap, e.g. backpack → equipped bag) based
+// on whether the two container GUIDs match.
+//
+// bagID convention matches `C_Container.GetContainerItemInfo`:
+//   0    = backpack
+//   1..4 = equipped bags (in equipment slots 20..23)
+// slot is 1-based. Returns false if either bag is unequipped, either
+// slot is out of bounds, or the source slot is empty. Destination is
+// allowed to be empty — the engine treats that as a move; or occupied
+// — engine atomically swaps.
+//
+// Requires a valid Lua state pointer because the source-side CGItem
+// lookup goes through `Item::Location::ResolveBag`, which uses the
+// engine's `PackBagSlot` helper. Stomps the Lua stack — callers must
+// read every arg they need before calling.
+bool Containers(void *L, int srcBag, int srcSlot, int dstBag, int dstSlot);
+
 } // namespace Item::Swap

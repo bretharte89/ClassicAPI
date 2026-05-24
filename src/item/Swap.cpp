@@ -13,6 +13,7 @@
 
 #include "item/Swap.h"
 
+#include "Game.h"
 #include "Offsets.h"
 #include "item/Location.h"
 
@@ -63,6 +64,39 @@ constexpr int FIRST_BAG_CONTAINER_LINEAR = 19;
 // player invMgr — i.e. 1-based bag-0 slot S maps to linear 22+S.
 constexpr int BACKPACK_LINEAR_OFFSET = 22;
 
+// (bagID, 1-based slot) → (containerGUID, engine linear slot). Returns
+// false for unequipped bags or out-of-range slots; does NOT validate
+// that the slot is occupied (caller checks separately).
+//
+//   bagID 0    → container = player, linear = BACKPACK_LINEAR_OFFSET + slot
+//   bagID 1..4 → container = equipped bag's CGContainer, linear = slot - 1
+bool EncodeBagSlot(int bagID, int slotInBag,
+                   uint32_t *containerLo, uint32_t *containerHi,
+                   uint32_t *linearSlot) {
+    if (slotInBag < 1)
+        return false;
+    if (bagID == 0) {
+        void *player = ResolvePlayer();
+        if (player == nullptr)
+            return false;
+        if (!ReadGuid(player, containerLo, containerHi))
+            return false;
+        *linearSlot = static_cast<uint32_t>(BACKPACK_LINEAR_OFFSET + slotInBag);
+        return true;
+    }
+    if (bagID >= 1 && bagID <= 4) {
+        const uint8_t *bag = Item::Location::ResolveEquipmentSlot(
+            FIRST_BAG_CONTAINER_LINEAR + bagID);
+        if (bag == nullptr)
+            return false;
+        if (!ReadGuid(bag, containerLo, containerHi))
+            return false;
+        *linearSlot = static_cast<uint32_t>(slotInBag - 1);
+        return true;
+    }
+    return false;
+}
+
 // Common send path. All paperdoll-side state (player ptr, player
 // GUID) is resolved here; caller supplies the source side
 // (already-encoded linear slot + the container GUID it lives in).
@@ -100,41 +134,10 @@ bool SendSwap(const void *srcItem,
 } // namespace
 
 bool FromBag(const void *cgItem, int bagID, int slotInBag, int dstPaperdollSlot) {
-    if (slotInBag < 1)
+    uint32_t containerLo = 0, containerHi = 0, linearSlot = 0;
+    if (!EncodeBagSlot(bagID, slotInBag, &containerLo, &containerHi, &linearSlot))
         return false;
-
-    if (bagID == 0) {
-        // Backpack: container is the player, linear slot is in the
-        // 23..38 range of the player invMgr.
-        void *player = ResolvePlayer();
-        if (player == nullptr)
-            return false;
-        uint32_t playerLo = 0, playerHi = 0;
-        if (!ReadGuid(player, &playerLo, &playerHi))
-            return false;
-        return SendSwap(cgItem,
-                        playerLo, playerHi,
-                        static_cast<uint32_t>(BACKPACK_LINEAR_OFFSET + slotInBag),
-                        dstPaperdollSlot);
-    }
-
-    if (bagID >= 1 && bagID <= 4) {
-        // Equipped bag: container is the bag's CGContainer (a CGItem),
-        // linear slot is 0-based within that bag.
-        const uint8_t *bag = Item::Location::ResolveEquipmentSlot(
-            FIRST_BAG_CONTAINER_LINEAR + bagID);
-        if (bag == nullptr)
-            return false;
-        uint32_t bagLo = 0, bagHi = 0;
-        if (!ReadGuid(bag, &bagLo, &bagHi))
-            return false;
-        return SendSwap(cgItem,
-                        bagLo, bagHi,
-                        static_cast<uint32_t>(slotInBag - 1),
-                        dstPaperdollSlot);
-    }
-
-    return false;
+    return SendSwap(cgItem, containerLo, containerHi, linearSlot, dstPaperdollSlot);
 }
 
 bool FromPaperdoll(const void *cgItem, int srcPaperdollSlot, int dstPaperdollSlot) {
@@ -151,6 +154,40 @@ bool FromPaperdoll(const void *cgItem, int srcPaperdollSlot, int dstPaperdollSlo
                     playerLo, playerHi,
                     static_cast<uint32_t>(srcPaperdollSlot - 1),
                     dstPaperdollSlot);
+}
+
+bool Containers(void *L, int srcBag, int srcSlot, int dstBag, int dstSlot) {
+    uint32_t srcContainerLo = 0, srcContainerHi = 0, srcLinear = 0;
+    uint32_t dstContainerLo = 0, dstContainerHi = 0, dstLinear = 0;
+    if (!EncodeBagSlot(srcBag, srcSlot,
+                       &srcContainerLo, &srcContainerHi, &srcLinear))
+        return false;
+    if (!EncodeBagSlot(dstBag, dstSlot,
+                       &dstContainerLo, &dstContainerHi, &dstLinear))
+        return false;
+
+    // Look up the source CGItem so we can put its GUID on the wire.
+    // This stomps the Lua stack — caller must have already read every
+    // arg it cares about.
+    const uint8_t *srcItem = Item::Location::ResolveBag(L, srcBag, srcSlot);
+    if (srcItem == nullptr)
+        return false; // empty source slot
+
+    void *player = ResolvePlayer();
+    if (player == nullptr)
+        return false;
+
+    uint32_t itemLo = 0, itemHi = 0;
+    if (!ReadGuid(srcItem, &itemLo, &itemHi))
+        return false;
+
+    auto fn = reinterpret_cast<SwapFn_t>(Offsets::FUN_INVENTORY_SWAP);
+    fn(player,
+       itemLo, itemHi,
+       srcContainerLo, srcContainerHi, srcLinear,
+       dstContainerLo, dstContainerHi, dstLinear,
+       0);
+    return true;
 }
 
 } // namespace Item::Swap

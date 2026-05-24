@@ -37,6 +37,7 @@ build instructions.
   - [`C_Container.GetContainerNumFreeSlots(bagID)`](#c_containergetcontainernumfreeslotsbagid)
   - [`C_Container.PlayerHasHearthstone()`](#c_containerplayerhashearthstone)
   - [`C_Container.UseHearthstone()`](#c_containerusehearthstone)
+  - [`C_Container.SwapItems(srcBag, srcSlot, dstBag, dstSlot)`](#c_containerswapitemssrcbag-srcslot-dstbag-dstslot)
   - [`C_Item.UseItemByName(itemInfo)`](#c_itemuseitembynameiteminfo)
 
 - [CVar](#cvar)
@@ -847,6 +848,43 @@ cursor-mode branch (repair vendor, spell-cast targeting, drop-on-bag)
 is skipped. Bypassing the dispatcher avoids the Lua-stack roundtrip
 of pushing `(bag, slot)` only for `Script_UseContainerItem` to re-parse
 and re-resolve the same item.
+
+### `C_Container.SwapItems(srcBag, srcSlot, dstBag, dstSlot)`
+
+Atomically swaps two bag slots on the server, no cursor involved.
+Returns `true` on send, `false` for bad args (missing bag, out-of-range
+slot, empty source).
+
+```lua
+-- Move slot 3 of bag 1 to slot 7 of the backpack
+C_Container.SwapItems(1, 3, 0, 7)
+
+-- Swap two backpack slots
+C_Container.SwapItems(0, 1, 0, 2)
+```
+
+Bag IDs match the rest of `C_Container.*`: `0` is the backpack, `1..4`
+are the equipped bags. Slots are 1-based. The engine accepts both
+directions:
+
+- Same container (e.g. backpack ↔ backpack, bag1 ↔ bag1) sends opcode
+  `0x10D` `CMSG_SWAP_INV_ITEM` with the two linear slot bytes.
+- Cross-container (e.g. backpack ↔ bag1, bag2 ↔ bag3) sends opcode
+  `0x10C` `CMSG_SWAP_ITEM` with `(srcBag, srcSlot, dstBag, dstSlot)`.
+
+Destination empty becomes a move; destination occupied becomes an
+atomic swap.
+
+> **ClassicAPI-only.** Modern Classic Era has no direct swap-two-slots
+> call — addons there drive the cursor with two `PickupContainerItem`
+> calls in sequence. This single-call form bypasses the cursor
+> entirely (same path
+> [`C_EquipmentSet.UseEquipmentSet`](#c_equipmentsetuseequipmentsetsetid)
+> uses for its swap chain).
+
+Send is fire-and-forget. Server confirms via the normal
+`BAG_UPDATE` / `SMSG_INVENTORY_CHANGE_FAILURE` flow; this call does not
+wait for that round-trip.
 
 ### `C_Item.UseItemByName(itemInfo)`
 
