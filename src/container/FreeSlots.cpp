@@ -18,7 +18,7 @@
 
 #include <cstdint>
 
-namespace Item::Bag {
+namespace Container::FreeSlots {
 
 namespace {
 
@@ -139,4 +139,4 @@ static void RegisterLuaFunctions() {
 
 static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
 
-} // namespace Item::Bag
+} // namespace Container::FreeSlots

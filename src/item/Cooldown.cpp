@@ -8,9 +8,8 @@
 // WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. See the GNU Lesser General Public License for more details.
 
-// `GetItemCooldown(itemInfo)` and `C_Container.GetItemCooldown(itemID)`
-// — direct-by-ID item cooldown query. Vanilla ships
-// `GetContainerItemCooldown(bag, slot)` and
+// `GetItemCooldown(itemInfo)` — direct-by-ID item cooldown query.
+// Vanilla ships `GetContainerItemCooldown(bag, slot)` and
 // `GetInventoryItemCooldown(unit, slot)` which both require a
 // physical slot reference; this surfaces the same data keyed by
 // itemID, matching modern's signature.
@@ -21,6 +20,11 @@
 // `GetTime()`-compatible seconds; `enable` is `1` for "ready or
 // counting down" / `0` for "used but cooldown is on hold" (potion-
 // in-combat case).
+//
+// `PushCooldown` is the shared helper, exposed via `item/Cooldown.h`
+// so `Container::Cooldown` can reuse it for `C_Container.GetItemCooldown`.
+
+#include "item/Cooldown.h"
 
 #include "Game.h"
 #include "Offsets.h"
@@ -43,6 +47,8 @@ using QueryItemCooldown_t = bool(__fastcall *)(uint32_t itemID,
                                                 int *outStart,
                                                 uint32_t *outEnable);
 
+} // namespace
+
 void PushCooldown(void *L, int itemID) {
     int durationMs = 0;
     int startMs = 0;
@@ -62,28 +68,13 @@ void PushCooldown(void *L, int itemID) {
 
 // Global `GetItemCooldown(itemInfo)` — accepts itemID, item link, or
 // numeric string, via the shared `Item::Arg::ResolveItemID`.
-int __fastcall Script_GetItemCooldown(void *L) {
+static int __fastcall Script_GetItemCooldown(void *L) {
     PushCooldown(L, Item::Arg::ResolveItemID(L, 1));
     return 3;
 }
 
-// `C_Container.GetItemCooldown(itemID)` — modern signature only
-// accepts a numeric itemID (per Blizzard's docs: "will not accept
-// an itemlink or name"). We reuse the same arg helper but skip the
-// name-fallback branch by only honoring number / link inputs that
-// `Item::Arg::Resolve` already extracts to a numeric ID.
-int __fastcall Script_C_Container_GetItemCooldown(void *L) {
-    Item::Arg::Resolved r = Item::Arg::Resolve(L, 1);
-    PushCooldown(L, r.itemID);
-    return 3;
-}
-
-} // namespace
-
 static void RegisterLuaFunctions() {
     Game::Lua::RegisterGlobalFunction("GetItemCooldown", &Script_GetItemCooldown);
-    Game::Lua::RegisterTableFunction("C_Container", "GetItemCooldown",
-                                     &Script_C_Container_GetItemCooldown);
 }
 
 static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};

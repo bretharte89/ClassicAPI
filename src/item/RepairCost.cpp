@@ -11,6 +11,8 @@
 // You should have received a copy of the GNU Lesser General Public License along with
 // ClassicAPI. If not, see <https://www.gnu.org/licenses/>.
 
+#include "item/RepairCost.h"
+
 #include "Game.h"
 #include "Offsets.h"
 #include "item/Location.h"
@@ -22,15 +24,20 @@ namespace Item::RepairCost {
 namespace {
 
 using RepairCostFn = int (__fastcall *)(void *item);
-static const auto ComputeRepairCost = reinterpret_cast<RepairCostFn>(
+const auto ComputeRepairCost = reinterpret_cast<RepairCostFn>(
     static_cast<uintptr_t>(Offsets::FUN_ITEM_REPAIR_COST));
+
+} // namespace
 
 // Pushes one int return (copper cost). 0 means "no repair needed" — the
 // engine's helper returns 0 for null items, broken items, items without a
 // durability concept, or fully-repaired items. We forward 0 in those cases
 // rather than returning nothing, because the caller asked "what's the
 // repair cost" and 0 is a meaningful answer ("nothing to repair").
-static int PushRepairCostForItem(void *L, const uint8_t *item) {
+//
+// Exposed via [[item/RepairCost.h]] so `Container::RepairCost` can
+// reuse the same engine call for `C_Container.GetContainerItemRepairCost`.
+int PushRepairCostForItem(void *L, const uint8_t *item) {
     if (item == nullptr) {
         Game::Lua::PushNumber(L, 0.0);
         return 1;
@@ -39,6 +46,8 @@ static int PushRepairCostForItem(void *L, const uint8_t *item) {
     Game::Lua::PushNumber(L, static_cast<double>(cost));
     return 1;
 }
+
+namespace {
 
 // `GetInventoryItemRepairCost(invSlot)` — returns the cost in copper to
 // repair the player's equipped item at `invSlot` (1-based). Matches the
@@ -53,7 +62,7 @@ static int PushRepairCostForItem(void *L, const uint8_t *item) {
 // Player-only; mirrors the shape of our existing
 // `GetInventoryItemDurability`. Returns 0 for empty slots or items
 // that don't need repair.
-static int __fastcall Script_GetInventoryItemRepairCost(void *L) {
+int __fastcall Script_GetInventoryItemRepairCost(void *L) {
     if (!Game::Lua::IsNumber(L, 1)) {
         Game::Lua::Error(L, "Usage: GetInventoryItemRepairCost(invSlot)");
         return 0;
@@ -66,29 +75,11 @@ static int __fastcall Script_GetInventoryItemRepairCost(void *L) {
     return PushRepairCostForItem(L, Item::Location::ResolveEquipmentSlot(slot1Based));
 }
 
-// `C_Container.GetContainerItemRepairCost(containerIndex, slotIndex)` —
-// bag/bank variant. Same engine helper, just a different slot-resolution
-// chain. The engine's `RepairAllCost` (`FUN_004FBD60`) walks both
-// equipment slots and bag contents through the same per-item function,
-// so this is the same cost the merchant would charge for that item.
-static int __fastcall Script_C_Container_GetContainerItemRepairCost(void *L) {
-    if (!Game::Lua::IsNumber(L, 1) || !Game::Lua::IsNumber(L, 2)) {
-        Game::Lua::Error(L,
-            "Usage: C_Container.GetContainerItemRepairCost(containerIndex, slotIndex)");
-        return 0;
-    }
-    const int bagID = static_cast<int>(Game::Lua::ToNumber(L, 1));
-    const int slotIndex = static_cast<int>(Game::Lua::ToNumber(L, 2));
-    return PushRepairCostForItem(L, Item::Location::ResolveBag(L, bagID, slotIndex));
-}
-
 } // namespace
 
 static void RegisterLuaFunctions() {
     Game::Lua::RegisterGlobalFunction("GetInventoryItemRepairCost",
                                       &Script_GetInventoryItemRepairCost);
-    Game::Lua::RegisterTableFunction("C_Container", "GetContainerItemRepairCost",
-                                     &Script_C_Container_GetContainerItemRepairCost);
 }
 
 static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};

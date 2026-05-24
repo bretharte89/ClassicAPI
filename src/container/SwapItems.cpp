@@ -26,7 +26,7 @@
 #include "Game.h"
 #include "item/Swap.h"
 
-namespace Item::SwapContainerItems {
+namespace Container::SwapItems {
 
 namespace {
 
@@ -58,4 +58,4 @@ const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
 
 } // namespace
 
-} // namespace Item::SwapContainerItems
+} // namespace Container::SwapItems

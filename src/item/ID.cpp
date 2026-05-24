@@ -46,30 +46,8 @@ static int __fastcall Script_GetItemID(void *L) {
     return 1;
 }
 
-// `C_Container.GetContainerItemID(bagIndex, slotIndex)` — modern
-// positional-arg accessor for the same data `C_Item.GetItemID({bagID=B,
-// slotIndex=S})` returns. Both go through `Item::Location::ResolveBag`
-// → engine `PackBagSlot` → `GetItemBySlot` → CGItem → instance block
-// → itemID. Returns nil for empty slots or invalid bag indices.
-static int __fastcall Script_C_Container_GetContainerItemID(void *L) {
-    if (!Game::Lua::IsNumber(L, 1) || !Game::Lua::IsNumber(L, 2)) {
-        Game::Lua::Error(L, "Usage: C_Container.GetContainerItemID(bagIndex, slotIndex)");
-        return 0;
-    }
-    const int bagID = static_cast<int>(Game::Lua::ToNumber(L, 1));
-    const int slotIndex = static_cast<int>(Game::Lua::ToNumber(L, 2));
-
-    const int itemID = FromCGItem(Item::Location::ResolveBag(L, bagID, slotIndex));
-    if (itemID == 0)
-        return 0;
-    Game::Lua::PushNumber(L, static_cast<double>(itemID));
-    return 1;
-}
-
 static void RegisterLuaFunctions() {
     Game::Lua::RegisterTableFunction("C_Item", "GetItemID", &Script_GetItemID);
-    Game::Lua::RegisterTableFunction("C_Container", "GetContainerItemID",
-                                     &Script_C_Container_GetContainerItemID);
 }
 
 static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};

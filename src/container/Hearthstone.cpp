@@ -19,7 +19,7 @@
 
 #include <cstdint>
 
-namespace Item::Hearthstone {
+namespace Container::Hearthstone {
 
 namespace {
 
@@ -131,4 +131,4 @@ static void RegisterLuaFunctions() {
 
 static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
 
-} // namespace Item::Hearthstone
+} // namespace Container::Hearthstone
