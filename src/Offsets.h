@@ -29,8 +29,31 @@ enum Offsets {
     FUN_LOAD_GLUE_SCRIPT_FUNCTIONS = 0x0046ABB0,
 
     // GameTooltip script-method prologue helpers (used to resolve self → CFrameScriptObject*).
+    // Underlying Lua C API names per [[docs/LuaCAPI.md]] are `lua_rawgeti`
+    // (0x6F3BC0) and `lua_touserdata` (0x6F3740). The Set* method prologue's
+    // call sequence
+    //   PushObject(L, idx, 0);  // == lua_rawgeti(L, idx, 0) — pushes the
+    //                             // lightuserdata at table[0]
+    //   GetObject(L, -1);       // == lua_touserdata(L, -1) — extracts
+    //                             // the raw CFrameScriptObject *
+    // is the canonical "Lua frame table → C++ object" path. The reverse
+    // (`GameTooltip:GetOwner` etc.) is just `lua_rawgeti(L, REGISTRY,
+    // [cobj+OFF_COBJECT_LUA_REGISTRY_REF])` — the engine pre-allocates
+    // the registry handle when the frame is created from Lua.
     FUN_FRAMESCRIPT_PUSH_OBJECT = 0x6F3BC0,
     FUN_FRAMESCRIPT_GET_OBJECT = 0x6F3740,
+
+    // CFrameScriptObject layout: the registry refkey allocated when the
+    // engine first exposes the C++ object to Lua. Pushing a frame back
+    // to Lua is `lua_rawgeti(L, LUA_REGISTRYINDEX, [cobj+0x08])`.
+    OFF_COBJECT_LUA_REGISTRY_REF = 0x08,
+
+    // Within a CGFrame, the embedded LayoutFrame sub-object starts here.
+    // Engine code that wants to invoke LayoutFrame methods polymorphically
+    // (anchoring, positioning) stores the LayoutFrame* — i.e.
+    // `(Frame*)obj + 0x24` — instead of the bare Frame*. Reverse
+    // lookups (e.g. GameTooltip:GetOwner) subtract this back out.
+    OFF_FRAME_LAYOUT_SUBOBJECT = 0x24,
 
     // Inner spell-tooltip builder, called from Script_GameTooltip_SetSpell at 0x00532E92.
     // __thiscall(spellID, 0, 0, isPet, 0, 0, 0); we always pass isPet=0.
@@ -91,6 +114,14 @@ enum Offsets {
     // Same clear/gating semantics as the unit GUID slot.
     OFF_TOOLTIP_GAMEOBJECT_GUID_LO = 0x370,
     OFF_TOOLTIP_GAMEOBJECT_GUID_HI = 0x374,
+    // Owner frame stored by `tooltip:SetOwner(frame, anchor)` and
+    // compared by `IsOwned`. Holds `owner_CObject + OFF_FRAME_LAYOUT_SUBOBJECT`
+    // (i.e. the LayoutFrame*, not the bare Frame*), or 0 if unowned.
+    // Verified via the helper at 0x0052FFE0 invoked by SetOwner's tail
+    // (writes `[this+0x314] = arg+0x24`) and Script_GameTooltip_IsOwned
+    // at 0x00530FE0 (reads `[edi+0x314]` and compares against the same
+    // `+0x24`-offset value).
+    OFF_TOOLTIP_OWNER = 0x314,
 
     // CGItem → fully-dressed item link string. __fastcall(ecx = CGItem *)
     // → const char *. Reads the item's itemID, quality, permanent

@@ -104,6 +104,7 @@ build instructions.
   - [`GameTooltip:HasItem()` / `GameTooltip:HasSpell()`](#gametooltiphasitem--gametooltiphasspell)
   - [`GameTooltip:GetUnitGUID()` / `GameTooltip:HasUnit()`](#gametooltipgetunitguid--gametooltiphasunit)
   - [`GameTooltip:GetGameObject()` / `GameTooltip:HasGameObject()`](#gametooltipgetgameobject--gametooltiphasgameobject)
+  - [`GameTooltip:GetOwner()`](#gametooltipgetowner)
 
 - [Globals](#globals)
   - [`CLASSIC_API_VERSION`](#classic_api_version)
@@ -2198,6 +2199,25 @@ gameobject has left the engine's visibility window (object manager
 evicted it). `HasGameObject()` stays true in the latter case —
 the tooltip-frame slot still has the GUID, even though the live
 object has been freed.
+
+### `GameTooltip:GetOwner()`
+
+Returns the frame that called `tooltip:SetOwner(frame, anchor)`, or
+`nil` if the tooltip hasn't been owned by anyone since its last
+`Clear` / `Hide`. Vanilla 1.12 ships `SetOwner` and `IsOwned` but
+never added the matching reader; modern Classic Era's signature is
+backported here for parity.
+
+```lua
+GameTooltip:SetOwner(SomeFrame, "ANCHOR_TOPLEFT")
+local owner = GameTooltip:GetOwner()
+-- owner == SomeFrame
+```
+
+Returns only the owner frame, not `(owner, anchorPoint)` like modern
+Classic. The anchor string is reachable via vanilla's native
+[`GameTooltip:GetAnchorType()`](https://wowwiki-archive.fandom.com/wiki/API_GameTooltip_GetAnchorType)
+(slot 5 in the GameTooltip method registry).
 
 ### `GameTooltip:SetTalentByID(talentID)`
 
