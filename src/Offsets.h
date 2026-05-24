@@ -868,6 +868,30 @@ enum Offsets {
     // every set / clear; no payload.
     OFF_ITEM_CLIENT_LOCK = 0x314,
     ITEM_CLIENT_LOCK_BIT = 0x01,
+
+    // `__stdcall(uint guidLo, int guidHi)` — sets bit 0 at `[item+0x314]`
+    // for the resolved item and fires ITEM_LOCK_CHANGED. Mirror of
+    // FUN_ITEM_UNLOCK_BY_GUID below. Engine's normal trigger is the
+    // optimistic-lock step inside pickup/equip/attach paths (cursor
+    // packets are sent immediately after).
+    FUN_ITEM_LOCK_BY_GUID = 0x004953E0,
+
+    // `__stdcall(uint guidLo, int guidHi)` — clears bit 0 at
+    // `[item+0x314]` for the resolved item and fires ITEM_LOCK_CHANGED.
+    // Resolves the item by GUID internally via FUN_00468460; safe to
+    // call with the GUID of an item that's already gone (event still
+    // fires but no-op on state). The engine's normal trigger for this
+    // is the SMSG_UPDATE_OBJECT post-processor (`FUN_005D8440`) when
+    // the server confirms a transaction.
+    FUN_ITEM_UNLOCK_BY_GUID = 0x00495420,
+
+    // `__cdecl()` — walks every CGItem the engine knows about (bag
+    // containers + their contents) and clears the lock bit on each.
+    // Fires a single ITEM_LOCK_CHANGED at the end. The engine itself
+    // only calls this from the PLAYER_LEAVING_WORLD cleanup path
+    // (`FUN_005FEF70` → fires event 0x112 right after); we expose it
+    // to addons as a stuck-lock recovery primitive.
+    FUN_ITEM_UNLOCK_ALL = 0x00495460,
     // ITEM_FIELD_STACK_COUNT — single dword. Verified by decoding
     // `Script_GetContainerItemInfo` (`0x004F9670`): after resolving the
     // descriptor, `mov eax, [esi+0x114]; fild [eax+0x20]` is the count

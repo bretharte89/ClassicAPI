@@ -166,6 +166,10 @@ build instructions.
   - [`C_Item.GetItemLink(itemLocation)`](#c_itemgetitemlinkitemlocation)
   - [`C_Item.GetItemInventoryType(itemLocation)` / `C_Item.GetItemInventoryTypeByID(item)`](#c_itemgetiteminventorytypeitemlocation--c_itemgetiteminventorytypebyiditem)
   - [`C_Item.IsLocked(itemLocation)`](#c_itemislockeditemlocation)
+  - [`C_Item.LockItem(itemLocation)`](#c_itemlockitemitemlocation)
+  - [`C_Item.LockItemByGUID(itemGUID)`](#c_itemlockitembyguiditemguid)
+  - [`C_Item.UnlockItem(itemLocation)`](#c_itemunlockitemitemlocation)
+  - [`C_Item.UnlockAllItems()`](#c_itemunlockallitems)
   - [`C_Item.GetItemGUID(itemLocation)`](#c_itemgetitemguiditemlocation)
   - [`C_Item.GetItemLocation(itemGUID)`](#c_itemgetitemlocationitemguid)
   - [`Get*ItemID` — companions to the engine's `Get*ItemLink` family](#getitemid--companions-to-the-engines-getitemlink-family)
@@ -3688,10 +3692,11 @@ end
 
 ### `C_Item.IsLocked(itemLocation)`
 
-Returns `true` if the equipped/bagged item is in a server-side locked
-state — mid-trade, mid-mail-attach, picked up onto the cursor, etc.
-Direct descriptor read: CGItem → `m_objectFields` (`+0x114`) →
-`ITEM_FIELD_FLAGS` (`+0x3C`) → bit 2 (`0x04`).
+Returns `true` if the item is in the client-side "in-transaction"
+lock state — picked up onto the cursor, mail-attached, trade-attached,
+mid-swap, etc. Reads the per-CGItem instance flag at `+0x314` bit 0
+(not the `ITEM_FIELD_FLAGS` descriptor field — vanilla's actual lock
+is on the instance, not in `m_objectFields`).
 
 ```lua
 if C_Item.IsLocked({bagID = 0, slotIndex = 1}) then
@@ -3699,15 +3704,91 @@ if C_Item.IsLocked({bagID = 0, slotIndex = 1}) then
 end
 ```
 
-**No `LockItem` / `UnlockItem` companion.** Vanilla 1.12 doesn't
-provide a public Lua API for setting the lock flag — it's
-exclusively server-driven via the `SMSG_ITEM_TIME_UPDATE` /
-`SMSG_ITEM_PUSH_RESULT` packet family in response to actions like
-`PickupContainerItem`. Modern backport code that calls
-`C_Item.LockItem` / `UnlockItem` will hit the
-`!!!ClassicAPI/Util/ItemUtil.lua` no-op shim and silently continue
-— there's nothing useful we can do on the C side without a fake
-state machine that wouldn't match server behavior.
+The lock is **client-managed, server-confirmed**:
+
+- Engine sets the bit *optimistically* in pickup/equip/attach paths,
+  before the transaction packet goes to the server. UI greys
+  immediately, no round-trip wait.
+- Engine clears the bit when the matching `SMSG_UPDATE_OBJECT`
+  confirms the transaction.
+
+Listen for the vanilla-native `ITEM_LOCK_CHANGED` event (no payload —
+the engine fires it on every set/clear and addons re-poll the items
+they care about) to react without timed polling.
+
+### `C_Item.LockItem(itemLocation)`
+
+Set the client-side lock on a single item by location. Calls the same
+engine primitive (`FUN_ITEM_LOCK_BY_GUID = 0x004953E0`) the engine
+itself uses optimistically before sending pickup/equip transactions.
+Fires `ITEM_LOCK_CHANGED` the same way.
+
+```lua
+C_Item.LockItem({bagID = 0, slotIndex = 1})
+```
+
+> **Setting the lock doesn't make anything real happen on the server.**
+> It's a pure client-side flag — the player's UI greys the item out
+> until something clears it. No transaction packet is sent, no
+> cancel-on-failure mechanism kicks in. Treat this as a UI hint for
+> custom workflows (batch-equip preview, drag-target highlighting,
+> etc.), not real transaction state.
+>
+> The lock stays until you call `UnlockItem` / `UnlockAllItems`, OR
+> the engine receives an SMSG_UPDATE_OBJECT for the item from the
+> server, which clears it as a side effect.
+
+### `C_Item.LockItemByGUID(itemGUID)`
+
+Same as [`LockItem`](#c_itemlockitemitemlocation) but takes a GUID
+string in the canonical `"0xHHHHHHHHLLLLLLLL"` format
+[`C_Item.GetItemGUID`](#c_itemgetitemguiditemlocation) returns. The
+engine resolves through the object manager, so this can mark items
+the player doesn't currently have in bags/equipment — trade window
+contents, mail attachments, freshly looted but not yet bagged — as
+long as the CGItem is loaded.
+
+```lua
+local guid = C_Item.GetItemGUID({equipmentSlotIndex = INVSLOT_HEAD})
+C_Item.LockItemByGUID(guid)
+```
+
+Same caveats as `LockItem` — purely client-side, doesn't affect any
+real engine transaction state.
+
+### `C_Item.UnlockItem(itemLocation)`
+
+Force-clear the client-side lock on one item. Recovery primitive —
+fires `ITEM_LOCK_CHANGED` so the UI refreshes.
+
+```lua
+C_Item.UnlockItem({bagID = 0, slotIndex = 1})
+```
+
+Useful when a transaction packet was sent but the server's
+confirmation never arrived: the item stays visually greyed
+indefinitely (vanilla's only built-in trigger for the unlock-all
+sweep is logout). This call gives you an in-session escape hatch.
+
+> **Cursor / server state isn't touched.** Unlocking doesn't tell the
+> server "cancel my transaction" — it only clears the local visual
+> lock. If the item is genuinely mid-flight, the server's next
+> update will set the lock right back. For cursor-cancel semantics,
+> pair with vanilla-native `ClearCursor()`.
+
+### `C_Item.UnlockAllItems()`
+
+Sweep clear of every CGItem the engine knows about — same primitive
+the engine itself runs on `PLAYER_LEAVING_WORLD`. One
+`ITEM_LOCK_CHANGED` fires at the end.
+
+```lua
+C_Item.UnlockAllItems()
+```
+
+Cheapest recovery if you don't know which item is stuck. Same caveat
+as `UnlockItem`: this is purely client-side state — it won't cancel
+any pending server-side transactions.
 
 ### `C_Item.GetItemGUID(itemLocation)`
 

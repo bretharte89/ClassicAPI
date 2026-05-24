@@ -16,8 +16,6 @@
 --     so those return nil / no-op.
 
 C_Item.GetItemInfo = GetItemInfo
-C_Item.LockItem = function() end
-C_Item.UnlockItem = function() end
 
 ----------------------------------------------------------------------
 
