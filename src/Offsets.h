@@ -171,6 +171,32 @@ enum Offsets {
     // client-side cursor manipulation.
     FUN_INVENTORY_SWAP = 0x005E0C40,
 
+    // Sister helper to FUN_INVENTORY_SWAP — packet builder for
+    // `CMSG_SPLIT_ITEM` (opcode 0x10E). Same __thiscall ABI shape;
+    // the item-GUID args (param_1, param_2) are unused padding for
+    // ABI parity. Packet wire format:
+    //   [0x10E, srcBag, srcSlot, dstBag, dstSlot, count]
+    // where srcBag/dstBag are byte-converted from container GUIDs by
+    // the same `FUN_005e13b0` helper the swap function uses
+    // (`0xFF` = INVENTORY_SLOT_BAG_0 / player, `19..22` = equipped bags).
+    //
+    // Server semantics are all-or-nothing: any failure
+    // (insufficient source, dest has different item, dest would
+    // overflow maxStack) leaves source untouched and emits
+    // `SMSG_INVENTORY_CHANGE_FAILURE`. No cursor involvement on send
+    // or response.
+    //
+    // Signature:
+    //   void __thiscall(
+    //     CGPlayer *this,
+    //     u32 unused1, u32 unused2,             // ABI padding
+    //     u32 srcContainerLo, u32 srcContainerHi,
+    //     u32 srcLinearSlot,                    // only low byte hits the wire
+    //     u32 dstContainerLo, u32 dstContainerHi,
+    //     u32 dstLinearSlot,                    // only low byte
+    //     u32 count);                           // only low byte
+    FUN_INVENTORY_SPLIT = 0x005E1210,
+
     // Registers a single global Lua function. __fastcall(name, func).
     FUN_FRAMESCRIPT_REGISTER_FUNCTION = 0x00704120,
 

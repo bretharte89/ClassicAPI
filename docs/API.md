@@ -38,6 +38,7 @@ build instructions.
   - [`C_Container.PlayerHasHearthstone()`](#c_containerplayerhashearthstone)
   - [`C_Container.UseHearthstone()`](#c_containerusehearthstone)
   - [`C_Container.SwapItems(srcBag, srcSlot, dstBag, dstSlot)`](#c_containerswapitemssrcbag-srcslot-dstbag-dstslot)
+  - [`C_Container.MoveItem(srcBag, srcSlot, dstBag, dstSlot, count)`](#c_containermoveitemsrcbag-srcslot-dstbag-dstslot-count)
   - [`C_Item.UseItemByName(itemInfo)`](#c_itemuseitembynameiteminfo)
 
 - [CVar](#cvar)
@@ -885,6 +886,44 @@ atomic swap.
 Send is fire-and-forget. Server confirms via the normal
 `BAG_UPDATE` / `SMSG_INVENTORY_CHANGE_FAILURE` flow; this call does not
 wait for that round-trip.
+
+### `C_Container.MoveItem(srcBag, srcSlot, dstBag, dstSlot, count)`
+
+Atomic split-and-place: move exactly `count` items from src to dst,
+no cursor involvement. Returns `true` on send, `false` on bad args
+(missing bag, out-of-range slot, empty source, `count < 1`, or
+`count > 255`).
+
+```lua
+-- Split 5 items off backpack slot 1 into backpack slot 2
+C_Container.MoveItem(0, 1, 0, 2, 5)
+
+-- Top up a partial stack by moving 3 items from another stack
+C_Container.MoveItem(1, 4, 0, 7, 3)
+```
+
+Server semantics are all-or-nothing — vanilla has no partial-move
+form:
+
+- `dst` empty → places `count` there (clean split).
+- `dst` holds the same item & `dstCount + count ≤ maxStack` → merges
+  `count` into dst.
+- `dst` holds a different item, or the merge would overflow → server
+  rejects entirely (source untouched, `SMSG_INVENTORY_CHANGE_FAILURE`
+  fires).
+
+Use this instead of `C_Container.SwapItems` when you want to
+consolidate partial stacks — `SwapItems` swaps the whole slots, which
+isn't what you want when both slots hold the same item but one has a
+partial stack.
+
+> **vs. the modern equivalent.** Modern Classic Era has no direct
+> one-call move — addons there string `SplitContainerItem(bag, slot,
+> count)` + `PickupContainerItem(dstBag, dstSlot)` together to drive
+> the cursor. This bundles the same two-step into one packet
+> (`CMSG_SPLIT_ITEM`, opcode 0x10E), so the cursor is never touched.
+
+Send is fire-and-forget (same as `SwapItems`).
 
 ### `C_Item.UseItemByName(itemInfo)`
 

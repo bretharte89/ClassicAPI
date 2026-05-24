@@ -156,6 +156,48 @@ bool FromPaperdoll(const void *cgItem, int srcPaperdollSlot, int dstPaperdollSlo
                     dstPaperdollSlot);
 }
 
+bool MoveCount(void *L, int srcBag, int srcSlot, int dstBag, int dstSlot, int count) {
+    // Vanilla protocol writes count as a single byte. Clamp at 255;
+    // anything larger would either truncate silently (255 sent) or
+    // wrap (0 = no-op). Refuse zero outright too.
+    if (count < 1 || count > 255)
+        return false;
+
+    uint32_t srcContainerLo = 0, srcContainerHi = 0, srcLinear = 0;
+    uint32_t dstContainerLo = 0, dstContainerHi = 0, dstLinear = 0;
+    if (!EncodeBagSlot(srcBag, srcSlot,
+                       &srcContainerLo, &srcContainerHi, &srcLinear))
+        return false;
+    if (!EncodeBagSlot(dstBag, dstSlot,
+                       &dstContainerLo, &dstContainerHi, &dstLinear))
+        return false;
+
+    // Confirm source is occupied — surfacing "empty source" as a clean
+    // local `false` rather than relying on the server reject + log
+    // SMSG_INVENTORY_CHANGE_FAILURE noise.
+    const uint8_t *srcItem = Item::Location::ResolveBag(L, srcBag, srcSlot);
+    if (srcItem == nullptr)
+        return false;
+
+    void *player = ResolvePlayer();
+    if (player == nullptr)
+        return false;
+
+    using SplitFn_t = void(__thiscall *)(
+        void *thisPlayer,
+        uint32_t unused1, uint32_t unused2,
+        uint32_t srcContainerLo, uint32_t srcContainerHi, uint32_t srcSlot,
+        uint32_t dstContainerLo, uint32_t dstContainerHi, uint32_t dstSlot,
+        uint32_t count);
+    auto fn = reinterpret_cast<SplitFn_t>(Offsets::FUN_INVENTORY_SPLIT);
+    fn(player,
+       0, 0,
+       srcContainerLo, srcContainerHi, srcLinear,
+       dstContainerLo, dstContainerHi, dstLinear,
+       static_cast<uint32_t>(count));
+    return true;
+}
+
 bool Containers(void *L, int srcBag, int srcSlot, int dstBag, int dstSlot) {
     uint32_t srcContainerLo = 0, srcContainerHi = 0, srcLinear = 0;
     uint32_t dstContainerLo = 0, dstContainerHi = 0, dstLinear = 0;

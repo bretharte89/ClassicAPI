@@ -64,4 +64,23 @@ bool FromPaperdoll(const void *cgItem, int srcPaperdollSlot, int dstPaperdollSlo
 // read every arg they need before calling.
 bool Containers(void *L, int srcBag, int srcSlot, int dstBag, int dstSlot);
 
+// Atomic server-side "split N items from src and place at dst" — same
+// wire-level primitive vanilla emits when you `SplitContainerItem` →
+// drop-on-target, but bundled into one packet (`CMSG_SPLIT_ITEM`,
+// opcode 0x10E). No cursor involvement.
+//
+// Semantics (server-enforced, all-or-nothing):
+//   - `dst` empty                        → places `count` there
+//   - `dst` same item & fits maxStack    → merges `count` into dst
+//   - `dst` different item / overflow    → server rejects (no partial)
+//
+// Source must be occupied with at least `count` items; server rejects
+// if not. Returns false locally only on bad args or unresolvable bags.
+// All other validation is server-side — same as `Containers` above.
+//
+// Requires Lua state for the same reason as `Containers`: the source
+// CGItem lookup goes through `Item::Location::ResolveBag`. Stomps the
+// Lua stack.
+bool MoveCount(void *L, int srcBag, int srcSlot, int dstBag, int dstSlot, int count);
+
 } // namespace Item::Swap
