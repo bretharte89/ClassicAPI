@@ -847,6 +847,27 @@ enum Offsets {
     // descriptor bytes for a worn-and-bound item.
     OFF_DESCRIPTOR_FLAGS = 0x3C,
     ITEM_FLAG_SOULBOUND = 0x01,
+
+    // Client-side "in-transaction" lock — set when the engine puts an
+    // item on the cursor / mail-attaches it / trade-attaches it, cleared
+    // when the SMSG_UPDATE_OBJECT post-processor (`FUN_005D8440`)
+    // confirms the transaction OR a cursor-cancel sweep
+    // (`FUN_00495460`) clears all locks.
+    //
+    // This is NOT in m_objectFields — it's a per-CGItem instance flag
+    // at byte offset 0x314, lowest bit (mask 0x01). Bit 1 of the same
+    // dword is a separate "cache-coherence" flag set by the SMSG
+    // post-processor. We only expose bit 0 here.
+    //
+    // The matching setter / clearer the engine uses:
+    //   FUN_004953E0(guidLo, guidHi)  — set:   `[item+0x314] |= 1` + fire ITEM_LOCK_CHANGED
+    //   FUN_00495420(guidLo, guidHi)  — clear: `[item+0x314] &= ~1` + fire ITEM_LOCK_CHANGED
+    //   FUN_00495460()                — sweep: walk all bags/items, clear all locks
+    //
+    // Vanilla fires `ITEM_LOCK_CHANGED` (engine event 0xBC = 188) on
+    // every set / clear; no payload.
+    OFF_ITEM_CLIENT_LOCK = 0x314,
+    ITEM_CLIENT_LOCK_BIT = 0x01,
     // ITEM_FIELD_STACK_COUNT — single dword. Verified by decoding
     // `Script_GetContainerItemInfo` (`0x004F9670`): after resolving the
     // descriptor, `mov eax, [esi+0x114]; fild [eax+0x20]` is the count

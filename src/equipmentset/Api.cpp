@@ -324,18 +324,17 @@ int __fastcall Script_ClearIgnoredSlotsForSave(void *L) {
     return 0;
 }
 
-// Returns true if any item in the set currently sits in a slot the
-// engine has flagged "locked" (a pending swap / use is in flight that
-// our equip dispatch would race with). Engine maintains a per-item
-// lock at `descriptor +0x3C` via `ITEM_FIELD_FLAGS` bit 2 (the next
-// bit up from soulbound at bit 0). We approximate by reading the
-// descriptor flags of every resolvable set item.
+// Returns true if any item in the set currently sits in the
+// client-side "in-transaction" lock state (a pending swap, mail-
+// attach, trade-attach, or cursor pickup that our equip dispatch
+// would race with). Reads the per-CGItem instance flag at
+// `OFF_ITEM_CLIENT_LOCK` bit 0 — same bit `C_Item.IsLocked` checks
+// and the engine's own pickup/unlock paths manipulate.
 int __fastcall Script_EquipmentSetContainsLockedItems(void *L) {
     const uint32_t setID = ArgSetID(L, 1);
     const Set *s = Data::FindByID(setID);
     if (s == nullptr)
         return 0;
-    constexpr uint32_t ITEM_FLAG_LOCKED = 0x04;
     bool any = false;
     for (int i = 0; i < SLOT_COUNT && !any; ++i) {
         const uint64_t g = s->items[i];
@@ -344,13 +343,9 @@ int __fastcall Script_EquipmentSetContainsLockedItems(void *L) {
         const uint8_t *item = Locations::ResolveItemByGUID(g);
         if (item == nullptr)
             continue;
-        auto *descriptor = *reinterpret_cast<const uint8_t *const *>(
-            item + Offsets::OFF_ITEM_DESCRIPTOR);
-        if (descriptor == nullptr)
-            continue;
         const uint32_t flags = *reinterpret_cast<const uint32_t *>(
-            descriptor + Offsets::OFF_DESCRIPTOR_FLAGS);
-        if (flags & ITEM_FLAG_LOCKED)
+            item + Offsets::OFF_ITEM_CLIENT_LOCK);
+        if (flags & Offsets::ITEM_CLIENT_LOCK_BIT)
             any = true;
     }
     Game::Lua::PushBool(L, any);
