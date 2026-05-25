@@ -136,6 +136,9 @@ build instructions.
   - [`IsLeftAltKeyDown()` / `IsRightAltKeyDown()`](#isleftaltkeydown--isrightaltkeydown)
   - [`IsModifierKeyDown()`](#ismodifierkeydown)
 
+- [Instance](#instance)
+  - [`GetInstanceInfo()`](#getinstanceinfo)
+
 - [Item](#item)
   - [`C_Item.IsBound(itemLocation)`](#c_itemisbounditemlocation)
   - [`C_Item.GetItemID(itemLocation)`](#c_itemgetitemiditemlocation)
@@ -2773,6 +2776,44 @@ Returns `1` if **any** of the six modifier keys is down, `nil`
 otherwise. Equivalent to
 `IsShiftKeyDown() or IsControlKeyDown() or IsAltKeyDown()` but in one
 call.
+
+## Instance
+
+### `GetInstanceInfo()`
+
+Returns the same 7-value tuple modern WoW does, with vanilla-degenerate
+values for the fields the 1.12 client doesn't actually track:
+
+```
+name, type, difficulty, difficultyName, maxPlayers, playerDifficulty, isDynamic
+```
+
+- `name` — localized instance/zone name from `Map.dbc`.
+- `type` — `"none"` (open world), `"party"` (5-man dungeon), `"raid"`,
+  `"pvp"` (battleground), or `"arena"` (unused in vanilla).
+- `difficulty` — always `1`. No heroic mode pre-TBC.
+- `difficultyName` — always `"Normal"`.
+- `maxPlayers` — type-default cap: `5` for dungeons, `40` for raids,
+  `40` for battlegrounds, `0` for open world. **See caveat below.**
+- `playerDifficulty` — always `1`.
+- `isDynamic` — always `false`.
+
+```lua
+/dump GetInstanceInfo()
+-- In Stormwind:    "Kalimdor", "none",  1, "Normal",  0, 1, false
+-- In Deadmines:    "Deadmines","party", 1, "Normal",  5, 1, false
+-- In Molten Core:  "Molten Core","raid",1, "Normal", 40, 1, false
+```
+
+**Caveat on `maxPlayers`.** Vanilla genuinely has no per-instance cap
+data client-side — `MapDifficulty.dbc` was a TBC addition. The server
+enforces caps via `SMSG_TRANSFER_ABORTED` when entry is denied, but
+that information never reaches the client otherwise. So we return the
+type's canonical max. **Zul'Gurub and AQ20 return `40` instead of
+their true `20`; non-AV battlegrounds (WSG `10`, AB `15`) return `40`
+instead of their true cap; any custom raid on a private server
+(e.g. Turtle WoW) returns `40` regardless of its real cap.** Addons
+that need exact caps must supply their own per-mapID table.
 
 ## Item
 

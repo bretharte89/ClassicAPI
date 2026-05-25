@@ -1994,6 +1994,25 @@ enum Offsets {
     OFF_SPELLDISPEL_HAS_NAME = 0x28,
     OFF_SPELLDISPEL_NAME = 0x2C,
 
+    // Map.dbc — instance/zone metadata. Standard 5-DWORD class instance
+    // shape; records and count are catalogued in `docs/DBCs.md`. Record
+    // schema (vanilla, derived from `FUN_00495c90` IsInInstance helper
+    // and `FUN_0049e1c0` raid-instance warning handler):
+    //   +0x08  uint32 instance type (0=world, 1=dungeon, 2=raid, 3=BG)
+    //   +0x10..+0x30  9 locale-string ptrs (localized display name)
+    // No max-players column in vanilla — that data was added in TBC via
+    // MapDifficulty.dbc.
+    VAR_MAP_RECORDS = 0x00C0DAA8,
+    VAR_MAP_COUNT = 0x00C0DAAC,
+    OFF_MAP_INSTANCE_TYPE = 0x08,
+    OFF_MAP_NAME = 0x10,
+
+    // Currently-loaded map ID (the Map.dbc ID for the zone/instance the
+    // player is in). Written by the map-transition handler
+    // `FUN_00495d10`; read by `FUN_00495c90` (the helper backing
+    // `Script_IsInInstance`).
+    VAR_CURRENT_MAP_ID = 0x00B4E378,
+
     VAR_LOCALE_INDEX = 0x00C0E080,             // 0..8, picks one of the 9 localized strings
 
     LUA_IS_NUMBER = 0x6F34D0,
