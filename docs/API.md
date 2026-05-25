@@ -2781,28 +2781,36 @@ call.
 
 ### `GetInstanceInfo()`
 
-Returns the same 7-value tuple modern WoW does, with vanilla-degenerate
-values for the fields the 1.12 client doesn't actually track:
+Returns the same 9-value tuple modern WoW does (TBC and later), with
+vanilla-degenerate values for the fields the 1.12 client doesn't
+actually track:
 
 ```
-name, type, difficulty, difficultyName, maxPlayers, playerDifficulty, isDynamic
+name, instanceType, difficultyID, difficultyName, maxPlayers,
+dynamicDifficulty, isDynamic, instanceID, instanceGroupSize
 ```
 
 - `name` — localized instance/zone name from `Map.dbc`.
-- `type` — `"none"` (open world), `"party"` (5-man dungeon), `"raid"`,
-  `"pvp"` (battleground), or `"arena"` (unused in vanilla).
-- `difficulty` — always `1`. No heroic mode pre-TBC.
+- `instanceType` — `"none"` (open world), `"party"` (5-man dungeon),
+  `"raid"`, `"pvp"` (battleground), or `"arena"` (unused in vanilla).
+- `difficultyID` — always `1`. No heroic mode pre-TBC.
 - `difficultyName` — always `"Normal"`.
 - `maxPlayers` — type-default cap: `5` for dungeons, `40` for raids,
   `40` for battlegrounds, `0` for open world. **See caveat below.**
-- `playerDifficulty` — always `1`.
+- `dynamicDifficulty` — always `0` (dynamic difficulty was a Cataclysm
+  addition).
 - `isDynamic` — always `false`.
+- `instanceID` — current map ID. Modern API calls this "instanceID" but
+  it's really the `Map.dbc` row ID — both vanilla and modern WoW put
+  the same value here.
+- `instanceGroupSize` — mirrors `maxPlayers` (no per-group-config
+  variants in vanilla).
 
 ```lua
 /dump GetInstanceInfo()
--- In Stormwind:    "Kalimdor", "none",  1, "Normal",  0, 1, false
--- In Deadmines:    "Deadmines","party", 1, "Normal",  5, 1, false
--- In Molten Core:  "Molten Core","raid",1, "Normal", 40, 1, false
+-- In Stormwind:    "Kalimdor",   "none", 1, "Normal",  0, 0, false,   1,  0
+-- In Deadmines:    "Deadmines",  "party",1, "Normal",  5, 0, false,  36,  5
+-- In Molten Core:  "Molten Core","raid", 1, "Normal", 40, 0, false, 409, 40
 ```
 
 **Caveat on `maxPlayers`.** Vanilla genuinely has no per-instance cap
