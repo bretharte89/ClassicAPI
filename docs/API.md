@@ -599,15 +599,22 @@ skipped.
 
 ### `InCombatLockdown()`
 
-Returns `true` if the local player is currently in combat, `false`
-otherwise. Modern WoW gates secure-frame UI manipulation on this; 1.12
-has no secure-frame system, so the function reduces to a plain
-"is the player in combat" check. Useful for addons backporting modern
-code that does e.g. `if not InCombatLockdown() then SetBindingClick(...) end`.
+Always returns `false`. Combat lockdown gates secure-frame UI
+manipulation in modern WoW, and the secure-frame system didn't exist
+in 1.12 — there's nothing in vanilla to lock down. This function is
+provided as a no-op stub purely so addons backported from later
+expansions can call it without erroring on a missing global.
+
+For "is the player actually in combat?", use vanilla's own
+`UnitAffectingCombat("player")`, which the stock 1.12 engine ships.
 
 ```lua
 if not InCombatLockdown() then
-    -- safe to make UI changes
+    -- always true in 1.12 — falls through unconditionally
+end
+
+if UnitAffectingCombat("player") then
+    -- this is the real check
 end
 ```
 

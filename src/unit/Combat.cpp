@@ -12,39 +12,17 @@
 // ClassicAPI. If not, see <https://www.gnu.org/licenses/>.
 
 #include "Game.h"
-#include "Offsets.h"
-
-#include <cstdint>
 
 namespace Unit::Combat {
 
-using ResolveUnitToken_t = void *(__fastcall *)(const char *token);
-
-// `InCombatLockdown()` — returns whether the local player is currently
-// in combat. Modern WoW gates secure-frame UI manipulation on this; 1.12
-// has no secure-frame system, so the function reduces to "is the player
-// in combat" — `UnitAffectingCombat("player")` would compute the same
-// answer, just via the slower string→token→unit→fields path. We read
-// the flag directly off the player CGUnit's m_objectFields.
-//
-// The bit (`UNIT_FLAG_IN_COMBAT = 0x00080000`) is the same one
-// `Script_UnitAffectingCombat` at `0x00517E4A`-`0x517E5C` tests.
+// `InCombatLockdown()` — always returns `false` in 1.12.1. The
+// secure-frame system that combat lockdown gates didn't exist in
+// vanilla; the function is provided purely so that addons backported
+// from later expansions can call it without erroring. Addons that
+// actually want "is the player in combat?" should use
+// `UnitAffectingCombat("player")`, which the stock 1.12 engine ships.
 static int __fastcall Script_InCombatLockdown(void *L) {
-    auto resolve = reinterpret_cast<ResolveUnitToken_t>(Offsets::FUN_RESOLVE_UNIT_TOKEN);
-    auto *player = static_cast<const uint8_t *>(resolve("player"));
-    if (player == nullptr) {
-        Game::Lua::PushBool(L, 0);
-        return 1;
-    }
-    auto *fields = *reinterpret_cast<const uint8_t *const *>(
-        player + Offsets::OFF_UNIT_DESCRIPTOR);
-    if (fields == nullptr) {
-        Game::Lua::PushBoolean(L, 0);
-        return 1;
-    }
-    const uint32_t flags = *reinterpret_cast<const uint32_t *>(
-        fields + Offsets::OFF_UNIT_FIELD_FLAGS);
-    Game::Lua::PushBoolean(L, (flags & Offsets::UNIT_FLAG_IN_COMBAT) != 0);
+    Game::Lua::PushBool(L, false);
     return 1;
 }
 
