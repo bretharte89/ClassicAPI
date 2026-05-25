@@ -45,3 +45,4 @@ jobs:
             ClassicAPI-Bundle-${{ github.ref_name }}.zip
             ClassicAPI-AddOnOnly-${{ github.ref_name }}.zip
             ClassicAPI-${{ github.ref_name }}/ClassicAPI.dll
+          generate_release_notes: true
