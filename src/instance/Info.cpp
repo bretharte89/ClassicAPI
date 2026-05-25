@@ -60,16 +60,22 @@ const uint8_t *MapRecord(uint32_t mapID) {
 
 } // namespace
 
-// `GetInstanceInfo()` — returns the modern 7-tuple shape, with vanilla
+// `GetInstanceInfo()` — returns the modern 9-tuple shape, with vanilla
 // degeneracies for fields the 1.12 client doesn't track:
-//   name, type, difficulty, difficultyName, maxPlayers, playerDiff, isDynamic
+//   name, type, difficultyID, difficultyName, maxPlayers,
+//   dynamicDifficulty, isDynamic, instanceID, instanceGroupSize
 //
 // - `name` / `type` come from Map.dbc.
-// - `difficulty` / `difficultyName` are always `1` / `"Normal"` (no
+// - `difficultyID` / `difficultyName` are always `1` / `"Normal"` (no
 //   heroic mode pre-TBC; MapDifficulty.dbc doesn't exist).
 // - `maxPlayers` is the type's canonical cap (see `CapForType`).
-// - `playerDiff` mirrors `difficulty`.
-// - `isDynamic` is always `false`.
+// - `dynamicDifficulty` is always `0` and `isDynamic` is always `false`
+//   (dynamic difficulty was a Cataclysm-era addition).
+// - `instanceID` is the current Map.dbc ID. (Modern docs call this
+//   "instanceID" but it's really the mapID — both vanilla and modern
+//   put the same value here.)
+// - `instanceGroupSize` mirrors `maxPlayers` (no per-group-config
+//   variants in vanilla).
 static int __fastcall Script_GetInstanceInfo(void *L) {
     const uint32_t mapID = *reinterpret_cast<const uint32_t *>(
         static_cast<uintptr_t>(Offsets::VAR_CURRENT_MAP_ID));
@@ -81,9 +87,11 @@ static int __fastcall Script_GetInstanceInfo(void *L) {
         Game::Lua::PushNumber(L, 1.0);
         Game::Lua::PushString(L, "Normal");
         Game::Lua::PushNumber(L, 0.0);
-        Game::Lua::PushNumber(L, 1.0);
+        Game::Lua::PushNumber(L, 0.0);
         Game::Lua::PushBool(L, false);
-        return 7;
+        Game::Lua::PushNumber(L, static_cast<double>(mapID));
+        Game::Lua::PushNumber(L, 0.0);
+        return 9;
     }
 
     const uint32_t type = *reinterpret_cast<const uint32_t *>(
@@ -96,15 +104,18 @@ static int __fastcall Script_GetInstanceInfo(void *L) {
     const char *typeName =
         (type < sizeof(kTypeNames) / sizeof(kTypeNames[0])) ? kTypeNames[type]
                                                             : "none";
+    const int cap = CapForType(type);
 
     Game::Lua::PushString(L, name != nullptr ? name : "");
     Game::Lua::PushString(L, typeName);
     Game::Lua::PushNumber(L, 1.0);
     Game::Lua::PushString(L, "Normal");
-    Game::Lua::PushNumber(L, static_cast<double>(CapForType(type)));
-    Game::Lua::PushNumber(L, 1.0);
+    Game::Lua::PushNumber(L, static_cast<double>(cap));
+    Game::Lua::PushNumber(L, 0.0);
     Game::Lua::PushBool(L, false);
-    return 7;
+    Game::Lua::PushNumber(L, static_cast<double>(mapID));
+    Game::Lua::PushNumber(L, static_cast<double>(cap));
+    return 9;
 }
 
 static void RegisterLuaFunctions() {
