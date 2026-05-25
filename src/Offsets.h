@@ -2013,6 +2013,46 @@ enum Offsets {
     // `Script_IsInInstance`).
     VAR_CURRENT_MAP_ID = 0x00B4E378,
 
+    // Local player's current AreaTable.dbc area ID (u32 storage; only
+    // the low 16 bits are used — the value is broadcast over the wire
+    // as a u16 in `SMSG_PARTY_MEMBER_STATS`). Written by the zone-change
+    // handler `FUN_00494780(areaID, parentAreaID, zoneName, subzone,
+    // realZone, eventID)`; read by `Script_GetRealZoneText` and the
+    // outbound party-stats builder `FUN_005f0880`.
+    VAR_PLAYER_AREA_ID = 0x00B4E314,
+
+    // Unified party/raid member stats lookup —
+    // `__fastcall(GUID *guidPair) -> uint8_t *`. Returns a pointer to
+    // the member's stats data on hit, NULL on miss. Tail-jumps from
+    // party storage (`FUN_004e8820`, 4 slots at `0x00BC70B0`) to raid
+    // storage (`FUN_004bb0f0`, 40-slot pointer array at `0x00B712A8`).
+    // Both sub-calls return pointers where the field at `+0x14` is the
+    // u16 areaID (AreaTable.dbc ID) — for party that's at struct +0x14
+    // directly, for raid it's at `*raidArr[i] + 0x10 + 0x14`. Caller
+    // doesn't need to distinguish the two cases.
+    //
+    // Within the returned stats block: `+0x08` status flags, `+0x09`
+    // powerType, `+0x0A..+0x10` HP/maxHP/power/maxPower, `+0x12` level,
+    // `+0x14` u16 areaID, `+0x16/+0x18` position. Verified from the
+    // outbound stats builder `FUN_005f0880` (mirrors inbound packet
+    // shape from SMSG_PARTY_MEMBER_STATS_FULL).
+    FUN_GROUP_MEMBER_STATS_LOOKUP = 0x00496400,
+    OFF_GROUP_MEMBER_AREA_ID = 0x14,
+
+    // Per-slot GUID tables — used to map party/raid token strings
+    // ("party1", "raid17") to GUIDs without going through
+    // `FUN_RESOLVE_UNIT_TOKEN`, which only resolves to a local CGUnit
+    // and returns NULL for group members in other zones.
+    //
+    // Party: 4 entries × 8 bytes (lo + hi). `guids[i]` corresponds to
+    // "partyN" where N = i+1.
+    //
+    // Raid: 40 entries × 4 bytes — each is a `RaidMember *`. GUID is
+    // at `*member + 0` (lo) and `*member + 4` (hi). Verified from
+    // `FUN_004bb0f0`. Slot may be NULL (empty / offline raid member).
+    VAR_PARTY_MEMBER_GUIDS = 0x00BC6F48,
+    VAR_RAID_MEMBER_PTRS = 0x00B712A8,
+
     VAR_LOCALE_INDEX = 0x00C0E080,             // 0..8, picks one of the 9 localized strings
 
     LUA_IS_NUMBER = 0x6F34D0,

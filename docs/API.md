@@ -182,6 +182,9 @@ build instructions.
   - [`CastSpellNoToggle` as a macro cast line](#castspellnotoggle-as-a-macro-cast-line)
   - [`GetMacroSpell(macroSlot)`](#getmacrospellmacroslot)
 
+- [Map](#map)
+  - [`C_Map.GetBestMapForUnit(unitToken)`](#c_mapgetbestmapforunitunittoken)
+
 - [MerchantFrame](#merchantframe)
   - [`C_MerchantFrame.GetItemInfo(slot)`](#c_merchantframegetiteminfoslot)
   - [`C_MerchantFrame.GetBuybackItemID(slot)`](#c_merchantframegetbuybackitemidslot)
@@ -4075,6 +4078,42 @@ section tags them with the same spellID a `/cast` line would, so
 > last edited under stock 1.12) will have a stale `0` cache —
 > opening them in the Macro UI and clicking Okay re-runs the parser
 > and the new behavior takes effect.
+
+## Map
+
+### `C_Map.GetBestMapForUnit(unitToken)`
+
+Returns the `AreaTable.dbc` area ID the given unit is currently in,
+or `nil` if the unit isn't trackable. Vanilla 1.12 has no UiMap.db2
+concept, so the closest equivalent to modern WoW's "best map" is the
+zone-level AreaTable ID — exactly what the engine itself tracks for
+the local player (`GetRealZoneText` reads it) and what gets broadcast
+for party/raid members via `SMSG_PARTY_MEMBER_STATS_FULL`.
+
+Coverage:
+
+- `"player"` — always works.
+- `"party1".."party4"` — works even for members in other zones / on
+  other continents (slot-indexed GUID table stays populated regardless
+  of local CGUnit availability).
+- `"raid1".."raid40"` — same; covers the full raid roster.
+- `"target"`, `"mouseover"`, `"focus"` and any other token that
+  resolves to the player or a group member — works.
+- NPCs, other players not in your group — `nil`.
+
+```lua
+/dump C_Map.GetBestMapForUnit("player")
+-- 1519                                            (Stormwind City)
+/dump C_Map.GetBestMapForUnit("party3")
+-- 876                                             (party member on GM Island)
+/dump C_Map.GetBestMapForUnit("target")
+-- nil                                             (target is an NPC)
+```
+
+**The returned ID is a vanilla `AreaTable.dbc` area ID, not a modern
+UI map ID.** Stormwind City in this backport is `1519`, not retail's
+`84`. Addons that hardcode modern UI map IDs need a translation table
+(or, simpler: compare against IDs this same function produces).
 
 ## MerchantFrame
 
