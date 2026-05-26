@@ -14,6 +14,7 @@
 #include "Game.h"
 #include "Offsets.h"
 #include "guid/Guid.h"
+#include "nameplate/Walk.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -105,13 +106,15 @@ static int __fastcall Script_UnitGUID(void *L) {
 // nil if none of the known tokens point at it.
 //
 // The search walks the modern retail token order with post-vanilla
-// tokens dropped (no `vehicle`, `nameplateN`, `arenaN`, `arenapetN`,
-// `bossN`, `focus`, `softenemy`, `softfriend`, `softinteract` —
-// those all post-date 1.12 and `FUN_TOKEN_TO_GUID` would raise
-// "Unknown unit name" for them). Order:
+// tokens dropped (no `vehicle`, `arenaN`, `arenapetN`, `bossN`,
+// `focus`, `softenemy`, `softfriend`, `softinteract` — those all
+// post-date 1.12 and `FUN_TOKEN_TO_GUID` would raise "Unknown unit
+// name" for them). `nameplateN` is included — we hook the token
+// resolver so the engine recognizes it (see `nameplate/TokenResolver.cpp`).
+// Order:
 //
 //   player → pet → party1..4 → partypet1..4 → raid1..40
-//          → raidpet1..40 → target → npc → mouseover
+//          → raidpet1..40 → nameplate1..N → target → npc → mouseover
 //
 // The result is inherently unstable — multiple tokens can map to the
 // same GUID at once (your target IS your mouseover IS your party1), and
@@ -181,6 +184,22 @@ static int __fastcall Script_UnitTokenFromGUID(void *L) {
     for (int i = 1; i <= raidCount; ++i) {
         std::snprintf(buf, sizeof buf, "raidpet%d", i);
         if (check(buf)) return 1;
+    }
+
+    // Visible nameplates. The ordered list (see
+    // `NamePlate::Events::g_orderedGUIDs`) is dense — `GetGUIDByIndex`
+    // returns 0 once we step past the populated count, terminating
+    // the loop. Skips the token-resolver hook + SStrCmpI cost per
+    // index by comparing GUIDs directly.
+    for (int i = 1; ; ++i) {
+        const uint64_t plateGuid = NamePlate::Events::GetGUIDByIndex(i);
+        if (plateGuid == 0)
+            break;
+        if (plateGuid == target) {
+            std::snprintf(buf, sizeof buf, "nameplate%d", i);
+            Game::Lua::PushString(L, buf);
+            return 1;
+        }
     }
 
     if (check("target")) return 1;

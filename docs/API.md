@@ -6758,14 +6758,16 @@ The search order matches modern retail with post-1.12 tokens
 omitted (`vehicle`, `arenaN`, `arenapetN`, `bossN`, `focus`,
 `softenemy`, `softfriend`, `softinteract` all post-date vanilla and
 the engine's resolver doesn't recognize them). `nameplateN` is
-recognized by the resolver (we hook it — see
-[Unit tokens](#unit-tokens-nameplaten)) but **not** searched here —
-two GUIDs can share a nameplate index over the lifetime of a
-session, so it's not a stable reverse-lookup key:
+included between `raidpetN` and `target` — we hook the resolver so
+the engine recognizes the token form (see
+[Unit tokens](#unit-tokens-nameplaten)). As with the other
+positional tokens, the returned `"nameplate3"`-style result is only
+valid at that instant; the slot may shift to a different unit
+between calls, so re-verify with `UnitGUID(token)` before reusing.
 
 ```
 player → pet → party1..4 → partypet1..4 → raid1..40
-       → raidpet1..40 → target → npc → mouseover
+       → raidpet1..40 → nameplate1..N → target → npc → mouseover
 ```
 
 ```lua
