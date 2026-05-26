@@ -167,7 +167,7 @@ build instructions.
   - [`GetAverageItemLevel()`](#getaverageitemlevel)
   - [`C_Item.GetItemMaxStackSize(itemLocation)` / `C_Item.GetItemMaxStackSizeByID(item)`](#c_itemgetitemmaxstacksizeitemlocation--c_itemgetitemmaxstacksizebyiditem)
   - [`C_Item.GetStackCount(itemLocation)`](#c_itemgetstackcountitemlocation)
-  - [`C_Item.GetItemUniqueness(itemLocation)`](#c_itemgetitemuniquenessitemlocation)
+  - [`C_Item.GetItemUniqueness(itemLocation)` / `C_Item.GetItemUniquenessByID(item)`](#c_itemgetitemuniquenessitemlocation--c_itemgetitemuniquenessbyiditem)
   - [`C_Item.GetItemLink(itemLocation)`](#c_itemgetitemlinkitemlocation)
   - [`C_Item.GetItemInventoryType(itemLocation)` / `C_Item.GetItemInventoryTypeByID(item)`](#c_itemgetiteminventorytypeitemlocation--c_itemgetiteminventorytypebyiditem)
   - [`C_Item.IsLocked(itemLocation)`](#c_itemislockeditemlocation)
@@ -3718,7 +3718,7 @@ Reads `ITEM_FIELD_STACK_COUNT` directly off the item's
 `m_objectFields` — same field `GetContainerItemInfo` returns as
 `itemCount`. Returns `0` for empty / unresolvable locations.
 
-### `C_Item.GetItemUniqueness(itemLocation)`
+### `C_Item.GetItemUniqueness(itemLocation)` / `C_Item.GetItemUniquenessByID(item)`
 
 Returns `(maxAllowed, category, equippedCount)` — the item's
 uniqueness cap, category name, and current equipped-of-category
@@ -3733,8 +3733,13 @@ count.
 ```lua
 local max = C_Item.GetItemUniqueness({equipmentSlotIndex = 13})
 -- max = 1 for typical trinkets (Unique)
--- max = 0 for non-unique items
+local max = C_Item.GetItemUniquenessByID(2943)
+-- max = 1 (Eye of Paleth — "Unique")
 ```
+
+The by-ID form skips item-location resolution and reads `ItemStats_C`
+directly. Fires a background cache fill on miss and returns nil;
+re-call after `GET_ITEM_INFO_RECEIVED`.
 
 Modern WoW returns the same 3-tuple but with the category half
 populated for unique-equipped categories (e.g. "Brewfest Mug",

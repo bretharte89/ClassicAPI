@@ -52,6 +52,23 @@ const uint8_t *PeekItemRecord(uint32_t itemID) {
 
 } // namespace
 
+// Pushes the 3-tuple `(maxAllowed, nil, 0)` derived from the
+// ItemStats_C record, or nil + early-return on cache miss.
+int PushFromItemID(void *L, uint32_t itemID) {
+    const uint8_t *record = PeekItemRecord(itemID);
+    if (record == nullptr) {
+        Item::Data::WarmCache(itemID);
+        Game::Lua::PushNil(L);
+        return 1;
+    }
+    const int maxCount = *reinterpret_cast<const int *>(
+        record + Offsets::OFF_ITEMSTATS_MAX_COUNT);
+    Game::Lua::PushNumber(L, static_cast<double>(maxCount));
+    Game::Lua::PushNil(L);              // category (vanilla has none)
+    Game::Lua::PushNumber(L, 0.0);      // equippedCount (not tracked)
+    return 3;
+}
+
 static int __fastcall Script_GetItemUniqueness(void *L) {
     if (!Item::Location::IsLocationArg(L, 1)) {
         Game::Lua::PushNil(L);
@@ -67,23 +84,27 @@ static int __fastcall Script_GetItemUniqueness(void *L) {
         Game::Lua::PushNil(L);
         return 1;
     }
-    const uint8_t *record = PeekItemRecord(static_cast<uint32_t>(itemID));
-    if (record == nullptr) {
-        Item::Data::WarmCache(static_cast<uint32_t>(itemID));
+    return PushFromItemID(L, static_cast<uint32_t>(itemID));
+}
+
+static int __fastcall Script_GetItemUniquenessByID(void *L) {
+    if (!Game::Lua::IsNumber(L, 1)) {
         Game::Lua::PushNil(L);
         return 1;
     }
-    const int maxCount = *reinterpret_cast<const int *>(
-        record + Offsets::OFF_ITEMSTATS_MAX_COUNT);
-    Game::Lua::PushNumber(L, static_cast<double>(maxCount));
-    Game::Lua::PushNil(L);              // category (vanilla has none)
-    Game::Lua::PushNumber(L, 0.0);      // equippedCount (not tracked)
-    return 3;
+    const int itemID = static_cast<int>(Game::Lua::ToNumber(L, 1));
+    if (itemID <= 0) {
+        Game::Lua::PushNil(L);
+        return 1;
+    }
+    return PushFromItemID(L, static_cast<uint32_t>(itemID));
 }
 
 static void RegisterLuaFunctions() {
     Game::Lua::RegisterTableFunction("C_Item", "GetItemUniqueness",
                                      &Script_GetItemUniqueness);
+    Game::Lua::RegisterTableFunction("C_Item", "GetItemUniquenessByID",
+                                     &Script_GetItemUniquenessByID);
 }
 
 static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
