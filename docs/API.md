@@ -227,6 +227,7 @@ build instructions.
   - [`C_Spell.GetSpellLink(spellID)`](#c_spellgetspelllinkspellid)
   - [`C_Spell.GetSpellDescription(spellID)`](#c_spellgetspelldescriptionspellid)
   - [`C_Spell.GetSpellReagents(spellID)`](#c_spellgetspellreagentsspellid)
+  - [`C_Spell.GetSpellSubtext(spellIdentifier)`](#c_spellgetspellsubtextspellidentifier)
   - [`IsPassiveSpell(spellID)` / `IsPassiveSpell(slot, bookType)`](#ispassivespellspellid--ispassivespellslot-booktype)
   - [`C_Spell.IsSpellPassive(spellID)`](#c_spellisspellpassivespellid)
   - [`IsPlayerSpell(spellID)`](#isplayerspellspellid)
@@ -5189,6 +5190,23 @@ from the engine's tooltip-builder; the CMaNGOS-style schema
 documented in some emulator sources places these at `+0x110` /
 `+0x130`, which is wrong for 1.12.1). Iteration stops at the first
 empty slot, matching how the engine walks its own reagent loop.
+
+### `C_Spell.GetSpellSubtext(spellIdentifier)`
+
+Returns the localized "Rank N" / "Passive" / "Racial Passive" /
+similar string that appears below the spell's name in the
+spellbook. Read directly from `Spell.dbc.Rank[9]` at record `+0x204`
+(same locale array shape as `Name[9]` two fields prior).
+
+Accepts the modern `SpellIdentifier` shape — `spellID`, name, name
+with rank (`"Fireball(Rank 3)"`), or `|Hspell:N|h` hyperlink. Returns
+`nil` for unrecognized input or spells with no rank text.
+
+```lua
+C_Spell.GetSpellSubtext(133)        -- "Rank 1"   (lowest-rank Fireball)
+C_Spell.GetSpellSubtext(25306)      -- "Rank 12"  (max-rank Fireball)
+C_Spell.GetSpellSubtext("Frost Armor")  -- "Rank 1"
+```
 
 ### `IsPassiveSpell(spellID)` / `IsPassiveSpell(slot, bookType)`
 
