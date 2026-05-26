@@ -5460,11 +5460,11 @@ C_Spell.IsRangedAutoAttackSpell(5019)        -- true (Shoot wand)
 C_Spell.IsRangedAutoAttackSpell(6603)        -- false (melee)
 ```
 
-Hardcoded ID test. Vanilla has exactly three auto-attack spells
-across all classes, and their IDs are stable across every expansion —
-modern WoW's equivalent functions fold attribute / class-script
-checks on top of these same IDs for corner cases that vanilla
-doesn't have.
+Tests `Spell.dbc.Attributes & 0x02` (the `SPELL_ATTR_AUTO_REPEAT`
+flag) — verified empirically against in-game spell data. Auto Shot
+(`0x00050012`) and Shoot wand (`0x00000012`) share bit 1; Heroic
+Strike (`0x00050014`) and other ranged abilities don't. Naturally
+covers any future auto-repeating spell a private server might add.
 
 See [`C_SpellBook.IsRangedAutoAttackSpellBookItem`](#c_spellbookisrangedautoattackspellbookitemslot-booktype)
 for the spellbook-slot variant.

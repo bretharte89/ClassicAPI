@@ -12,23 +12,27 @@
 // ClassicAPI. If not, see <https://www.gnu.org/licenses/>.
 
 // `C_Spell.IsAutoAttackSpell` / `C_Spell.IsRangedAutoAttackSpell` and
-// the spellbook-slot variants. Vanilla has exactly three auto-attack
-// spells, and their IDs have been stable across every WoW version:
+// the spellbook-slot variants.
 //
-//   6603 — "Auto Attack"        (melee, all classes)
-//     75 — "Auto Shot"          (Hunter ranged)
-//   5019 — "Shoot"              (caster wand)
+// Melee — there's only one spell that triggers melee swings (`6603` —
+// "Auto Attack"), and no `Spell.dbc` attribute uniquely identifies it
+// vs. on-next-swing abilities like Heroic Strike or Maul. We test
+// against the engine constant directly.
 //
-// Modern WoW's equivalents fold attribute / class-script checks on top
-// of these IDs to handle proc-spawned variants and other corner cases
-// that vanilla doesn't have. A hardcoded ID test is the same answer
-// you'd get from a Spell.dbc walk here, with no surface area for
-// false positives.
+// Ranged — both vanilla ranged auto-attacks (`75` Auto Shot, `5019`
+// Shoot wand) set bit 1 of `Spell.dbc.Attributes` (the
+// `SPELL_ATTR_AUTO_REPEAT` flag at value `0x02`). Verified empirically
+// against the in-game cache: Attr `0x00050012` (Auto Shot) and
+// `0x00000012` (Shoot) share that bit; on-next-swing Heroic Strike
+// (`0x00050014`) and other ranged spells like Aimed Shot / Fireball do
+// NOT. The attribute check naturally extends to any future
+// auto-repeating spell a private server might add.
 
 #include "Lookup.h"
 
 #include "Game.h"
 #include "Offsets.h"
+#include "dbc/Lookup.h"
 
 #include <cstdint>
 #include <cstring>
@@ -38,15 +42,24 @@ namespace Spell::AutoAttack {
 namespace {
 
 constexpr int SPELL_AUTO_ATTACK = 6603;
-constexpr int SPELL_AUTO_SHOT = 75;
-constexpr int SPELL_SHOOT_WAND = 5019;
+constexpr int OFF_SPELL_ATTRIBUTES = 0x18;
+constexpr uint32_t SPELL_ATTR_AUTO_REPEAT = 0x00000002;
 
 bool IsMelee(int spellID) {
     return spellID == SPELL_AUTO_ATTACK;
 }
 
 bool IsRanged(int spellID) {
-    return spellID == SPELL_AUTO_SHOT || spellID == SPELL_SHOOT_WAND;
+    if (spellID <= 0)
+        return false;
+    const uint8_t *rec = DBC::Record(Offsets::VAR_SPELL_RECORDS,
+                                     Offsets::VAR_SPELL_RECORD_COUNT,
+                                     static_cast<uint32_t>(spellID));
+    if (rec == nullptr)
+        return false;
+    const uint32_t attr = *reinterpret_cast<const uint32_t *>(
+        rec + OFF_SPELL_ATTRIBUTES);
+    return (attr & SPELL_ATTR_AUTO_REPEAT) != 0;
 }
 
 int ReadSpellID(void *L) {
