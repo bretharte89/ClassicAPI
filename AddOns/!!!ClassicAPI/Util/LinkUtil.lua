@@ -62,7 +62,10 @@ LinkTypes = {
 LinkUtil = {};
 
 function LinkUtil.FormatLink(linkType, linkDisplayText, ...)
-	local linkFormatTable = { string.format("|H%s", linkType), ... };
+	local linkFormatTable = { string.format("|H%s", linkType) };
+	for i = 1, arg.n do
+		linkFormatTable[i + 1] = arg[i];
+	end
 	local returnLink = table.concat(linkFormatTable, ":");
 	if linkDisplayText then
 		return returnLink .. string.format("|h%s|h", linkDisplayText);
