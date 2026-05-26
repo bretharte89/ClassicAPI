@@ -238,6 +238,8 @@ build instructions.
   - [`C_Spell.IsCurrentSpell(spellIdentifier)`](#c_spelliscurrentspellspellidentifier)
   - [`C_Spell.IsSelfBuff(spellID)`](#c_spellisselfbuffspellid)
   - [`C_Spell.SpellHasRange(spellIdentifier)` / `SpellHasRange(slot, bookType)`](#c_spellspellhasrangespellidentifier--spellhasrangeslot-booktype)
+  - [`C_Spell.IsAutoAttackSpell(spellID)` / `C_SpellBook.IsAutoAttackSpellBookItem(slot, bookType)`](#c_spellisautoattackspellspellid--c_spellbookisautoattackspellbookitemslot-booktype)
+  - [`C_Spell.IsRangedAutoAttackSpell(spellID)` / `C_SpellBook.IsRangedAutoAttackSpellBookItem(slot, bookType)`](#c_spellisrangedautoattackspellspellid--c_spellbookisrangedautoattackspellbookitemslot-booktype)
   - [`IsHarmfulSpell(spell)` / `IsHelpfulSpell(spell)`](#isharmfulspellspell--ishelpfulspellspell)
   - [`C_Spell.IsSpellHarmful(spellID)` / `C_Spell.IsSpellHelpful(spellID)`](#c_spellisspellharmfulspellid--c_spellisspellhelpfulspellid)
   - [`C_SpellBook.GetSpellLevelLearned(spellID)`](#c_spellbookgetspelllevellearnedspellid)
@@ -5459,6 +5461,35 @@ matching the dual-signature shape used elsewhere in this backport
 (`GetSpellInfo`, `GetSpellLink`, etc.). The `bookType` argument
 follows the same convention as `GetSpellName(slot, bookType)`:
 `"spell"` (or any non-pet value) → player book, `"pet"` → pet book.
+
+### `C_Spell.IsAutoAttackSpell(spellID)` / `C_SpellBook.IsAutoAttackSpellBookItem(slot, bookType)`
+
+Returns `true` if the spell is the melee auto-attack — spell ID
+`6603` ("Auto Attack"), used by every class. The spellbook variant
+resolves the spellbook slot to its spellID first.
+
+```lua
+C_Spell.IsAutoAttackSpell(6603)              -- true
+C_Spell.IsAutoAttackSpell(133)               -- false
+C_SpellBook.IsAutoAttackSpellBookItem(1, "spell")
+```
+
+### `C_Spell.IsRangedAutoAttackSpell(spellID)` / `C_SpellBook.IsRangedAutoAttackSpellBookItem(slot, bookType)`
+
+Returns `true` if the spell is one of the two ranged auto-attacks —
+spell `75` (Hunter "Auto Shot") or spell `5019` ("Shoot" wand).
+
+```lua
+C_Spell.IsRangedAutoAttackSpell(75)          -- true (Auto Shot)
+C_Spell.IsRangedAutoAttackSpell(5019)        -- true (Shoot wand)
+C_Spell.IsRangedAutoAttackSpell(6603)        -- false (melee)
+```
+
+These are hardcoded ID tests. Vanilla has exactly three auto-attack
+spells across all classes, and their IDs are stable across every
+expansion — modern WoW's equivalent functions fold attribute /
+class-script checks on top of these same IDs for corner cases that
+vanilla doesn't have.
 
 ### `C_Item.GetWeaponEnchantInfo()`
 
