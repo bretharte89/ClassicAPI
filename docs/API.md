@@ -236,6 +236,7 @@ build instructions.
   - [`C_Spell.IsSpellUsable(spellID)`](#c_spellisspellusablespellid)
   - [`C_Spell.GetSpellCooldown(spellIdentifier)`](#c_spellgetspellcooldownspellidentifier)
   - [`C_Spell.IsCurrentSpell(spellIdentifier)`](#c_spelliscurrentspellspellidentifier)
+  - [`C_Spell.IsSelfBuff(spellID)`](#c_spellisselfbuffspellid)
   - [`IsHarmfulSpell(spell)` / `IsHelpfulSpell(spell)`](#isharmfulspellspell--ishelpfulspellspell)
   - [`C_Spell.IsSpellHarmful(spellID)` / `C_Spell.IsSpellHelpful(spellID)`](#c_spellisspellharmfulspellid--c_spellisspellhelpfulspellid)
   - [`C_SpellBook.GetSpellLevelLearned(spellID)`](#c_spellbookgetspelllevellearnedspellid)
@@ -5418,6 +5419,23 @@ on this. Reads three engine slots and returns true on any match:
 - `UNIT_FIELD_CHANNEL_SPELL` (descriptor `+0x228`) on the player —
   covers channeled abilities (Fishing, Drain Soul, Ritual of
   Summoning, etc.).
+
+### `C_Spell.IsSelfBuff(spellID)`
+
+Returns `true` if every active effect on the spell targets only the
+caster — every effect's implicit target (A and B) must be either
+`TARGET_NONE` (0) or `TARGET_SELF` (1).
+
+```lua
+C_Spell.IsSelfBuff(1006)   -- Inner Fire        → true
+C_Spell.IsSelfBuff(7302)   -- Frost Armor       → true
+C_Spell.IsSelfBuff(1459)   -- Arcane Intellect  → false (targets friendly)
+C_Spell.IsSelfBuff(133)    -- Fireball          → false (targets enemy)
+```
+
+Walks `Spell.dbc.EffectImplicitTargetA[3]` and
+`EffectImplicitTargetB[3]`. Spells with no active effects (a
+degenerate case for normal content) return `false`.
 
 ### `C_Item.GetWeaponEnchantInfo()`
 
