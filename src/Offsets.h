@@ -1082,6 +1082,14 @@ enum Offsets {
     ITEMSTATS_SPELL_SLOT_COUNT = 5,
     ITEM_SPELLTRIGGER_ON_USE = 0,
 
+    // `ItemStats_C.m_maxCount` — max number of this item the player can
+    // hold in inventory at once. `0` = unlimited, `1` = unique, higher
+    // values are caps like "5x bandage type". Vanilla 1.12 doesn't have
+    // modern "unique-equipped category" semantics; this is the only
+    // uniqueness signal the client has. Derived by summing struct
+    // members in VanillaHelpers's `ItemStats_C` definition.
+    OFF_ITEMSTATS_MAX_COUNT = 0x5C,
+
     // `Spell.dbc` `Name[9]` field at record +0x1E0 (9-locale string
     // array, indexed by `[VAR_LOCALE_INDEX]`). Used by `GetItemSpell`
     // to push the spell name half of its return.

@@ -166,6 +166,8 @@ build instructions.
   - [`C_Item.GetCurrentItemLevel(itemLocation)` / `C_Item.GetDetailedItemLevelInfo(item)`](#c_itemgetcurrentitemlevelitemlocation--c_itemgetdetaileditemlevelinfoitem)
   - [`GetAverageItemLevel()`](#getaverageitemlevel)
   - [`C_Item.GetItemMaxStackSize(itemLocation)` / `C_Item.GetItemMaxStackSizeByID(item)`](#c_itemgetitemmaxstacksizeitemlocation--c_itemgetitemmaxstacksizebyiditem)
+  - [`C_Item.GetStackCount(itemLocation)`](#c_itemgetstackcountitemlocation)
+  - [`C_Item.GetItemUniqueness(itemLocation)`](#c_itemgetitemuniquenessitemlocation)
   - [`C_Item.GetItemLink(itemLocation)`](#c_itemgetitemlinkitemlocation)
   - [`C_Item.GetItemInventoryType(itemLocation)` / `C_Item.GetItemInventoryTypeByID(item)`](#c_itemgetiteminventorytypeitemlocation--c_itemgetiteminventorytypebyiditem)
   - [`C_Item.IsLocked(itemLocation)`](#c_itemislockeditemlocation)
@@ -3699,6 +3701,45 @@ local cap = C_Item.GetItemMaxStackSizeByID(2589)  -- Linen Cloth → 20
 Single `uint32` read at cache record `+0x60` (`m_stackable`). By-ID
 form fires a background cache fill on miss and returns nil; re-call
 after `GET_ITEM_INFO_RECEIVED`.
+
+### `C_Item.GetStackCount(itemLocation)`
+
+Returns the **current** stack count in a specific slot — distinct
+from `C_Item.GetItemCount(item)`, which sums every stack of that
+itemID across the player's inventory. Useful when an addon needs to
+know "this specific stack has 13/20", not "I have 47 total".
+
+```lua
+local n = C_Item.GetStackCount({bagID = 0, slotIndex = 1})
+-- 13 (the bag's first slot has 13 of whatever item)
+```
+
+Reads `ITEM_FIELD_STACK_COUNT` directly off the item's
+`m_objectFields` — same field `GetContainerItemInfo` returns as
+`itemCount`. Returns `0` for empty / unresolvable locations.
+
+### `C_Item.GetItemUniqueness(itemLocation)`
+
+Returns `(maxAllowed, category, equippedCount)` — the item's
+uniqueness cap, category name, and current equipped-of-category
+count.
+
+| Field | Vanilla source |
+|-------|----------------|
+| `maxAllowed` | `ItemStats_C.m_maxCount` — `0` = unlimited, `1` = unique ("Unique" tag in tooltip), higher = inventory cap |
+| `category` | Always `nil` — vanilla's client has no unique-equipped category system (added in TBC). |
+| `equippedCount` | Always `0` — without categories there's nothing meaningful to count against. |
+
+```lua
+local max = C_Item.GetItemUniqueness({equipmentSlotIndex = 13})
+-- max = 1 for typical trinkets (Unique)
+-- max = 0 for non-unique items
+```
+
+Modern WoW returns the same 3-tuple but with the category half
+populated for unique-equipped categories (e.g. "Brewfest Mug",
+"Heart of Azeroth"). On this backport, only `maxAllowed` carries
+information.
 
 ### `C_Item.GetItemLink(itemLocation)`
 
