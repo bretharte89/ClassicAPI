@@ -237,6 +237,7 @@ build instructions.
   - [`C_Spell.GetSpellCooldown(spellIdentifier)`](#c_spellgetspellcooldownspellidentifier)
   - [`C_Spell.IsCurrentSpell(spellIdentifier)`](#c_spelliscurrentspellspellidentifier)
   - [`C_Spell.IsSelfBuff(spellID)`](#c_spellisselfbuffspellid)
+  - [`C_Spell.SpellHasRange(spellIdentifier)` / `SpellHasRange(slot, bookType)`](#c_spellspellhasrangespellidentifier--spellhasrangeslot-booktype)
   - [`IsHarmfulSpell(spell)` / `IsHelpfulSpell(spell)`](#isharmfulspellspell--ishelpfulspellspell)
   - [`C_Spell.IsSpellHarmful(spellID)` / `C_Spell.IsSpellHelpful(spellID)`](#c_spellisspellharmfulspellid--c_spellisspellhelpfulspellid)
   - [`C_SpellBook.GetSpellLevelLearned(spellID)`](#c_spellbookgetspelllevellearnedspellid)
@@ -5436,6 +5437,28 @@ C_Spell.IsSelfBuff(133)    -- Fireball          → false (targets enemy)
 Walks `Spell.dbc.EffectImplicitTargetA[3]` and
 `EffectImplicitTargetB[3]`. Spells with no active effects (a
 degenerate case for normal content) return `false`.
+
+### `C_Spell.SpellHasRange(spellIdentifier)` / `SpellHasRange(slot, bookType)`
+
+Returns `true` if the spell has a non-zero min or max range — i.e.
+it's a targeted ability you cast at a unit / location rather than a
+self-cast (which has range `0`).
+
+```lua
+C_Spell.SpellHasRange(133)    -- Fireball       → true (40yd)
+C_Spell.SpellHasRange(1006)   -- Inner Fire     → false (self buff)
+SpellHasRange(10, "spell")    -- 10th spellbook slot in player book
+```
+
+Looks up `Spell.dbc.RangeIndex` (`+0x90`) → `SpellRange.dbc` row,
+then tests `minRange > 0 or maxRange > 0`. Vanilla 1.12 doesn't ship
+this function at all; 3.3.5+ added it as the `(spellIdentifier)`
+form only. We expose both the modern namespaced form (any
+`SpellIdentifier`) and a positional `SpellHasRange(slot, bookType)`
+matching the dual-signature shape used elsewhere in this backport
+(`GetSpellInfo`, `GetSpellLink`, etc.). The `bookType` argument
+follows the same convention as `GetSpellName(slot, bookType)`:
+`"spell"` (or any non-pet value) → player book, `"pet"` → pet book.
 
 ### `C_Item.GetWeaponEnchantInfo()`
 
