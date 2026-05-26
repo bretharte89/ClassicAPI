@@ -247,6 +247,8 @@ build instructions.
   - [`IsFalling()`](#isfalling)
   - [`IsSwimming()`](#isswimming)
   - [`IsAssistingRitual()`](#isassistingritual)
+  - [`IsInGroup()`](#isingroup)
+  - [`IsInRaid()`](#isinraid)
   - [`GetMirrorTimerInfo(index)` / `GetMirrorTimerProgress(label)`](#getmirrortimerinfoindex--getmirrortimerprogresslabel)
   - [`GetShapeshiftFormID()`](#getshapeshiftformid)
   - [`CancelShapeshiftForm()`](#cancelshapeshiftform)
@@ -5759,6 +5761,33 @@ Local-player only — the `+0xB4` pointer lives on the CGPlayer
 object, not in the broadcast descriptor, so the function can't
 report state for `target` / `party*` / etc. Returns `false` when
 called before the player object is initialized (login screen).
+
+### `IsInGroup()`
+
+Returns `true` if the player is in a party or a raid, `false`
+otherwise. Modern shortcut over stock 1.12's
+`GetNumPartyMembers() > 0 or GetNumRaidMembers() > 0`.
+
+Accepts an optional `groupType` argument (modern
+`Enum.PartyCategory.Home` / `Instance`). Vanilla has no LFG / LFD
+instance-group concept, so the argument is accepted and ignored.
+
+```lua
+if IsInGroup() then
+    SendChatMessage("ready check", "PARTY")
+end
+```
+
+### `IsInRaid()`
+
+Returns `true` if the player is in a raid (specifically — parties
+return `false`), `false` otherwise. Same `groupType` argument story
+as `IsInGroup`.
+
+```lua
+local channel = IsInRaid() and "RAID" or "PARTY"
+SendChatMessage("ready check", channel)
+```
 
 ### `GetMirrorTimerInfo(index)` / `GetMirrorTimerProgress(label)`
 
