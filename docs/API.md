@@ -222,7 +222,6 @@ build instructions.
   - [`C_Spell.GetSpellInfo(spellID)`](#c_spellgetspellinfospellid)
   - [`C_Spell.GetSpellName(spellID)`](#c_spellgetspellnamespellid)
   - [`C_Spell.GetSpellTexture(spellID)`](#c_spellgetspelltexturespellid)
-  - [`FindSpellBookSlotByID(spellID)`](#findspellbookslotbyidspellid)
   - [`GetSpellLink(spellID)` / `GetSpellLink(slot, bookType)`](#getspelllinkspellid--getspelllinkslot-booktype)
   - [`C_Spell.GetSpellLink(spellID)`](#c_spellgetspelllinkspellid)
   - [`C_Spell.GetSpellDescription(spellID)`](#c_spellgetspelldescriptionspellid)
@@ -238,16 +237,21 @@ build instructions.
   - [`C_Spell.IsCurrentSpell(spellIdentifier)`](#c_spelliscurrentspellspellidentifier)
   - [`C_Spell.IsSelfBuff(spellID)`](#c_spellisselfbuffspellid)
   - [`C_Spell.SpellHasRange(spellIdentifier)` / `SpellHasRange(slot, bookType)`](#c_spellspellhasrangespellidentifier--spellhasrangeslot-booktype)
-  - [`C_Spell.IsAutoAttackSpell(spellID)` / `C_SpellBook.IsAutoAttackSpellBookItem(slot, bookType)`](#c_spellisautoattackspellspellid--c_spellbookisautoattackspellbookitemslot-booktype)
-  - [`C_Spell.IsRangedAutoAttackSpell(spellID)` / `C_SpellBook.IsRangedAutoAttackSpellBookItem(slot, bookType)`](#c_spellisrangedautoattackspellspellid--c_spellbookisrangedautoattackspellbookitemslot-booktype)
+  - [`C_Spell.IsAutoAttackSpell(spellID)`](#c_spellisautoattackspellspellid)
+  - [`C_Spell.IsRangedAutoAttackSpell(spellID)`](#c_spellisrangedautoattackspellspellid)
   - [`IsHarmfulSpell(spell)` / `IsHelpfulSpell(spell)`](#isharmfulspellspell--ishelpfulspellspell)
   - [`C_Spell.IsSpellHarmful(spellID)` / `C_Spell.IsSpellHelpful(spellID)`](#c_spellisspellharmfulspellid--c_spellisspellhelpfulspellid)
-  - [`C_SpellBook.GetSpellLevelLearned(spellID)`](#c_spellbookgetspelllevellearnedspellid)
-  - [`C_SpellBook.GetCurrentLevelSpells([level])`](#c_spellbookgetcurrentlevelspellslevel)
-  - [`C_SpellBook.GetSpellSkillLine(spellID)`](#c_spellbookgetspellskilllinespellid)
   - [`GetSpellSchool(spellID)`](#getspellschoolspellid)
   - [`CastSpellNoToggle(name | spellID)`](#castspellnotogglename--spellid)
   - [`C_Spell.CancelSpellByID(spellID)` / `CancelSpellByName(name)`](#c_spellcancelspellbyidspellid--cancelspellbynamename)
+
+- [SpellBook](#spellbook)
+  - [`FindSpellBookSlotByID(spellID)`](#findspellbookslotbyidspellid)
+  - [`C_SpellBook.GetSpellLevelLearned(spellID)`](#c_spellbookgetspelllevellearnedspellid)
+  - [`C_SpellBook.GetCurrentLevelSpells([level])`](#c_spellbookgetcurrentlevelspellslevel)
+  - [`C_SpellBook.GetSpellSkillLine(spellID)`](#c_spellbookgetspellskilllinespellid)
+  - [`C_SpellBook.IsAutoAttackSpellBookItem(slot, bookType)`](#c_spellbookisautoattackspellbookitemslot-booktype)
+  - [`C_SpellBook.IsRangedAutoAttackSpellBookItem(slot, bookType)`](#c_spellbookisrangedautoattackspellbookitemslot-booktype)
 
 - [State](#state)
   - [`IsMounted()`](#ismounted)
@@ -5065,36 +5069,6 @@ local path = C_Spell.GetSpellTexture(133)
 -- path = "Interface\\Icons\\Spell_Fire_FlameBolt"
 ```
 
-### `FindSpellBookSlotByID(spellID)`
-
-Inverse of 1.12's `GetSpellName(slot, bookType)`. Given a spellID,
-returns the 1-based slot it occupies in the player or pet spellbook,
-along with the matching bookType so the result feeds directly into
-slot-and-bookType APIs (`GetSpellName`, `GetSpellTexture`,
-`GameTooltip:SetSpell`, etc.).
-
-```
-slot, bookType = FindSpellBookSlotByID(spellID)
-```
-
-- Returns `(slot, "spell")` if the spell is in the player spellbook.
-- Returns `(slot, "pet")` if it's only in the pet spellbook.
-- Returns `nil` if the spellID isn't currently in either book.
-
-Player book is searched first, so if a spell somehow appeared in both
-(unusual but possible for special pet-shared abilities), the player
-slot wins.
-
-```lua
-local slot, book = FindSpellBookSlotByID(133)
-if slot then
-    GameTooltip:SetSpell(slot, book)  -- shows full caster-scaled tooltip
-end
-```
-
-Equivalent to the legacy function of the same name introduced in 3.0
-(later renamed to `FindSpellBookSlotBySpellID` in 5.x).
-
 ### `GetSpellLink(spellID)` / `GetSpellLink(slot, bookType)`
 
 Returns the chat-style spell hyperlink and the spellID:
@@ -5462,19 +5436,20 @@ matching the dual-signature shape used elsewhere in this backport
 follows the same convention as `GetSpellName(slot, bookType)`:
 `"spell"` (or any non-pet value) → player book, `"pet"` → pet book.
 
-### `C_Spell.IsAutoAttackSpell(spellID)` / `C_SpellBook.IsAutoAttackSpellBookItem(slot, bookType)`
+### `C_Spell.IsAutoAttackSpell(spellID)`
 
 Returns `true` if the spell is the melee auto-attack — spell ID
-`6603` ("Auto Attack"), used by every class. The spellbook variant
-resolves the spellbook slot to its spellID first.
+`6603` ("Auto Attack"), used by every class.
 
 ```lua
 C_Spell.IsAutoAttackSpell(6603)              -- true
 C_Spell.IsAutoAttackSpell(133)               -- false
-C_SpellBook.IsAutoAttackSpellBookItem(1, "spell")
 ```
 
-### `C_Spell.IsRangedAutoAttackSpell(spellID)` / `C_SpellBook.IsRangedAutoAttackSpellBookItem(slot, bookType)`
+See [`C_SpellBook.IsAutoAttackSpellBookItem`](#c_spellbookisautoattackspellbookitemslot-booktype)
+for the spellbook-slot variant.
+
+### `C_Spell.IsRangedAutoAttackSpell(spellID)`
 
 Returns `true` if the spell is one of the two ranged auto-attacks —
 spell `75` (Hunter "Auto Shot") or spell `5019` ("Shoot" wand).
@@ -5485,11 +5460,14 @@ C_Spell.IsRangedAutoAttackSpell(5019)        -- true (Shoot wand)
 C_Spell.IsRangedAutoAttackSpell(6603)        -- false (melee)
 ```
 
-These are hardcoded ID tests. Vanilla has exactly three auto-attack
-spells across all classes, and their IDs are stable across every
-expansion — modern WoW's equivalent functions fold attribute /
-class-script checks on top of these same IDs for corner cases that
-vanilla doesn't have.
+Hardcoded ID test. Vanilla has exactly three auto-attack spells
+across all classes, and their IDs are stable across every expansion —
+modern WoW's equivalent functions fold attribute / class-script
+checks on top of these same IDs for corner cases that vanilla
+doesn't have.
+
+See [`C_SpellBook.IsRangedAutoAttackSpellBookItem`](#c_spellbookisrangedautoattackspellbookitemslot-booktype)
+for the spellbook-slot variant.
 
 ### `C_Item.GetWeaponEnchantInfo()`
 
@@ -5578,95 +5556,6 @@ C_Spell.IsSpellHelpful(2061)    -- true (Flash Heal)
 
 Equivalent to `C_Spell.IsSpellHarmful` / `C_Spell.IsSpellHelpful`
 introduced in 11.x.
-
-### `C_SpellBook.GetSpellLevelLearned(spellID)`
-
-Returns the level at which a spell becomes available — the
-`BaseLevel` field in `Spell.dbc` (record `+0x70`). Direct read off
-the cached record; no class/race filtering.
-
-```lua
-C_SpellBook.GetSpellLevelLearned(133)    -- Fireball rank 1 → 4
-C_SpellBook.GetSpellLevelLearned(25306)  -- Fireball rank 12 → 60
-C_SpellBook.GetSpellLevelLearned(2061)   -- Flash Heal rank 1 → 20
-```
-
-Returns `0` for invalid spellIDs, spells with no level requirement
-(most non-class utility spells), or records the engine hasn't
-cached. Matches modern semantics — unknown / utility spells
-return 0 rather than nil.
-
-### `C_SpellBook.GetCurrentLevelSpells([level])`
-
-Returns a 1-based table of spellIDs the player's class/race can
-learn at the given level. Without arguments, defaults to the
-player's current level.
-
-```lua
-C_SpellBook.GetCurrentLevelSpells()    -- spells trainable at your level
-C_SpellBook.GetCurrentLevelSpells(20)  -- preview what's available at 20
-C_SpellBook.GetCurrentLevelSpells(60)  -- preview at 60
-```
-
-Walks `SkillLineAbility.dbc` filtering by the player's class bit
-(`1 << (classID - 1)`) and race bit, respecting both the include
-masks (entries with mask = 0 are "all classes"/"all races", which
-also pass) and the exclude masks. For each surviving entry, looks
-up the spell's `BaseLevel` and includes it if it matches the
-queried level.
-
-> **Vanilla is trainer-driven.** Modern `GetCurrentLevelSpells`
-> (added in 5.x when trainers were removed) returns *auto-learned*
-> spells. Vanilla 1.12 requires visiting a trainer to actually
-> learn most class spells. We return the closest available analog:
-> **what's *trainable* at this level**. Useful for "what's new
-> this level" UI panels and level-preview tooling ported from MoP+.
-
-Class/race come from the local player — there's no
-`(class, race, level)` form because vanilla doesn't expose a
-clean class-string→classID lookup. Returns an empty table at
-character select / pre-login (no CGPlayer yet) and for levels
-where no class/race spells match.
-
-### `C_SpellBook.GetSpellSkillLine(spellID)`
-
-Returns `(name, skillID)` — the SkillLine.dbc row that the given spell
-belongs to. The name is the user-facing skill/tab string in the engine's
-current locale: spellbook tab names for class spells (`"Protection"`,
-`"Fire"`, `"Holy"`), profession headers (`"Tailoring"`, `"Engineering"`),
-weapon-skill rows (`"Swords"`, `"Bows"`), etc.
-
-```lua
-C_SpellBook.GetSpellSkillLine(1671)   -- "Protection", 26 (Shield Bash)
-C_SpellBook.GetSpellSkillLine(133)    -- "Fire", 8        (Fireball)
-C_SpellBook.GetSpellSkillLine(2050)   -- "Holy", 56       (Lesser Heal)
-C_SpellBook.GetSpellSkillLine(2480)   -- "Bows", 45       (Shoot Bow)
-C_SpellBook.GetSpellSkillLine(3273)   -- "First Aid", 129 (Anesthetic)
-```
-
-Walks `SkillLineAbility.dbc` for any row whose `spellID` matches, then
-reads the localized `Name[locale]` field at offset `+0x0C` of the
-referenced `SkillLine.dbc` record. For spells with multiple SLA rows
-(race-locked variants, Turtle WoW's faction-specific entries) the
-lookup prefers a row whose class/race masks match the local player —
-so the result reflects "what tab is this spell in *for me*" when one
-exists. Falls back to the first matching row otherwise, so the
-function still answers for spells the local player can't actually use
-(inspecting other classes, parsing combat-log entries from unfamiliar
-specs).
-
-Returns `(nil, nil)` for:
-- non-numeric or non-positive input
-- spellIDs with no `SkillLineAbility.dbc` row (most temporary auras,
-  proc-only spells, item-on-use effects, GM-debug spells)
-- rows whose `skillID` doesn't resolve in `SkillLine.dbc`
-
-Vanilla's `GetSpellTabInfo(tabIndex)` enumerates spellbook tabs by
-1-based index — it can't answer "what tab is *this spellID* in".
-Addons that need a spellID→tab mapping have historically had to walk
-every tab's slot range and string-match against `GetSpellName`. This
-function reads it directly off the DBC for any spellID, including
-spells the player hasn't learned.
 
 ### `GetSpellSchool(spellID)`
 
@@ -5805,6 +5694,155 @@ input (e.g. `"Power Word: Fortitude(Rank 4)"`) is **not** parsed —
 pass the plain name. Multi-rank buffs match on first-found; if you
 have multiple ranks of the same buff active (unusual but possible with
 e.g. paladin blessings before talent merge), the first slot wins.
+
+## SpellBook
+
+Functions keyed on the player or pet **spellbook** (slot indices,
+learn requirements, skill-tab membership). The underlying `Spell.dbc`
+data is exposed through the [Spell](#spell) section; what lives here
+is the spellbook-as-a-collection layer.
+
+### `FindSpellBookSlotByID(spellID)`
+
+Inverse of 1.12's `GetSpellName(slot, bookType)`. Given a spellID,
+returns the 1-based slot it occupies in the player or pet spellbook,
+along with the matching bookType so the result feeds directly into
+slot-and-bookType APIs (`GetSpellName`, `GetSpellTexture`,
+`GameTooltip:SetSpell`, etc.).
+
+```
+slot, bookType = FindSpellBookSlotByID(spellID)
+```
+
+- Returns `(slot, "spell")` if the spell is in the player spellbook.
+- Returns `(slot, "pet")` if it's only in the pet spellbook.
+- Returns `nil` if the spellID isn't currently in either book.
+
+Player book is searched first, so if a spell somehow appeared in both
+(unusual but possible for special pet-shared abilities), the player
+slot wins.
+
+```lua
+local slot, book = FindSpellBookSlotByID(133)
+if slot then
+    GameTooltip:SetSpell(slot, book)  -- shows full caster-scaled tooltip
+end
+```
+
+Equivalent to the legacy function of the same name introduced in 3.0
+(later renamed to `FindSpellBookSlotBySpellID` in 5.x).
+
+### `C_SpellBook.GetSpellLevelLearned(spellID)`
+
+Returns the level at which a spell becomes available — the
+`BaseLevel` field in `Spell.dbc` (record `+0x70`). Direct read off
+the cached record; no class/race filtering.
+
+```lua
+C_SpellBook.GetSpellLevelLearned(133)    -- Fireball rank 1 → 4
+C_SpellBook.GetSpellLevelLearned(25306)  -- Fireball rank 12 → 60
+C_SpellBook.GetSpellLevelLearned(2061)   -- Flash Heal rank 1 → 20
+```
+
+Returns `0` for invalid spellIDs, spells with no level requirement
+(most non-class utility spells), or records the engine hasn't
+cached. Matches modern semantics — unknown / utility spells
+return 0 rather than nil.
+
+### `C_SpellBook.GetCurrentLevelSpells([level])`
+
+Returns a 1-based table of spellIDs the player's class/race can
+learn at the given level. Without arguments, defaults to the
+player's current level.
+
+```lua
+C_SpellBook.GetCurrentLevelSpells()    -- spells trainable at your level
+C_SpellBook.GetCurrentLevelSpells(20)  -- preview what's available at 20
+C_SpellBook.GetCurrentLevelSpells(60)  -- preview at 60
+```
+
+Walks `SkillLineAbility.dbc` filtering by the player's class bit
+(`1 << (classID - 1)`) and race bit, respecting both the include
+masks (entries with mask = 0 are "all classes"/"all races", which
+also pass) and the exclude masks. For each surviving entry, looks
+up the spell's `BaseLevel` and includes it if it matches the
+queried level.
+
+> **Vanilla is trainer-driven.** Modern `GetCurrentLevelSpells`
+> (added in 5.x when trainers were removed) returns *auto-learned*
+> spells. Vanilla 1.12 requires visiting a trainer to actually
+> learn most class spells. We return the closest available analog:
+> **what's *trainable* at this level**. Useful for "what's new
+> this level" UI panels and level-preview tooling ported from MoP+.
+
+Class/race come from the local player — there's no
+`(class, race, level)` form because vanilla doesn't expose a
+clean class-string→classID lookup. Returns an empty table at
+character select / pre-login (no CGPlayer yet) and for levels
+where no class/race spells match.
+
+### `C_SpellBook.GetSpellSkillLine(spellID)`
+
+Returns `(name, skillID)` — the SkillLine.dbc row that the given spell
+belongs to. The name is the user-facing skill/tab string in the engine's
+current locale: spellbook tab names for class spells (`"Protection"`,
+`"Fire"`, `"Holy"`), profession headers (`"Tailoring"`, `"Engineering"`),
+weapon-skill rows (`"Swords"`, `"Bows"`), etc.
+
+```lua
+C_SpellBook.GetSpellSkillLine(1671)   -- "Protection", 26 (Shield Bash)
+C_SpellBook.GetSpellSkillLine(133)    -- "Fire", 8        (Fireball)
+C_SpellBook.GetSpellSkillLine(2050)   -- "Holy", 56       (Lesser Heal)
+C_SpellBook.GetSpellSkillLine(2480)   -- "Bows", 45       (Shoot Bow)
+C_SpellBook.GetSpellSkillLine(3273)   -- "First Aid", 129 (Anesthetic)
+```
+
+Walks `SkillLineAbility.dbc` for any row whose `spellID` matches, then
+reads the localized `Name[locale]` field at offset `+0x0C` of the
+referenced `SkillLine.dbc` record. For spells with multiple SLA rows
+(race-locked variants, Turtle WoW's faction-specific entries) the
+lookup prefers a row whose class/race masks match the local player —
+so the result reflects "what tab is this spell in *for me*" when one
+exists. Falls back to the first matching row otherwise, so the
+function still answers for spells the local player can't actually use
+(inspecting other classes, parsing combat-log entries from unfamiliar
+specs).
+
+Returns `(nil, nil)` for:
+- non-numeric or non-positive input
+- spellIDs with no `SkillLineAbility.dbc` row (most temporary auras,
+  proc-only spells, item-on-use effects, GM-debug spells)
+- rows whose `skillID` doesn't resolve in `SkillLine.dbc`
+
+Vanilla's `GetSpellTabInfo(tabIndex)` enumerates spellbook tabs by
+1-based index — it can't answer "what tab is *this spellID* in".
+Addons that need a spellID→tab mapping have historically had to walk
+every tab's slot range and string-match against `GetSpellName`. This
+function reads it directly off the DBC for any spellID, including
+spells the player hasn't learned.
+
+### `C_SpellBook.IsAutoAttackSpellBookItem(slot, bookType)`
+
+Spellbook-slot variant of
+[`C_Spell.IsAutoAttackSpell`](#c_spellisautoattackspellspellid). Resolves
+the spellbook slot to its spellID first, then tests `== 6603` (melee
+auto-attack).
+
+```lua
+C_SpellBook.IsAutoAttackSpellBookItem(1, "spell")
+```
+
+### `C_SpellBook.IsRangedAutoAttackSpellBookItem(slot, bookType)`
+
+Spellbook-slot variant of
+[`C_Spell.IsRangedAutoAttackSpell`](#c_spellisrangedautoattackspellspellid).
+Resolves the slot to a spellID, returns `true` if it's `75` (Auto
+Shot) or `5019` (Shoot wand).
+
+```lua
+C_SpellBook.IsRangedAutoAttackSpellBookItem(10, "spell")
+-- true if slot 10 is your wand Shoot
+```
 
 ## State
 
