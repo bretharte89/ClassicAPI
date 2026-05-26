@@ -200,6 +200,30 @@ enum Offsets {
     // Registers a single global Lua function. __fastcall(name, func).
     FUN_FRAMESCRIPT_REGISTER_FUNCTION = 0x00704120,
 
+    // `FrameScript_Object::ScriptRegister(this, name)` — `__thiscall`,
+    // `this` = a `CFrameScriptObject *`. On first call (when `this+0x04`
+    // is zero) builds a Lua wrapper table `{[0] = lightuserdata(this)}`
+    // with `_G["__framescript_meta"]` as metatable, `luaL_ref`s it into
+    // the registry, stores the refkey at `this+0x08`. Always increments
+    // `this+0x04` (the Lua-side refcount). Optional `name` argument
+    // installs `_G[name] = wrapper` for engine-named frames.
+    //
+    // We call this in `PushNamePlateFrame` so the engine and our own
+    // C_NamePlate getters operate on the **same** wrapper table —
+    // every push through `lua_rawgeti(REGISTRY, this+0x08)` (the
+    // canonical engine path) lands on the same Lua object pfUI
+    // received in `NAME_PLATE_CREATED`, so addon-set fields
+    // (`plate.nameplate = decoratedButton`) survive engine-side
+    // re-fetches. Earlier note in `Info.cpp` warned about pinning the
+    // refcount; for pool-managed nameplates the engine never
+    // un-registers them anyway, so the pin is benign.
+    FUN_FRAMESCRIPT_OBJECT_SCRIPT_REGISTER = 0x00701BD0,
+
+    // `this+0x04` Lua refcount, incremented by `ScriptRegister`. We
+    // read it as a "has the engine ever exposed this CObject to Lua"
+    // probe — equivalent to checking `this+0x08 > 0` but more direct.
+    OFF_COBJECT_LUA_REFCOUNT = 0x04,
+
     // Direct cvar lookup — `__fastcall(const char *name) → CVar* | NULL`.
     // Hash-table by-name lookup over the CVar registry; same call
     // `Script_GetCVar` makes internally before the engine wraps the
@@ -280,6 +304,28 @@ enum Offsets {
     // for the `lua_pcall(UnitName)` workaround. For pure unit-token
     // input it's the right primitive.
     FUN_TOKEN_TO_GUID = 0x00515970,
+
+    // `SStrCmpI(a, b, n)` — Storm's case-insensitive memcmp-style
+    // comparator. **`int __stdcall(const char *a, const char *b, int n)`**
+    // — the function ends with `ret 0xc`, so the callee pops the
+    // 3-arg stack frame. Declaring it as `__cdecl` and calling makes
+    // MSVC emit a redundant `add esp, 12` post-call, drifting ESP
+    // upward by 12 per call and corrupting the caller's stack frame
+    // — manifested as a deep-Lua crash whose `L` pointer landed in
+    // `.text`. Returns 0 when the first `n` characters match
+    // (ignoring case) or both strings end before `n`.
+    FUN_SSTR_CMP_I = 0x0064A4C0,
+
+    // UNIT_FIELD_TARGET within `m_objectFields` — 64-bit GUID at byte
+    // offsets +0x28 (lo) / +0x2C (hi). Verified by disassembling
+    // `FUN_TOKEN_TO_GUID`'s suffix walker at `0x00515A1C-A2C`:
+    // `mov eax, [obj + 0x110]; mov edi, [eax + 0x28]; mov ebx, [eax + 0x2c]`
+    // — reads the target GUID to chain `targettarget`-style tokens.
+    // Distinct from the higher field offsets in the
+    // `OFF_UNIT_FIELD_*` block; UNIT_FIELD_TARGET is one of the few
+    // 1.12 offsets that matches the CMaNGOS-documented vanilla
+    // layout.
+    OFF_UNIT_FIELD_TARGET = 0x28,
 
     // Party / raid roster counts and the party GUID array referenced
     // in the `FUN_TOKEN_TO_GUID` dispatch comment above. Used by
@@ -2089,6 +2135,22 @@ enum Offsets {
     // to L->top → `add [ecx+8], 0x10` incr_top). `0x6F32B0` is
     // `lua_replace` (single TValue copy + decr_top).
     LUA_PUSH_VALUE = 0x6F3350,
+    // `luaL_ref(L, t)` — pops the top, stores it in the table at `t`
+    // at a freshly-allocated integer key, returns the key. Use with
+    // `LUA_REGISTRY_INDEX` to stash Lua values across C-side scopes;
+    // pair with `LUA_REF_UNREF` to release. Verified by decompiling
+    // `FUN_006f5310`: classic luaL_ref shape — nil-top early-out
+    // returning `LUA_REFNIL = -1`, FREELIST_REF chain pop (pushvalue +
+    // tonumber on table[0]), else objlen-based new slot, finally
+    // table[ref] = popped value.
+    LUA_REF_REF = 0x6F5310,
+    // `luaL_unref(L, t, ref)` — releases a ref previously returned
+    // by `luaL_ref`, freeing the slot for future allocations. Verified
+    // by decompiling `FUN_006f5400`: `ref >= 0` guard (skips
+    // `LUA_NOREF = -2` / `LUA_REFNIL = -1`), reads current FREELIST_REF
+    // head, writes it to `table[ref]`, then updates FREELIST_REF = ref
+    // — the canonical freelist-link operation.
+    LUA_REF_UNREF = 0x6F5400,
     LUA_PUSH_CCLOSURE = 0x6F3920,
     LUA_NEW_TABLE = 0x6F3C90,
     LUA_GET_TABLE = 0x6F3A40,     // (was 0x6F3EA0, which is lua_rawset)

@@ -16,6 +16,7 @@
 #include "MinHook.h"
 #include "Offsets.h"
 #include "event/Custom.h"
+#include "nameplate/Walk.h"
 #include "player/NameCache.h"
 
 static Game::FrameScript_Initialize_t FrameScript_Initialize_o = nullptr;
@@ -36,6 +37,15 @@ static bool __fastcall FrameScript_Initialize_h() {
     // FrameScript_Initialize), invalidate our cached slot indices. The
     // table is rebuilt at a fresh allocation; the old slots are stale.
     Event::Custom::PrepareForReload();
+
+    // Clear the nameplate diff state so currently-visible plates
+    // refire CREATED and UNIT_ADDED on the next tick — re-presents
+    // them to the freshly reloaded UI, matching modern WoW. The
+    // wrappers themselves now live in the engine's own registry
+    // (via `FrameScript_Object::ScriptRegister`), which the engine
+    // tears down and rebuilds across the Lua reset — no per-module
+    // cache to clear here.
+    NamePlate::Events::PrepareForReload();
 
     // Persist the name cache before the engine starts tearing down.
     // This hook fires on both `/reload` and `/logout` (the engine

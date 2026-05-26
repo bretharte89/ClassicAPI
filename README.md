@@ -39,6 +39,7 @@ Full per-function reference: **[docs/API.md](docs/API.md)**.
 | [Macros](docs/API.md#macros) | `GetMacroSpell` |
 | [Map](docs/API.md#map) | `C_Map.GetBestMapForUnit` |
 | [MerchantFrame](docs/API.md#merchantframe) | `C_MerchantFrame.GetBuybackItemID`, `C_MerchantFrame.GetItemInfo`, `C_MerchantFrame.GetNumJunkItems`, `C_MerchantFrame.IsMerchantItemRefundable`, `C_MerchantFrame.IsSellAllJunkEnabled`, `C_MerchantFrame.SellAllJunkItems` |
+| [NamePlate](docs/API.md#nameplate) | `C_NamePlate.GetNamePlateForGUID`, `C_NamePlate.GetNamePlateForUnit`, `C_NamePlate.GetNamePlateGUIDs`, `C_NamePlate.GetNamePlates` |
 | [NameCache](docs/API.md#namecache) | `C_CreatureInfo.GetCreatureID`, `C_PlayerCache.GetPlayerInfoByName`, `C_PlayerCache.IsEnabled`, `C_PlayerCache.IsScanEnabled`, `C_PlayerCache.RememberPlayer`, `C_PlayerCache.SetEnabled`, `C_PlayerCache.SetScanEnabled`, `C_PlayerInfo.GUIDIsCreature`, `C_PlayerInfo.GUIDIsGameObject`, `C_PlayerInfo.GUIDIsPet`, `C_PlayerInfo.GUIDIsPlayer`, `GetPlayerInfoByGUID` |
 | [Quest](docs/API.md#quest) | `C_QuestLog.GetQuestIDForLogIndex`, `C_QuestLog.GetTitleForQuestID`, `C_QuestLog.IsOnQuest`, `C_QuestLog.IsQuestDataCachedByID`, `C_QuestLog.IsUnitOnQuest`, `C_QuestLog.RequestLoadQuestByID`, `GetQuestLogLeaderBoardID` |
 | [Spell](docs/API.md#spell) | `C_Spell.CancelSpellByID`, `C_Spell.DoesSpellExist`, `C_Spell.GetSchoolString`, `C_Spell.GetSpellCooldown`, `C_Spell.GetSpellDescription`, `C_Spell.GetSpellInfo`, `C_Spell.GetSpellLink`, `C_Spell.GetSpellName`, `C_Spell.GetSpellReagents`, `C_Spell.GetSpellSubtext`, `C_Spell.GetSpellTexture`, `C_Spell.IsAutoAttackSpell`, `C_Spell.IsCurrentSpell`, `C_Spell.IsRangedAutoAttackSpell`, `C_Spell.IsSelfBuff`, `C_Spell.IsSpellHarmful`, `C_Spell.IsSpellHelpful`, `C_Spell.IsSpellPassive`, `C_Spell.IsSpellUsable`, `C_Spell.SpellHasRange`, `CancelSpellByName`, `CastSpellNoToggle`, `GetCraftSpellID`, `GetSpellInfo`, `GetSpellLink`, `GetSpellSchool`, `IsHarmfulSpell`, `IsHelpfulSpell`, `IsPassiveSpell`, `IsPlayerSpell`, `IsSpellKnown`, `IsUsableSpell`, `SpellHasRange` |
@@ -94,6 +95,9 @@ functions, just behavior the stock 1.12 engine didn't have. See the
 | `HEARTHSTONE_BOUND` | *(none)* |
 | `ITEM_DATA_LOAD_RESULT` | `itemID, success` |
 | `MODIFIER_STATE_CHANGED` | `keyName, down` |
+| `NAME_PLATE_CREATED` | `nameplateFrame` |
+| `NAME_PLATE_UNIT_ADDED` | `unitToken` ("nameplateN") |
+| `NAME_PLATE_UNIT_REMOVED` | `unitToken` ("nameplateN") |
 | `PLAYER_STARTED_LOOKING` | *(none)* |
 | `PLAYER_STOPPED_LOOKING` | *(none)* |
 | `PLAYER_STARTED_MOVING` | *(none)* |
@@ -115,6 +119,12 @@ functions, just behavior the stock 1.12 engine didn't have. See the
 | Unit stat | `LE_UNIT_STAT_STRENGTH` … `LE_UNIT_STAT_SPIRIT` |
 | Addon security | `Enum.AddOnSecurityStatus.{Secure,Insecure,Banned,NotAvailable}` |
 | Power type | `Enum.PowerType.{HealthCost,None,Mana,Rage,Focus,Energy,Happiness}` |
+
+### Unit tokens
+
+| Token | Resolves to |
+|-------|-------------|
+| `nameplate1`..`nameplateN` | Unit behind the Nth visible nameplate, in creation-order. Works with every `UnitX` function — `UnitName`, `UnitGUID`, `UnitClass`, `UnitHealth`, etc. Suffix chains (`nameplate1target`, `nameplate1targettarget`) compose. See [NamePlate / Unit tokens](docs/API.md#unit-tokens-nameplaten). |
 
 ## Installation
 
