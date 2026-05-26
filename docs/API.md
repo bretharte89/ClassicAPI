@@ -217,6 +217,7 @@ build instructions.
 
 - [Spell](#spell)
   - [`C_Spell.DoesSpellExist(spellID)`](#c_spelldoesspellexistspellid)
+  - [`C_Spell.GetSchoolString(schoolMask)`](#c_spellgetschoolstringschoolmask)
   - [`GetSpellInfo(spellID)` / `GetSpellInfo(slot, bookType)`](#getspellinfospellid--getspellinfoslot-booktype)
   - [`C_Spell.GetSpellInfo(spellID)`](#c_spellgetspellinfospellid)
   - [`C_Spell.GetSpellName(spellID)`](#c_spellgetspellnamespellid)
@@ -4917,6 +4918,37 @@ if C_Spell.DoesSpellExist(133) then
     local info = C_Spell.GetSpellInfo(133)  -- safe
 end
 ```
+
+### `C_Spell.GetSchoolString(schoolMask)`
+
+Returns the localized name for a damage-school bitmask. Resolves
+single-bit masks via the engine's `SPELL_SCHOOL<n>_CAP` global
+strings (`SPELL_SCHOOL0_CAP` = "Physical", `SPELL_SCHOOL2_CAP` =
+"Fire", etc.).
+
+```lua
+C_Spell.GetSchoolString(4)    -- "Fire"
+C_Spell.GetSchoolString(32)   -- "Shadow"
+```
+
+Vanilla spells are single-school — the multi-school combos
+("Frostfire", "Shadowflame", "Spellstorm", etc.) were TBC-and-later
+additions. Any multi-bit mask returns `"Unknown"`, matching the
+modern API's documented fallback for unnamed combinations.
+
+> Lua 5.0 doesn't support hex literals (`0x04` is a syntax error);
+> pass mask values as decimals, or via `tonumber("0x04", 16)` if you
+> want to keep hex notation in source.
+
+| Decimal | Hex | School |
+|--------:|-----|--------|
+| `1` | `0x01` | Physical |
+| `2` | `0x02` | Holy |
+| `4` | `0x04` | Fire |
+| `8` | `0x08` | Nature |
+| `16` | `0x10` | Frost |
+| `32` | `0x20` | Shadow |
+| `64` | `0x40` | Arcane |
 
 ### `GetSpellInfo(spellID)` / `GetSpellInfo(slot, bookType)`
 
