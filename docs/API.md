@@ -216,6 +216,7 @@ build instructions.
   - [`GetQuestLogLeaderBoardID(objectiveIndex [, questIndex])`](#getquestlogleaderboardidobjectiveindex--questindex)
 
 - [Spell](#spell)
+  - [`C_Spell.DoesSpellExist(spellID)`](#c_spelldoesspellexistspellid)
   - [`GetSpellInfo(spellID)` / `GetSpellInfo(slot, bookType)`](#getspellinfospellid--getspellinfoslot-booktype)
   - [`C_Spell.GetSpellInfo(spellID)`](#c_spellgetspellinfospellid)
   - [`C_Spell.GetSpellName(spellID)`](#c_spellgetspellnamespellid)
@@ -4903,6 +4904,19 @@ A separate function keeps the existing call wire-compatible.
 > `IsHarmfulSpell`, `IsUsableSpell`, etc.) keep their existing
 > `(slot, bookType)` overload — only the `C_Spell.*` namespace is
 > broadened.
+
+### `C_Spell.DoesSpellExist(spellID)`
+
+Returns `true` if `spellID` resolves to a populated `Spell.dbc`
+record, `false` otherwise. Cheap pre-flight check for any of the
+spellID-keyed `C_Spell.*` calls — if this returns `false`, the rest
+of the family will return nil/empty.
+
+```lua
+if C_Spell.DoesSpellExist(133) then
+    local info = C_Spell.GetSpellInfo(133)  -- safe
+end
+```
 
 ### `GetSpellInfo(spellID)` / `GetSpellInfo(slot, bookType)`
 
