@@ -64,12 +64,34 @@ constexpr int FIRST_BAG_CONTAINER_LINEAR = 19;
 // player invMgr — i.e. 1-based bag-0 slot S maps to linear 22+S.
 constexpr int BACKPACK_LINEAR_OFFSET = 22;
 
+// Main bank contents (bagID -1) live at linear slots 39..62 in the
+// player invMgr — i.e. 1-based bank slot S maps to linear 38+S.
+// Same encoding shape as the backpack (container is the player
+// itself), different base offset. Range valid only when the bank
+// window has been opened in the current session.
+constexpr int BANK_MAIN_LINEAR_OFFSET = 38;
+constexpr int BANK_MAIN_NUM_SLOTS = 24;
+
+// Bank bag containers occupy 1-based equipment slots 64..69 (linear
+// 63..68). Addressed by bagID 5..10 — bagID 5 = first bank bag.
+// Requires bank window open; otherwise the engine's CGContainer for
+// the bag is unsynced and `ResolveEquipmentSlot` returns null.
+constexpr int FIRST_BANK_BAG_EQ_SLOT = 64;
+constexpr int FIRST_BANK_BAG_ID = 5;
+constexpr int LAST_BANK_BAG_ID = 10;
+
 // (bagID, 1-based slot) → (containerGUID, engine linear slot). Returns
 // false for unequipped bags or out-of-range slots; does NOT validate
 // that the slot is occupied (caller checks separately).
 //
-//   bagID 0    → container = player, linear = BACKPACK_LINEAR_OFFSET + slot
-//   bagID 1..4 → container = equipped bag's CGContainer, linear = slot - 1
+//   bagID  0    → container = player, linear = 22 + slot (backpack)
+//   bagID  1..4 → container = equipped bag's CGContainer, linear = slot - 1
+//   bagID -1    → container = player, linear = 38 + slot (bank main)
+//   bagID  5..10 → container = bank bag's CGContainer, linear = slot - 1
+//
+// Bank-side encodings only resolve once the bank window has been
+// opened in the current session (the engine doesn't sync the bank
+// CGContainers or bank-slot inventory entries before then).
 bool EncodeBagSlot(int bagID, int slotInBag,
                    uint32_t *containerLo, uint32_t *containerHi,
                    uint32_t *linearSlot) {
@@ -87,6 +109,27 @@ bool EncodeBagSlot(int bagID, int slotInBag,
     if (bagID >= 1 && bagID <= 4) {
         const uint8_t *bag = Item::Location::ResolveEquipmentSlot(
             FIRST_BAG_CONTAINER_LINEAR + bagID);
+        if (bag == nullptr)
+            return false;
+        if (!ReadGuid(bag, containerLo, containerHi))
+            return false;
+        *linearSlot = static_cast<uint32_t>(slotInBag - 1);
+        return true;
+    }
+    if (bagID == -1) {
+        if (slotInBag > BANK_MAIN_NUM_SLOTS)
+            return false;
+        void *player = ResolvePlayer();
+        if (player == nullptr)
+            return false;
+        if (!ReadGuid(player, containerLo, containerHi))
+            return false;
+        *linearSlot = static_cast<uint32_t>(BANK_MAIN_LINEAR_OFFSET + slotInBag);
+        return true;
+    }
+    if (bagID >= FIRST_BANK_BAG_ID && bagID <= LAST_BANK_BAG_ID) {
+        const uint8_t *bag = Item::Location::ResolveEquipmentSlot(
+            FIRST_BANK_BAG_EQ_SLOT + (bagID - FIRST_BANK_BAG_ID));
         if (bag == nullptr)
             return false;
         if (!ReadGuid(bag, containerLo, containerHi))

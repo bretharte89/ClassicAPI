@@ -904,17 +904,28 @@ C_Container.SwapItems(1, 3, 0, 7)
 C_Container.SwapItems(0, 1, 0, 2)
 ```
 
-Bag IDs match the rest of `C_Container.*`: `0` is the backpack, `1..4`
-are the equipped bags. Slots are 1-based. The engine accepts both
-directions:
+Bag IDs match the rest of `C_Container.*`:
 
-- Same container (e.g. backpack ↔ backpack, bag1 ↔ bag1) sends opcode
-  `0x10D` `CMSG_SWAP_INV_ITEM` with the two linear slot bytes.
-- Cross-container (e.g. backpack ↔ bag1, bag2 ↔ bag3) sends opcode
-  `0x10C` `CMSG_SWAP_ITEM` with `(srcBag, srcSlot, dstBag, dstSlot)`.
+- `0` — backpack
+- `1..4` — equipped bags
+- `-1` — main bank (24 slots; **requires the bank window to be open**)
+- `5..10` — equipped bank bags (**requires the bank window to be open**)
+
+Slots are 1-based. The engine accepts both directions:
+
+- Same container (e.g. backpack ↔ backpack, bag1 ↔ bag1, bank ↔ bank)
+  sends opcode `0x10D` `CMSG_SWAP_INV_ITEM` with the two linear slot bytes.
+- Cross-container (e.g. backpack ↔ bag1, bag2 ↔ bank, bank ↔ bank bag)
+  sends opcode `0x10C` `CMSG_SWAP_ITEM` with `(srcBag, srcSlot, dstBag, dstSlot)`.
 
 Destination empty becomes a move; destination occupied becomes an
 atomic swap.
+
+> **Bank slots require the bank window to be open.** The engine
+> doesn't sync bank-side `CGContainer`s or bank inventory entries
+> before the first bank interaction, so any bank `EncodeBagSlot`
+> path returns false until then. Same constraint as
+> `C_Container.GetContainerItemInfo` on bank IDs.
 
 > **ClassicAPI-only.** Modern Classic Era has no direct swap-two-slots
 > call — addons there drive the cursor with two `PickupContainerItem`
@@ -956,6 +967,9 @@ Use this instead of `C_Container.SwapItems` when you want to
 consolidate partial stacks — `SwapItems` swaps the whole slots, which
 isn't what you want when both slots hold the same item but one has a
 partial stack.
+
+Bank IDs (`-1`, `5..10`) work here too with the same bank-window
+constraint as `SwapItems`.
 
 > **vs. the modern equivalent.** Modern Classic Era has no direct
 > one-call move — addons there string `SplitContainerItem(bag, slot,
