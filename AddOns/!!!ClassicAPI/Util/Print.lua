@@ -17,12 +17,6 @@
 --     Secure-Templates system, so the protective wrappers in 3.3.5
 --     reduce to a plain pcall.
 --
--- Skipping if print is already defined keeps this file safe to load
--- alongside any other DLL or addon that might inject its own print.
-
-if type(print) == "function" then
-    return
-end
 
 ----------------------------------------------------------------------------
 -- tostringall: convert every vararg to a string, preserving count.
