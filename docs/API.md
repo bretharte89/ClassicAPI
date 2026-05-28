@@ -36,6 +36,7 @@ build instructions.
   - [`C_Container.GetContainerItemRepairCost(containerIndex, slotIndex)`](#c_containergetcontaineritemrepaircostcontainerindex-slotindex)
   - [`C_Container.GetContainerItemCharges(containerIndex, slotIndex)`](#c_containergetcontaineritemchargescontainerindex-slotindex)
   - [`C_Container.GetContainerNumFreeSlots(bagID)`](#c_containergetcontainernumfreeslotsbagid)
+  - [`C_Container.IsContainerItemOpenable(containerIndex, slotIndex)`](#c_containeriscontaineritemopenablecontainerindex-slotindex)
   - [`C_Container.PlayerHasHearthstone()`](#c_containerplayerhashearthstone)
   - [`C_Container.UseHearthstone()`](#c_containerusehearthstone)
   - [`C_Container.SwapItems(srcBag, srcSlot, dstBag, dstSlot)`](#c_containerswapitemssrcbag-srcslot-dstbag-dstslot)
@@ -178,6 +179,7 @@ build instructions.
   - [`C_Item.GetItemUniqueness(itemLocation)` / `C_Item.GetItemUniquenessByID(item)`](#c_itemgetitemuniquenessitemlocation--c_itemgetitemuniquenessbyiditem)
   - [`C_Item.GetItemLink(itemLocation)`](#c_itemgetitemlinkitemlocation)
   - [`C_Item.GetItemInventoryType(itemLocation)` / `C_Item.GetItemInventoryTypeByID(item)`](#c_itemgetiteminventorytypeitemlocation--c_itemgetiteminventorytypebyiditem)
+  - [`C_Item.IsItemOpenable(itemLocation)` / `C_Item.IsItemOpenableByID(item)`](#c_itemisitemopenableitemlocation--c_itemisitemopenablebyiditem)
   - [`C_Item.IsLocked(itemLocation)`](#c_itemislockeditemlocation)
   - [`C_Item.LockItem(itemLocation)`](#c_itemlockitemitemlocation)
   - [`C_Item.LockItemByGUID(itemGUID)`](#c_itemlockitembyguiditemguid)
@@ -879,6 +881,27 @@ Implementation walks the bag using
 internally and counts slots that resolve to a null `CGItem *` (i.e.,
 empty). Cross-checked in-game against a manual
 `C_Container.GetContainerItemID` walk; counts match.
+
+### `C_Container.IsContainerItemOpenable(containerIndex, slotIndex)`
+
+Positional-arg wrapper for [`C_Item.IsItemOpenable`](#c_itemisitemopenableitemlocation--c_itemisitemopenablebyiditem)
+against a bag/slot pair. Returns `true` if the slot holds a right-
+click-openable item (sack, clam, lockbox, etc.), `false` for empty
+slots, equipment, or any non-openable item.
+
+```lua
+-- Sweep main backpack for openables
+for slot = 1, GetContainerNumSlots(0) do
+    if C_Container.IsContainerItemOpenable(0, slot) then
+        -- ...
+    end
+end
+```
+
+Same cache-warming caveat as the underlying `C_Item.IsItemOpenable` —
+a freshly-seen item may report `false` for one call while the
+`SMSG_ITEM_QUERY_SINGLE` round-trips. Bag-resident items are almost
+always already cached.
 
 ### `C_Container.PlayerHasHearthstone()`
 
@@ -4069,6 +4092,40 @@ if t == 1 then -- head
     ...
 end
 ```
+
+### `C_Item.IsItemOpenable(itemLocation)` / `C_Item.IsItemOpenableByID(item)`
+
+Returns `true` if the item is right-click-openable — a sack, clam,
+simple chest, quest box, lockbox, etc. (anything whose tooltip would
+show `<Right Click to Open>`). Intrinsic to the item type, not
+contextual: a locked lockbox you can't currently open still reports
+`true` here.
+
+```lua
+-- Loop a bag and gather every openable
+for slot = 1, GetContainerNumSlots(0) do
+    local itemID = C_Container.GetContainerItemID(0, slot)
+    if itemID and C_Item.IsItemOpenableByID(itemID) then
+        -- pickup + use
+    end
+end
+
+-- Single-slot check via itemLocation
+if C_Item.IsItemOpenable({bagID = 0, slotIndex = 1}) then
+    -- ...
+end
+```
+
+Reads the openable bit (`Flags & 0x4`) from the client-side ItemSparse
+cache. Same bit the engine's tooltip builder uses to gate the
+`ITEM_OPENABLE` string. Returns `false` for uncached items and fires
+a background `SMSG_ITEM_QUERY_SINGLE` so a follow-up call after
+`GET_ITEM_INFO_RECEIVED` resolves correctly; in practice bag items
+are cached on bag-update and resolve instantly.
+
+The "ByID" variant accepts a numeric itemID, an item link, or an
+`"item:NNN..."` string — same input shape as
+`C_Item.GetItemInfoInstant`.
 
 ### `C_Item.IsLocked(itemLocation)`
 

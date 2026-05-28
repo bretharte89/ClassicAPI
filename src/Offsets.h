@@ -1060,6 +1060,24 @@ enum Offsets {
     OFF_ITEMSTATS_NAME = 0x08,
     OFF_ITEMSTATS_DISPLAY_INFO_ID = 0x18,
     OFF_ITEMSTATS_QUALITY = 0x1C,    // u32 — 0=Poor … 5=Legendary
+    // `m_flags` — item-class flags bitfield. Bits we read:
+    //   `ITEMSTATS_FLAG_OPENABLE` (`0x4`, bit 2): freely right-click-
+    //     openable container (sack, clam, simple chest, quest box).
+    //     The tooltip line `<Right Click to Open>` (`ITEM_OPENABLE`
+    //     string) renders for items with this bit set, gated on the
+    //     player's lock skill when the item also carries a non-zero
+    //     LockID. Same bit modern WoW's `C_Item.IsItemOpenable`
+    //     surfaces.
+    //   Other documented bits (`0x1` = BIND_ON_PICKUP, `0x2` = CONJURED,
+    //     `0x10` = LOOTABLE, `0x200` = WRAPPER, etc.) live in the same
+    //     field but we don't read them here. Add named constants as
+    //     consumers materialize.
+    // Reader at `0x0052E323` (the tooltip-builder's openable branch in
+    // `FUN_0052B650`) does `(ItemStats[+0x20] & 0x4)` against this
+    // field; verified by checking the field offset matches the
+    // 5-DWORD-per-row layout `puVar4[8]` resolves to in the decompile.
+    OFF_ITEMSTATS_FLAGS = 0x20,
+    ITEMSTATS_FLAG_OPENABLE = 0x4,
     OFF_ITEMSTATS_SELL_PRICE = 0x28,
     OFF_ITEMSTATS_INVENTORY_TYPE = 0x2C,
     OFF_ITEMSTATS_ITEM_LEVEL = 0x38, // u32 — base ilvl from ItemSparse
