@@ -17,12 +17,15 @@
 
 namespace Item::Openable {
 
-// True iff the `ItemStats_C` record for `itemID` has the openable flag
-// set (`Flags & 0x4`). Reads from the client-side item cache; returns
-// false (the safe default for "I can't see openable semantics on this
-// item") when the item is uncached. Item-type intrinsic — same answer
-// for every instance of a given item, so container/equipment variants
-// just resolve their context to an itemID and forward here.
-bool IsItemIDOpenable(uint32_t itemID);
+// Pushes the openable bool for `itemID` and returns 1, OR pushes
+// nothing and returns 0 when the item is uncached / itemID is
+// invalid. Caller can `return PushIsItemOpenable(...)` from a Lua
+// C function; pushing 0 surfaces as `nil` to the Lua caller, which
+// distinguishes "data unknown" from "definitely not openable".
+//
+// Reads `ItemStats_C.Flags & 0x4` from the client-side item cache.
+// Fires a background `SMSG_ITEM_QUERY_SINGLE` for uncached items so
+// a follow-up call after `GET_ITEM_INFO_RECEIVED` resolves correctly.
+int PushIsItemOpenable(void *L, uint32_t itemID);
 
 } // namespace Item::Openable

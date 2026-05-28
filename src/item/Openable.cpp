@@ -48,19 +48,20 @@ const uint8_t *PeekItemRecord(uint32_t itemID) {
 
 } // namespace
 
-bool IsItemIDOpenable(uint32_t itemID) {
+int PushIsItemOpenable(void *L, uint32_t itemID) {
     if (itemID == 0)
-        return false;
+        return 0;
     const uint8_t *record = PeekItemRecord(itemID);
     if (record == nullptr) {
         // Background fill so a follow-up call (after the cache warms)
         // returns the real value. Same pattern Quality / Info use.
         Item::Data::WarmCache(itemID);
-        return false;
+        return 0;
     }
     const uint32_t flags = *reinterpret_cast<const uint32_t *>(
         record + Offsets::OFF_ITEMSTATS_FLAGS);
-    return (flags & Offsets::ITEMSTATS_FLAG_OPENABLE) != 0;
+    Game::Lua::PushBool(L, (flags & Offsets::ITEMSTATS_FLAG_OPENABLE) != 0);
+    return 1;
 }
 
 namespace {
@@ -71,14 +72,12 @@ int __fastcall Script_C_Item_IsItemOpenable(void *L) {
         return 0;
     }
     const int itemID = Item::ID::FromCGItem(Item::Location::Resolve(L, 1));
-    Game::Lua::PushBool(L, IsItemIDOpenable(static_cast<uint32_t>(itemID)));
-    return 1;
+    return PushIsItemOpenable(L, static_cast<uint32_t>(itemID));
 }
 
 int __fastcall Script_C_Item_IsItemOpenableByID(void *L) {
     const int itemID = Item::Arg::ResolveItemID(L, 1);
-    Game::Lua::PushBool(L, IsItemIDOpenable(static_cast<uint32_t>(itemID)));
-    return 1;
+    return PushIsItemOpenable(L, static_cast<uint32_t>(itemID));
 }
 
 void RegisterLuaFunctions() {

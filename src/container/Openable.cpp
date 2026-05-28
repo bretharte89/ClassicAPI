@@ -36,9 +36,7 @@ int __fastcall Script_C_Container_IsContainerItemOpenable(void *L) {
     const int slotIndex = static_cast<int>(Game::Lua::ToNumber(L, 2));
     const int itemID = Item::ID::FromCGItem(
         Item::Location::ResolveBag(L, bagID, slotIndex));
-    Game::Lua::PushBool(L, Item::Openable::IsItemIDOpenable(
-        static_cast<uint32_t>(itemID)));
-    return 1;
+    return Item::Openable::PushIsItemOpenable(L, static_cast<uint32_t>(itemID));
 }
 
 void RegisterLuaFunctions() {

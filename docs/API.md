@@ -886,8 +886,9 @@ empty). Cross-checked in-game against a manual
 
 Positional-arg wrapper for [`C_Item.IsItemOpenable`](#c_itemisitemopenableitemlocation--c_itemisitemopenablebyiditem)
 against a bag/slot pair. Returns `true` if the slot holds a right-
-click-openable item (sack, clam, lockbox, etc.), `false` for empty
-slots, equipment, or any non-openable item.
+click-openable item (sack, clam, lockbox, etc.), `false` for non-
+openable items, and `nil` for empty slots or items whose data hasn't
+been cached yet.
 
 ```lua
 -- Sweep main backpack for openables
@@ -4118,10 +4119,11 @@ end
 
 Reads the openable bit (`Flags & 0x4`) from the client-side ItemSparse
 cache. Same bit the engine's tooltip builder uses to gate the
-`ITEM_OPENABLE` string. Returns `false` for uncached items and fires
-a background `SMSG_ITEM_QUERY_SINGLE` so a follow-up call after
-`GET_ITEM_INFO_RECEIVED` resolves correctly; in practice bag items
-are cached on bag-update and resolve instantly.
+`ITEM_OPENABLE` string. Returns `nil` for uncached items (so callers
+can distinguish "data unknown" from "definitely not openable") and
+fires a background `SMSG_ITEM_QUERY_SINGLE` so a follow-up call after
+`GET_ITEM_INFO_RECEIVED` resolves to a real `true` / `false`; in
+practice bag items are cached on bag-update and resolve instantly.
 
 The "ByID" variant accepts a numeric itemID, an item link, or an
 `"item:NNN..."` string — same input shape as
