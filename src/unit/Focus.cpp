@@ -25,12 +25,21 @@
 // `UnitFlag bit 0x2000` ("focus glow" rendering hint, introduced in
 // TBC for the default focus frame). Vanilla addons (pfUI) render
 // their own focus indicator and don't need the hint.
+//
+// Auto-clear on despawn: modern WoW fires `PLAYER_FOCUS_CHANGED`
+// when the focused unit leaves the client's object table (out of
+// rendering range, despawn) and does NOT auto-refocus when they
+// come back. We mirror that by probing `ObjectByGUID(g_focusGUID)`
+// every world tick — when it returns null, we `Set(0)` which fires
+// the event. Cost is one hash-table lookup per tick while focus is
+// set; zero when no focus is active.
 
 #include "Focus.h"
 
 #include "Game.h"
 #include "Offsets.h"
 #include "event/Custom.h"
+#include "tick/WorldTick.h"
 
 #include <cstdint>
 
@@ -44,6 +53,9 @@ const Event::Custom::AutoReserve _reserve{kEventName};
 uint64_t g_focusGUID = 0;
 
 using TokenToGUID_t = uint64_t(__fastcall *)(const char *token);
+using ResolveByGUID_t = void *(__fastcall *)(int type, const char *debugName,
+                                              uint32_t guidLo, uint32_t guidHi,
+                                              int priority);
 
 uint64_t ResolveTokenGUID(const char *token) {
     if (token == nullptr || *token == '\0')
@@ -51,6 +63,23 @@ uint64_t ResolveTokenGUID(const char *token) {
     auto fn = reinterpret_cast<TokenToGUID_t>(
         static_cast<uintptr_t>(Offsets::FUN_TOKEN_TO_GUID));
     return fn(token);
+}
+
+// Per-tick despawn watcher. Probes the engine's object table for
+// `g_focusGUID`; when it disappears (out of range, fully despawned),
+// clear focus and fire PLAYER_FOCUS_CHANGED — matches modern's
+// "leaves render distance → focus drops" behavior. Won't refocus
+// when the unit comes back, also matching modern.
+void OnWorldTick() {
+    if (g_focusGUID == 0)
+        return;
+    auto resolve = reinterpret_cast<ResolveByGUID_t>(
+        static_cast<uintptr_t>(Offsets::FUN_OBJECT_RESOLVE_BY_GUID));
+    if (resolve(Offsets::OBJ_TYPE_UNIT, "Focus",
+                static_cast<uint32_t>(g_focusGUID),
+                static_cast<uint32_t>(g_focusGUID >> 32),
+                0x172) == nullptr)
+        Set(0);
 }
 
 // `FocusUnit(unit)` — sets focus to whatever GUID `unit` currently
@@ -80,6 +109,7 @@ void RegisterLuaFunctions() {
 }
 
 const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
+const Tick::WorldTick::AutoSubscribe _tickSub{&OnWorldTick};
 
 } // namespace
 

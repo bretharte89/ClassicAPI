@@ -2168,6 +2168,13 @@ loads that recreate Lua state. Modern Classic Era behaves the same;
 addons that want persistence have to re-`FocusUnit` from `SavedVariables`
 at `ADDON_LOADED`.
 
+**Auto-clear on despawn.** When the focused unit leaves the client's
+object table — out of rendering range, full despawn, dies and
+decays — focus drops and [`PLAYER_FOCUS_CHANGED`](#player_focus_changed-event)
+fires. The unit re-entering range does NOT auto-refocus. Matches
+modern WoW's documented behavior. Implementation: per-tick
+`ObjectByGUID(g_focusGUID)` probe; on null result, `Set(0)`.
+
 ### `FocusUnit(unit)`
 
 Sets focus to the given unit. Argument is a unit token —
