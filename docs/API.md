@@ -34,6 +34,7 @@ build instructions.
   - [`GetItemCooldown(itemInfo)` / `C_Container.GetItemCooldown(itemID)`](#getitemcooldowniteminfo--c_containergetitemcooldownitemid)
   - [`C_Container.GetContainerItemDurability(containerIndex, slotIndex)`](#c_containergetcontaineritemdurabilitycontainerindex-slotindex)
   - [`C_Container.GetContainerItemRepairCost(containerIndex, slotIndex)`](#c_containergetcontaineritemrepaircostcontainerindex-slotindex)
+  - [`C_Container.GetContainerItemCharges(containerIndex, slotIndex)`](#c_containergetcontaineritemchargescontainerindex-slotindex)
   - [`C_Container.GetContainerNumFreeSlots(bagID)`](#c_containergetcontainernumfreeslotsbagid)
   - [`C_Container.PlayerHasHearthstone()`](#c_containerplayerhashearthstone)
   - [`C_Container.UseHearthstone()`](#c_containerusehearthstone)
@@ -769,6 +770,62 @@ end
 Useful for "repair only items above N copper" smart-repair logic
 without scanning tooltips. ClassicAPI addition; modern WoW has no
 direct equivalent.
+
+### `C_Container.GetContainerItemCharges(containerIndex, slotIndex)`
+
+Per-slot equivalent of
+[`C_Item.GetItemCount`](#c_itemgetitemcountitem-includebank-includecharges)'s
+`includeCharges=true` mode — returns the total uses available in
+*this single slot*, where `GetItemCount` totals the same value
+across every matching slot.
+
+```
+uses = C_Container.GetContainerItemCharges(containerIndex, slotIndex)
+```
+
+`containerIndex` accepts the same values as
+[`C_Container.GetContainerItemDurability`](#c_containergetcontaineritemdurabilitycontainerindex-slotindex)
+(`0` = backpack, `1..4` = equipped bags, `-1`/`5..11` = bank, etc.).
+`slotIndex` is 1-based.
+
+Math is `stack * usesPerItem`, where `usesPerItem` is
+`abs(SPELL_CHARGES[0])` for items with a negative charges field
+(consume-on-use: wands, healthstones, mana gems, sapper charges)
+and `1` for everything else. Worked examples:
+
+| Slot contents | Stack | Raw charges | Returns |
+|---|---:|---:|---:|
+| Wand of Decay at 50 charges | 1 | -50 | **50** |
+| Wand at 1 charge | 1 | -1 | **1** |
+| Healthstone | 1 | -1 | **1** |
+| Stack of 20 water | 20 | -1 | **20** |
+| Stack of 5 mana potions | 5 | -1 | **5** |
+| Hearthstone (cooldown-only) | 1 | 0 | **1** |
+| Any other item in the slot | 1 | 0 | **1** |
+
+Returns `nil` only when the slot is empty.
+
+```lua
+-- "how many charges does my wand have left?"
+local charges = C_Container.GetContainerItemCharges(0, 1)
+print("Wand charges remaining: " .. charges)
+
+-- "how many drinks across the bags?" — same as GetItemCount(water, false, true)
+local total = 0
+for bag = 0, 4 do
+    for slot = 1, GetContainerNumSlots(bag) do
+        if C_Container.GetContainerItemID(bag, slot) == waterID then
+            total = total + C_Container.GetContainerItemCharges(bag, slot)
+        end
+    end
+end
+```
+
+ClassicAPI addition; modern WoW has no direct equivalent (modern
+addons read charges off tooltip text). Useful when you need a
+per-slot number rather than `GetItemCount`'s rollup — e.g. to
+display "X charges" on the slot UI for a wand without re-walking
+every other matching item.
 
 ### `C_Container.GetContainerNumFreeSlots(bagID)`
 
