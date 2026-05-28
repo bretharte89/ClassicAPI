@@ -27,7 +27,12 @@ set(TINYCBOR_SOURCES
 
 add_library(${PROJECT_NAME} SHARED ${SOURCES} ${HEADERS} ${TINYCBOR_SOURCES})
 
-set(CLASSICAPI_VERSION_VALUE 1)
+# Dev-build sentinel — represents "newer than every plausible
+# release". Encoded as v9999.99.99 = 9999 * 10000 + 99 * 100 + 99 =
+# 99,999,999. Picked so addon-side feature gates of the form
+# `CLASSIC_API_VERSION >= X` always pass during local development;
+# CI release builds overwrite it via `-DCLASSICAPI_TAG=vX.Y.Z`.
+set(CLASSICAPI_VERSION_VALUE 99999999)
 
 set(CLASSICAPI_TAG
     ""

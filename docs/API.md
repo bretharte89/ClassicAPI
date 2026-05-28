@@ -2718,14 +2718,28 @@ lines; re-saving a set repopulates itemIDs.
 
 ### `CLASSIC_API_VERSION`
 
-Defined once FrameScript has booted. Addons can use this to detect that
-the DLL is loaded and which version is in use. The value is
-`X*10000 + Y*100 + Z` for a tag of `vX.Y.Z` passed to CMake at configure
-time via `-DCLASSICAPI_TAG=vX.Y.Z`. Unset versions resolve to `0`.
+Defined once FrameScript has booted. Addons can use this to detect
+that the DLL is loaded and which version is in use. The value is
+`X*10000 + Y*100 + Z` for a tag of `vX.Y.Z` passed to CMake at
+configure time via `-DCLASSICAPI_TAG=vX.Y.Z`.
+
+Untagged builds (local dev, CI without a release tag) get a
+**sentinel value of `99999999`** — encoded as `v9999.99.99`, chosen
+to be higher than every plausible real release so addon-side
+feature gates like `CLASSIC_API_VERSION >= 10200` don't reject the
+dev build.
 
 ```lua
 if CLASSIC_API_VERSION and CLASSIC_API_VERSION >= 10200 then
-    -- ClassicAPI v1.2.0 or newer is loaded
+    -- ClassicAPI v1.2.0 or newer is loaded (or untagged dev build)
+end
+```
+
+If you specifically want to detect a dev build:
+
+```lua
+if CLASSIC_API_VERSION == 99999999 then
+    -- running against a locally-built, untagged DLL
 end
 ```
 
