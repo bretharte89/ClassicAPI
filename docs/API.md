@@ -650,10 +650,6 @@ if UnitAffectingCombat("player") then
 end
 ```
 
-Equivalent to `UnitAffectingCombat("player")` but faster — reads the
-`UNIT_FLAG_IN_COMBAT` bit directly off the player CGUnit's
-m_objectFields, no token-resolution roundtrip.
-
 ## Container
 
 ### `C_Container.GetContainerItemID(bagIndex, slotIndex)`
