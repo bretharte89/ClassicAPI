@@ -146,6 +146,43 @@ const uint8_t *ResolveByGUID(uint64_t guid) {
                                             0x172));
 }
 
+bool FindByItemID(void *L, int itemID, ByGUIDResult *out) {
+    if (itemID <= 0)
+        return false;
+
+    for (int slot = Offsets::EQUIPMENT_SLOT_FIRST;
+         slot <= Offsets::EQUIPMENT_SLOT_LAST; ++slot) {
+        auto *item = ResolveEquipmentSlot(slot);
+        if (item == nullptr)
+            continue;
+        if (Item::ID::FromCGItem(item) == itemID) {
+            out->equipmentSlotIndex = slot;
+            out->bagID = 0;
+            out->slotIndex = 0;
+            out->item = item;
+            return true;
+        }
+    }
+
+    for (int bagID = 0; bagID <= 4; ++bagID) {
+        const int slotCount = GetBagSlotCount(bagID);
+        for (int slotIndex = 1; slotIndex <= slotCount; ++slotIndex) {
+            auto *item = ResolveBag(L, bagID, slotIndex);
+            if (item == nullptr)
+                continue;
+            if (Item::ID::FromCGItem(item) == itemID) {
+                out->equipmentSlotIndex = 0;
+                out->bagID = bagID;
+                out->slotIndex = slotIndex;
+                out->item = item;
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
 bool FindByGUID(void *L, uint64_t guid, ByGUIDResult *out) {
     if (guid == 0)
         return false;

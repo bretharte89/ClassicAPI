@@ -49,6 +49,9 @@ build instructions.
 - [CVar](#cvar)
   - [`C_CVar.GetCVarBool(cvar)`](#c_cvargetcvarboolcvar)
 
+- [Cursor](#cursor)
+  - [`GetCursorInfo()`](#getcursorinfo)
+
 - [EquipmentSet](#equipmentset)
   - [Overview & file format](#overview--file-format)
   - [`C_EquipmentSet.CanUseEquipmentSets()`](#c_equipmentsetcanuseequipmentsets)
@@ -1255,6 +1258,83 @@ storage is process-global, so writes on either state are
 immediately visible on the other (a `SetCVar("foo", "1")` from a
 GlueXML script will read back as `"1"` on the in-world side, and
 vice versa).
+
+## Cursor
+
+### `GetCursorInfo()`
+
+Returns a tuple describing whatever the player has picked up on the
+cursor (item, money, spell, macro, merchant slot), or nothing when
+the cursor is empty. Reads the same engine globals `CursorHasItem` /
+`CursorHasSpell` / `GetCursorMoney` consult, so the answer always
+matches what the rest of the engine sees.
+
+Return shape per cursor state:
+
+| Cursor holds | Returns |
+|---|---|
+| nothing | *nil* |
+| a bag item (PickupContainerItem, mail/trade detach with GUID) | `"item"`, `itemID`, `itemLink` |
+| a drag-source item (equipment slot, action bar, trade, mail) | `"item"`, `itemID` |
+| money (gold-split UI, `PickupPlayerMoney`) | `"money"`, `copperAmount` |
+| a spell from the spellbook | `"spell"`, `spellbookSlot`, `bookType`, `spellID` |
+| a macro | `"macro"`, `macroIndex` |
+| a merchant slot | `"merchant"`, `merchantIndex` |
+
+`bookType` is `"spell"` for player spells, `"pet"` for pet spells.
+`spellbookSlot` is the 1-based slot the spell lives at in the
+spellbook arrays, found by walking the player/pet books. `0` if the
+spellID isn't in either book (rare — passive talent-granted spells).
+
+```lua
+local kind, a, b, c = GetCursorInfo()
+if kind == "item" then
+    print(("cursor item: %d"):format(a))
+elseif kind == "money" then
+    print(("cursor money: %d copper"):format(a))
+elseif kind == "spell" then
+    print(("cursor spell: id=%d slot=%d (%s book)"):format(c, a, b))
+elseif kind == "macro" then
+    print(("cursor macro index: %d"):format(a))
+end
+```
+
+#### `itemLink` availability
+
+Returned only when the cursor holds a **bag item** (type 1) —
+`PickupContainerItem` / `PickupInventoryItem` from a bag slot, mail
+or trade detach. The cursor stores the item's GUID in this case, so
+we resolve back to the live `CGItem *` and feed it to the engine's
+link builder, which produces the full per-instance form including
+enchant ID and random-suffix decoration:
+
+```
+|cff1eff00|Hitem:16791:255:0:0|h[Silkstream Cuffs]|h|r
+|cff1eff00|Hitem:9877:0:767:0|h[Sorcerer Cloak of the Owl]|h|r
+```
+
+Not returned for drag-source items (equipment slot, action bar
+slot, trade slot, mail attachment — types 5/6/7/9). In those cases
+the cursor only stores the itemID (no GUID, no live `CGItem *`), so
+the engine's link builder isn't reachable. Derive a basic link from
+the itemID via `GetItemInfo` if you need one for display:
+
+```lua
+local kind, itemID, link = GetCursorInfo()
+if kind == "item" and not link then
+    link = (select(2, GetItemInfo(itemID))) or ("item:" .. itemID)
+end
+```
+
+#### Types we don't surface
+
+The engine has cursor types beyond what `GetCursorInfo` advertises in
+modern WoW — pet action drag, trade-slot drag, mail-attach drag,
+ability-bar drag from `PickupAction`, etc. These don't map cleanly to
+any modern `GetCursorInfo` string, so we return `nil` for them.
+Consumers needing to detect those can use the engine-native
+`CursorHasItem` / `CursorHasSpell` / `CursorHasMoney` (which already
+exist in vanilla) and the source-side `PickupX` calls.
 
 ## EquipmentSet
 

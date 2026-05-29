@@ -1068,6 +1068,17 @@ enum Offsets {
     OFF_ITEMSTATS_NAME = 0x08,
     OFF_ITEMSTATS_DISPLAY_INFO_ID = 0x18,
     OFF_ITEMSTATS_QUALITY = 0x1C,    // u32 — 0=Poor … 5=Legendary
+
+    // Item-quality color-prefix table. Array of 7 `const char *`
+    // pointers, indexed by quality 0..6 (POOR..ARTIFACT); each
+    // points to a `"|cffRRGGBB"` markup string used by the engine's
+    // own link builder. Discovered via the inner color helper at
+    // `0x0052AD90` which does `(&table)[quality]` with a fallback
+    // to white (`"|cffffffff"`, the index-1 entry) for quality > 6.
+    // Quality 7 (Heirloom) doesn't exist in vanilla; consumers
+    // should mirror the engine's fallback for safety.
+    VAR_QUALITY_COLOR_TABLE = 0x00854124,
+    QUALITY_COLOR_TABLE_SIZE = 7,
     // `m_flags` — item-class flags bitfield. Bits we read:
     //   `ITEMSTATS_FLAG_OPENABLE` (`0x4`, bit 2): freely right-click-
     //     openable container (sack, clam, simple chest, quest box).
@@ -3190,4 +3201,57 @@ enum Offsets {
     VAR_GLUE_LOGIN_READY1 = 0x00B41DFC,
     VAR_GLUE_LOGIN_READY2 = 0x00B41E04,
     VAR_GLUE_LOGIN_INPROGRESS = 0x00B41DA0,
+
+    // Cursor state — single global type-tag at VAR_CURSOR_TYPE
+    // dispatches reads through one of several payload slots depending
+    // on what's picked up. The engine's `CursorHasItem` /
+    // `CursorHasSpell` / `GetCursorMoney` and the various `Pickup*`
+    // functions all read/write through these. Discovered by tracing
+    // `Script_CursorHasItem` (`0x004895D0`) and the writers in
+    // `FUN_00494B60` (item), `FUN_00494CC0` (money), `FUN_00494D20`
+    // (spell), `FUN_00494E20` (pet action), `FUN_00494F80` (macro),
+    // `FUN_004950F0` (action/inv/etc.), `FUN_00495010` (merchant).
+    //
+    // Type values:
+    //   0  empty (nothing on cursor)
+    //   1  bag item — GUID at `VAR_CURSOR_ITEM_GUID_LO/_HI`,
+    //      itemID resolved by feeding the GUID to
+    //      `FUN_OBJECT_FROM_GUID` (filter 0x2).
+    //   2  money — copper at `VAR_CURSOR_MONEY_COPPER`
+    //   3  player spell — spellID at `VAR_CURSOR_SPELL_ID`
+    //   4  pet action — packed at `VAR_CURSOR_PETACTION_PACKED`
+    //   5  merchant item — itemID at `VAR_CURSOR_GENERIC_SLOT`,
+    //      0-based merchant slot at `VAR_CURSOR_GENERIC_SOURCE`.
+    //      Written by `Script_PickupMerchantItem` (`0x004FB760`) →
+    //      `FUN_004950F0(itemID, ?, slot0, 5)`.
+    //   6/7 other drag-source items — itemID at
+    //      `VAR_CURSOR_GENERIC_SLOT`. Type 7 is action-bar pickup
+    //      (`FUN_004E6130`); type 6 is another drag path (mail/etc.).
+    //   8  macro — 1-based index at `VAR_CURSOR_MACRO_INDEX`
+    //   9  inventory item (equipped slot) — itemID stored at
+    //      `VAR_CURSOR_GENERIC_SLOT`. Bare itemID rather than a GUID
+    //      because the item is out of the descriptor stream while
+    //      on the cursor.
+    //   10 stable pet — 1-based index at `VAR_CURSOR_STABLEPET_INDEX`.
+    //      Written by `Script_ClickStablePet` (`FUN_004CB420`) →
+    //      `FUN_00495010(slot)`.
+    //
+    // `CursorHasItem` returns true for types 1 *and* 9 only.
+    VAR_CURSOR_TYPE = 0x00B4D900,
+    VAR_CURSOR_ITEM_GUID_LO = 0x00B4E248,
+    VAR_CURSOR_ITEM_GUID_HI = 0x00B4E24C,
+    VAR_CURSOR_MONEY_COPPER = 0x00B4E2F0,
+    VAR_CURSOR_SPELL_ID = 0x00B4E2F4,
+    VAR_CURSOR_PETACTION_PACKED = 0x00B4E2F8,
+    VAR_CURSOR_MACRO_INDEX = 0x00B4E2FC,
+    VAR_CURSOR_STABLEPET_INDEX = 0x00B4E300,
+    VAR_CURSOR_GENERIC_SLOT = 0x00B4B41C,
+    VAR_CURSOR_GENERIC_DISPLAY = 0x00B4D8EC,
+    VAR_CURSOR_GENERIC_SOURCE = 0x00B4B420,
+
+    // GUID → CGObject resolver. `__fastcall(type_filter, guid_lo,
+    // guid_hi) → CGObject *` at `0x00468460`. Type filter 0x2 = item,
+    // matching what `FUN_00494B60` and the trade-attached paths pass
+    // when re-resolving the cursor GUID to a `CGItem *`.
+    FUN_OBJECT_FROM_GUID = 0x00468460,
 };

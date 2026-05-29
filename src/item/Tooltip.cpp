@@ -17,6 +17,7 @@
 #include "item/ID.h"
 #include "item/Link.h"
 #include "item/Location.h"
+#include "item/QualityColor.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -134,25 +135,6 @@ static int __fastcall Script_GameTooltipSetInventoryItemByID(void *L) {
     return fn(L);
 }
 
-// Modern `Enum.ItemQuality` color codes for the SetItemByID fallback
-// path (no CGItem → no engine link helper). For the CGItem-resolved
-// path we delegate to the engine's own builder, which uses the same
-// palette internally.
-static const char *QualityHex(int quality) {
-    static const char *const kHex[] = {
-        "9d9d9d", // POOR
-        "ffffff", // COMMON
-        "1eff00", // UNCOMMON
-        "0070dd", // RARE
-        "a335ee", // EPIC
-        "ff8000", // LEGENDARY
-        "e6cc80", // ARTIFACT (TBC+)
-        "00ccff", // HEIRLOOM (WotLK+)
-    };
-    if (quality < 0 || quality > 7)
-        return kHex[1];
-    return kHex[quality];
-}
 
 using GetItemRecord_t = const uint8_t *(__thiscall *)(void *cache, uint32_t itemID,
                                                       const uint64_t *guid, void *callback,
@@ -277,8 +259,9 @@ static int __fastcall Script_GameTooltipGetItem(void *L) {
 
     char link[256];
     std::snprintf(link, sizeof(link),
-                  "|cff%s|Hitem:%d:0:0:0:0:0:0:0|h[%s]|h|r",
-                  QualityHex(static_cast<int>(quality)), itemID, name);
+                  "%s|Hitem:%d:0:0:0:0:0:0:0|h[%s]|h|r",
+                  Item::QualityColor::Prefix(static_cast<int>(quality)),
+                  itemID, name);
 
     Game::Lua::PushString(L, name);
     Game::Lua::PushString(L, link);

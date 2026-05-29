@@ -86,6 +86,16 @@ struct ByGUIDResult {
 // Lua stack — only safe from inside a Lua callback.
 bool FindByGUID(void *L, uint64_t guid, ByGUIDResult *out);
 
+// Same equipment-first, bag-second walk as `FindByGUID`, but matches
+// on itemID instead. Returns the FIRST instance found — equipment
+// slots are checked before bags, so an equipped enchanted copy is
+// preferred over an unenchanted duplicate in the backpack. Used
+// when we only have the itemID for a slot (e.g. cursor-held items
+// picked up from the action bar, which the engine stores as a
+// bare itemID with no GUID) and want to recover the live CGItem
+// for link-decoration purposes. Stomps the Lua stack.
+bool FindByItemID(void *L, int itemID, ByGUIDResult *out);
+
 // Parses the `"0xHHHHHHHHLLLLLLLL"` GUID string format
 // `C_Item.GetItemGUID` returns. Strict: requires exactly `0x` prefix
 // + 16 case-insensitive hex digits. Returns false (and leaves `*out`
