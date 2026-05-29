@@ -893,6 +893,14 @@ enum Offsets {
     // descriptor bytes for a worn-and-bound item.
     OFF_DESCRIPTOR_FLAGS = 0x3C,
     ITEM_FLAG_SOULBOUND = 0x01,
+    // Bit 2 — instance is "unlocked", i.e. the lock referenced by
+    // `ItemStats.LockID` has been opened (rogue Pick Lock, key item,
+    // etc.). For unlockable items, the engine gates the
+    // `<Right Click to Open>` tooltip on this bit: a fresh lockbox
+    // has it clear (priest sees no openable affordance), a picked
+    // lockbox has it set. Items with `LockID == 0` (clams, simple
+    // sacks) never need the bit.
+    ITEM_FLAG_UNLOCKED = 0x04,
 
     // Client-side "in-transaction" lock — set when the engine puts an
     // item on the cursor / mail-attaches it / trade-attaches it, cleared
@@ -1079,6 +1087,14 @@ enum Offsets {
     OFF_ITEMSTATS_FLAGS = 0x20,
     ITEMSTATS_FLAG_OPENABLE = 0x4,
     OFF_ITEMSTATS_SELL_PRICE = 0x28,
+    // `m_lockID` — references `Lock.dbc`. Zero means "no lock"; any
+    // nonzero value gates the openable interaction on the player
+    // successfully unlocking the item (instance flag bit 2 in
+    // `ITEM_FIELD_FLAGS`). Same field the tooltip builder reads as
+    // `ItemStats[+0x1AC]` (puVar4[0x6b]) when deciding whether the
+    // `<Right Click to Open>` line should require the lock to be
+    // picked first.
+    OFF_ITEMSTATS_LOCK_ID = 0x1AC,
     OFF_ITEMSTATS_INVENTORY_TYPE = 0x2C,
     OFF_ITEMSTATS_ITEM_LEVEL = 0x38, // u32 — base ilvl from ItemSparse
     // `m_stackable` — max stack size for this item type (1 for non-

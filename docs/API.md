@@ -179,7 +179,7 @@ build instructions.
   - [`C_Item.GetItemUniqueness(itemLocation)` / `C_Item.GetItemUniquenessByID(item)`](#c_itemgetitemuniquenessitemlocation--c_itemgetitemuniquenessbyiditem)
   - [`C_Item.GetItemLink(itemLocation)`](#c_itemgetitemlinkitemlocation)
   - [`C_Item.GetItemInventoryType(itemLocation)` / `C_Item.GetItemInventoryTypeByID(item)`](#c_itemgetiteminventorytypeitemlocation--c_itemgetiteminventorytypebyiditem)
-  - [`C_Item.IsItemOpenable(itemLocation)` / `C_Item.IsItemOpenableByID(item)`](#c_itemisitemopenableitemlocation--c_itemisitemopenablebyiditem)
+  - [`C_Item.IsItemOpenable(itemLocation)`](#c_itemisitemopenableitemlocation)
   - [`C_Item.IsLocked(itemLocation)`](#c_itemislockeditemlocation)
   - [`C_Item.LockItem(itemLocation)`](#c_itemlockitemitemlocation)
   - [`C_Item.LockItemByGUID(itemGUID)`](#c_itemlockitembyguiditemguid)
@@ -881,10 +881,9 @@ empty). Cross-checked in-game against a manual
 ### `C_Container.IsContainerItemOpenable(containerIndex, slotIndex)`
 
 Positional-arg wrapper for [`C_Item.IsItemOpenable`](#c_itemisitemopenableitemlocation--c_itemisitemopenablebyiditem)
-against a bag/slot pair. Returns `true` if the slot holds a right-
-click-openable item (sack, clam, lockbox, etc.), `false` for non-
-openable items, and `nil` for empty slots or items whose data hasn't
-been cached yet.
+against a bag/slot pair. Same `(isOpenable, canOpen)` tuple — see
+the linked section for full semantics. Both returns are `nil` for
+empty slots or items whose data hasn't been cached yet.
 
 ```lua
 -- Sweep main backpack for openables
@@ -4090,40 +4089,54 @@ if t == 1 then -- head
 end
 ```
 
-### `C_Item.IsItemOpenable(itemLocation)` / `C_Item.IsItemOpenableByID(item)`
+### `C_Item.IsItemOpenable(itemLocation)`
 
-Returns `true` if the item is right-click-openable — a sack, clam,
-simple chest, quest box, lockbox, etc. (anything whose tooltip would
-show `<Right Click to Open>`). Intrinsic to the item type, not
-contextual: a locked lockbox you can't currently open still reports
-`true` here.
+Returns two values: `(isOpenable, canOpen)`.
+
+- **`isOpenable`** — `true` if the item type is right-click-openable
+  (sack, clam, simple chest, quest box, lockbox, etc. — anything
+  whose tooltip *could* show `<Right Click to Open>`). Intrinsic to
+  the item type. From `ItemStats.Flags & 0x4`.
+- **`canOpen`** — `true` if the player can right-click *this specific
+  instance* and trigger the open action right now. For unlocked-by-
+  default items (clams, sacks) this matches `isOpenable`. For items
+  with a lock (lockboxes), it's only true after the lock has been
+  removed (rogue Pick Lock, key item, etc.) — so a priest looking at
+  a fresh lockbox sees `(true, false)`, while a rogue who just
+  picked it sees `(true, true)`.
+
+Both values are `nil` when the item data isn't cached yet (background
+`SMSG_ITEM_QUERY_SINGLE` fired) or when the location is empty /
+invalid. Lets callers distinguish "data unknown" from "definitely
+not openable".
+
+There's no `ByID` variant — the `canOpen` check depends on a specific
+instance's `ITEM_FIELD_FLAGS`, which you can only have via an
+itemLocation. If you only have an itemID, use
+`C_Item.GetItemInfoInstant` to inspect the item type instead.
 
 ```lua
--- Loop a bag and gather every openable
+-- Loop a bag and gather every openable the player can act on now
 for slot = 1, GetContainerNumSlots(0) do
-    local itemID = C_Container.GetContainerItemID(0, slot)
-    if itemID and C_Item.IsItemOpenableByID(itemID) then
-        -- pickup + use
+    local _, canOpen = C_Container.IsContainerItemOpenable(0, slot)
+    if canOpen then
+        -- pickup + use; this slot is good to open
     end
 end
 
--- Single-slot check via itemLocation
-if C_Item.IsItemOpenable({bagID = 0, slotIndex = 1}) then
-    -- ...
+-- Show a different hint depending on the lock state
+local isOpenable, canOpen = C_Item.IsItemOpenable({bagID = 0, slotIndex = 1})
+if isOpenable and not canOpen then
+    print("This item is locked.")
 end
 ```
 
-Reads the openable bit (`Flags & 0x4`) from the client-side ItemSparse
-cache. Same bit the engine's tooltip builder uses to gate the
-`ITEM_OPENABLE` string. Returns `nil` for uncached items (so callers
-can distinguish "data unknown" from "definitely not openable") and
-fires a background `SMSG_ITEM_QUERY_SINGLE` so a follow-up call after
-`GET_ITEM_INFO_RECEIVED` resolves to a real `true` / `false`; in
-practice bag items are cached on bag-update and resolve instantly.
-
-The "ByID" variant accepts a numeric itemID, an item link, or an
-`"item:NNN..."` string — same input shape as
-`C_Item.GetItemInfoInstant`.
+Implementation: `isOpenable` reads `ItemStats.Flags & 0x4` from the
+client-side ItemSparse cache. `canOpen` adds a check that either
+`ItemStats.LockID == 0` (no lock) or the CGItem instance's
+`ITEM_FIELD_FLAGS & 0x4` (UNLOCKED) bit is set. Same conditions the
+engine's tooltip builder uses at `0x0052E323` to gate the
+`ITEM_OPENABLE` line.
 
 ### `C_Item.IsLocked(itemLocation)`
 

@@ -17,15 +17,21 @@
 
 namespace Item::Openable {
 
-// Pushes the openable bool for `itemID` and returns 1, OR pushes
-// nothing and returns 0 when the item is uncached / itemID is
-// invalid. Caller can `return PushIsItemOpenable(...)` from a Lua
-// C function; pushing 0 surfaces as `nil` to the Lua caller, which
-// distinguishes "data unknown" from "definitely not openable".
+// Pushes two values for the openable check on a player-owned item
+// (`isOpenable, canOpen`), returning 2. The two semantics:
 //
-// Reads `ItemStats_C.Flags & 0x4` from the client-side item cache.
-// Fires a background `SMSG_ITEM_QUERY_SINGLE` for uncached items so
-// a follow-up call after `GET_ITEM_INFO_RECEIVED` resolves correctly.
-int PushIsItemOpenable(void *L, uint32_t itemID);
+//   `isOpenable` — bool. The item type carries the openable flag
+//     (`ItemStats.Flags & 0x4` — clams, sacks, lockboxes, etc.).
+//   `canOpen`    — bool. The player can right-click this specific
+//     instance and trigger the open action right now. True for
+//     openable items with no lock (`LockID == 0`) or whose instance
+//     has been unlocked (`ITEM_FIELD_FLAGS & 0x4` — set after a
+//     rogue picks the lock, a key is used, etc.). False for fresh
+//     lockboxes a non-rogue is looking at.
+//
+// `cgItem` may be null (empty slot), in which case nothing is pushed
+// and 0 is returned (Lua sees nil for both returns). Uncached itemID
+// also returns 0 plus a background cache warm.
+int PushIsItemOpenable(void *L, const uint8_t *cgItem);
 
 } // namespace Item::Openable

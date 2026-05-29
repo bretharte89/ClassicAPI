@@ -11,19 +11,22 @@
 // You should have received a copy of the GNU Lesser General Public License along with
 // ClassicAPI. If not, see <https://www.gnu.org/licenses/>.
 
-// `C_Item.IsItemOpenable` / `C_Item.IsItemOpenableByID` — backport of
-// the modern WoW accessor that says "right-clicking this item triggers
-// an open/loot interaction" (clams, sacks, simple chests, quest
-// boxes). The flag is intrinsic to the item type, read from the
-// client-side ItemSparse cache.
+// `C_Item.IsItemOpenable(itemLocation)` — backport of the modern WoW
+// accessor that says "right-clicking this item triggers an open/loot
+// interaction" (clams, sacks, simple chests, quest boxes, lockboxes).
+// Returns two values: `(isOpenable, canOpen)` — the first is the
+// item-type-intrinsic openable flag, the second is whether the
+// player can right-click *this specific instance* right now (lock
+// is gone or never existed).
 //
 // Vanilla 1.12's tooltip builder gates the `<Right Click to Open>`
-// string (`ITEM_OPENABLE`) on `ItemStats_C.Flags & 0x4` (see
-// `Offsets::ITEMSTATS_FLAG_OPENABLE`). We surface the same bit.
+// string (`ITEM_OPENABLE`) on `ItemStats.Flags & 0x4` AND
+// (`LockID == 0` OR `ITEM_FIELD_FLAGS & 0x4`). We mirror both checks
+// — see `Offsets::ITEMSTATS_FLAG_OPENABLE`, `ITEMSTATS_LOCK_ID`, and
+// `ITEM_FLAG_UNLOCKED`.
 
 #include "Game.h"
 #include "Offsets.h"
-#include "item/Arg.h"
 #include "item/Data.h"
 #include "item/ID.h"
 #include "item/Location.h"
@@ -48,20 +51,44 @@ const uint8_t *PeekItemRecord(uint32_t itemID) {
 
 } // namespace
 
-int PushIsItemOpenable(void *L, uint32_t itemID) {
-    if (itemID == 0)
+namespace {
+
+// Reads `ITEM_FIELD_FLAGS` from the instance descriptor at +0x114.
+// Defaults to 0 if `cgItem` is null or the descriptor pointer hasn't
+// been populated yet.
+uint32_t InstanceFlags(const uint8_t *cgItem) {
+    if (cgItem == nullptr)
         return 0;
-    const uint8_t *record = PeekItemRecord(itemID);
+    auto *descriptor = *reinterpret_cast<const uint8_t *const *>(
+        cgItem + Offsets::OFF_ITEM_DESCRIPTOR);
+    if (descriptor == nullptr)
+        return 0;
+    return *reinterpret_cast<const uint32_t *>(
+        descriptor + Offsets::OFF_DESCRIPTOR_FLAGS);
+}
+
+} // namespace
+
+int PushIsItemOpenable(void *L, const uint8_t *cgItem) {
+    const int itemID = Item::ID::FromCGItem(cgItem);
+    if (itemID <= 0)
+        return 0;
+    const uint8_t *record = PeekItemRecord(static_cast<uint32_t>(itemID));
     if (record == nullptr) {
-        // Background fill so a follow-up call (after the cache warms)
-        // returns the real value. Same pattern Quality / Info use.
-        Item::Data::WarmCache(itemID);
+        Item::Data::WarmCache(static_cast<uint32_t>(itemID));
         return 0;
     }
-    const uint32_t flags = *reinterpret_cast<const uint32_t *>(
+    const uint32_t typeFlags = *reinterpret_cast<const uint32_t *>(
         record + Offsets::OFF_ITEMSTATS_FLAGS);
-    Game::Lua::PushBool(L, (flags & Offsets::ITEMSTATS_FLAG_OPENABLE) != 0);
-    return 1;
+    const uint32_t lockID = *reinterpret_cast<const uint32_t *>(
+        record + Offsets::OFF_ITEMSTATS_LOCK_ID);
+    const bool isOpenable = (typeFlags & Offsets::ITEMSTATS_FLAG_OPENABLE) != 0;
+    const uint32_t instFlags = InstanceFlags(cgItem);
+    const bool canOpen = isOpenable && (lockID == 0 ||
+                                        (instFlags & Offsets::ITEM_FLAG_UNLOCKED) != 0);
+    Game::Lua::PushBool(L, isOpenable);
+    Game::Lua::PushBool(L, canOpen);
+    return 2;
 }
 
 namespace {
@@ -71,20 +98,12 @@ int __fastcall Script_C_Item_IsItemOpenable(void *L) {
         Game::Lua::Error(L, "Usage: C_Item.IsItemOpenable(itemLocation)");
         return 0;
     }
-    const int itemID = Item::ID::FromCGItem(Item::Location::Resolve(L, 1));
-    return PushIsItemOpenable(L, static_cast<uint32_t>(itemID));
-}
-
-int __fastcall Script_C_Item_IsItemOpenableByID(void *L) {
-    const int itemID = Item::Arg::ResolveItemID(L, 1);
-    return PushIsItemOpenable(L, static_cast<uint32_t>(itemID));
+    return PushIsItemOpenable(L, Item::Location::Resolve(L, 1));
 }
 
 void RegisterLuaFunctions() {
     Game::Lua::RegisterTableFunction("C_Item", "IsItemOpenable",
                                      &Script_C_Item_IsItemOpenable);
-    Game::Lua::RegisterTableFunction("C_Item", "IsItemOpenableByID",
-                                     &Script_C_Item_IsItemOpenableByID);
 }
 
 const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};

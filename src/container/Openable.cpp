@@ -12,13 +12,12 @@
 // ClassicAPI. If not, see <https://www.gnu.org/licenses/>.
 
 // `C_Container.IsContainerItemOpenable(bag, slot)` — positional-arg
-// wrapper around `Item::Openable::IsItemIDOpenable`. Same chain
+// wrapper around `Item::Openable::PushIsItemOpenable`. Same chain
 // `C_Container.GetContainerItemDurability` and friends use:
-// `ResolveBag` → `GetItemBySlot` → instance-block itemID → cache flag
-// read.
+// `ResolveBag` → `GetItemBySlot`. Returns the
+// `(isOpenable, canOpen)` tuple — see [[item/Openable.h]].
 
 #include "Game.h"
-#include "item/ID.h"
 #include "item/Location.h"
 #include "item/Openable.h"
 
@@ -34,9 +33,8 @@ int __fastcall Script_C_Container_IsContainerItemOpenable(void *L) {
     }
     const int bagID = static_cast<int>(Game::Lua::ToNumber(L, 1));
     const int slotIndex = static_cast<int>(Game::Lua::ToNumber(L, 2));
-    const int itemID = Item::ID::FromCGItem(
-        Item::Location::ResolveBag(L, bagID, slotIndex));
-    return Item::Openable::PushIsItemOpenable(L, static_cast<uint32_t>(itemID));
+    return Item::Openable::PushIsItemOpenable(
+        L, Item::Location::ResolveBag(L, bagID, slotIndex));
 }
 
 void RegisterLuaFunctions() {
