@@ -2433,6 +2433,48 @@ enum Offsets {
     // registry before the load pass.
     FUN_ADDON_INIT = 0x0051C740,
 
+    // Generic intrusive-list insert/move helper used by `FUN_TOC_PARSER`
+    // to thread new addon entries into the registry's doubly-linked
+    // list. Signature (`__thiscall`):
+    //   `(ListCtrl *this, void *entry, int position, int anchor)`
+    // Where:
+    //   - `this`        — list-control struct (for the addon registry,
+    //                      this is `&VAR_ADDON_LIST_CTRL`).
+    //   - `entry`       — entry to insert. If already linked, the
+    //                      function removes it from its current
+    //                      position first.
+    //   - `position`    — `1` = insert at head, anything else (engine
+    //                      passes `2`) = insert at tail.
+    //   - `anchor`      — `0` = anchor against the list sentinel
+    //                      (default), nonzero = anchor relative to
+    //                      another entry's link field at that offset.
+    //
+    // Used by `Addons::Embedded` to move our injected `!!!ClassicAPI`
+    // entry from the tail (where `FUN_TOC_PARSER` puts it) to the head
+    // — vanilla's addon load pass at `FUN_0051F600` walks the linked
+    // list in insertion order, so without this fix our addon would
+    // load *last*, breaking dependent addons that expect our globals
+    // to be ready in their main chunk.
+    FUN_INTRUSIVE_LIST_INSERT = 0x00521AD0,
+
+    // Addon-registry intrusive-list control. Layout
+    // (`__thiscall`-friendly, generic across all intrusive lists in the
+    // binary):
+    //   +0x00 (= `0x00BE1B64`) — `int` next-pointer offset within each
+    //                              entry (= `0xC` at runtime; entries
+    //                              store their next-link at
+    //                              `entry+0xC..0x10`).
+    //   +0x04 (= `0x00BE1B68`) — sentinel `next` field
+    //                              (points back into &sentinel+1 when
+    //                              the list is empty).
+    //   +0x08 (= `0x00BE1B6C`) — list head (alias for sentinel `prev`
+    //                              when treated as circular).
+    //
+    // `VAR_ADDON_LIST_CTRL` is just the address of the control struct
+    // (i.e., `0x00BE1B64`). Pass `&VAR_ADDON_LIST_CTRL` as the `this`
+    // arg to `FUN_INTRUSIVE_LIST_INSERT`.
+    VAR_ADDON_LIST_CTRL = 0x00BE1B64,
+
     // `SStrDup(const char *src, const char *file, int line)`. `__stdcall`.
     // Storm's string-copy wrapper around `SMemAlloc` — used by the engine
     // itself to populate event entry names. We use it from `Event::Custom`

@@ -301,11 +301,58 @@ using AddonInit_t = void(__fastcall *)(const char *accountName);
 AddonInit_t AddonInit_o = nullptr;
 
 using TocParser_t = void(__fastcall *)(const char *name);
+using ListInsert_t = void(__thiscall *)(void *listCtrl, void *entry,
+                                         int position, int anchor);
+
+// `FUN_TOC_PARSER` appends new entries to the *tail* of the addon
+// registry's linked list, and the engine's addon-load pass at
+// `FUN_0051F600` walks that list in *insertion order* (NOT
+// alphabetical order — the alphabetical sort only applies to the
+// flat array `GetAddOnInfo(i)` reads from). So our post-hook
+// injection lands at the very end of the load order, after every
+// disk-scanned addon. Addons that consume our globals from their
+// main chunk (idTip's `FrameWatcher`, etc.) would see `nil` and
+// hard-error during their boot.
+//
+// Fix: walk the linked list, find our entry by name, and re-link
+// it to the head via `FUN_INTRUSIVE_LIST_INSERT(position=1)`. The
+// engine's own insert helper handles remove-then-insert atomically,
+// so it's safe to call on an entry that's already in the list.
+//
+// Entries are pointed to by `[VAR_ADDON_LIST_HEAD]` (`0x00BE1B6C`),
+// with the next-pointer field at `entry + 0x10` (computed as
+// `*(value-at-VAR_ADDON_LIST_CTRL) + entry + 4` = `0xC + entry + 4`
+// = `entry + 0x10`). Low-bit-1 means "sentinel" (end of list).
+// Name pointer lives at `entry + 0x14`.
+constexpr uintptr_t VAR_ADDON_LIST_HEAD = 0x00BE1B6C;
+constexpr int OFF_ADDON_ENTRY_NAME_PTR = 0x14;
+
+void MoveEmbeddedToListHead() {
+    uintptr_t entry = *reinterpret_cast<uintptr_t *>(VAR_ADDON_LIST_HEAD);
+    const int linkOffset = *reinterpret_cast<const int *>(
+        static_cast<uintptr_t>(Offsets::VAR_ADDON_LIST_CTRL));
+    while ((entry & 1) == 0 && entry != 0) {
+        const char *name = *reinterpret_cast<const char *const *>(
+            entry + OFF_ADDON_ENTRY_NAME_PTR);
+        if (name != nullptr && std::strcmp(name, kAddonName) == 0) {
+            auto fn = reinterpret_cast<ListInsert_t>(
+                Offsets::FUN_INTRUSIVE_LIST_INSERT);
+            fn(reinterpret_cast<void *>(
+                   static_cast<uintptr_t>(Offsets::VAR_ADDON_LIST_CTRL)),
+               reinterpret_cast<void *>(entry),
+               /*position=*/ 1, /*anchor=*/ 0);
+            return;
+        }
+        entry = *reinterpret_cast<const uintptr_t *>(
+            entry + linkOffset + 4);
+    }
+}
 
 void __fastcall AddonInit_h(const char *accountName) {
     AddonInit_o(accountName);
     auto TocParser = reinterpret_cast<TocParser_t>(Offsets::FUN_TOC_PARSER);
     TocParser(kAddonName);
+    MoveEmbeddedToListHead();
 }
 
 const Game::HookAutoRegister _hookFileRead{
