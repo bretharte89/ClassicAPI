@@ -2360,6 +2360,44 @@ enum Offsets {
     FUN_STORM_SMEM_ALLOC = 0x006462E0,
     FUN_STORM_SMEM_FREE = 0x00646430,
 
+    // Engine's main file-content reader. Used by the TOC parser at
+    // `FUN_TOC_PARSER` to slurp addon `.toc` files and by the addon
+    // load pass for `.lua` source. Allocates a Storm buffer via
+    // `FUN_STORM_SMEM_ALLOC`, writes the file content + `extraBytes`
+    // trailing zeros, hands the buffer to the caller. Caller frees
+    // via `FUN_STORM_SMEM_FREE`.
+    //
+    //   __cdecl int FileRead(
+    //       int          unused,         // always 0 from engine call sites
+    //       const char  *path,           // "Interface\AddOns\X\Y.lua"
+    //       void       **outBuf,         // Storm-allocated content
+    //       size_t      *outSize,        // optional, may be NULL
+    //       size_t       extraBytes,     // trailing zero-fill (1 for nul-term)
+    //       int          flag1,          // always 1 from TOC parser
+    //       int          flag2);         // 0
+    //   Returns 1 on success, 0 on failure.
+    //
+    // We hook this to redirect reads of `Interface\AddOns\!!!ClassicAPI\*`
+    // to embedded buffers (see src/addons/Embedded.cpp). Allocating via
+    // the same Storm allocator the engine uses means the caller's
+    // normal `SMemFree` works without us tracking lifetime.
+    FUN_FILE_READ = 0x00648620,
+
+    // TOC parser — `__fastcall(this=addonName)`. Already documented in
+    // CLAUDE.md under "AddOn registry & hot-reload". Dedup-safe: if
+    // the addon is already in the hash table, returns immediately
+    // without re-parsing. Reads the TOC file via `FUN_FILE_READ`. We
+    // call this from the post-`FUN_ADDON_INIT` hook to register the
+    // embedded `!!!ClassicAPI` addon — the dedup behavior means our
+    // call is a no-op when the user has the addon installed on disk.
+    FUN_TOC_PARSER = 0x0051C9B0,
+
+    // AddOn registry init — `__fastcall(accountName)`. Documented in
+    // CLAUDE.md ("AddOn registry & hot-reload"). Hooked post-call so
+    // we can splice the embedded addon entry into the freshly-populated
+    // registry before the load pass.
+    FUN_ADDON_INIT = 0x0051C740,
+
     // `SStrDup(const char *src, const char *file, int line)`. `__stdcall`.
     // Storm's string-copy wrapper around `SMemAlloc` — used by the engine
     // itself to populate event entry names. We use it from `Event::Custom`

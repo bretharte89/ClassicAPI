@@ -164,8 +164,19 @@ The triple-`!` prefix is **load-order-significant** — WoW loads
 addons alphabetically, so `!!!ClassicAPI` is guaranteed to run before
 any consumer that depends on its globals. Don't rename the folder.
 
-To install: copy [`AddOns/!!!ClassicAPI/`](AddOns/!!!ClassicAPI/) into
-your `Interface/AddOns/` directory.
+**You don't have to install the addon manually** — the DLL embeds
+the contents of [`AddOns/!!!ClassicAPI/`](AddOns/!!!ClassicAPI/) and
+registers them with the engine as a synthetic addon on startup, so
+the library is always available when the DLL is loaded. The engine
+sees it as a normal addon: it appears in `GetAddOnInfo`, fires
+`ADDON_LOADED`, supports `SavedVariables`, the works.
+
+If you do drop the folder into your `Interface/AddOns/` directory,
+**that copy wins** — the DLL's embedded version is only registered
+when the engine's normal scan doesn't already have an entry under
+that name. Useful for editing the Lua locally without rebuilding the
+DLL. The dispatch is transparent: addons consuming `Mixin`,
+`ColorMixin`, `TableUtil`, etc. behave identically in both cases.
 
 ## Bundled addon: DebugTools
 

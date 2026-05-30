@@ -25,7 +25,31 @@ set(TINYCBOR_SOURCES
     external/tinycbor/src/cborparser_float.c
     external/tinycbor/src/cborerrorstrings.c)
 
-add_library(${PROJECT_NAME} SHARED ${SOURCES} ${HEADERS} ${TINYCBOR_SOURCES})
+# Bundle `AddOns/!!!ClassicAPI/` into a generated header so the DLL can
+# surface the addon to the engine even when the user doesn't have it
+# installed on disk. The file-read hook in `src/addons/Embedded.cpp`
+# returns these buffers when the engine asks for paths under
+# `Interface\AddOns\!!!ClassicAPI\`.
+set(EMBEDDED_CLASSICAPI_SRC "${CMAKE_CURRENT_SOURCE_DIR}/AddOns/!!!ClassicAPI")
+set(EMBEDDED_CLASSICAPI_HEADER "${CMAKE_BINARY_DIR}/generated/embedded_classicapi.h")
+file(GLOB_RECURSE EMBEDDED_CLASSICAPI_FILES CONFIGURE_DEPENDS
+     "${EMBEDDED_CLASSICAPI_SRC}/*")
+add_custom_command(
+    OUTPUT "${EMBEDDED_CLASSICAPI_HEADER}"
+    COMMAND ${CMAKE_COMMAND}
+        -DSRC_DIR=${EMBEDDED_CLASSICAPI_SRC}
+        -DOUT_HEADER=${EMBEDDED_CLASSICAPI_HEADER}
+        -DADDON_NAME=ClassicAPI
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_addon.cmake"
+    DEPENDS
+        ${EMBEDDED_CLASSICAPI_FILES}
+        "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_addon.cmake"
+    COMMENT "Embedding !!!ClassicAPI addon into ${EMBEDDED_CLASSICAPI_HEADER}"
+    VERBATIM)
+
+add_library(${PROJECT_NAME} SHARED
+    ${SOURCES} ${HEADERS} ${TINYCBOR_SOURCES}
+    ${EMBEDDED_CLASSICAPI_HEADER})
 
 # Dev-build sentinel — represents "newer than every plausible
 # release". Encoded as v9999.99.99 = 9999 * 10000 + 99 * 100 + 99 =
@@ -59,6 +83,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE minhook advapi32)
 
 target_include_directories(
   ${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
+                          ${CMAKE_BINARY_DIR}/generated
                           external/minhook/include
                           external
                           external/tinycbor/src)
