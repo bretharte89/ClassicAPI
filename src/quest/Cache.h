@@ -40,15 +40,83 @@ inline const uint8_t *Peek(uint32_t questID) {
 }
 
 // Field offsets within the data block returned by `Lookup`.
-constexpr int OFF_TITLE = 0x9C;
+//
+// Derived from the engine's own `Script_GetQuestLog*` accessors at
+// `0x004DF930..0x004E12B0`. Each accessor calls `_GetRecord` then
+// reads from one of these offsets; the existing comment block on each
+// constant identifies the source function. See CLAUDE.md's
+// "Quest static-info cache" section for the full trace.
+
+// Quest level — uint32. Source: `FUN_004df340` (called by
+// `Script_GetQuestLogTitle`) does `mov eax, [block + 0x08]` and
+// pushes it as `level`.
+constexpr int OFF_LEVEL = 0x08;
+// Quest sort/category pointer — used by the quest log UI to group
+// entries under headers. Source: `FUN_004dee60` reads `block[+0x0C]`
+// and matches against `VAR_QUEST_LOG_CATEGORY_TABLE` to find the
+// containing collapsible header index.
+constexpr int OFF_SORT_PTR = 0x0C;
+// QuestInfo.dbc row — uint32 row index into the small DBC at
+// `0x00C0D9CC` (records) / `0x00C0D9D0` (count). Each record is
+// `{id@+0, char *name[locale]@+4}`; the localized name is the
+// quest-type tag string ("Dungeon", "Raid", "Group", "PvP", "Elite"
+// — modern WoW's `frequency`/`questTag`). Source: `FUN_004df2a0`.
+constexpr int OFF_QUEST_INFO_ROW = 0x10;
+// Signed money delta — int32. Positive = reward copper, negative =
+// `-required` copper. The engine has two accessors that share this
+// field with complementary sign:
+//   - `Script_GetQuestLogRewardMoney`   returns max(0, +money)
+//   - `Script_GetQuestLogRequiredMoney` returns max(0, -money)
+constexpr int OFF_MONEY_DELTA = 0x28;
+// Level-cap reward money bonus — int32. Added to the reward when
+// the player's level is ≥ 60. Source: `Script_GetQuestLogRewardMoney`
+// does `cmp [player.unit + 0x70], 0x3C` (level >= 60) then
+// `add edx, [block + 0x2C]`.
+constexpr int OFF_LEVEL_CAP_BONUS_MONEY = 0x2C;
+// Reward spellID — int32. 0 = no spell reward. Source:
+// `Script_GetQuestLogRewardSpell` does `mov eax, [block + 0x30]` then
+// resolves the SpellIcon path and locale-applied name via `Spell.dbc`.
+constexpr int OFF_REWARD_SPELL_ID = 0x30;
+// Quest flags — uint32. Bit definitions match modern WoW's
+// `QUEST_FLAGS_*` enum, of which only bit 3 (`0x08` SHARABLE) is
+// confirmed-tested by the engine (`Script_GetQuestLogPushable`'s
+// `test byte ptr [block + 0x38], 0x08`). Other bits are presumed
+// stored but unverified.
+constexpr int OFF_QUEST_FLAGS = 0x38;
 // Reward and choice item arrays — up to 4 reward and 6 choice
 // itemIDs stored inline (4 bytes each). 0 in any slot means
 // "no item in this slot". Used by `GetQuestLogItemLink` /
 // `GetQuestLogItemID`.
+//
+// Each itemID array is paired with a parallel uint32 count array
+// (the "how many of this item" reward). Layout in cache memory:
+//   +0x3C  RewardItems[4]
+//   +0x4C  RewardItemsCount[4]
+//   +0x5C  ChoiceItems[6]
+//   +0x74  ChoiceItemsCount[6]
+// Verified from `Script_GetQuestLogRewardInfo` (`fild [block + slot*4 + 0x4C]`
+// for numItems) and `Script_GetQuestLogChoiceInfo` (`fild [block + slot*4 + 0x74]`).
 constexpr int OFF_REWARD_ITEMS = 0x3C;
+constexpr int OFF_REWARD_ITEMS_COUNT = 0x4C;
 constexpr int OFF_CHOICE_ITEMS = 0x5C;
+constexpr int OFF_CHOICE_ITEMS_COUNT = 0x74;
 constexpr int REWARD_COUNT = 4;
 constexpr int CHOICE_COUNT = 6;
+constexpr int OFF_TITLE = 0x9C;
+// Inline narrative text — both locale-applied and printf-style
+// format-expanded by the engine's variable substituter at
+// `0x00506F70` (handles tokens like `$N` for player name, `$C` for
+// class, etc.). Source: `Script_GetQuestLogQuestText` reads both,
+// pushes `description` first then `objectives`.
+//
+// We deliberately expose the *raw* inline bytes, not the format-
+// expanded version, because the substituter wants a 1024-byte
+// scratch buffer and the substitutions (player name, class) belong
+// in the addon layer anyway. Addons can run `string.gsub` if they
+// need the runtime values, otherwise raw text is more useful for
+// guides / databases.
+constexpr int OFF_OBJECTIVES = 0x29C;
+constexpr int OFF_DESCRIPTION = 0xA9C;
 // Objective arrays — four uint32[4] parallel slabs carrying
 // SMSG_QUEST_QUERY_RESPONSE's RequiredNPCOrGo / Count / Item / Count
 // fields verbatim. NPC-or-GO is **signed**: positive = creature

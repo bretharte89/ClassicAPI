@@ -238,6 +238,7 @@ build instructions.
   - [`C_QuestLog.IsOnQuest(questID)`](#c_questlogisonquestquestid)
   - [`C_QuestLog.IsUnitOnQuest(unit, questID)`](#c_questlogisunitonquestunit-questid)
   - [`C_QuestLog.GetTitleForQuestID(questID)`](#c_questloggettitleforquestidquestid)
+  - [`C_QuestLog.GetQuestDetails(questID)`](#c_questloggetquestdetailsquestid)
   - [`C_QuestLog.IsQuestDataCachedByID(questID)`](#c_questlogisquestdatacachedbyidquestid)
   - [`GetQuestLogLeaderBoardID(objectiveIndex [, questIndex])`](#getquestlogleaderboardidobjectiveindex--questindex)
 
@@ -5620,6 +5621,73 @@ f:SetScript("OnEvent", function()
 end)
 C_QuestLog.RequestLoadQuestByID(215)
 ```
+
+### `C_QuestLog.GetQuestDetails(questID)`
+
+Returns a table with every field we know how to read from the engine's
+quest static-info cache for `questID`, or `nil` if the data isn't
+loaded. One round-trip alternative to calling
+`GetTitleForQuestID` / `GetQuestLogRewardMoney` / etc. across each of
+its individual accessors. Quest-helper-style addons that want
+structured data per quest are the primary consumers.
+
+Like `GetTitleForQuestID`, this is a pure cache probe — pair it with
+`C_QuestLog.RequestLoadQuestByID` and listen for
+`QUEST_DATA_LOAD_RESULT` if the quest isn't already cached.
+
+#### Returned table
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `questID` | number | Echo of the input. |
+| `title` | string | Locale-applied. |
+| `level` | number | Quest level from the static record. |
+| `questType` | string \| absent | Localized tag string — `"Elite"`, `"Group"`, `"PvP"`, `"Dungeon"`, `"Raid"` — sourced from `QuestInfo.dbc`. Field is omitted for plain quests with no tag. |
+| `rewardMoney` | number | Reward copper. `0` if the quest *requires* money instead. |
+| `requiredMoney` | number | Copper the player must hand in to complete (e.g. quartermaster contributions). `0` for quests with no money requirement. |
+| `rewardMoneyAtMaxLevel` | number | Vanilla's level-60 reward bonus. Added to `rewardMoney` when the player is level 60; populated even on low-level quests. |
+| `rewardSpellID` | number | `spellID` of a spell taught on completion (e.g. profession recipes), or `0` for no spell reward. |
+| `questFlags` | number | Raw `QUEST_FLAGS_*` bitfield — only bit `0x08` (sharable) is positively confirmed-tested by the vanilla engine; other bits are presumed-stored but unverified. |
+| `isSharable` | boolean | Convenience extraction of bit `0x08` from `questFlags`. |
+| `description` | string | The questgiver's narrative text. Raw — printf-style `$N` (player name), `$C` (class), `$R` (race) tokens are **not** substituted; use `string.gsub` if you need runtime values. |
+| `objectives` | string | The "what you must do" summary text, same raw / un-substituted format as `description`. |
+| `rewardItems` | array of `{id, count}` | Items the quest gives unconditionally on turn-in. Empty when there are no fixed rewards (most quests with choice rewards have no fixed rewards). |
+| `choiceItems` | array of `{id, count}` | "Pick one" reward items. Empty when none. |
+| `requirements` | array of `{kind, id, count}` | Objectives. `kind` is `"monster"` (creature), `"object"` (gameobject — usually clickable world props), or `"item"` (collect / interact). Order: NPC/GO objectives first, then item objectives, both 1-indexed. Only non-empty slots included. |
+
+XP rewards aren't exposed — vanilla 1.12 has no `GetQuestLogRewardXP`,
+and per emulator-decoded packet structure, the server doesn't include
+an XP field in `SMSG_QUEST_QUERY_RESPONSE`. XP is computed
+server-side at turn-in from level-scaling tables.
+
+#### Example
+
+```lua
+local f = CreateFrame("Frame")
+f:RegisterEvent("QUEST_DATA_LOAD_RESULT")
+f:SetScript("OnEvent", function()
+    if event == "QUEST_DATA_LOAD_RESULT" and arg2 == 1 then
+        local d = C_QuestLog.GetQuestDetails(arg1)
+        if d then
+            print(d.title, "level", d.level, d.questType or "(no tag)")
+            for _, r in ipairs(d.requirements) do
+                print("  -", r.kind, r.id, "x", r.count)
+            end
+        end
+    end
+end)
+C_QuestLog.RequestLoadQuestByID(1467)
+```
+
+Sample output for quest 1467 (`"Reagents for Reclaimers Inc."`):
+
+```
+Reagents for Reclaimers Inc.  level 40  (no tag)
+  - item 6253 x 1
+```
+
+with `d.choiceItems = {{id=6793, count=1}, {id=6794, count=1}}`,
+`d.rewardMoney = 3500`, `d.rewardMoneyAtMaxLevel = 1920`, etc.
 
 ### `C_QuestLog.IsQuestDataCachedByID(questID)`
 
