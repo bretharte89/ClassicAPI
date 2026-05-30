@@ -49,6 +49,7 @@
 #include "Offsets.h"
 
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 
 namespace Addons::Embedded {
@@ -56,6 +57,7 @@ namespace Addons::Embedded {
 namespace {
 
 constexpr const char *kAddonName = "!!!ClassicAPI";
+constexpr const char *kAddonTocFile = "!!!ClassicAPI.toc";
 
 // `Interface\AddOns\!!!ClassicAPI\` — the prefix the engine
 // constructs for any of our addon's files. Comparing case-
@@ -120,6 +122,129 @@ using FileRead_t = int(__stdcall *)(int unused, const char *path, void **outBuf,
                                     int flag1, int flag2);
 FileRead_t FileRead_o = nullptr;
 
+// Storm-allocator free. Used to release the disk-TOC buffer after we
+// scrape its version line — same path the engine itself uses when
+// `FileRead_o` succeeded and the caller's done with the result.
+//   __stdcall void SMemFree(void *buf, const char *file, int line, int flags)
+using SMemFree_t = void(__stdcall *)(void *buf, const char *file, int line, int flags);
+
+// Extracts the value of the `## Version: X` line from a TOC byte
+// buffer. Writes into `out` (size `outSize`) and returns true on
+// success. The TOC format is `## Key: Value`, one per line, case-
+// sensitive on the key. Returns false if no Version line is found.
+bool ExtractTocVersion(const char *content, size_t size,
+                       char *out, size_t outSize) {
+    static const char kKey[] = "## Version:";
+    constexpr size_t kKeyLen = sizeof(kKey) - 1;
+    for (size_t i = 0; i + kKeyLen <= size; ++i) {
+        const bool atLineStart = (i == 0) || content[i - 1] == '\n';
+        if (!atLineStart) continue;
+        if (std::memcmp(content + i, kKey, kKeyLen) != 0) continue;
+        const char *p = content + i + kKeyLen;
+        const char *end = content + size;
+        while (p < end && (*p == ' ' || *p == '\t')) ++p;
+        size_t j = 0;
+        while (p < end && *p != '\r' && *p != '\n' && j + 1 < outSize) {
+            out[j++] = *p++;
+        }
+        while (j > 0 && (out[j - 1] == ' ' || out[j - 1] == '\t')) --j;
+        out[j] = '\0';
+        return j > 0;
+    }
+    if (outSize > 0) out[0] = '\0';
+    return false;
+}
+
+// Returns -1/0/+1 for `a < b` / `a == b` / `a > b`. "DEV" is a
+// sentinel meaning "newer than any real release" — local dev builds
+// always win against installed-on-disk versions. Otherwise the two
+// strings are walked as dot-separated numeric semver components
+// (`1.2` < `1.10`).
+int CompareVersions(const char *a, const char *b) {
+    const bool aDev = std::strcmp(a, "DEV") == 0;
+    const bool bDev = std::strcmp(b, "DEV") == 0;
+    if (aDev && bDev) return 0;
+    if (aDev) return 1;
+    if (bDev) return -1;
+    while (*a || *b) {
+        int va = 0, vb = 0;
+        while (*a >= '0' && *a <= '9') { va = va * 10 + (*a - '0'); ++a; }
+        while (*b >= '0' && *b <= '9') { vb = vb * 10 + (*b - '0'); ++b; }
+        if (va != vb) return va < vb ? -1 : 1;
+        if (*a == '.') ++a;
+        if (*b == '.') ++b;
+        if (!*a && !*b) break;
+        if (!*a) return -1;
+        if (!*b) return 1;
+    }
+    return 0;
+}
+
+// Pre-extracted embedded TOC version, populated lazily on first
+// FileRead_h call under our prefix. Empty until populated.
+char g_embeddedVersion[64] = "";
+
+// Which source wins the embed-vs-disk comparison, decided once on
+// first relevant file read.
+enum class Source { Undecided, Disk, Embedded };
+Source g_source = Source::Undecided;
+
+void EnsureEmbeddedVersionExtracted() {
+    if (g_embeddedVersion[0] != '\0') return;
+    for (size_t i = 0; i < ClassicAPIFiles::kFileCount; ++i) {
+        if (PathEqualsCI(kAddonTocFile, ClassicAPIFiles::kFiles[i].path)) {
+            ExtractTocVersion(
+                reinterpret_cast<const char *>(ClassicAPIFiles::kFiles[i].data),
+                ClassicAPIFiles::kFiles[i].size,
+                g_embeddedVersion, sizeof(g_embeddedVersion));
+            return;
+        }
+    }
+}
+
+// Decide whether disk or embedded should serve all reads for this
+// addon. Called on the first FileRead_h call with a matching prefix.
+// Reads the on-disk TOC via the original `FUN_FILE_READ` (bypassing
+// our hook), parses its version, compares to the embedded version,
+// and caches the winner. If disk has no TOC at all, embedded wins by
+// default.
+void DecideSource() {
+    if (g_source != Source::Undecided) return;
+    EnsureEmbeddedVersionExtracted();
+
+    char fullPath[256];
+    std::snprintf(fullPath, sizeof(fullPath), "%s%s",
+                  kAddonPathPrefix, kAddonTocFile);
+
+    void *diskBuf = nullptr;
+    size_t diskSize = 0;
+    const int ok = FileRead_o(0, fullPath, &diskBuf, &diskSize, 1, 1, 0);
+    if (ok == 0 || diskBuf == nullptr) {
+        g_source = Source::Embedded;
+        return;
+    }
+
+    char diskVersion[64] = "";
+    ExtractTocVersion(static_cast<const char *>(diskBuf), diskSize,
+                      diskVersion, sizeof(diskVersion));
+
+    // Free the disk buffer we just borrowed — we only needed it for
+    // the version-line scrape. The actual content for the engine's
+    // TOC read comes through the regular hook path below.
+    auto SMemFree = reinterpret_cast<SMemFree_t>(Offsets::FUN_STORM_SMEM_FREE);
+    SMemFree(diskBuf, __FILE__, __LINE__, 0);
+
+    // Missing or unparseable disk version → assume it's older than
+    // anything we ship, embedded wins.
+    if (diskVersion[0] == '\0') {
+        g_source = Source::Embedded;
+        return;
+    }
+
+    const int cmp = CompareVersions(g_embeddedVersion, diskVersion);
+    g_source = (cmp > 0) ? Source::Embedded : Source::Disk;
+}
+
 int __stdcall FileRead_h(int unused, const char *path, void **outBuf,
                          size_t *outSize, size_t extraBytes,
                          int flag1, int flag2) {
@@ -131,20 +256,29 @@ int __stdcall FileRead_h(int unused, const char *path, void **outBuf,
                           flag1, flag2);
     }
 
-    // **Disk wins.** Always try the original (disk) read first. If the
-    // user has the addon installed on disk, the engine's normal scan
-    // picks it up and registers it; if we returned our embedded
-    // content here instead, we'd replace the disk content with the
-    // embedded version — defeating the "power users edit on disk"
-    // promise. Only fall back to embedded if the disk read fails
-    // (file doesn't exist), which is exactly the case where the
-    // embedded version should kick in.
-    const int diskResult = FileRead_o(unused, path, outBuf, outSize,
-                                       extraBytes, flag1, flag2);
-    if (diskResult != 0) return diskResult;
+    DecideSource();
 
+    if (g_source == Source::Disk) {
+        // Disk version is at least as new — serve disk. If disk
+        // doesn't have this specific file (e.g. embedded has files
+        // disk doesn't), fall through and try embedded.
+        const int diskResult = FileRead_o(unused, path, outBuf, outSize,
+                                           extraBytes, flag1, flag2);
+        if (diskResult != 0) return diskResult;
+    }
+
+    // Source::Embedded path, OR Source::Disk-but-file-missing fallback.
+    // Look up the embedded version and synthesize a Storm buffer the
+    // caller can free normally.
     const auto *entry = LookupEmbedded(suffix);
-    if (entry == nullptr) return 0;
+    if (entry == nullptr) {
+        // Not in our embedded set either — let the engine try disk
+        // one more time (returns 0 if that also fails). Covers
+        // pathological cases like an empty disk install + embedded
+        // missing some file.
+        return FileRead_o(unused, path, outBuf, outSize, extraBytes,
+                          flag1, flag2);
+    }
 
     auto SMemAlloc = reinterpret_cast<SMemAlloc_t>(
         Offsets::FUN_STORM_SMEM_ALLOC);
