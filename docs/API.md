@@ -5646,14 +5646,21 @@ Like `GetTitleForQuestID`, this is a pure cache probe — pair it with
 | `rewardMoney` | number | Reward copper. `0` if the quest *requires* money instead. |
 | `requiredMoney` | number | Copper the player must hand in to complete (e.g. quartermaster contributions). `0` for quests with no money requirement. |
 | `rewardMoneyAtMaxLevel` | number | Vanilla's level-60 reward bonus. Added to `rewardMoney` when the player is level 60; populated even on low-level quests. |
-| `rewardSpellID` | number | `spellID` of a spell taught on completion (e.g. profession recipes), or `0` for no spell reward. |
+| `rewardSpellID` | number | `spellID` of a spell *taught* on completion (e.g. profession recipes), or `0` for no learned spell reward. |
+| `srcItemID` | number | `itemID` the questgiver hands the player on accept (e.g. the sigil in *"Verdant Sigil"* — given on accept, read by the player, then turned back in). `0` = no source item. Same as the quest's `requirements[].id` for "give-then-return" quests. |
 | `questFlags` | number | Raw `QUEST_FLAGS_*` bitfield — only bit `0x08` (sharable) is positively confirmed-tested by the vanilla engine; other bits are presumed-stored but unverified. |
 | `isSharable` | boolean | Convenience extraction of bit `0x08` from `questFlags`. |
 | `description` | string | The questgiver's narrative text. Raw — printf-style `$N` (player name), `$C` (class), `$R` (race) tokens are **not** substituted; use `string.gsub` if you need runtime values. |
 | `objectives` | string | The "what you must do" summary text, same raw / un-substituted format as `description`. |
-| `rewardItems` | array of `{id, count}` | Items the quest gives unconditionally on turn-in. Empty when there are no fixed rewards (most quests with choice rewards have no fixed rewards). |
+| `completionText` | string | The "now turn it in" text shown on the reward UI panel after objectives are met. Often empty for simple quests; populated for narrative-heavy ones. Modern API name: `GetQuestLogCompletionText`. |
+| `poi` | table \| absent | Point-of-interest marker (`{mapID, x, y, opt}`). Set on quests with a server-supplied "go here" location; omitted when `mapID == 0`. |
+| `rewardItems` | array of `{id, count}` | Items the quest gives unconditionally on turn-in. Empty when there are no fixed rewards. |
 | `choiceItems` | array of `{id, count}` | "Pick one" reward items. Empty when none. |
-| `requirements` | array of `{kind, id, count}` | Objectives. `kind` is `"monster"` (creature), `"object"` (gameobject — usually clickable world props), or `"item"` (collect / interact). Order: NPC/GO objectives first, then item objectives, both 1-indexed. Only non-empty slots included. |
+| `requirements` | array of `{kind, id, count, text}` | Objectives. `kind` is `"monster"` (creature), `"object"` (gameobject), or `"item"` (collect / interact). `text` is the questgiver's per-objective override (e.g. `"Investigate the cave"` instead of the auto-generated `"Mor'shan Bear: 0/8"`); empty string means use the auto-format. Order: NPC/GO objectives first, then item objectives, both 1-indexed. Only non-empty slots included. |
+
+> **Not included** — race, class, skill, time limit, and suggested-player count. Vanilla 1.12's `SMSG_QUEST_QUERY_RESPONSE` doesn't ship those fields; the server enforces them and filters quests *before* broadcasting, so the client only ever sees quests it could accept and never receives the static restriction values. Verified empirically: a race-restricted starter (`3120` Verdant Sigil — Night Elf Druid only), a dungeon quest (`914`), and a timed delivery (`3364` Scalding Mornbrew — 5-min authored timer) all have those cache slots zero-filled in memory. **Addons that need that data must source it from an external scraped database** like pfQuest's.
+>
+> **Field reliability:** everything currently returned is either confirmed-correct via the engine's own `Script_GetQuestLog*` accessors or empirically verified against in-game quest semantics. The `poi` field is the only remaining hypothesis — its offsets are confirmed but no test quest has yet exercised it.
 
 XP rewards aren't exposed — vanilla 1.12 has no `GetQuestLogRewardXP`,
 and per emulator-decoded packet structure, the server doesn't include

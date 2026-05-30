@@ -77,9 +77,23 @@ void PushItemArray(void *L, const uint32_t *ids, const uint32_t *counts,
     }
 }
 
+// Per-objective override text — the 4-slot array at `+0x14DC` with
+// 256-byte stride. Index in objective-declaration order (NPC/GO first,
+// then item, same enumeration the LeaderBoard accessor walks).
+// Returns empty string for slots past the cache's 4-entry capacity
+// or for slots with an empty buffer (engine auto-formats those).
+const char *OverrideTextFor(const uint8_t *data, int objectiveSlot) {
+    if (objectiveSlot < 0 || objectiveSlot >= Quest::Cache::OBJECTIVE_TEXT_COUNT)
+        return "";
+    return reinterpret_cast<const char *>(
+        data + Quest::Cache::OFF_OBJECTIVE_TEXT +
+        objectiveSlot * Quest::Cache::OBJECTIVE_TEXT_STRIDE);
+}
+
 void PushRequirements(void *L, const uint8_t *data) {
     Game::Lua::NewTable(L);
     int next = 1;
+    int overrideSlot = 0;
 
     auto *npcOrGo = reinterpret_cast<const int32_t *>(
         data + Quest::Cache::OFF_REQUIRED_NPC_OR_GO);
@@ -96,6 +110,8 @@ void PushRequirements(void *L, const uint8_t *data) {
                                   static_cast<double>(v > 0 ? v : -v));
         Game::Lua::SetFieldNumber(L, "count",
                                   static_cast<double>(npcOrGoCount[i]));
+        Game::Lua::SetFieldString(L, "text",
+                                  OverrideTextFor(data, overrideSlot++));
         Game::Lua::SetTable(L, -3);
     }
 
@@ -112,6 +128,8 @@ void PushRequirements(void *L, const uint8_t *data) {
         Game::Lua::SetFieldNumber(L, "id", static_cast<double>(items[i]));
         Game::Lua::SetFieldNumber(L, "count",
                                   static_cast<double>(itemCounts[i]));
+        Game::Lua::SetFieldString(L, "text",
+                                  OverrideTextFor(data, overrideSlot++));
         Game::Lua::SetTable(L, -3);
     }
 }
@@ -139,6 +157,10 @@ int __fastcall Script_GetQuestDetails(void *L) {
         return reinterpret_cast<const char *>(data + off);
     };
 
+    const auto f32 = [data](int off) {
+        return *reinterpret_cast<const float *>(data + off);
+    };
+
     Game::Lua::NewTable(L);
 
     Game::Lua::SetFieldNumber(L, "questID", static_cast<double>(questID));
@@ -152,6 +174,12 @@ int __fastcall Script_GetQuestDetails(void *L) {
             Game::Lua::SetFieldString(L, "questType", tag);
     }
 
+    // Race / class / skill / timer / suggested-players gates aren't
+    // here intentionally — vanilla 1.12's quest-query response leaves
+    // those cache slots (+0x14..+0x24) zero-filled; the server enforces
+    // those constraints and only ships quests to clients who could
+    // accept them. Addons that need that data must source it from an
+    // external scraped DB (pfQuest-style).
     const int32_t money = i32(Quest::Cache::OFF_MONEY_DELTA);
     Game::Lua::SetFieldNumber(L, "rewardMoney",
                               money > 0 ? static_cast<double>(money) : 0.0);
@@ -163,6 +191,9 @@ int __fastcall Script_GetQuestDetails(void *L) {
     Game::Lua::SetFieldNumber(
         L, "rewardSpellID",
         static_cast<double>(i32(Quest::Cache::OFF_REWARD_SPELL_ID)));
+    Game::Lua::SetFieldNumber(
+        L, "srcItemID",
+        static_cast<double>(u32(Quest::Cache::OFF_SRC_ITEM_ID)));
 
     const uint32_t flags = u32(Quest::Cache::OFF_QUEST_FLAGS);
     Game::Lua::SetFieldNumber(L, "questFlags", static_cast<double>(flags));
@@ -172,6 +203,19 @@ int __fastcall Script_GetQuestDetails(void *L) {
                               str(Quest::Cache::OFF_DESCRIPTION));
     Game::Lua::SetFieldString(L, "objectives",
                               str(Quest::Cache::OFF_OBJECTIVES));
+    Game::Lua::SetFieldString(L, "completionText",
+                              str(Quest::Cache::OFF_COMPLETION_TEXT));
+
+    if (const uint32_t mapID = u32(Quest::Cache::OFF_POI_MAP_ID)) {
+        Game::Lua::PushString(L, "poi");
+        Game::Lua::NewTable(L);
+        Game::Lua::SetFieldNumber(L, "mapID", static_cast<double>(mapID));
+        Game::Lua::SetFieldNumber(L, "x", static_cast<double>(f32(Quest::Cache::OFF_POI_X)));
+        Game::Lua::SetFieldNumber(L, "y", static_cast<double>(f32(Quest::Cache::OFF_POI_Y)));
+        Game::Lua::SetFieldNumber(L, "opt",
+                                  static_cast<double>(u32(Quest::Cache::OFF_POI_OPT)));
+        Game::Lua::SetTable(L, -3);
+    }
 
     Game::Lua::PushString(L, "rewardItems");
     PushItemArray(L,
