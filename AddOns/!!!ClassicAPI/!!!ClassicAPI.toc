@@ -29,3 +29,4 @@ Util\PlayerUtil.lua
 Util\SlashCommandsRegistry.lua
 Util\LinkUtil.lua
 Util\IconDataProvider.lua
+Util\GameTooltip.lua
