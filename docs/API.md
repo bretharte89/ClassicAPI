@@ -200,7 +200,6 @@ build instructions.
   - [`CastSpellNoToggle` as a macro cast line](#castspellnotoggle-as-a-macro-cast-line)
   - [`GetMacroSpell(macroSlot)`](#getmacrospellmacroslot)
   - [`GetMacroIcons` / `GetMacroItemIcons` / `GetLooseMacroIcons` / `GetLooseMacroItemIcons`](#getmacroicons--getmacroitemicons--getloosemacroicons--getloosemacroitemicons)
-  - [`IconDataProviderMixin`](#icondataprovidermixin)
 
 - [Map](#map)
   - [`C_Map.GetBestMapForUnit(unitToken)`](#c_mapgetbestmapforunitunittoken)
@@ -4725,62 +4724,6 @@ MPQ will appear in both the loose and mpq lists).
 
 The vanilla legacy globals `GetNumMacroIcons` / `GetMacroIconInfo`
 remain available unchanged.
-
-### `IconDataProviderMixin`
-
-Lua-side wrapper (ported from
-`Blizzard_FrameXMLBase/Classic/IconDataProvider.lua`) around the four
-mutators above. Bundles `Spell` and `Item` buckets into one stateful
-provider with an optional "extras" prepend section, and exposes the
-modern `GetIconByIndex(i)` / `GetNumIcons()` / `GetIndexOfIcon(icon)`
-/ `Release()` / `GetIconForSaving(i)` API the modern Macro UI and
-Equipment Manager icon-pickers consume.
-
-```lua
--- Equipment Manager icon picker (matches modern Cata code as-written):
-local provider = CreateAndInitFromMixin(IconDataProviderMixin,
-                                         IconDataProviderExtraType.Equipment)
-provider:GetNumIcons()              -- total count (1 + extras + base)
-provider:GetIconByIndex(1)          -- always the `?` sentinel
-provider:GetIconByIndex(2)          -- first equipped-item icon
--- ...
-provider:Release()                  -- decref + collectgarbage when last ref drops
-```
-
-`IconDataProviderExtraType`:
-
-- `Spellbook` — pre-walks the spellbook tabs
-  (`GetNumSpellTabs` / `GetSpellTabInfo` / `GetSpellTexture`) **and**
-  the three vanilla talent trees
-  (`GetNumTalentTabs` / `GetNumTalents` / `GetTalentInfo`), gathering
-  every talent's icon — including talents the player hasn't put points
-  into. Dedups via a set, prepends to the picker. Vanilla doesn't have
-  spec groups or PvP talents, so dual-spec / PvP-talent walks present
-  in modern's `IconDataProvider.lua` are omitted. Spells not surfaced
-  in the spellbook UI (racials kept off the bar, profession recipes
-  the engine doesn't list as spells) are still missed — that's a
-  vanilla data limitation, not a port omission.
-- `Equipment` — pre-walks `INVSLOT_FIRST_EQUIPPED..INVSLOT_LAST_EQUIPPED`
-  via `GetInventoryItemTexture("player", i)`.
-- `None` — no prepend; base DB only.
-
-`IconDataProviderIconType`:
-
-- `Spell` (`= 1`) — `Ability_*` / `Spell_*` set.
-- `Item` (`= 2`) — `INV_*` set.
-
-The mixin doesn't cross-dedup between extras and the base DB — the
-player's currently-equipped weapon icon may appear twice in the
-final picker (once at the head as an "extra", once again later in
-its alphabetical spot inside the `INV_*` base list). That's
-deliberate; the modern engine has the same behavior. Pickers
-typically tolerate it because the extras section is short.
-
-Memory model matches modern: `BaseIconFilenames` is module-level
-state shared across all active providers. The first `Init` triggers
-the four engine calls (which collectively walk ~30k icon paths); on
-the last `Release`, `BaseIconFilenames` is nil'd and `collectgarbage()`
-runs explicitly.
 
 ## Map
 
