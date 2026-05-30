@@ -32,6 +32,12 @@ namespace Item::Swap {
 //   paperdoll slot `srcSlot` (1-based). Used for paperdoll-to-
 //   paperdoll swaps like rings 11/12, trinkets 13/14.
 //
+// - `ToBag(item, srcPaperdollSlot, dstBag, dstSlot)` — item currently
+//   in paperdoll slot, moving to a bag slot. The "unequip" direction
+//   `UseEquipmentSet` needs for slots the set wants empty. Uses the
+//   same atomic swap packet — server-side accept rules are identical
+//   (bagID 0..4, dst slot must be valid for that bag).
+//
 // All slot args are 1-based Lua-facing; helpers do the
 // linear-slot conversion. Returns `false` on bad args (slot out of
 // range, no player object, missing instance block on the item or
@@ -43,6 +49,8 @@ namespace Item::Swap {
 bool FromBag(const void *cgItem, int bagID, int slotInBag, int dstPaperdollSlot);
 
 bool FromPaperdoll(const void *cgItem, int srcPaperdollSlot, int dstPaperdollSlot);
+
+bool ToBag(const void *cgItem, int srcPaperdollSlot, int dstBagID, int dstSlotInBag);
 
 // General bag-to-bag swap — neither side is constrained to the
 // paperdoll. Same engine helper (`FUN_INVENTORY_SWAP`), which routes

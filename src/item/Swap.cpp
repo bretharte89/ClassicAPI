@@ -199,6 +199,38 @@ bool FromPaperdoll(const void *cgItem, int srcPaperdollSlot, int dstPaperdollSlo
                     dstPaperdollSlot);
 }
 
+bool ToBag(const void *cgItem, int srcPaperdollSlot, int dstBagID, int dstSlotInBag) {
+    if (srcPaperdollSlot < 1 || srcPaperdollSlot > 19)
+        return false;
+    if (cgItem == nullptr)
+        return false;
+
+    void *player = ResolvePlayer();
+    if (player == nullptr)
+        return false;
+    uint32_t playerLo = 0, playerHi = 0;
+    if (!ReadGuid(player, &playerLo, &playerHi))
+        return false;
+
+    uint32_t dstContainerLo = 0, dstContainerHi = 0, dstLinear = 0;
+    if (!EncodeBagSlot(dstBagID, dstSlotInBag,
+                       &dstContainerLo, &dstContainerHi, &dstLinear))
+        return false;
+
+    uint32_t itemLo = 0, itemHi = 0;
+    if (!ReadGuid(cgItem, &itemLo, &itemHi))
+        return false;
+
+    auto fn = reinterpret_cast<SwapFn_t>(Offsets::FUN_INVENTORY_SWAP);
+    fn(player,
+       itemLo, itemHi,
+       playerLo, playerHi,
+       static_cast<uint32_t>(srcPaperdollSlot - 1),
+       dstContainerLo, dstContainerHi, dstLinear,
+       0);
+    return true;
+}
+
 bool MoveCount(void *L, int srcBag, int srcSlot, int dstBag, int dstSlot, int count) {
     // Vanilla protocol writes count as a single byte. Clamp at 255;
     // anything larger would either truncate silently (255 sent) or

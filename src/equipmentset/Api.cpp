@@ -35,6 +35,7 @@
 #include "Offsets.h"
 #include "Set.h"
 #include "event/Custom.h"
+#include "item/Location.h"
 #include "item/Swap.h"
 
 #include <cstdint>
@@ -401,11 +402,54 @@ int __fastcall Script_UseEquipmentSet(void *L) {
     uint64_t guids[SLOT_COUNT];
     std::memcpy(guids, s->items, sizeof(guids));
 
+    // Snapshot empty bag slots up front. The CGItem state doesn't
+    // update between packet sends (server has to acknowledge each
+    // swap), so iterating the bag walk fresh per unequip would
+    // repeatedly pick the same "first empty" slot — second packet
+    // collides with what packet 1 just put there, and the server
+    // tries to swap that item back onto the wrong paperdoll slot
+    // → "This item cannot be equipped".
+    struct FreeSlot {
+        int bag;
+        int slot;
+    };
+    FreeSlot freeSlots[64];
+    int freeSlotCount = 0;
+    for (int bag = 0; bag <= 4 && freeSlotCount < 64; ++bag) {
+        const int slots = Item::Location::GetBagSlotCount(bag);
+        for (int slot = 1; slot <= slots && freeSlotCount < 64; ++slot) {
+            if (Item::Location::ResolveBag(L, bag, slot) == nullptr)
+                freeSlots[freeSlotCount++] = {bag, slot};
+        }
+    }
+    int nextFreeSlot = 0;
+
     for (int i = 0; i < SLOT_COUNT; ++i) {
         const int targetSlot = i + 1;
         const uint64_t g = guids[i];
-        if (g == GUID_EMPTY || g == GUID_IGNORED)
+
+        // GUID_IGNORED: leave whatever the player has in this slot
+        // as-is. Distinct from GUID_EMPTY (= 0), which means "this
+        // slot should be empty after the swap" — handled below.
+        if (g == GUID_IGNORED)
             continue;
+
+        if (g == GUID_EMPTY) {
+            // Set wants this slot empty. If it already is, no-op.
+            // Otherwise unequip whatever's there into the next bag
+            // slot we reserved during the pre-loop snapshot. If
+            // we've exhausted the snapshot, silently skip — matches
+            // the modern API which surfaces no per-slot reason.
+            const uint8_t *equipped =
+                Item::Location::ResolveEquipmentSlot(targetSlot);
+            if (equipped == nullptr)
+                continue;
+            if (nextFreeSlot >= freeSlotCount)
+                continue;
+            const FreeSlot &fs = freeSlots[nextFreeSlot++];
+            Item::Swap::ToBag(equipped, targetSlot, fs.bag, fs.slot);
+            continue;
+        }
 
         const int loc = Locations::FindGUID(g);
         if (loc == 0)
