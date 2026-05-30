@@ -1,0 +1,311 @@
+// This file is part of ClassicAPI.
+//
+// ClassicAPI is free software: you can redistribute it and/or modify it under the terms
+// of the GNU Lesser General Public License as published by the Free Software Foundation, either
+// version 3 of the License, or (at your option) any later version.
+//
+// ClassicAPI is distributed in the hope that it will be useful, but WITHOUT ANY
+// WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+// PURPOSE. See the GNU Lesser General Public License for more details.
+//
+// You should have received a copy of the GNU Lesser General Public License along with
+// ClassicAPI. If not, see <https://www.gnu.org/licenses/>.
+
+// `GetMacroIcons(list)` / `GetMacroItemIcons(list)` /
+// `GetLooseMacroIcons(list)` / `GetLooseMacroItemIcons(list)` —
+// the modern 4-function append-to-table icon enumeration surface.
+// Each takes a Lua table as its only argument and appends icon
+// basenames; returns nothing (mutation is the contract).
+//
+// Modern WoW's `IconDataProviderMixin` (see
+// `AddOns/!!!ClassicAPI/Util/IconDataProvider.lua`) calls all four
+// in this order to assemble its `BaseIconFilenames` cache:
+//
+//     GetLooseMacroIcons(spellList)
+//     GetLooseMacroItemIcons(itemList)
+//     GetMacroIcons(spellList)
+//     GetMacroItemIcons(itemList)
+//
+// The split is `loose` (icons dropped onto disk under
+// `Interface\Icons\` by the user) vs MPQ (icons baked into the game's
+// MPQ archives), crossed with `Spell` (basenames starting with
+// `Ability_` / `Spell_`) vs `Item` (basenames starting with `INV_`).
+// Modern engines maintain four parallel arrays in their loader; we
+// replicate the same scheme by hooking vanilla's three scan
+// callbacks and tagging each captured filename by its callback
+// source and basename prefix.
+//
+// **Data source (vanilla 1.12 / Octo):**
+//
+// - `FUN_MACRO_ICON_CB_DISK` (`LAB_004f0220`) — engine's disk-scan
+//   per-file callback. Files the user has dropped loose into
+//   `Interface\Icons\`. Filename arg is the full
+//   `"Interface\Icons\<name>.blp"` path. Tagged as `loose`.
+// - `FUN_MACRO_ICON_CB_USER_MPQ` (`FUN_004f0350`) — user-mounted
+//   patch-MPQ callback. Already prefix-filtered to `Ability_*` /
+//   `Spell_*` by the engine. Tagged as `mpq`.
+// - `FUN_MACRO_ICON_CB_INSTALL_MPQ` (`LAB_004f04f0`) — install-MPQ
+//   callback. Accepts any `.blp`/`.tga` (no prefix filter in the
+//   engine), and is the only source that surfaces `INV_*` filenames
+//   in vanilla. Tagged as `mpq`.
+//
+// Each callback gets a hook that examines the filename, classifies
+// it by prefix (`INV_` → item, `Ability_`/`Spell_` → spell, else
+// ignore), and appends to the matching side array. Capture-time
+// dedup via per-array `unordered_set` ensures each unique basename
+// only appears once per source even though most files flow through
+// multiple callbacks. The arrays are sorted lazily on first Lua
+// read so the output order matches modern engines.
+//
+// Entry shape (all four functions): uppercase basename stripped of
+// the `Interface\Icons\` prefix and any `.blp`/`.tga` extension —
+// e.g. `"INV_SWORD_25"`, `"ABILITY_KICK"`. Callers concat the
+// prefix themselves before `texture:SetTexture(...)`.
+
+#include "Game.h"
+#include "Offsets.h"
+
+#include <algorithm>
+#include <cstdint>
+#include <cstring>
+#include <string>
+#include <unordered_set>
+#include <vector>
+
+namespace Macro::Icons {
+
+namespace {
+
+using LoadIcons_t = void(__cdecl *)();
+
+void EnsureLoaded() {
+    if (*reinterpret_cast<const uint32_t *>(
+            static_cast<uintptr_t>(Offsets::VAR_MACRO_ICON_COUNT)) != 0)
+        return;
+    reinterpret_cast<LoadIcons_t>(Offsets::FUN_LOAD_MACRO_ICONS)();
+}
+
+constexpr int ICON_BUF_LEN = 128;
+
+// Last path-component of `s` (after the final `\` or `/`), or `s`
+// itself if no separator. NULL-safe.
+const char *Basename(const char *s) {
+    if (s == nullptr)
+        return nullptr;
+    const char *bn = s;
+    for (const char *p = s; *p; ++p) {
+        if (*p == '\\' || *p == '/')
+            bn = p + 1;
+    }
+    return bn;
+}
+
+// Case-insensitive prefix match. `prefix` must be uppercase ASCII.
+bool StartsWithCI(const char *s, const char *prefix) {
+    for (int i = 0; prefix[i] != '\0'; ++i) {
+        char c = s[i];
+        if (c >= 'a' && c <= 'z')
+            c = static_cast<char>(c - ('a' - 'A'));
+        if (c != prefix[i])
+            return false;
+    }
+    return true;
+}
+
+// Normalize an icon path for dedup: strip `Interface\Icons\` (or any
+// directory) prefix, strip extension at first `.`, uppercase ASCII.
+// `dst` must be `ICON_BUF_LEN` bytes. Result is null-terminated.
+void NormalizeIconKey(char *dst, const char *src) {
+    const char *bn = Basename(src);
+    if (bn == nullptr) {
+        dst[0] = '\0';
+        return;
+    }
+    int i = 0;
+    while (i + 1 < ICON_BUF_LEN && bn[i] != '\0' && bn[i] != '.') {
+        char c = bn[i];
+        if (c >= 'a' && c <= 'z')
+            c = static_cast<char>(c - ('a' - 'A'));
+        dst[i] = c;
+        ++i;
+    }
+    dst[i] = '\0';
+}
+
+// =============================================================
+// Four side arrays — (loose|mpq) × (spell|item). Each is a
+// dedup-on-insert set plus a parallel vector preserving insertion
+// order. We sort each vector once before the first Lua read so
+// `GetMacroIcons` etc. return alphabetical results matching modern
+// engines.
+// =============================================================
+
+enum Source { SRC_LOOSE = 0, SRC_MPQ = 1 };
+enum Category { CAT_SPELL = 0, CAT_ITEM = 1 };
+
+struct Bucket {
+    std::vector<std::string> vec;
+    std::unordered_set<std::string> set;
+};
+
+Bucket &BucketFor(Source src, Category cat) {
+    static Bucket buckets[2][2];
+    return buckets[src][cat];
+}
+
+void Capture(const char *raw, Source src) {
+    const char *bn = Basename(raw);
+    if (bn == nullptr || *bn == '\0')
+        return;
+    Category cat;
+    if (StartsWithCI(bn, "INV_"))
+        cat = CAT_ITEM;
+    else if (StartsWithCI(bn, "ABILITY_") || StartsWithCI(bn, "SPELL_"))
+        cat = CAT_SPELL;
+    else
+        return;
+    char key[ICON_BUF_LEN];
+    NormalizeIconKey(key, bn);
+    if (key[0] == '\0')
+        return;
+    Bucket &b = BucketFor(src, cat);
+    auto [it, inserted] = b.set.emplace(key);
+    if (inserted)
+        b.vec.emplace_back(*it);
+}
+
+// Sort all four buckets alphabetically. Called once before the first
+// Lua read so output is stable and matches modern engines' sorted
+// output. Idempotent — re-running re-sorts (cheap for already-sorted
+// vectors) but `EnsureSorted` short-circuits via the flag.
+bool g_sorted = false;
+void EnsureSorted() {
+    if (g_sorted)
+        return;
+    for (int s = 0; s < 2; ++s) {
+        for (int c = 0; c < 2; ++c) {
+            auto &v = BucketFor(static_cast<Source>(s),
+                                 static_cast<Category>(c)).vec;
+            std::sort(v.begin(), v.end());
+        }
+    }
+    g_sorted = true;
+}
+
+// =============================================================
+// Engine scan-callback hooks.
+// =============================================================
+
+// Disk-scan callback (`__fastcall(const char *fullPath)`). Path is
+// `"Interface\Icons\<NAME>"`-shaped — Basename() strips the prefix
+// before classification.
+using DiskCb_t = int (__fastcall *)(const char *path);
+DiskCb_t IconCbDisk_o = nullptr;
+int __fastcall IconCbDisk_h(const char *path) {
+    Capture(path, SRC_LOOSE);
+    return IconCbDisk_o(path);
+}
+
+// MPQ-scan callbacks (`__fastcall(MpqRecord *)`). Record layout:
+// `+0x04` = file flags (bit `0x10` = directory), `+0x08` = inline
+// null-terminated filename (no prefix, no extension stripped).
+using MpqCb_t = int (__fastcall *)(uint8_t *record);
+MpqCb_t IconCbUserMpq_o = nullptr;
+int __fastcall IconCbUserMpq_h(uint8_t *record) {
+    if (record != nullptr && (record[4] & 0x10) == 0)
+        Capture(reinterpret_cast<const char *>(record + 8), SRC_MPQ);
+    return IconCbUserMpq_o(record);
+}
+MpqCb_t IconCbInstallMpq_o = nullptr;
+int __fastcall IconCbInstallMpq_h(uint8_t *record) {
+    if (record != nullptr && (record[4] & 0x10) == 0)
+        Capture(reinterpret_cast<const char *>(record + 8), SRC_MPQ);
+    return IconCbInstallMpq_o(record);
+}
+
+const Game::HookAutoRegister _hookCbDisk{
+    Offsets::FUN_MACRO_ICON_CB_DISK,
+    reinterpret_cast<void *>(&IconCbDisk_h),
+    reinterpret_cast<void **>(&IconCbDisk_o)};
+const Game::HookAutoRegister _hookCbUserMpq{
+    Offsets::FUN_MACRO_ICON_CB_USER_MPQ,
+    reinterpret_cast<void *>(&IconCbUserMpq_h),
+    reinterpret_cast<void **>(&IconCbUserMpq_o)};
+const Game::HookAutoRegister _hookCbInstallMpq{
+    Offsets::FUN_MACRO_ICON_CB_INSTALL_MPQ,
+    reinterpret_cast<void *>(&IconCbInstallMpq_h),
+    reinterpret_cast<void **>(&IconCbInstallMpq_o)};
+
+// =============================================================
+// Lua surface — four global mutators.
+// =============================================================
+
+// Walks `list[1..]` to find the first nil slot — that's where we
+// start appending. Leaves the stack unchanged on return.
+int FindAppendIndex(void *L) {
+    int idx = 1;
+    while (true) {
+        Game::Lua::PushNumber(L, static_cast<double>(idx));
+        Game::Lua::RawGet(L, 1);
+        const int t = Game::Lua::Type(L, -1);
+        Game::Lua::SetTop(L, -2);
+        if (t == Game::Lua::TYPE_NIL)
+            return idx;
+        ++idx;
+    }
+}
+
+void AppendBucket(void *L, Source src, Category cat, const char *usage) {
+    if (Game::Lua::Type(L, 1) != Game::Lua::TYPE_TABLE) {
+        Game::Lua::Error(L, usage);
+        return;
+    }
+    EnsureLoaded();
+    EnsureSorted();
+    const auto &v = BucketFor(src, cat).vec;
+    if (v.empty())
+        return;
+    int idx = FindAppendIndex(L);
+    for (const auto &name : v) {
+        Game::Lua::PushNumber(L, static_cast<double>(idx++));
+        Game::Lua::PushString(L, name.c_str());
+        Game::Lua::RawSet(L, 1);
+    }
+}
+
+int __fastcall Script_GetMacroIcons(void *L) {
+    AppendBucket(L, SRC_MPQ, CAT_SPELL, "Usage: GetMacroIcons(table)");
+    return 0;
+}
+
+int __fastcall Script_GetMacroItemIcons(void *L) {
+    AppendBucket(L, SRC_MPQ, CAT_ITEM, "Usage: GetMacroItemIcons(table)");
+    return 0;
+}
+
+int __fastcall Script_GetLooseMacroIcons(void *L) {
+    AppendBucket(L, SRC_LOOSE, CAT_SPELL, "Usage: GetLooseMacroIcons(table)");
+    return 0;
+}
+
+int __fastcall Script_GetLooseMacroItemIcons(void *L) {
+    AppendBucket(L, SRC_LOOSE, CAT_ITEM,
+                 "Usage: GetLooseMacroItemIcons(table)");
+    return 0;
+}
+
+void RegisterLuaFunctions() {
+    Game::Lua::RegisterGlobalFunction("GetMacroIcons", &Script_GetMacroIcons);
+    Game::Lua::RegisterGlobalFunction("GetMacroItemIcons",
+                                       &Script_GetMacroItemIcons);
+    Game::Lua::RegisterGlobalFunction("GetLooseMacroIcons",
+                                       &Script_GetLooseMacroIcons);
+    Game::Lua::RegisterGlobalFunction("GetLooseMacroItemIcons",
+                                       &Script_GetLooseMacroItemIcons);
+}
+
+const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
+
+} // namespace
+
+} // namespace Macro::Icons

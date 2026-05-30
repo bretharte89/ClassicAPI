@@ -28,3 +28,4 @@ Util\EquipmentManager.lua
 Util\PlayerUtil.lua
 Util\SlashCommandsRegistry.lua
 Util\LinkUtil.lua
+Util\IconDataProvider.lua

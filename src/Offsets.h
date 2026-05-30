@@ -1783,6 +1783,41 @@ enum Offsets {
     // without re-parsing the body. See `Macro::Spell::Script_GetMacroSpell`.
     FUN_MACRO_SLOT_TO_ENTRY = 0x004F0E40,
 
+    // Macro-icon database. Populated lazily by `FUN_LOAD_MACRO_ICONS`
+    // on the first `GetNumMacroIcons` call — enumerates `Interface\Icons\`
+    // for `*.blp` files plus a wildcard match, sorts, and de-dupes. Each
+    // entry is the basename (e.g. `"Ability_Kick"`) without the
+    // `Interface\Icons\` prefix; vanilla's `Script_GetMacroIconInfo`
+    // joins the prefix via sprintf before pushing. Verified by reading
+    // `Script_GetNumMacroIcons` (`0x004F19F0`) and
+    // `Script_GetMacroIconInfo` (`0x004F1A30`).
+    //
+    // Vanilla's loader has 3 enumeration passes, each with a per-file
+    // callback. The first two (`FUN_MACRO_ICON_CB_DISK`,
+    // `FUN_MACRO_ICON_CB_USER_MPQ`) prefix-filter on `"Ability_"` and
+    // `"Spell_"` — anything else (including `INV_*` item icons) is
+    // rejected. The third (`FUN_MACRO_ICON_CB_INSTALL_MPQ`) reads as
+    // extension-only filter in the disassembly (any `.blp`/`.tga` is
+    // accepted), but the engine's main icon DB ends up with zero
+    // `INV_*` entries regardless (`GetNumMacroIcons() == 746`, all
+    // `Ability_*`/`Spell_*`). Best guess: a check inside the
+    // `SStrDup`/array-append helpers downstream of all three callbacks
+    // filters them out — but the per-file callbacks themselves DO see
+    // `INV_*` filenames (verified by hook capture: 5,226 unique
+    // `INV_*` basenames flow through the callbacks per session).
+    //
+    // For `C_Macro::GetMacroItemIcons` we hook each callback at its
+    // entry, capture any `INV_*` filename into a DLL-owned side array,
+    // then forward to the original — dodges whichever downstream
+    // filter the engine applies and matches the parallel item-icon
+    // array 4.3.4 exposes (via `Script_GetMacroItemIcons`).
+    VAR_MACRO_ICON_COUNT = 0x00BDCC1C,          // uint32 count of loaded icons
+    VAR_MACRO_ICON_ARRAY = 0x00BDCC20,          // char ** — pointer to flat array of icon-name C strings (4-byte stride)
+    FUN_LOAD_MACRO_ICONS = 0x004F0090,          // `__cdecl()` lazy populate; no-op if already loaded
+    FUN_MACRO_ICON_CB_DISK = 0x004F0220,        // disk enumerator callback — `__fastcall(const char *fullPath)` — prefix-filtered
+    FUN_MACRO_ICON_CB_USER_MPQ = 0x004F0350,    // user-MPQ enumerator callback — `__fastcall(MpqRecord *r)` — prefix-filtered
+    FUN_MACRO_ICON_CB_INSTALL_MPQ = 0x004F04F0, // install-MPQ enumerator callback — `__fastcall(MpqRecord *r)` — extension-only filter
+
     // Quest log: 16-byte-stride entry array and active count.
     // Field +0 of each entry is the questID for real quests (a category index
     // for headers); field +8 is the header indicator: non-NULL = header,

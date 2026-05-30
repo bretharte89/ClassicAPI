@@ -199,6 +199,8 @@ build instructions.
   - [Numeric spellIDs in `/cast` and `CastSpellByName`](#numeric-spellids-in-cast-and-castspellbyname)
   - [`CastSpellNoToggle` as a macro cast line](#castspellnotoggle-as-a-macro-cast-line)
   - [`GetMacroSpell(macroSlot)`](#getmacrospellmacroslot)
+  - [`GetMacroIcons` / `GetMacroItemIcons` / `GetLooseMacroIcons` / `GetLooseMacroItemIcons`](#getmacroicons--getmacroitemicons--getloosemacroicons--getloosemacroitemicons)
+  - [`IconDataProviderMixin`](#icondataprovidermixin)
 
 - [Map](#map)
   - [`C_Map.GetBestMapForUnit(unitToken)`](#c_mapgetbestmapforunitunittoken)
@@ -4671,6 +4673,114 @@ section tags them with the same spellID a `/cast` line would, so
 > last edited under stock 1.12) will have a stale `0` cache —
 > opening them in the Macro UI and clicking Okay re-runs the parser
 > and the new behavior takes effect.
+
+### `GetMacroIcons` / `GetMacroItemIcons` / `GetLooseMacroIcons` / `GetLooseMacroItemIcons`
+
+Modern Classic Era's 4-function append-to-table icon enumeration
+surface. Each takes a Lua table as its only argument and appends icon
+basenames; returns nothing (mutation is the contract).
+
+```lua
+local spellList, itemList = {}, {}
+
+-- Modern's canonical call order (mirrors IconDataProvider.lua):
+GetLooseMacroIcons(spellList)
+GetLooseMacroItemIcons(itemList)
+GetMacroIcons(spellList)
+GetMacroItemIcons(itemList)
+
+-- spellList now has `Ability_*` / `Spell_*` basenames;
+-- itemList now has `INV_*` basenames.
+```
+
+The split is `loose` (icons the user dropped into `Interface\Icons\`
+on disk) vs `mpq` (icons baked into the game's MPQ archives), crossed
+with `Spell` (basenames starting with `Ability_` / `Spell_`) vs
+`Item` (basenames starting with `INV_`). Modern engines maintain four
+parallel arrays in their loader; we replicate the scheme by hooking
+vanilla's three scan callbacks
+(`FUN_MACRO_ICON_CB_DISK` / `*_USER_MPQ` / `*_INSTALL_MPQ`) and tagging
+each captured filename by source + prefix.
+
+**Vanilla quirk worth noting**: the engine's main icon DB (what
+`GetMacroIconInfo(i)` returns) is filtered down to `Ability_*` /
+`Spell_*` only — `INV_*` filenames flow through the scan callbacks
+(~2,500+ per session in the Octo client) but never land in the DB
+because something downstream of the callbacks rejects them. We
+capture before that rejection, so `GetMacroItemIcons` works even
+though no engine-level `GetMacroItemIconInfo(i)` exists.
+
+Each appended entry is the uppercase basename stripped of the
+`Interface\Icons\` prefix and any `.blp`/`.tga` extension (e.g.
+`"INV_SWORD_25"`, `"ABILITY_KICK"`). Callers concat the prefix
+themselves before `texture:SetTexture(...)`. Output is alphabetically
+sorted within each function (sorted lazily on first read).
+
+Capture-time dedup ensures each unique basename only appears once
+per source/prefix combination even though most files flow through
+multiple scan callbacks. There is **no cross-dedup** between loose
+and mpq, or between spell and item — matches modern engine
+behavior (a file that exists both as a loose drop-in and inside an
+MPQ will appear in both the loose and mpq lists).
+
+The vanilla legacy globals `GetNumMacroIcons` / `GetMacroIconInfo`
+remain available unchanged.
+
+### `IconDataProviderMixin`
+
+Lua-side wrapper (ported from
+`Blizzard_FrameXMLBase/Classic/IconDataProvider.lua`) around the four
+mutators above. Bundles `Spell` and `Item` buckets into one stateful
+provider with an optional "extras" prepend section, and exposes the
+modern `GetIconByIndex(i)` / `GetNumIcons()` / `GetIndexOfIcon(icon)`
+/ `Release()` / `GetIconForSaving(i)` API the modern Macro UI and
+Equipment Manager icon-pickers consume.
+
+```lua
+-- Equipment Manager icon picker (matches modern Cata code as-written):
+local provider = CreateAndInitFromMixin(IconDataProviderMixin,
+                                         IconDataProviderExtraType.Equipment)
+provider:GetNumIcons()              -- total count (1 + extras + base)
+provider:GetIconByIndex(1)          -- always the `?` sentinel
+provider:GetIconByIndex(2)          -- first equipped-item icon
+-- ...
+provider:Release()                  -- decref + collectgarbage when last ref drops
+```
+
+`IconDataProviderExtraType`:
+
+- `Spellbook` — pre-walks the spellbook tabs
+  (`GetNumSpellTabs` / `GetSpellTabInfo` / `GetSpellTexture`) **and**
+  the three vanilla talent trees
+  (`GetNumTalentTabs` / `GetNumTalents` / `GetTalentInfo`), gathering
+  every talent's icon — including talents the player hasn't put points
+  into. Dedups via a set, prepends to the picker. Vanilla doesn't have
+  spec groups or PvP talents, so dual-spec / PvP-talent walks present
+  in modern's `IconDataProvider.lua` are omitted. Spells not surfaced
+  in the spellbook UI (racials kept off the bar, profession recipes
+  the engine doesn't list as spells) are still missed — that's a
+  vanilla data limitation, not a port omission.
+- `Equipment` — pre-walks `INVSLOT_FIRST_EQUIPPED..INVSLOT_LAST_EQUIPPED`
+  via `GetInventoryItemTexture("player", i)`.
+- `None` — no prepend; base DB only.
+
+`IconDataProviderIconType`:
+
+- `Spell` (`= 1`) — `Ability_*` / `Spell_*` set.
+- `Item` (`= 2`) — `INV_*` set.
+
+The mixin doesn't cross-dedup between extras and the base DB — the
+player's currently-equipped weapon icon may appear twice in the
+final picker (once at the head as an "extra", once again later in
+its alphabetical spot inside the `INV_*` base list). That's
+deliberate; the modern engine has the same behavior. Pickers
+typically tolerate it because the extras section is short.
+
+Memory model matches modern: `BaseIconFilenames` is module-level
+state shared across all active providers. The first `Init` triggers
+the four engine calls (which collectively walk ~30k icon paths); on
+the last `Release`, `BaseIconFilenames` is nil'd and `collectgarbage()`
+runs explicitly.
 
 ## Map
 
