@@ -2609,9 +2609,11 @@ enum Offsets {
     // We dispatch to these directly so the wrappers don't need to
     // bounce through `Script_GetAddOnInfo` and unwind 7 returns.
     //
-    //   IS_LOAD_ON_DEMAND `__fastcall(entry) → byte`
-    //     Hash-table lookup in the addon registry. Non-zero ⇒
-    //     `## LoadOnDemand: 1` in the .toc.
+    //   IS_LOADED `__fastcall(entry) → byte`
+    //     Hash-table lookup in the addon registry. Returns the byte
+    //     at `entry+0x18`, which the addon loader (`FUN_0051F240`)
+    //     writes `1` to when the addon has finished loading. Non-zero
+    //     ⇒ the addon is loaded.
     //
     //   CAN_LOAD `__fastcall(entry, char fullCheck=1, int *outStatus,
     //                        int *outDepHandle, const char *accountName) → byte`
@@ -2632,7 +2634,7 @@ enum Offsets {
     //     Hash-table lookup that returns the security category index
     //     (0=SECURE, 1=INSECURE, 2=BANNED). Defaults to `1` (INSECURE)
     //     when the entry isn't in the override table.
-    FUN_ADDON_IS_LOAD_ON_DEMAND = 0x0051E6F0,
+    FUN_ADDON_IS_LOADED = 0x0051E6F0,
     FUN_ADDON_CAN_LOAD = 0x0051E780,
     FUN_ADDON_GET_SECURITY_INDEX = 0x0051E990,
 

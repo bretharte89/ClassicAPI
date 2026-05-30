@@ -83,12 +83,11 @@ function EventUtil.TriggerOnVariablesLoaded()
 end
 
 function EventUtil.ContinueOnAddOnLoaded(addOnName, callback)
-    -- 1.12's IsAddOnLoaded returns a single bool. 3.3.5 split that into
-    -- (isLoadedOrLoading, isLoaded); treat truthy as "ready to use".
-    if IsAddOnLoaded(addOnName) then
-        callback()
-        return
-    end
+	local isLoadedOrLoading, isLoaded = C_AddOns.IsAddOnLoaded(addOnName)
+	if isLoaded then
+		callback();
+		return;
+	end
 
     EventUtil.RegisterOnceFrameEventAndCallback("ADDON_LOADED", callback, addOnName)
 end

@@ -163,9 +163,13 @@ int __fastcall Script_IsAddOnLoadable(void *L) {
         return 2;
     }
 
-    auto isLoD = reinterpret_cast<EntryByteFn_t>(
-        Offsets::FUN_ADDON_IS_LOAD_ON_DEMAND);
-    if (isLoD(entry) != 0) {
+    // Already-loaded addons are trivially loadable — skip the
+    // recursive dep walk and return (true, nil) directly. `IS_LOADED`
+    // reads the byte at `entry+0x18` (the loader sets that to 1 on
+    // successful load).
+    auto isLoaded = reinterpret_cast<EntryByteFn_t>(
+        Offsets::FUN_ADDON_IS_LOADED);
+    if (isLoaded(entry) != 0) {
         Game::Lua::PushBoolean(L, 1);
         Game::Lua::PushNil(L);
         return 2;
@@ -229,6 +233,36 @@ int __fastcall Script_GetAddOnSecurity(void *L) {
     return 1;
 }
 
+// `C_AddOns.IsAddOnLoaded(indexOrName)` → `(loadedOrLoading, loaded)`.
+//
+// Modern WoW distinguishes "load-in-progress" from "fully loaded" —
+// matters for LoD addons whose load is split across multiple
+// `LoadAddOn` callbacks. Vanilla 1.12's `FUN_0051F240` is fully
+// synchronous: the loaded byte at `entry+0x18` flips from 0 → 1
+// inside a single call, so the "loading" state is never observable
+// from Lua. We return the same boolean twice — `loadedOrLoading`
+// and `loaded` are identical here.
+//
+// Resolves both numeric indices (via `FUN_ADDON_GET_BY_INDEX`) and
+// string names. `IS_LOADED` accepts an entry pointer as its name arg
+// because the entry's first 12 bytes are the inline NUL-terminated
+// directory name (same as the other per-field accessors), so we can
+// feed it either an entry or a Lua-side string transparently.
+int __fastcall Script_IsAddOnLoaded(void *L) {
+    const uint8_t *entry = ResolveAddOnName(L);
+    if (entry == nullptr) {
+        Game::Lua::PushBool(L, false);
+        Game::Lua::PushBool(L, false);
+        return 2;
+    }
+    auto isLoaded = reinterpret_cast<EntryByteFn_t>(
+        Offsets::FUN_ADDON_IS_LOADED);
+    const bool loaded = isLoaded(entry) != 0;
+    Game::Lua::PushBool(L, loaded);
+    Game::Lua::PushBool(L, loaded);
+    return 2;
+}
+
 // `C_AddOns.DoesAddOnExist(indexOrName)` — true iff the engine's
 // addon registry has a matching entry. For numeric input we trust
 // `GetByIndex`'s OOR-NULL; for string input we walk the flat array,
@@ -276,6 +310,8 @@ static void RegisterLuaFunctions() {
                                      &Script_GetAddOnSecurity);
     Game::Lua::RegisterTableFunction("C_AddOns", "DoesAddOnExist",
                                      &Script_DoesAddOnExist);
+    Game::Lua::RegisterTableFunction("C_AddOns", "IsAddOnLoaded",
+                                     &Script_IsAddOnLoaded);
     Game::Lua::RegisterIntegerEnum(
         "Enum", "AddOnSecurityStatus",
         kAddOnSecurityStatusEntries,

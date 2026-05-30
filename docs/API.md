@@ -17,6 +17,7 @@ build instructions.
   - [`C_AddOns.GetAddOnTitle(indexOrName)`](#c_addonsgetaddontitleindexorname)
   - [`C_AddOns.GetAddOnNotes(indexOrName)`](#c_addonsgetaddonnotesindexorname)
   - [`C_AddOns.IsAddOnLoadable(indexOrName)`](#c_addonsisaddonloadableindexorname)
+  - [`C_AddOns.IsAddOnLoaded(indexOrName)`](#c_addonsisaddonloadedindexorname)
   - [`C_AddOns.GetAddOnSecurity(indexOrName)`](#c_addonsgetaddonsecurityindexorname)
   - [`C_AddOns.DoesAddOnExist(indexOrName)`](#c_addonsdoesaddonexistindexorname)
 
@@ -564,6 +565,29 @@ C_AddOns.IsAddOnLoadable("DebugTools")        -- true, nil
 C_AddOns.IsAddOnLoadable("HardcoreTooltips")  -- false, "DISABLED"
 C_AddOns.IsAddOnLoadable("garbage")           -- false, nil
 ```
+
+### `C_AddOns.IsAddOnLoaded(indexOrName)`
+
+Returns `loadedOrLoading, loaded` — two booleans.
+
+```lua
+C_AddOns.IsAddOnLoaded("DebugTools")    -- true, true
+C_AddOns.IsAddOnLoaded("garbage")       -- false, false
+C_AddOns.IsAddOnLoaded(1)               -- true, true   (first addon by index)
+```
+
+Modern WoW splits the two returns to distinguish "load-in-progress"
+from "fully loaded" — the difference matters for `LoadOnDemand`
+addons whose load is split across multiple `LoadAddOn` callbacks.
+Vanilla 1.12's addon loader (`FUN_0051F240`) is fully synchronous:
+the `loaded` byte flips inside a single call, so the in-flight
+state is never observable from Lua. Both returns are always the
+same boolean here. We surface the two-return shape so consumer
+code written against modern API doesn't need to special-case
+vanilla.
+
+Unknown addons (numeric index past `GetNumAddOns()`, or
+string name not in the registry) return `false, false`.
 
 ### `C_AddOns.GetAddOnSecurity(indexOrName)`
 
