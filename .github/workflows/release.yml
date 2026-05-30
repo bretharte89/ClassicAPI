@@ -16,33 +16,27 @@ jobs:
         with:
           submodules: recursive
 
+      # Stamp the addon's TOC version from the tag (drops the leading `v`)
+      # BEFORE CMake configure, so the embed step picks up the stamped TOC.
+      # The DLL bundles AddOns/!!!ClassicAPI/ at build time — see the
+      # `embed_addon` custom command in CMakeLists.txt and the file-read
+      # hook in src/addons/Embedded.cpp.
+      - name: Stamp embedded TOC version
+        shell: pwsh
+        run: |
+          $version = '${{ github.ref_name }}' -replace '^v',''
+          $toc = 'AddOns/!!!ClassicAPI/!!!ClassicAPI.toc'
+          (Get-Content $toc) -replace '^## Version:.*', "## Version: $version" |
+            Set-Content $toc
+
       - name: Configure
         run: cmake -B build -A Win32 "-DCLASSICAPI_TAG=${{ github.ref_name }}"
 
       - name: Build
         run: cmake --build build --config Release
 
-      - name: Stage release bundle
-        shell: pwsh
-        run: |
-          $tag = '${{ github.ref_name }}'
-          $version = $tag -replace '^v',''
-          $stage = "ClassicAPI-$tag"
-          New-Item -ItemType Directory -Force -Path $stage | Out-Null
-          Copy-Item build/Release/ClassicAPI.dll $stage
-          Copy-Item -Recurse 'AddOns/!!!ClassicAPI' $stage
-          # Stamp the addon's TOC version line from the tag (drops the leading `v`)
-          $toc = Join-Path $stage '!!!ClassicAPI/!!!ClassicAPI.toc'
-          (Get-Content $toc) -replace '^## Version:.*', "## Version: $version" |
-            Set-Content $toc
-          Compress-Archive -Path "$stage/*" -DestinationPath "ClassicAPI-Bundle-$tag.zip"
-          Compress-Archive -Path "$stage/!!!ClassicAPI" -DestinationPath "ClassicAPI-AddOnOnly-$tag.zip"
-
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            ClassicAPI-Bundle-${{ github.ref_name }}.zip
-            ClassicAPI-AddOnOnly-${{ github.ref_name }}.zip
-            ClassicAPI-${{ github.ref_name }}/ClassicAPI.dll
+          files: build/Release/ClassicAPI.dll
           generate_release_notes: true
