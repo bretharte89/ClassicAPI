@@ -126,10 +126,12 @@ local function FillOutExtraIconsMapWithTalents(extraIconsMap)
 end
 
 local function FillOutExtraIconsMapWithEquipment(extraIconsMap)
-    for i = INVSLOT_FIRST_EQUIPPED, INVSLOT_LAST_EQUIPPED do
-        local itemTexture = GetInventoryItemTexture("player", i)
-        if itemTexture ~= nil then
-            extraIconsMap[itemTexture] = true
+    for slot = INVSLOT_FIRST_EQUIPPED, INVSLOT_LAST_EQUIPPED do
+        for _, itemLink in pairs(GetInventoryItemsForSlot(slot, {})) do
+            local _, _, _, _, itemTexture = C_Item.GetItemInfoInstant(itemLink)
+            if itemTexture then
+                extraIconsMap[itemTexture] = true
+            end
         end
     end
 end
