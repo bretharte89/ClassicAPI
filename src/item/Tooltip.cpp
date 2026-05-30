@@ -21,6 +21,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 
 namespace Item::Tooltip {
 
@@ -290,8 +291,82 @@ static int __fastcall Script_GameTooltipHasItem(void *L) {
     return 1;
 }
 
+// `GameTooltip:SetItemByGUID(guidString)` — modern method that renders
+// the tooltip for the specific item instance identified by GUID
+// (`"0xHHHHHHHHLLLLLLLL"` per `C_Item.GetItemGUID`). Distinct from
+// `SetItemByID`, which shows the base `ItemSparse` data with no
+// per-instance state: this path uses the live CGItem so the tooltip
+// includes enchant lines, random-suffix-decorated name + bonuses,
+// locked/broken state, etc.
+//
+// Implementation: parse the GUID string, resolve via the engine's
+// `FUN_OBJECT_RESOLVE_BY_GUID` (same path `C_Item.GetItemLocation`
+// and `GameTooltip:GetItem` use), build the fully-decorated
+// hyperlink via `Item::Link::FromCGItem` (engine helper at
+// `FUN_GAMETOOLTIP_BUILD_ITEM_LINK`), then dispatch to the engine's
+// existing `Script_GameTooltip_SetHyperlink`. SetHyperlink parses
+// the link's `item:N:enchant:gem:gem:gem:gem:suffix:unique` payload
+// back into instance-specific tooltip data — closing the loop
+// without us needing a separate engine entry point for "tooltip
+// from CGItem*".
+//
+// Silent no-op when the GUID is malformed, not loaded in the
+// client, or doesn't resolve to an item (creature/object GUIDs go
+// to a different resolver).
+static int __fastcall Script_GameTooltipSetItemByGUID(void *L) {
+    if (Game::Lua::Type(L, 1) != Game::Lua::TYPE_TABLE) {
+        Game::Lua::Error(L, "Usage: GameTooltip:SetItemByGUID(itemGUID)");
+        return 0;
+    }
+    if (Game::Lua::Type(L, 2) != Game::Lua::TYPE_STRING) {
+        Game::Lua::Error(L, "Usage: GameTooltip:SetItemByGUID(itemGUID)");
+        return 0;
+    }
+    const char *guidStr = Game::Lua::ToString(L, 2);
+    uint64_t guid = 0;
+    if (!Item::Location::ParseGUIDString(guidStr, &guid))
+        return 0;
+    const uint8_t *cgItem = Item::Location::ResolveByGUID(guid);
+    if (cgItem == nullptr)
+        return 0;
+    const char *link = Item::Link::FromCGItem(cgItem);
+    if (link == nullptr || *link == '\0')
+        return 0;
+
+    // `Item::Link::FromCGItem` returns the full
+    // `|cffXXXXXXXX|Hitem:N:E:S:S:S:S:R:U|h[Name]|h|r` decorated link
+    // (the public-link form addons paste into chat). `SetHyperlink`
+    // wants just the bare `item:N:E:S:S:S:S:R:U` payload — passing the
+    // decorated form trips its "Unknown link type" Lua error because
+    // the parser sees `|c` first and gives up. Extract the payload by
+    // finding `|Hitem:` and copying through to the closing `|h`.
+    const char *open = std::strstr(link, "|Hitem:");
+    if (open == nullptr)
+        return 0;
+    open += 2; // skip past `|H` so we start at `item:`
+    const char *close = std::strstr(open, "|h");
+    if (close == nullptr)
+        return 0;
+    const size_t payloadLen = static_cast<size_t>(close - open);
+    char payload[128];
+    if (payloadLen + 1 > sizeof(payload))
+        return 0;
+    std::memcpy(payload, open, payloadLen);
+    payload[payloadLen] = '\0';
+
+    // Replace stack[2] (the GUID) with the bare item link and
+    // dispatch to SetHyperlink with (self, "item:...").
+    Game::Lua::SetTop(L, 1);
+    Game::Lua::PushString(L, payload);
+
+    using Script_t = int(__fastcall *)(void *L);
+    auto fn = reinterpret_cast<Script_t>(Offsets::FUN_SCRIPT_GAMETOOLTIP_SET_HYPERLINK);
+    return fn(L);
+}
+
 static const Game::Lua::FrameMethodEntry g_methods[] = {
     {"SetItemByID", &Script_GameTooltipSetItemByID},
+    {"SetItemByGUID", &Script_GameTooltipSetItemByGUID},
     {"SetInventoryItemByID", &Script_GameTooltipSetInventoryItemByID},
     {"GetItem", &Script_GameTooltipGetItem},
     {"HasItem", &Script_GameTooltipHasItem},

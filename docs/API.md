@@ -116,6 +116,7 @@ build instructions.
   - [`GameTooltip:SetSpellByID(spellID)`](#gametooltipsetspellbyidspellid)
   - [`GameTooltip:SetTalentByID(talentID)`](#gametooltipsettalentbyidtalentid)
   - [`GameTooltip:SetInventoryItemByID(itemID)`](#gametooltipsetinventoryitembyiditemid)
+  - [`GameTooltip:SetItemByGUID(itemGUID)`](#gametooltipsetitembyguiditemguid)
   - [`GameTooltip:SetEquipmentSet(name)`](#gametooltipsetequipmentsetname)
   - [`GameTooltip:GetItem()`](#gametooltipgetitem)
   - [`GameTooltip:GetSpell()`](#gametooltipgetspell)
@@ -2596,6 +2597,37 @@ existing `Script_GameTooltip_SetHyperlink` (registry slot 12).
 > documents — same underlying cache. Modern WoW (5.0+) has the same
 > caveat, just with `C_Item.RequestLoadItemData(itemLocation)` /
 > `Item:OnItemLoad`-style continuation.
+
+### `GameTooltip:SetItemByGUID(itemGUID)`
+
+Renders the tooltip for a specific item *instance* identified by
+GUID — same string `C_Item.GetItemGUID` returns
+(`"0xHHHHHHHHLLLLLLLL"`). Distinct from `SetItemByID`: this path
+goes through the live CGItem, so the tooltip includes enchant
+lines, random-suffix-decorated name + bonuses, and locked/broken
+state — the same depth `SetBagItem` / `SetInventoryItem` would
+produce for that specific copy.
+
+```lua
+local guid = C_Item.GetItemGUID({ equipmentSlotIndex = 10 }) -- legs
+GameTooltip:SetOwner(UIParent, "ANCHOR_CURSOR")
+GameTooltip:SetItemByGUID(guid)
+GameTooltip:Show()
+```
+
+Resolves through the engine's own `FUN_OBJECT_RESOLVE_BY_GUID`
+(same path `C_Item.GetItemLocation` uses), builds the full
+`item:N:enchant:gem:gem:gem:gem:suffix:unique`-style hyperlink via
+the engine's link builder, then dispatches to
+`Script_GameTooltip_SetHyperlink`. The link round-trip is what
+gives `GameTooltip:GetItem()` the dressed link back when called
+after — same shape `GetInventoryItemLink` / `GetContainerItemLink`
+emit for the same slot.
+
+Silent no-op when the GUID is malformed, the item isn't currently
+loaded in the client (e.g. items only the server knows about), or
+the GUID resolves to a non-item object (creature/gameobject GUIDs
+go to a different resolver and won't match).
 
 ### `GameTooltip:SetUnitAura(unit, index, [filter])`
 
