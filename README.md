@@ -46,7 +46,7 @@ Full per-function reference: **[docs/API.md](docs/API.md)**.
 | [Quest](docs/API.md#quest) | `C_QuestLog.GetQuestDetails`, `C_QuestLog.GetQuestIDForLogIndex`, `C_QuestLog.GetTitleForQuestID`, `C_QuestLog.IsOnQuest`, `C_QuestLog.IsQuestDataCachedByID`, `C_QuestLog.IsUnitOnQuest`, `C_QuestLog.RequestLoadQuestByID`, `GetQuestLogLeaderBoardID` |
 | [Spell](docs/API.md#spell) | `C_Spell.CancelSpellByID`, `C_Spell.DoesSpellExist`, `C_Spell.GetSchoolString`, `C_Spell.GetSpellCooldown`, `C_Spell.GetSpellDescription`, `C_Spell.GetSpellInfo`, `C_Spell.GetSpellLink`, `C_Spell.GetSpellName`, `C_Spell.GetSpellReagents`, `C_Spell.GetSpellSubtext`, `C_Spell.GetSpellTexture`, `C_Spell.IsAutoAttackSpell`, `C_Spell.IsCurrentSpell`, `C_Spell.IsRangedAutoAttackSpell`, `C_Spell.IsSelfBuff`, `C_Spell.IsSpellHarmful`, `C_Spell.IsSpellHelpful`, `C_Spell.IsSpellPassive`, `C_Spell.IsSpellUsable`, `C_Spell.SpellHasRange`, `CancelSpellByName`, `CastSpellNoToggle`, `GetCraftSpellID`, `GetSpellInfo`, `GetSpellLink`, `GetSpellSchool`, `IsHarmfulSpell`, `IsHelpfulSpell`, `IsPassiveSpell`, `IsPlayerSpell`, `IsSpellKnown`, `IsUsableSpell`, `SpellHasRange` |
 | [SpellBook](docs/API.md#spellbook) | `C_SpellBook.GetCurrentLevelSpells`, `C_SpellBook.GetSpellLevelLearned`, `C_SpellBook.GetSpellSkillLine`, `C_SpellBook.IsAutoAttackSpellBookItem`, `C_SpellBook.IsRangedAutoAttackSpellBookItem`, `FindSpellBookSlotByID` |
-| [State](docs/API.md#state) | `CancelShapeshiftForm`, `Dismount`, `GetMirrorTimerInfo`, `GetMirrorTimerProgress`, `GetShapeshiftFormID`, `IsAssistingRitual`, `IsFalling`, `IsInGroup`, `IsInRaid`, `IsLoggedIn` (also on glue), `IsMounted`, `IsStealthed`, `IsSwimming` |
+| [State](docs/API.md#state) | `CancelShapeshiftForm`, `Dismount`, `GetMirrorTimerInfo`, `GetMirrorTimerProgress`, `GetShapeshiftFormID`, `IsAssistingRitual`, `IsFalling`, `IsInGroup`, `IsInRaid`, `IsLoggedIn`, `IsMounted`, `IsStealthed`, `IsSwimming` |
 | [Table](docs/API.md#table) | `table.wipe` |
 | [Talent](docs/API.md#talent) | `GetTalentIDByIndex`, `GetTalentSpellID` |
 | [Time](docs/API.md#time) | `C_DateAndTime.AdjustTimeByDays`, `C_DateAndTime.AdjustTimeByMinutes`, `C_DateAndTime.CompareCalendarTime`, `C_DateAndTime.GetCalendarTimeFromEpoch`, `C_DateAndTime.GetCurrentCalendarTime`, `C_DateAndTime.GetSecondsUntilDailyReset`, `C_DateAndTime.GetServerTimeLocal`, `C_Timer.After`, `C_Timer.NewTicker`, `C_Timer.NewTimer`, `GetServerTime` |
@@ -71,7 +71,7 @@ the glue state because GlueXML had no way to reach them otherwise.
 | [CharacterList](docs/API.md#characterlist) | `GetSavedCharacterOrder`, `SetSavedCharacterOrder` (persist to `WTF\Account\...\ClassicAPI.txt`) |
 | CVar | `GetCVar`, `SetCVar`, `RegisterCVar`, `GetCVarDefault`, `C_CVar.GetCVarBool` (storage is process-global — writes from glue are visible in-world and vice versa) |
 | Script | `RunScript` (compile and run a Lua chunk in the glue state's globals — useful for slash-command-style helpers in GlueXML) |
-| State | `IsLoggedIn` (also on in-game; returns `false` on glue since no character is in-world) |
+| State | `IsLoggedIn` |
 
 ### Macros
 
