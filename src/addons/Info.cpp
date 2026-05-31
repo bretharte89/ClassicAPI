@@ -115,10 +115,21 @@ int PushFieldOrNil(void *L, FieldByName_t accessor) {
 // `C_AddOns.GetAddOnName(indexOrName)` — the addon's directory name.
 // For numeric input, returns the engine's canonical casing. For
 // string input, returns the input verbatim once existence is
-// confirmed.
+// confirmed; nil for an unregistered name.
+//
+// String-input existence isn't free: `ResolveAddOnName` echoes the
+// string for the field accessors below (`GetAddOnTitle`, etc.) which
+// short-circuit cleanly on unknown names via the engine's own NULL-
+// return paths. `GetAddOnName` doesn't call any engine accessor, so
+// it'd otherwise echo any string. Probe the registry explicitly.
 int __fastcall Script_GetAddOnName(void *L) {
     const uint8_t *entry = ResolveAddOnName(L);
     if (entry == nullptr) {
+        Game::Lua::PushNil(L);
+        return 1;
+    }
+    if (Game::Lua::Type(L, 1) == Game::Lua::TYPE_STRING &&
+        !AddOnExistsByName(reinterpret_cast<const char *>(entry))) {
         Game::Lua::PushNil(L);
         return 1;
     }
