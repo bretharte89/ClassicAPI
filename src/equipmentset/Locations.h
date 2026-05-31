@@ -42,4 +42,16 @@ int FindGUID(uint64_t targetGuid);
 // isn't known to the client. Side-effect free.
 const uint8_t *ResolveItemByGUID(uint64_t guid);
 
+// Copies the current paperdoll GUIDs into `out[0..SLOT_COUNT-1]`,
+// where `out[i]` is the GUID at 1-based equipment slot `i+1`.
+// Empty / unequipped slots write 0. Reads from the player invMgr's
+// flat GUID array directly — no Lua stack, no engine state changes.
+//
+// Used by `UseEquipmentSet` to seed a "virtual paperdoll" model that
+// stays current across in-flight swaps. The engine's CGItem state
+// lags behind packet sends (server has to ACK each swap), so any
+// subsequent `FindGUID` after the first packet would return stale
+// pre-swap locations. Tracking moves locally bypasses that lag.
+void SnapshotPaperdoll(uint64_t *out);
+
 } // namespace EquipmentSet::Locations

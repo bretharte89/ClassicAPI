@@ -424,58 +424,134 @@ int __fastcall Script_UseEquipmentSet(void *L) {
     }
     int nextFreeSlot = 0;
 
+    // Pre-snapshot each set item's location against the ORIGINAL
+    // state, before any swap packets fly. This mirrors how 4.3.4's
+    // `Script_UseEquipmentSet` (`0x009A15D0`) builds its action list:
+    // resolve all 19 source locations up front, then execute. The
+    // engine's CGItem / InvMgr state lags behind our packet sends
+    // (waits for server ACK), so any `FindGUID` mid-execution would
+    // return stale answers and we'd re-resolve items into the wrong
+    // place.
+    int sourceLoc[SLOT_COUNT];
+    for (int i = 0; i < SLOT_COUNT; ++i) {
+        const uint64_t g = guids[i];
+        if (g == GUID_EMPTY || g == GUID_IGNORED) {
+            sourceLoc[i] = 0;
+            continue;
+        }
+        sourceLoc[i] = Locations::FindGUID(g);
+    }
+
+    // Virtual paperdoll occupant model — seeded from the engine's
+    // initial paperdoll GUID array, then updated in-place after each
+    // swap so phase 1 can chain rotations and phase 3 can spot
+    // already-empty slots.
+    uint64_t virtualPaperdoll[SLOT_COUNT];
+    Locations::SnapshotPaperdoll(virtualPaperdoll);
+
+    // Locates the current virtual slot of a GUID on the paperdoll,
+    // or 0 if it's not currently there. Used during phase 1 so
+    // chained paperdoll-to-paperdoll moves operate on the *current*
+    // virtual position, not the stale pre-snapshot.
+    auto currentPaperdollSlot = [&](uint64_t g) -> int {
+        if (g == 0)
+            return 0;
+        for (int slot = 1; slot <= SLOT_COUNT; ++slot) {
+            if (virtualPaperdoll[slot - 1] == g)
+                return slot;
+        }
+        return 0;
+    };
+
+    // ── Phase 1: paperdoll → paperdoll ─────────────────────────────
+    // Move items already on the paperdoll into their target slots.
+    // Source and destination are both paperdoll, so atomic swaps
+    // never touch bag state — phase 2's bag lookups stay accurate.
     for (int i = 0; i < SLOT_COUNT; ++i) {
         const int targetSlot = i + 1;
         const uint64_t g = guids[i];
-
-        // GUID_IGNORED: leave whatever the player has in this slot
-        // as-is. Distinct from GUID_EMPTY (= 0), which means "this
-        // slot should be empty after the swap" — handled below.
-        if (g == GUID_IGNORED)
+        if (g == GUID_EMPTY || g == GUID_IGNORED)
             continue;
 
-        if (g == GUID_EMPTY) {
-            // Set wants this slot empty. If it already is, no-op.
-            // Otherwise unequip whatever's there into the next bag
-            // slot we reserved during the pre-loop snapshot. If
-            // we've exhausted the snapshot, silently skip — matches
-            // the modern API which surfaces no per-slot reason.
-            const uint8_t *equipped =
-                Item::Location::ResolveEquipmentSlot(targetSlot);
-            if (equipped == nullptr)
-                continue;
-            if (nextFreeSlot >= freeSlotCount)
-                continue;
-            const FreeSlot &fs = freeSlots[nextFreeSlot++];
-            Item::Swap::ToBag(equipped, targetSlot, fs.bag, fs.slot);
-            continue;
-        }
-
-        const int loc = Locations::FindGUID(g);
+        const int loc = sourceLoc[i];
         if (loc == 0)
-            continue; // missing — nothing to do
-
-        // Already in its target slot? Skip.
-        if ((loc & LOC_BAGS) == 0 && (loc & LOC_BANK) == 0 &&
-            (loc & LOC_SLOT_MASK) == targetSlot)
             continue;
-
-        // In bank (main or bank-bag) — server rejects equip-from-bank.
         if (loc & LOC_BANK)
-            continue;
+            continue; // server rejects equip-from-bank
+        if (loc & LOC_BAGS)
+            continue; // phase 2
+
+        const int srcSlot = currentPaperdollSlot(g);
+        if (srcSlot == 0 || srcSlot == targetSlot)
+            continue; // missing or already there
 
         const uint8_t *item = Locations::ResolveItemByGUID(g);
         if (item == nullptr)
             continue;
 
-        if (loc & LOC_BAGS) {
-            const int srcBag = (loc >> LOC_BAG_SHIFT) & 0xFF;
-            const int srcSlot = loc & LOC_SLOT_MASK;
-            Item::Swap::FromBag(item, srcBag, srcSlot, targetSlot);
-        } else {
-            const int srcSlot = loc & LOC_SLOT_MASK;
-            Item::Swap::FromPaperdoll(item, srcSlot, targetSlot);
+        const uint64_t displaced = virtualPaperdoll[targetSlot - 1];
+        if (Item::Swap::FromPaperdoll(item, srcSlot, targetSlot)) {
+            virtualPaperdoll[targetSlot - 1] = g;
+            virtualPaperdoll[srcSlot - 1] = displaced;
         }
+    }
+
+    // ── Phase 2: bag → paperdoll ───────────────────────────────────
+    // Move items from bag slots onto the paperdoll. Each atomic swap
+    // displaces the current paperdoll occupant into the bag slot the
+    // incoming item vacated. Anything we still wanted on the paperdoll
+    // was already placed by phase 1, so phase 2 displacements can't
+    // strand a future set item in a bag.
+    for (int i = 0; i < SLOT_COUNT; ++i) {
+        const int targetSlot = i + 1;
+        const uint64_t g = guids[i];
+        if (g == GUID_EMPTY || g == GUID_IGNORED)
+            continue;
+        if (virtualPaperdoll[targetSlot - 1] == g)
+            continue; // already at target (probably by phase 1)
+
+        const int loc = sourceLoc[i];
+        if (loc == 0)
+            continue;
+        if (loc & LOC_BANK)
+            continue;
+        if ((loc & LOC_BAGS) == 0)
+            continue; // not from a bag — phase 1 handled, or item missing
+
+        const uint8_t *item = Locations::ResolveItemByGUID(g);
+        if (item == nullptr)
+            continue;
+
+        const int srcBag = (loc >> LOC_BAG_SHIFT) & 0xFF;
+        const int srcSlot = loc & LOC_SLOT_MASK;
+        if (Item::Swap::FromBag(item, srcBag, srcSlot, targetSlot)) {
+            virtualPaperdoll[targetSlot - 1] = g;
+            // The displaced item lands in (srcBag, srcSlot). We
+            // don't track bag-side virtual state — by phase 3 we
+            // only care about the paperdoll occupant.
+        }
+    }
+
+    // ── Phase 3: unequip slots the set wants empty ─────────────────
+    // For each `GUID_EMPTY` slot, send the current paperdoll occupant
+    // (if any) to a pre-snapshotted free bag slot. Runs last so any
+    // displaced items from phases 1/2 that landed in the slot get
+    // unequipped here too.
+    for (int i = 0; i < SLOT_COUNT; ++i) {
+        const int targetSlot = i + 1;
+        if (guids[i] != GUID_EMPTY)
+            continue;
+        const uint64_t occupant = virtualPaperdoll[targetSlot - 1];
+        if (occupant == 0)
+            continue;
+        if (nextFreeSlot >= freeSlotCount)
+            continue;
+        const uint8_t *equipped = Locations::ResolveItemByGUID(occupant);
+        if (equipped == nullptr)
+            continue;
+        const FreeSlot &fs = freeSlots[nextFreeSlot++];
+        if (Item::Swap::ToBag(equipped, targetSlot, fs.bag, fs.slot))
+            virtualPaperdoll[targetSlot - 1] = 0;
     }
 
     const int evt = Event::Custom::Lookup(kSwapFinishedEvent);

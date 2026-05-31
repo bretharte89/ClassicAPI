@@ -177,4 +177,15 @@ const uint8_t *ResolveItemByGUID(uint64_t guid) {
     return Item::Location::ResolveByGUID(guid);
 }
 
+void SnapshotPaperdoll(uint64_t *out) {
+    for (int i = 0; i < SLOT_COUNT; ++i)
+        out[i] = 0;
+    auto *invMgr = ResolvePlayerInvMgr();
+    auto *guids = InvMgrGuidArray(invMgr);
+    if (guids == nullptr)
+        return;
+    for (int i = 0; i < SLOT_COUNT; ++i)
+        out[i] = guids[i];
+}
+
 } // namespace EquipmentSet::Locations
