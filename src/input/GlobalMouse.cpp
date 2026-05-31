@@ -18,6 +18,12 @@
 // per-frame `OnMouseDown` scripts — these fire even when the click
 // misses any UI frame.
 //
+// `IsMouseButtonDown([button])` — query the current held state of a
+// specific button by name or 1-based ID, or "any button held" when
+// called with no args. State is maintained from the same hook stream
+// as the events (single source of truth — events firing and the
+// state being readable happen at the same point in the pipeline).
+//
 // Same `WH_GETMESSAGE` thread-message hook pattern as
 // [Input::Modifier](Modifier.cpp): we intercept the WM_*BUTTON*
 // messages on the engine's main thread *before* dispatch. The hook
@@ -28,6 +34,9 @@
 #include "Game.h"
 #include "event/Custom.h"
 
+#include <cstdint>
+#include <cstring>
+
 #include <windows.h>
 
 namespace Input::GlobalMouse {
@@ -36,6 +45,19 @@ namespace {
 
 constexpr const char *kDownEvent = "GLOBAL_MOUSE_DOWN";
 constexpr const char *kUpEvent   = "GLOBAL_MOUSE_UP";
+
+// Held-state bitmap — bit `i` set means the button with 1-based
+// `IsMouseButtonDown` ID `i+1` is currently held. Modern API IDs:
+//   1 = LeftButton, 2 = RightButton, 3 = MiddleButton,
+//   4 = Button4    (XBUTTON1), 5 = Button5 (XBUTTON2).
+constexpr int BIT_LEFT_BUTTON   = 0;
+constexpr int BIT_RIGHT_BUTTON  = 1;
+constexpr int BIT_MIDDLE_BUTTON = 2;
+constexpr int BIT_BUTTON4       = 3;
+constexpr int BIT_BUTTON5       = 4;
+constexpr uint32_t MASK_ANY_BUTTON = 0x1F;
+
+uint32_t g_mouseButtonMask = 0;
 
 HHOOK g_msgHook = nullptr;
 
@@ -60,14 +82,58 @@ const char *DecodeButton(UINT msg, WPARAM wParam, bool *outDown) {
     }
 }
 
+// Maps a "LeftButton"/.../"Button5" name to its bit index. -1 for
+// any other string.
+int NameToBitIdx(const char *name) {
+    if (name == nullptr)
+        return -1;
+    if (std::strcmp(name, "LeftButton") == 0)   return BIT_LEFT_BUTTON;
+    if (std::strcmp(name, "RightButton") == 0)  return BIT_RIGHT_BUTTON;
+    if (std::strcmp(name, "MiddleButton") == 0) return BIT_MIDDLE_BUTTON;
+    if (std::strcmp(name, "Button4") == 0)      return BIT_BUTTON4;
+    if (std::strcmp(name, "Button5") == 0)      return BIT_BUTTON5;
+    return -1;
+}
+
 void ProcessMouseMessage(UINT msg, WPARAM wParam) {
     bool down = false;
     const char *name = DecodeButton(msg, wParam, &down);
     if (name == nullptr)
         return;
+
+    const int bitIdx = NameToBitIdx(name);
+    if (bitIdx >= 0) {
+        const uint32_t bit = 1u << bitIdx;
+        if (down) g_mouseButtonMask |= bit;
+        else      g_mouseButtonMask &= ~bit;
+    }
+
     const int slot = Event::Custom::Lookup(down ? kDownEvent : kUpEvent);
     if (slot >= 0)
         Event::Custom::Fire(slot, "%s", name);
+}
+
+int __fastcall Script_IsMouseButtonDown(void *L) {
+    bool down;
+    if (Game::Lua::GetTop(L) == 0) {
+        // No-arg form: any button held.
+        down = (g_mouseButtonMask & MASK_ANY_BUTTON) != 0;
+    } else {
+        int bitIdx = -1;
+        if (Game::Lua::IsNumber(L, 1)) {
+            const int id = static_cast<int>(Game::Lua::ToNumber(L, 1));
+            if (id >= 1 && id <= 5)
+                bitIdx = id - 1;
+        } else if (Game::Lua::IsString(L, 1)) {
+            bitIdx = NameToBitIdx(Game::Lua::ToString(L, 1));
+        }
+        // Unrecognized button (bad id, unknown name) → false, matching
+        // the modern API's "did this specific button happen to be held"
+        // semantic. Bad input doesn't promote to the any-button check.
+        down = (bitIdx >= 0) && (g_mouseButtonMask & (1u << bitIdx)) != 0;
+    }
+    Game::Lua::PushBool(L, down);
+    return 1;
 }
 
 LRESULT CALLBACK GetMsgHook(int code, WPARAM wParam, LPARAM lParam) {
@@ -88,7 +154,11 @@ void InstallHook() {
                                    GetCurrentThreadId());
 }
 
-void RegisterLuaFunctions() { InstallHook(); }
+void RegisterLuaFunctions() {
+    Game::Lua::RegisterGlobalFunction("IsMouseButtonDown",
+                                      &Script_IsMouseButtonDown);
+    InstallHook();
+}
 
 const Event::Custom::AutoReserve _reserveDown{kDownEvent};
 const Event::Custom::AutoReserve _reserveUp{kUpEvent};

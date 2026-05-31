@@ -152,6 +152,7 @@ build instructions.
   - [`IsLeftControlKeyDown()` / `IsRightControlKeyDown()`](#isleftcontrolkeydown--isrightcontrolkeydown)
   - [`IsLeftAltKeyDown()` / `IsRightAltKeyDown()`](#isleftaltkeydown--isrightaltkeydown)
   - [`IsModifierKeyDown()`](#ismodifierkeydown)
+  - [`IsMouseButtonDown([button])`](#ismousebuttondownbutton)
 
 - [Instance](#instance)
   - [`GetInstanceInfo()`](#getinstanceinfo)
@@ -3336,6 +3337,41 @@ Returns `1` if **any** of the six modifier keys is down, `nil`
 otherwise. Equivalent to
 `IsShiftKeyDown() or IsControlKeyDown() or IsAltKeyDown()` but in one
 call.
+
+### `IsMouseButtonDown([button])`
+
+Returns `true` if the given mouse button is currently held, `false`
+otherwise. With no argument (or `nil`), returns `true` if **any**
+mouse button is held.
+
+`button` is either a 1-based ID or a name string:
+
+| ID  | Name |
+|-----|------|
+| `1` | `"LeftButton"` |
+| `2` | `"RightButton"` |
+| `3` | `"MiddleButton"` |
+| `4` | `"Button4"` (XBUTTON1 / first side button) |
+| `5` | `"Button5"` (XBUTTON2 / second side button) |
+
+Unrecognized IDs / names return `false` (matches modern semantics:
+the named button just isn't held — bad input doesn't fall through
+to the any-button check).
+
+State is maintained from the same `WH_GETMESSAGE` hook that drives
+`GLOBAL_MOUSE_DOWN` / `GLOBAL_MOUSE_UP`, so press/release transitions
+register at exactly the moment the corresponding event fires. Hook
+scopes to WoW's message queue — clicks made while the game is
+alt-tabbed out don't deliver, which means the state can stay
+"down" if a button was held while focus left the window. Most uses
+of `IsMouseButtonDown` are gated behind a frame that just received
+mouse focus, so this rarely matters in practice.
+
+```lua
+if IsMouseButtonDown("RightButton") then
+    -- right-button-held bindings
+end
+```
 
 ## Instance
 
