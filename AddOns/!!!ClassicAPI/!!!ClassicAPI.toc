@@ -1,7 +1,7 @@
 ## Interface: 11200
 ## Title: !!!ClassicAPI
 ## Notes: Library to emulate aspects of the modern WoW API on 1.12.1 / Lua 5.0.
-## Version: 1.3
+## Version: DEV
 ## Author: Brues
 
 GlobalStrings.lua
