@@ -105,6 +105,47 @@ bool FitsSlot(int slot1Based, uint32_t invType) {
     return (kSlotMaskByInvType[invType] & (1u << (slot1Based - 1))) != 0;
 }
 
+// ── Proficiency gate ──────────────────────────────────────────────
+// `FitsSlot` only checks invType→slot shape compatibility; without
+// also gating on the player's proficiencies this would return (e.g.)
+// mail helms for a warlock since both are `invType=HEAD`. Modern
+// WoW's equipment-set picker filters by what the player can actually
+// equip; we mirror that.
+//
+// Source of truth: the engine's per-itemClass proficiency bitmap at
+// `[VAR_PROFICIENCY_TABLE]` (17 u32 entries indexed by `m_class`).
+// SMSG_SET_PROFICIENCY's handler at `0x005E7B70` writes the bitmask
+// for each class verbatim from the wire. Bit N of `table[class]` =
+// "player can equip subclass N of this class". Same data the engine
+// itself reads for the tooltip "Mail/Leather/Plate" red-text and the
+// cursor-drop-on-paperdoll-slot check — covers both armor and weapon
+// proficiencies in one lookup.
+//
+// 4.3.4's `Script_GetInventoryItemsForSlot` does the equivalent check
+// via `FUN_00553AD0(itemClass) & (1 << subclass)`, reading from
+// `DAT_00DD4D38` (its own copy of the same packet-fed table).
+
+bool PlayerHasProficiency(uint32_t itemClass, uint32_t subclass) {
+    if (itemClass > 16)
+        return true; // table only covers 0..16; be permissive past that
+    const uint32_t mask = *reinterpret_cast<const uint32_t *>(
+        static_cast<uintptr_t>(Offsets::VAR_PROFICIENCY_TABLE) + itemClass * 4);
+    if (mask == 0)
+        return true; // table not populated yet (pre-SMSG_SET_PROFICIENCY)
+                     // — fail open so empty-mask doesn't blank the list
+    return (mask & (1u << subclass)) != 0;
+}
+
+bool PlayerCanEquip(const uint8_t *record) {
+    if (record == nullptr)
+        return true; // missing record — be permissive, don't hide the item
+    const uint32_t classCode = *reinterpret_cast<const uint32_t *>(
+        record + Offsets::OFF_ITEMSTATS_CLASS);
+    const uint32_t subclass = *reinterpret_cast<const uint32_t *>(
+        record + Offsets::OFF_ITEMSTATS_SUBCLASS);
+    return PlayerHasProficiency(classCode, subclass);
+}
+
 const uint8_t *PeekItemRecord(uint32_t itemID) {
     auto fn = reinterpret_cast<GetItemRecord_t>(Offsets::FUN_DBCACHE_ITEMSTATS_GET_RECORD);
     auto *cache = reinterpret_cast<void *>(Offsets::VAR_ITEMDB_CACHE);
@@ -112,11 +153,14 @@ const uint8_t *PeekItemRecord(uint32_t itemID) {
     return fn(cache, itemID, &zeroGuid, nullptr, nullptr, 0);
 }
 
-uint32_t ReadInventoryType(const uint8_t *cgItem) {
+const uint8_t *ItemRecordForCGItem(const uint8_t *cgItem) {
     const int itemID = Item::ID::FromCGItem(cgItem);
     if (itemID <= 0)
-        return 0;
-    auto *record = PeekItemRecord(static_cast<uint32_t>(itemID));
+        return nullptr;
+    return PeekItemRecord(static_cast<uint32_t>(itemID));
+}
+
+uint32_t ReadInventoryType(const uint8_t *record) {
     if (record == nullptr)
         return 0;
     return *reinterpret_cast<const uint32_t *>(
@@ -132,7 +176,10 @@ void CollectIfFits(int slot, const uint8_t *cgItem, int location,
                    std::vector<Hit> &out) {
     if (cgItem == nullptr)
         return;
-    if (!FitsSlot(slot, ReadInventoryType(cgItem)))
+    const uint8_t *record = ItemRecordForCGItem(cgItem);
+    if (!FitsSlot(slot, ReadInventoryType(record)))
+        return;
+    if (!PlayerCanEquip(record))
         return;
     out.push_back({location, cgItem});
 }

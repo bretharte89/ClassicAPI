@@ -1488,6 +1488,35 @@ enum Offsets {
     VAR_SKILL_LINE_COUNT = 0x00C0D930,
     OFF_SKILL_LINE_NAME = 0x0C,
 
+    // Player's known-skills table — separate from the DBC. Populated
+    // by the engine on login from server data; entries are pointers
+    // to per-skill records. Each record's `+0x00` is the
+    // `SkillLine.dbc` row (or `0` for header / category rows), and
+    // `+0x10` is the current skill rank (other rank/modifier fields
+    // follow). Source: `Script_GetSkillLineInfo` at `0x004D3610`,
+    // which walks this array indexed by the Lua arg.
+    VAR_PLAYER_SKILL_LIST = 0x00B7318C,
+    VAR_PLAYER_SKILL_COUNT = 0x00B731B8,
+    OFF_PLAYER_SKILL_LINE_ID = 0x00,
+    OFF_PLAYER_SKILL_RANK = 0x10,
+
+    // Per-itemClass proficiency bitmap maintained by the engine.
+    // 17 u32 entries (indexed by Item.dbc `m_class`, 0..16). Each
+    // entry is a bitmask where bit N is set if the player has
+    // proficiency in subclass N of that item class — i.e.
+    // `table[4] & (1 << 3)` = "can wear Mail" (armor=class 4,
+    // mail=subclass 3).
+    //
+    // Populated by SMSG_SET_PROFICIENCY's handler at
+    // `FUN_005E7B70`, which writes `table[itemClass] = mask`
+    // verbatim from the packet. Same source the engine itself uses
+    // for equip eligibility (the tooltip "Mail" red-text logic
+    // and the cursor-drop-on-paperdoll check both read this). Note:
+    // covers **weapons too** (class 2), making it strictly more
+    // general than walking the per-skill-line table for individual
+    // armor proficiencies.
+    VAR_PROFICIENCY_TABLE = 0x00C4D4A0,
+
     // Spell.dbc `BaseLevel` — the level a spell becomes available
     // (trainer offers it, quest reward grants it, etc.). Distinct
     // from `SpellLevel` at +0x74 which is the effective level used
