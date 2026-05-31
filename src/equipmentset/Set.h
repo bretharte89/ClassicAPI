@@ -56,11 +56,6 @@ inline const char *DefaultIcon() { return "INV_Misc_QuestionMark"; }
 // (1.15.x is also 32). 4.3.4 used the same buffer size.
 constexpr int MAX_NAME_LEN = 31;
 
-// Hard cap matching 4.3.4 behavior. Modern Classic Era (1.15) raised
-// this to 30; we follow the 4.3.4 number so legacy addons that show
-// "X / 10" don't surprise users.
-constexpr int MAX_SETS = 10;
-
 // `GetItemLocations` encoding — matches Blizzard FrameXML's
 // `EquipmentManager_UnpackLocation` (constants are in
 // `Constants.lua`: `ITEM_INVENTORY_LOCATION_*` and

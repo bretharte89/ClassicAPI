@@ -140,8 +140,6 @@ uint32_t Create(const char *name, const char *icon) {
     EnsureLoaded();
     if (g_path.empty() || name == nullptr || name[0] == '\0')
         return 0;
-    if (g_sets.size() >= MAX_SETS)
-        return 0;
     if (FindByName(name) != nullptr)
         return 0;
     Set s;

@@ -1415,7 +1415,7 @@ Modern's signatures take a numeric `iconFileID`; we accept icon path
 strings (e.g. `"INV_Shield_06"`) since vanilla has no fileDataID
 system. Same string-or-default fallback semantic as 4.3.4 native.
 
-Cap is **10 sets per character**, matching 4.3.4. The full list re-
+No cap on the number of sets per character. The full list re-
 serializes on every mutation; a corrupted file is harmless (parse
 errors leave the in-memory list empty and the next save rewrites the
 file from scratch).
@@ -1520,9 +1520,8 @@ returns its setID. Honors `IgnoreSlotForSave` — slots flagged ignored
 at call time get the ignored marker instead of the equipped item's
 GUID.
 
-Returns the new setID on success. Returns nothing if:
-- the name is empty or already in use
-- the cap of 10 sets is reached
+Returns the new setID on success. Returns nothing if the name is
+empty or already in use.
 
 `icon` defaults to `"INV_Misc_QuestionMark"` if omitted.
 
