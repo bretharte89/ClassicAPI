@@ -4302,31 +4302,42 @@ Reads `ITEM_FIELD_STACK_COUNT` directly off the item's
 
 ### `C_Item.GetItemUniqueness(itemLocation)` / `C_Item.GetItemUniquenessByID(item)`
 
-Returns `(maxAllowed, category, equippedCount)` — the item's
-uniqueness cap, category name, and current equipped-of-category
-count.
+The two functions have **different signatures** in modern (Classic
+Era 1.15.x) WoW — we mirror them exactly:
+
+`C_Item.GetItemUniqueness(itemLocation)` returns
+`(limitCategory, limitMax)`:
 
 | Field | Vanilla source |
 |-------|----------------|
-| `maxAllowed` | `ItemStats_C.m_maxCount` — `0` = unlimited, `1` = unique ("Unique" tag in tooltip), higher = inventory cap |
-| `category` | Always `nil` — vanilla's client has no unique-equipped category system (added in TBC). |
-| `equippedCount` | Always `0` — without categories there's nothing meaningful to count against. |
+| `limitCategory` | Always `0` — vanilla has no `LimitCategory.dbc` (TBC addition). |
+| `limitMax` | `ItemStats_C.m_maxCount` — `0` = unlimited, `1` = "Unique", higher = inventory cap. |
 
-```lua
-local max = C_Item.GetItemUniqueness({equipmentSlotIndex = 13})
--- max = 1 for typical trinkets (Unique)
-local max = C_Item.GetItemUniquenessByID(2943)
--- max = 1 (Eye of Paleth — "Unique")
-```
+`C_Item.GetItemUniquenessByID(itemID)` returns
+`(isUnique, limitCategoryName, limitCategoryCount, limitCategoryID)`:
 
-The by-ID form skips item-location resolution and reads `ItemStats_C`
-directly. Fires a background cache fill on miss and returns nil;
+| Field | Vanilla source |
+|-------|----------------|
+| `isUnique` | `m_maxCount > 0` — true for any unique-tagged item. |
+| `limitCategoryName` | Always `nil` — no categories in vanilla. |
+| `limitCategoryCount` | `m_maxCount` when `isUnique`, else `nil`. |
+| `limitCategoryID` | Always `nil`. |
+
+Both functions return nothing (zero Lua return values, matching
+modern's `MayReturnNothing` annotation) if the item record isn't
+cached. The by-ID variant fires a background cache fill on miss;
 re-call after `GET_ITEM_INFO_RECEIVED`.
 
-Modern WoW returns the same 3-tuple but with the category half
-populated for unique-equipped categories (e.g. "Brewfest Mug",
-"Heart of Azeroth"). On this backport, only `maxAllowed` carries
-information.
+```lua
+local _, max = C_Item.GetItemUniqueness({equipmentSlotIndex = 13})
+-- max = 1 for typical trinkets (Unique)
+local isUnique, _, count = C_Item.GetItemUniquenessByID(81013)
+-- isUnique = true, count = 10  (Southern Sand Crawler Leg, "Unique (10)")
+```
+
+Modern WoW populates the category half for items like Brewfest Mug
+or Heart of Azeroth ("Unique-Equipped: Eye of Azshara"). Vanilla
+has no such items, so the category fields stay nil/0.
 
 ### `C_Item.GetItemLink(itemLocation)`
 
