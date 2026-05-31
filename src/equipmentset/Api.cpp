@@ -331,6 +331,19 @@ int __fastcall Script_ClearIgnoredSlotsForSave(void *L) {
 // would race with). Reads the per-CGItem instance flag at
 // `OFF_ITEM_CLIENT_LOCK` bit 0 — same bit `C_Item.IsLocked` checks
 // and the engine's own pickup/unlock paths manipulate.
+//
+// Gates on `Locations::FindGUID` BEFORE consulting the lock flag:
+// for items the player has deleted/mailed/traded away, the engine's
+// CGItem cache often retains a stale entry that `ResolveByGUID`
+// still hands back, but the inventory walk no longer finds the GUID
+// anywhere. Reading the lock flag off the stale CGItem reflects
+// whatever bits were last set on it (frequently the "locked"
+// in-transaction state from when it was being deleted/swapped),
+// which would falsely report the set as "contains locked items"
+// and prevent `UseEquipmentSet` from running through addon
+// wrappers that gate on this check. The inventory presence check
+// matches modern semantics: a missing item is *missing*, not
+// *locked*.
 int __fastcall Script_EquipmentSetContainsLockedItems(void *L) {
     const uint32_t setID = ArgSetID(L, 1);
     const Set *s = Data::FindByID(setID);
@@ -341,6 +354,8 @@ int __fastcall Script_EquipmentSetContainsLockedItems(void *L) {
         const uint64_t g = s->items[i];
         if (g == GUID_EMPTY || g == GUID_IGNORED)
             continue;
+        if (Locations::FindGUID(g) == 0)
+            continue; // not in inventory — treat as missing, not locked
         const uint8_t *item = Locations::ResolveItemByGUID(g);
         if (item == nullptr)
             continue;
