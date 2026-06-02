@@ -132,6 +132,19 @@ functions, just behavior the stock 1.12 engine didn't have. See the
 | `nameplate1`..`nameplateN` | Unit behind the Nth visible nameplate, in creation-order. Works with every `UnitX` function — `UnitName`, `UnitGUID`, `UnitClass`, `UnitHealth`, etc. Suffix chains (`nameplate1target`, `nameplate1targettarget`) compose. See [NamePlate / Unit tokens](docs/API.md#unit-tokens-nameplaten). |
 | `focus` / `focustarget` | Sticky target set via [`FocusUnit`](docs/API.md#focusunitunit), cleared via [`ClearFocus`](docs/API.md#clearfocus). Same `UnitX` coverage as `nameplateN`. Fires [`PLAYER_FOCUS_CHANGED`](docs/API.md#player_focus_changed-event) on transition. See [Focus](docs/API.md#focus). |
 
+### Bindings
+
+Injected into the engine's **Targeting Functions** group at FrameXML
+Bindings.xml load time, so they appear in the keybind UI alongside
+native targeting bindings instead of orphaned at the bottom.
+
+| Binding | Action |
+|---------|--------|
+| `FOCUSTARGET` | `FocusUnit("target")` — pin current target as focus |
+| `TARGETFOCUS` | `TargetUnit("focus")` — switch target to the focus |
+
+See [Focus / Bindings](docs/API.md#bindings-focustarget--targetfocus) for the implementation note.
+
 ## Installation
 
 Use [VanillaFixes](https://github.com/hannesmann/vanillafixes) to load the

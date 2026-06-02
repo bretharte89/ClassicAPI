@@ -106,6 +106,7 @@ build instructions.
   - [`FocusUnit(unit)`](#focusunitunit)
   - [`ClearFocus()`](#clearfocus)
   - [Unit token (`focus` / `focustarget`)](#unit-token-focus--focustarget)
+  - [Bindings (`FOCUSTARGET` / `TARGETFOCUS`)](#bindings-focustarget--targetfocus)
 
 - [FriendList](#friendlist)
   - [`C_FriendList.SendWhoQueryByName(name)`](#c_friendlistsendwhoquerybynamename)
@@ -2436,6 +2437,29 @@ Returns `nil` cleanly when no focus is set; doesn't raise the
 after `"target"` (matching retail order), so a focused unit's GUID
 reverse-resolves to `"focus"` only if it isn't already addressable
 as `"player"` / `"party*"` / `"raid*"` / `"nameplate*"` / `"target"`.
+
+### Bindings (`FOCUSTARGET` / `TARGETFOCUS`)
+
+Two key bindings appear in the keybind UI (`Esc` → Key Bindings)
+under the **Targeting Functions** group, between `PETATTACK` and the
+Interface section:
+
+| Binding | Lua action | Use |
+|---------|------------|-----|
+| `FOCUSTARGET` | `FocusUnit("target")` | Pin current target as focus |
+| `TARGETFOCUS` | `TargetUnit("focus")` | Switch target to the focus |
+
+No default key — assign one in the keybind UI like any other binding.
+The two together give you a quick "set focus → swap to focus" loop
+common in PvP / heal-tank-while-killing-add scenarios.
+
+Implementation note: addon-side `Bindings.xml` files always render at
+the bottom of the keybind list (orphaned from any `header="..."` they
+declare) because the engine's binding registry is linearly indexed by
+insertion order and addons load after FrameXML. To land inside the
+TARGETING block, the DLL splices the two `<Binding>` entries into the
+engine's `Interface\FrameXML\Bindings.xml` at file-read time via a
+hook on `FUN_FILE_READ` — see [`src/bindings/Inject.cpp`](../src/bindings/Inject.cpp).
 
 ## FriendList
 
