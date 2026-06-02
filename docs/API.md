@@ -157,46 +157,46 @@ build instructions.
   - [`GetInstanceInfo()`](#getinstanceinfo)
 
 - [Item](#item)
-  - [`C_Item.IsBound(itemLocation)`](#c_itemisbounditemlocation)
-  - [`C_Item.GetItemID(itemLocation)`](#c_itemgetitemiditemlocation)
-  - [`GetInventoryItemID(unit, slot)`](#getinventoryitemidunit-slot)
-  - [`GetInventoryItemDurability(invSlot)`](#getinventoryitemdurabilityinvslot)
-  - [`GetInventoryItemsForSlot(slot, returnTable [, transmogrify])`](#getinventoryitemsforslotslot-returntable--transmogrify)
-  - [`GetInventoryItemRepairCost(invSlot)`](#getinventoryitemrepaircostinvslot)
-  - [`C_Item.GetItemFamily(item)`](#c_itemgetitemfamilyitem)
-  - [`C_Item.GetItemCount(itemInfo, [includeBank], [includeUses])`](#c_itemgetitemcountiteminfo-includebank-includeuses)
-  - [`GetItemIcon(itemID)` / `C_Item.GetItemIcon(itemLocation)` / `C_Item.GetItemIconByID(item)`](#getitemiconitemid--c_itemgetitemiconitemlocation--c_itemgetitemiconbyiditem)
-  - [`C_Item.GetItemInfoInstant(item)`](#c_itemgetiteminfoinstantitem)
-  - [`C_Item.IsItemDataCachedByID(item)` / `C_Item.IsItemDataCached(itemLocation)`](#c_itemisitemdatacachedbyiditem--c_itemisitemdatacacheditemlocation)
-  - [`C_Item.RequestLoadItemDataByID(item)` / `C_Item.RequestLoadItemData(itemLocation)`](#c_itemrequestloaditemdatabyiditem--c_itemrequestloaditemdataitemlocation)
-  - [`C_Item.GetItemSpell(item)`](#c_itemgetitemspellitem)
-  - [`OffhandHasWeapon()`](#offhandhasweapon)
-  - [`C_Item.IsEquippableItem(item)`](#c_itemisequippableitemitem)
-  - [`C_Item.IsEquippedItem(item)`](#c_itemisequippeditemitem)
-  - [`C_Item.EquipItemByName(itemInfo [, dstSlot])`](#c_itemequipitembynameiteminfo--dstslot)
-  - [`C_Item.UseItemByName(itemInfo [, unit])`](#c_itemuseitembynameiteminfo--unit)
   - [`C_Item.DoesItemExist(itemLocation)` / `C_Item.DoesItemExistByID(item)`](#c_itemdoesitemexititemlocation--c_itemdoesitemexistbyiditem)
+  - [`C_Item.EquipItemByName(itemInfo [, dstSlot])`](#c_itemequipitembynameiteminfo--dstslot)
+  - [`C_Item.GetCurrentItemLevel(itemLocation)` / `C_Item.GetDetailedItemLevelInfo(item)`](#c_itemgetcurrentitemlevelitemlocation--c_itemgetdetaileditemlevelinfoitem)
+  - [`C_Item.GetItemCount(itemInfo, [includeBank], [includeUses])`](#c_itemgetitemcountiteminfo-includebank-includeuses)
+  - [`C_Item.GetItemFamily(item)`](#c_itemgetitemfamilyitem)
+  - [`C_Item.GetItemGUID(itemLocation)`](#c_itemgetitemguiditemlocation)
+  - [`C_Item.GetItemID(itemLocation)`](#c_itemgetitemiditemlocation)
+  - [`C_Item.GetItemInfoInstant(item)`](#c_itemgetiteminfoinstantitem)
+  - [`C_Item.GetItemInventoryType(itemLocation)` / `C_Item.GetItemInventoryTypeByID(item)`](#c_itemgetiteminventorytypeitemlocation--c_itemgetiteminventorytypebyiditem)
+  - [`C_Item.GetItemLink(itemLocation)`](#c_itemgetitemlinkitemlocation)
+  - [`C_Item.GetItemLocation(itemGUID)`](#c_itemgetitemlocationitemguid)
+  - [`C_Item.GetItemMaxStackSize(itemLocation)` / `C_Item.GetItemMaxStackSizeByID(item)`](#c_itemgetitemmaxstacksizeitemlocation--c_itemgetitemmaxstacksizebyiditem)
   - [`C_Item.GetItemName(itemLocation)` / `C_Item.GetItemNameByID(item)`](#c_itemgetitemnameitemlocation--c_itemgetitemnamebyiditem)
   - [`C_Item.GetItemQuality(itemLocation)` / `C_Item.GetItemQualityByID(item)`](#c_itemgetitemqualityitemlocation--c_itemgetitemqualitybyiditem)
+  - [`C_Item.GetItemSellPrice(itemLocation)` / `C_Item.GetItemSellPriceByID(item)`](#c_itemgetitemsellpriceitemlocation--c_itemgetitemsellpricebyiditem)
   - [`C_Item.GetItemSetID(itemLocation)` / `C_Item.GetItemSetIDByID(item)`](#c_itemgetitemsetiditemlocation--c_itemgetitemsetidbyiditem)
   - [`C_Item.GetItemSetInfo(setID)`](#c_itemgetitemsetinfosetid)
-  - [`C_Item.GetItemSellPrice(itemLocation)` / `C_Item.GetItemSellPriceByID(item)`](#c_itemgetitemsellpriceitemlocation--c_itemgetitemsellpricebyiditem)
-  - [`C_Item.GetCurrentItemLevel(itemLocation)` / `C_Item.GetDetailedItemLevelInfo(item)`](#c_itemgetcurrentitemlevelitemlocation--c_itemgetdetaileditemlevelinfoitem)
-  - [`GetAverageItemLevel()`](#getaverageitemlevel)
-  - [`C_Item.GetItemMaxStackSize(itemLocation)` / `C_Item.GetItemMaxStackSizeByID(item)`](#c_itemgetitemmaxstacksizeitemlocation--c_itemgetitemmaxstacksizebyiditem)
-  - [`C_Item.GetStackCount(itemLocation)`](#c_itemgetstackcountitemlocation)
+  - [`C_Item.GetItemSpell(item)`](#c_itemgetitemspellitem)
   - [`C_Item.GetItemUniqueness(itemLocation)` / `C_Item.GetItemUniquenessByID(item)`](#c_itemgetitemuniquenessitemlocation--c_itemgetitemuniquenessbyiditem)
-  - [`C_Item.GetItemLink(itemLocation)`](#c_itemgetitemlinkitemlocation)
-  - [`C_Item.GetItemInventoryType(itemLocation)` / `C_Item.GetItemInventoryTypeByID(item)`](#c_itemgetiteminventorytypeitemlocation--c_itemgetiteminventorytypebyiditem)
+  - [`C_Item.GetStackCount(itemLocation)`](#c_itemgetstackcountitemlocation)
+  - [`C_Item.IsBound(itemLocation)`](#c_itemisbounditemlocation)
+  - [`C_Item.IsEquippableItem(item)`](#c_itemisequippableitemitem)
+  - [`C_Item.IsEquippedItem(item)`](#c_itemisequippeditemitem)
+  - [`C_Item.IsItemDataCachedByID(item)` / `C_Item.IsItemDataCached(itemLocation)`](#c_itemisitemdatacachedbyiditem--c_itemisitemdatacacheditemlocation)
   - [`C_Item.IsItemOpenable(itemLocation)`](#c_itemisitemopenableitemlocation)
   - [`C_Item.IsLocked(itemLocation)`](#c_itemislockeditemlocation)
   - [`C_Item.LockItem(itemLocation)`](#c_itemlockitemitemlocation)
   - [`C_Item.LockItemByGUID(itemGUID)`](#c_itemlockitembyguiditemguid)
-  - [`C_Item.UnlockItem(itemLocation)`](#c_itemunlockitemitemlocation)
+  - [`C_Item.RequestLoadItemDataByID(item)` / `C_Item.RequestLoadItemData(itemLocation)`](#c_itemrequestloaditemdatabyiditem--c_itemrequestloaditemdataitemlocation)
   - [`C_Item.UnlockAllItems()`](#c_itemunlockallitems)
-  - [`C_Item.GetItemGUID(itemLocation)`](#c_itemgetitemguiditemlocation)
-  - [`C_Item.GetItemLocation(itemGUID)`](#c_itemgetitemlocationitemguid)
+  - [`C_Item.UnlockItem(itemLocation)`](#c_itemunlockitemitemlocation)
+  - [`C_Item.UseItemByName(itemInfo [, unit])`](#c_itemuseitembynameiteminfo--unit)
   - [`Get*ItemID` — companions to the engine's `Get*ItemLink` family](#getitemid--companions-to-the-engines-getitemlink-family)
+  - [`GetAverageItemLevel()`](#getaverageitemlevel)
+  - [`GetInventoryItemDurability(invSlot)`](#getinventoryitemdurabilityinvslot)
+  - [`GetInventoryItemID(unit, slot)`](#getinventoryitemidunit-slot)
+  - [`GetInventoryItemRepairCost(invSlot)`](#getinventoryitemrepaircostinvslot)
+  - [`GetInventoryItemsForSlot(slot, returnTable [, transmogrify])`](#getinventoryitemsforslotslot-returntable--transmogrify)
+  - [`GetItemIcon(itemID)` / `C_Item.GetItemIcon(itemLocation)` / `C_Item.GetItemIconByID(item)`](#getitemiconitemid--c_itemgetitemiconitemlocation--c_itemgetitemiconbyiditem)
+  - [`OffhandHasWeapon()`](#offhandhasweapon)
 
 - [Macros](#macros)
   - [Numeric spellIDs in `/cast` and `CastSpellByName`](#numeric-spellids-in-cast-and-castspellbyname)
@@ -3402,216 +3402,145 @@ that need exact caps must supply their own per-mapID table.
 > keyring are not walked. Fine for sporadic addon use; avoid for per-frame
 > polling.
 
-### `C_Item.IsBound(itemLocation)`
+### `C_Item.DoesItemExist(itemLocation)` / `C_Item.DoesItemExistByID(item)`
 
-Returns `true` if the item at the given location is soulbound, `false` otherwise
-(including when the slot is empty or the location is malformed). The 1.12
-client tracks the soulbound bit on each item instance directly; previously
-the only way to read it from Lua was a scan-tooltip hack
-(`SetBagItem` + string-compare against the localized `ITEM_SOULBOUND`
-constant) — slow, locale-fragile, and one of the hottest paths during bag
-updates.
+Existence checks straight off the engine's inventory manager (location
+form) and item cache (ID form). No `GetItemInfo` chaining — both
+functions read directly from the structures they need.
 
-```lua
-if C_Item.IsBound({equipmentSlotIndex = INVSLOT_HEAD}) then ... end
-if C_Item.IsBound({bagID = 0, slotIndex = 1}) then ... end
-if C_Item.IsBound(itemGUID) then ... end
-```
-
-### `C_Item.GetItemID(itemLocation)`
-
-Returns the itemID of the item at the given location, or `nil` if the slot
-is empty or the location is malformed. Useful as the input to
-`GetItemInfoInstant`/`GetItemInfo` when you only know which slot an item
-came from (rather than its link or ID).
-
-Accepts the same `itemLocation` shapes as `IsBound`:
+- `C_Item.DoesItemExist(itemLocation)` — `true` iff the equipment-slot
+  or `(bagID, slotIndex)` location resolves to a populated inventory
+  slot on the active player. Empty slots, missing bags, or malformed
+  tables return `false`.
+- `C_Item.DoesItemExistByID(item)` — `true` iff the cache currently
+  has data for `item`. Cache miss returns `false` and kicks off the
+  network query in the background; a follow-up call after
+  [`GET_ITEM_INFO_RECEIVED`](#c_itemrequestloaditemdatabyiditem--c_itemrequestloaditemdataitemlocation)
+  will succeed. Accepts a numeric `itemID`, a bare `"item:NNN..."`
+  string, or a full chat link.
 
 ```lua
-local id = C_Item.GetItemID({equipmentSlotIndex = INVSLOT_HEAD})
-if id then
-    local _, type, subtype = C_Item.GetItemInfoInstant(id)
-    -- ...
-end
+if C_Item.DoesItemExist({equipmentSlotIndex = INVSLOT_HEAD}) then ... end
+if C_Item.DoesItemExistByID(6948) then ... end
 ```
 
-### `GetInventoryItemID(unit, slot)`
+### `C_Item.EquipItemByName(itemInfo [, dstSlot])`
 
-Returns the itemID of the item equipped at `slot` (1-based) on `unit`,
-or `nil` if the slot is empty / the unit isn't valid / the unit doesn't
-expose its equipment to the local client. Same arg shape as 1.12's
-`GetInventoryItemLink(unit, slot)` — drop-in for code that just needs
-the ID and would otherwise have to parse the link string.
+Finds the first item in the player's bags matching `itemInfo` and
+equips it. With `dstSlot` (a 1-based character-pane slot, 1..19),
+equips to that specific slot; without, the engine auto-picks based on
+the item's inventory type.
 
-- For `"player"` (and any token resolving to the local player, e.g.
-  `"target"` when self-targeted): walks the private inventory manager.
-  Supports the full slot range (equipment 1..19, bag slots 20..23,
-  bank slots, etc.) — same range `GetItemBySlot` accepts internally.
-- For other player-controlled units (`"target"`, `"party1"..party4"`,
-  inspect targets): reads the unit's broadcast visible-items array.
-  Equipment slots 1..19 only.
-- For NPCs / creatures: returns `nil`. The visible-items array isn't
-  populated for non-player-controlled units in 1.12, so we gate this
-  on `UnitPlayerControlled` to avoid the engine crash that
-  `GetInventoryItemLink` itself would trigger on the same input.
+`itemInfo` accepts the same shapes as
+[`C_Item.IsEquippedItem`](#c_itemisequippeditemitem) — itemID number,
+bare `"item:N"` string, full chat link, or a localized item name. Name
+matches are case-insensitive against the cached `m_name[0]`.
+
+Returns nothing. Silently no-ops when:
+
+- the input is `nil`, an empty string, or otherwise unparseable
+- no matching item is in bags (already-equipped items aren't moved —
+  matches modern API behavior)
+- the engine refuses the equip — combat, locked item, type mismatch
+  with `dstSlot`, locked equipment slot, etc.
+
+Two paths based on `dstSlot`:
+
+- **Explicit `dstSlot` (1..19): cursor-free direct swap.** Calls the
+  engine's own `FUN_INVENTORY_SWAP` (`0x005E0C40`) — the same
+  primitive `Script_EquipCursorItem` dispatches to after resolving
+  cursor state. We hand it the source item GUID, source container
+  GUID, source linear slot, and target paperdoll slot; the engine
+  builds and sends the CMSG_SWAP_INV_ITEM (or CMSG_AUTOEQUIP_ITEM
+  for cross-container) packet through its normal pipeline. **The
+  cursor is never read or written.** An item already on the cursor
+  stays on the cursor.
+- **No `dstSlot` (engine auto-picks slot from inventory type):**
+  falls back to the cursor-pickup + `AutoEquipCursorItem` path
+  because 1.12's auto-pick logic reads off cursor state. For this
+  path only, the function refuses to operate (no-op) when
+  `CursorHasItem()` is already true, to avoid clobbering whatever's
+  held.
 
 ```lua
-local id = GetInventoryItemID("player", INVSLOT_HEAD)
-if id then
-    local _, type, subtype = C_Item.GetItemInfoInstant(id)
-    -- ...
-end
+-- By itemID, auto-pick slot:
+C_Item.EquipItemByName(2589)
 
--- Inspect a party member without parsing a hyperlink:
-local headID = GetInventoryItemID("party1", INVSLOT_HEAD)
+-- By name, force into off-hand (slot 17):
+C_Item.EquipItemByName("Linen Cloth", 17)
+
+-- From a chat link:
+C_Item.EquipItemByName(itemLink)
 ```
 
-### `GetInventoryItemsForSlot(slot, returnTable [, transmogrify])`
+### `C_Item.GetCurrentItemLevel(itemLocation)` / `C_Item.GetDetailedItemLevelInfo(item)`
 
-Populates `returnTable` with every item in the player's equipment
-and bags that's eligible to be equipped in `slot` (1..19). Returned
-table is keyed by the packed [ItemLocation
-bitfield](#equipmentset) — same encoding
-`C_EquipmentSet.GetItemLocations` uses — with the itemLink as the
-value. Returns the same `returnTable` reference for chaining.
+Returns the item's base ilvl from `m_itemLevel` (cache record `+0x38`).
+Vanilla 1.12 has no per-instance scaling (no upgrades, no warforging),
+so "current" and "base" item level are always identical — both APIs
+return the same single value. Modern `GetDetailedItemLevelInfo` is
+spec'd to return `(current, isPreview, base)`; we push only the
+current level, callers that care about the extra returns will see
+`nil` for them.
 
 ```lua
-local t = {}
-GetInventoryItemsForSlot(16, t)   -- mainhand
-for loc, link in pairs(t) do
-    -- loc is a number like 0x00300103; link is "|c…|Hitem:…|h[…]|h|r"
-end
+local ilvl = C_Item.GetCurrentItemLevel({equipmentSlotIndex = INVSLOT_HEAD})
 ```
 
-| slot | Eligible InventoryTypes |
-|------|-------------------------|
-| 1 HEAD, 2 NECK, …, 10 HANDS | The slot's matching InventoryType |
-| 11, 12 FINGER | INVTYPE_FINGER (11) — items appear under both ring slots |
-| 13, 14 TRINKET | INVTYPE_TRINKET (12) |
-| 15 BACK | INVTYPE_CLOAK (16) |
-| 16 MAINHAND | INVTYPE_WEAPON (13), INVTYPE_2HWEAPON (17), INVTYPE_WEAPONMAINHAND (21) |
-| 17 OFFHAND | INVTYPE_WEAPON (13), INVTYPE_SHIELD (14), INVTYPE_WEAPONOFFHAND (22), INVTYPE_HOLDABLE (23) |
-| 18 RANGED | INVTYPE_RANGED (15), INVTYPE_THROWN (25), INVTYPE_RANGEDRIGHT (26) |
-| 5 CHEST | INVTYPE_CHEST (5), INVTYPE_ROBE (20) |
-| 19 TABARD | INVTYPE_TABARD (19) |
+### `C_Item.GetItemCount(itemInfo, [includeBank], [includeUses])`
 
-Compatibility check is a single bitwise AND against a static
-`invType → slotMask` table — same shape and values as 3.3.5's table
-at `DAT_00A2D288` (used by `Script_GetInventoryItemsForSlot` via
-`FUN_007082B0`), with two adjustments for vanilla:
-
-- 2H weapons (`INVTYPE_2HWEAPON`) confined to the mainhand slot
-  only. 3.3.5 allowed offhand for the titanic-grip era; vanilla has
-  no such mechanic and the server would reject the equip anyway.
-- `INVTYPE_WEAPONMAINHAND` / `WEAPONOFFHAND` confined to their
-  literal slot rather than the looser "either hand" 3.3.5 allowed.
-
-The `transmogrify` arg is accepted and ignored. Stock 1.12 has no
-transmog system to query against, and the modern flag's effect
-(broader cross-eligibility for visual swaps) reduces to the
-regular equip check here. Private servers like Turtle WoW layer
-their own transmog systems on top of vanilla; this function
-doesn't currently plumb the flag through to any of them.
-
-> **Bank items aren't included.** Vanilla's `GetItemBySlot` gates
-> bank slots on a banker GUID that's only set while the bank window
-> is open; modern WoW behaves the same way (bank shows up only when
-> the bank UI is open). We don't walk bank slots — addons that want
-> bank inclusion need their own bank scan with the bank UI open.
-
-### `GetInventoryItemDurability(invSlot)`
-
-Returns `(current, maximum)` durability for the player's equipped item
-at `invSlot` (1-based, character-pane slots 1..19), or nothing if the
-slot is empty or the item has no durability concept (rings, trinkets,
-necks, backs, shirts, tabards, etc.).
+Returns the player's total count of `itemInfo` — equipped items +
+bags, and optionally bank.
 
 ```
-current, maximum = GetInventoryItemDurability(invSlot)
+count = C_Item.GetItemCount(itemInfo [, includeBank [, includeUses]])
 ```
+
+- `itemInfo` — numeric `itemID` or string containing `"item:NNN"`
+  (full chat links work). Item names are NOT accepted (vanilla has
+  no name → ID resolver).
+- `includeBank` *(optional, default false)* — also walk bank slots
+  (bag `-1` for the main bank, bags `5..10` for bank-bag slots).
+- `includeUses` *(optional, default false)* — when `true`, multiplies
+  each match by the item's spell-charges count. A wand with 50 charges
+  contributes 50 instead of 1. Items without charges pass their plain
+  stack count through unchanged, so the flag is a no-op for them.
 
 ```lua
-local cur, max = GetInventoryItemDurability(INVSLOT_CHEST)
-if cur then
-    -- cur, max are positive integers (e.g. 65, 65 for full chest)
-end
+local n = C_Item.GetItemCount(2589)               -- Linen Cloth in bags + equipped
+local n = C_Item.GetItemCount(2589, true)         -- + bank
+local n = C_Item.GetItemCount("item:2589")        -- string form works too
 
--- Items without durability return nothing — both locals are nil:
-local cur, max = GetInventoryItemDurability(INVSLOT_FINGER1)
--- cur == nil, max == nil
+-- Equipped items count toward the total:
+local trinketID = GetInventoryItemID("player", INVSLOT_TRINKET1)
+C_Item.GetItemCount(trinketID)                    -- 1
+
+-- includeUses multiplies by charges for charged items:
+C_Item.GetItemCount(wandID, false, true)          -- 50 for one 50-charge wand
+C_Item.GetItemCount(linenID, false, true)         -- same as stack count (no charges)
 ```
 
-> **Player-only.** Matches modern API: 3.3.5+ `GetInventoryItemDurability`
-> takes only the slot, no unit token. Inspect targets / party members'
-> equipment durability isn't broadcast in 1.12, so we couldn't expose it
-> for other units even if we wanted to.
+> **Bank works cold — no banker visit required.** The 1.12 server
+> sends bank inventory at login alongside the rest of the player's
+> data; only the engine's own `GetItemBySlot` gates bank slots until
+> the window opens. We bypass that gate by reading the GUID array
+> directly out of the player invMgr and resolving each entry via the
+> engine's object resolver — same path `GetItemBySlot` would take
+> internally if the gate let us through. Counts are correct from
+> session start.
 
-> **`(0, max)` vs nothing.** Items that have a durability concept but
-> are currently broken (`current == 0`, `max > 0`) still return
-> `(0, max)`. The "nothing" return is reserved for items that have no
-> durability fields populated at all — `max` is the discriminator,
-> matching the engine's own `GetInventoryItemBroken` logic.
+Walks the 19 equipment slots via
+`Item::Location::ResolveEquipmentSlot`, then bags via the same
+`Item::Location::ResolveBag` chain
+[`C_Container.GetContainerItemID`](#c_containergetcontaineritemidbagindex-slotindex)
+uses. Slot counts come from the engine's `Script_GetContainerNumSlots`
+so custom server bag sizes work transparently. Stack counts read
+directly off the CGItem's m_objectFields descriptor at +0x20
+(`ITEM_FIELD_STACK_COUNT`, verified by decoding
+`Script_GetContainerItemInfo` at `0x004F9670`).
 
-Reads ITEM_FIELD_DURABILITY (+0xA0) and ITEM_FIELD_MAXDURABILITY
-(+0xA4) directly off the CGItem's m_objectFields descriptor at `+0x114`
-— same descriptor [`C_Item.IsBound`](#c_itemisbounditemlocation) reads
-FLAGS from. No DBC indirection.
-
-### `GetInventoryItemRepairCost(invSlot)`
-
-Returns the cost in copper to repair the player's equipped item at
-`invSlot`. Same value `GameTooltip:SetInventoryItem` returns as its
-third out-parameter.
-
-```
-copperCost = GetInventoryItemRepairCost(invSlot)
-```
-
-```lua
-local cost = GetInventoryItemRepairCost(INVSLOT_CHEST)
-if cost > 0 then
-    -- e.g. cost == 12345
-end
-```
-
-Returns `0` for slots that are empty, items without a durability
-concept, fully-repaired items, or items whose stats aren't cached yet
-(rare — happens briefly after login before SMSG_ITEM_QUERY_RESPONSE
-arrives for newly-seen items). The "no return" path is reserved for
-invalid input (non-numeric slot).
-
-> **Player-only**, same constraint as
-> [`GetInventoryItemDurability`](#getinventoryitemdurabilityinvslot)
-> — other units' durability isn't broadcast in 1.12.
-
-> **Discount is vendor-context-dependent.** The faction-rep + PvP
-> rank discount is only applied when the player has a merchant
-> window open (i.e. has received `SMSG_LIST_INVENTORY`). Called from
-> anywhere else, you get the raw, undiscounted base cost.
->
-> The engine tracks the current merchant via globals
-> `DAT_00BDDFA0/A4` (the merchant's GUID), set when the merchant
-> frame opens and zeroed when it closes. The helper short-circuits
-> the discount path when those globals are zero.
->
-> For consistent "what will I pay" semantics inside addons, only
-> trust this value when `MerchantFrame:IsShown()` is true — or call
-> it once per merchant-visit and cache.
-
-Calls the engine's own per-item repair-cost helper at `0x004FAF30`,
-which is the same function `Script_GameTooltip_SetInventoryItem`
-calls for its repairCost return. The raw cost comes from
-`DurabilityCosts.dbc` (indexed by item subclass and slot type) ×
-`DurabilityQuality.dbc` (indexed by item quality); the discount —
-when applicable — stacks faction reputation with the merchant
-(Friendly+ unlocks a base 5%) and PvP rank (Sergeant Major+ adds
-another 5%, Knight-Lieutenant+ stacks one more).
-
-This is a ClassicAPI addition — modern WoW has no standalone Lua
-function for per-item repair cost; the only way to read it there is
-the tooltip's third return value. We expose it directly because the
-underlying calculation is already in the engine and a Lua function
-is the natural surface.
+Equivalent to the legacy global `GetItemCount` (since 3.0) and the
+modern `C_Item.GetItemCount` introduced in 10.x.
 
 ### `C_Item.GetItemFamily(item)`
 
@@ -3683,92 +3612,41 @@ Bitmask values match modern WoW's encoding (`1 << (familyID - 1)`):
 Equivalent to the legacy global `GetItemFamily` (since 3.0) and the
 modern `C_Item.GetItemFamily` introduced in 10.x.
 
-### `C_Item.GetItemCount(itemInfo, [includeBank], [includeUses])`
+### `C_Item.GetItemGUID(itemLocation)`
 
-Returns the player's total count of `itemInfo` — equipped items +
-bags, and optionally bank.
-
-```
-count = C_Item.GetItemCount(itemInfo [, includeBank [, includeUses]])
-```
-
-- `itemInfo` — numeric `itemID` or string containing `"item:NNN"`
-  (full chat links work). Item names are NOT accepted (vanilla has
-  no name → ID resolver).
-- `includeBank` *(optional, default false)* — also walk bank slots
-  (bag `-1` for the main bank, bags `5..10` for bank-bag slots).
-- `includeUses` *(optional, default false)* — when `true`, multiplies
-  each match by the item's spell-charges count. A wand with 50 charges
-  contributes 50 instead of 1. Items without charges pass their plain
-  stack count through unchanged, so the flag is a no-op for them.
+Returns the per-instance 64-bit GUID of the item at the location,
+formatted as `"0xHHHHHHHHLLLLLLLL"` (16 hex digits, hi dword first).
+Same format `UnitGUID` uses — 1.12 GUIDs are plain qwords with no
+`"Item-Server-..."`-style prefix scheme (modern's prefix format
+arrived in 6.x). Returns `nil` for empty / invalid locations.
 
 ```lua
-local n = C_Item.GetItemCount(2589)               -- Linen Cloth in bags + equipped
-local n = C_Item.GetItemCount(2589, true)         -- + bank
-local n = C_Item.GetItemCount("item:2589")        -- string form works too
-
--- Equipped items count toward the total:
-local trinketID = GetInventoryItemID("player", INVSLOT_TRINKET1)
-C_Item.GetItemCount(trinketID)                    -- 1
-
--- includeUses multiplies by charges for charged items:
-C_Item.GetItemCount(wandID, false, true)          -- 50 for one 50-charge wand
-C_Item.GetItemCount(linenID, false, true)         -- same as stack count (no charges)
+local guid = C_Item.GetItemGUID({equipmentSlotIndex = INVSLOT_HEAD})
+-- "0x40000000000DEFCA"
 ```
 
-> **Bank works cold — no banker visit required.** The 1.12 server
-> sends bank inventory at login alongside the rest of the player's
-> data; only the engine's own `GetItemBySlot` gates bank slots until
-> the window opens. We bypass that gate by reading the GUID array
-> directly out of the player invMgr and resolving each entry via the
-> engine's object resolver — same path `GetItemBySlot` would take
-> internally if the gate let us through. Counts are correct from
-> session start.
+Reads CGItem instance block at `+0x08` → GUID qword at `+0x00`.
+The GUID is stable per-character-session and survives moves between
+bags / character pane, so it's the right identifier for "this exact
+item instance" — equipment-set tracking, soulbind matching, or any
+addon code that needs to follow a single item across slot moves.
 
-Walks the 19 equipment slots via
-`Item::Location::ResolveEquipmentSlot`, then bags via the same
-`Item::Location::ResolveBag` chain
-[`C_Container.GetContainerItemID`](#c_containergetcontaineritemidbagindex-slotindex)
-uses. Slot counts come from the engine's `Script_GetContainerNumSlots`
-so custom server bag sizes work transparently. Stack counts read
-directly off the CGItem's m_objectFields descriptor at +0x20
-(`ITEM_FIELD_STACK_COUNT`, verified by decoding
-`Script_GetContainerItemInfo` at `0x004F9670`).
+### `C_Item.GetItemID(itemLocation)`
 
-Equivalent to the legacy global `GetItemCount` (since 3.0) and the
-modern `C_Item.GetItemCount` introduced in 10.x.
+Returns the itemID of the item at the given location, or `nil` if the slot
+is empty or the location is malformed. Useful as the input to
+`GetItemInfoInstant`/`GetItemInfo` when you only know which slot an item
+came from (rather than its link or ID).
 
-### `GetItemIcon(itemID)` / `C_Item.GetItemIcon(itemLocation)` / `C_Item.GetItemIconByID(item)`
-
-Three accessors that all return the icon path for an item, differing only in
-how you address the item:
-
-| Function                             | Input                     |
-|--------------------------------------|---------------------------|
-| `GetItemIcon(itemID)`                | numeric itemID (global)   |
-| `C_Item.GetItemIcon(itemLocation)`   | `{equipmentSlotIndex=N}` or `{bagID=B, slotIndex=S}` |
-| `C_Item.GetItemIconByID(item)`       | numeric itemID OR `"item:NNN"` string (full chat links work) |
-
-All three return the icon path string (e.g. `"Interface\\Icons\\INV_Misc_Rune_01"`),
-or `nil` if the item isn't in the client-side cache, the slot is empty, or
-the display info record is missing. The path is suitable for direct use
-with `texture:SetTexture(...)`.
+Accepts the same `itemLocation` shapes as `IsBound`:
 
 ```lua
-local path = GetItemIcon(6948)                                -- "Interface\\Icons\\INV_Misc_Rune_01"
-local path = C_Item.GetItemIcon({equipmentSlotIndex = INVSLOT_HEAD})
-local path = C_Item.GetItemIconByID("|cff...|Hitem:6948:0:0:0|h[Hearthstone]|h|r")
+local id = C_Item.GetItemID({equipmentSlotIndex = INVSLOT_HEAD})
+if id then
+    local _, type, subtype = C_Item.GetItemInfoInstant(id)
+    -- ...
+end
 ```
-
-> **`iconID`-vs-path deviation.** Modern WoW returns these as a
-> `fileID:number` (specifically `iconFileID` in Classic Era 1.15.x). 1.12
-> has no fileID system — same situation as
-> [`C_Spell.GetSpellTexture`](#c_spellgetspelltexturespellid) and
-> [`C_Spell.GetSpellInfo`](#c_spellgetspellinfospellid)'s `iconID` field.
-> We surface the path string everywhere for consistency.
-
-Equivalent to the legacy global `GetItemIcon` (since 1.x) and the
-`C_Item.GetItemIcon` / `GetItemIconByID` family added in 10.x.
 
 ### `C_Item.GetItemInfoInstant(item)`
 
@@ -3811,297 +3689,106 @@ The actual class/subclass values reflect 1.12.1's data, which differs from
 modern WoW. For example, vanilla had no Cloth subclass under Trade Goods —
 Silk Cloth lives at `(7, 0)` in this client, not the modern `(7, 5)`.
 
-### `C_Item.IsItemDataCachedByID(item)` / `C_Item.IsItemDataCached(itemLocation)`
+### `C_Item.GetItemInventoryType(itemLocation)` / `C_Item.GetItemInventoryTypeByID(item)`
 
-Returns `true` if the item's static data is currently in the client-side
-item cache, `false` otherwise. The "ByID" variant takes an itemID or
-"item:NNN"-style string; the location variant takes the modern
-`{equipmentSlotIndex=}` / `{bagID=, slotIndex=}` table.
+Returns the numeric `Enum.InventoryType` straight off the cache
+record's `m_inventoryType` field (`+0x2C`) — the integer sibling of
+`GetItemInfoInstant`'s 4th return (which gives the `INVTYPE_*` string).
 
-These read the cache without firing a server query — pair with
-`RequestLoadItemData(ByID)` if you need to ensure the data is loaded
-before checking.
+| Value | Constant              | Slot                        |
+|------:|-----------------------|-----------------------------|
+| 0     | `INVTYPE_NON_EQUIP_IGNORE` | non-equippable        |
+| 1     | `INVTYPE_HEAD`        | head                         |
+| 2     | `INVTYPE_NECK`        | neck                         |
+| …     | …                     | …                            |
+| 20    | `INVTYPE_ROBE`        | chest (full-body robes)      |
+| 26    | `INVTYPE_RANGEDRIGHT` | ranged                       |
+| 27    | `INVTYPE_QUIVER`      | quiver/ammo pouch            |
+
+Vanilla items only produce values `0..28`; the higher modern
+constants (`INVTYPE_PROFESSION_*`, `INVTYPE_EQUIPABLESPELL_*`, etc.)
+were introduced post-vanilla and are never returned. Modern
+backport code that compares against the higher enum values still
+resolves correctly because vanilla items just don't carry those
+types.
 
 ```lua
-if not C_Item.IsItemDataCachedByID(itemID) then
-    C_Item.RequestLoadItemDataByID(itemID)
-    -- (poll IsItemDataCachedByID on a timer until true)
+local t = C_Item.GetItemInventoryTypeByID(19019)  -- Thunderfury: 17 = INVTYPE_2HWEAPON
+if t == 1 then -- head
+    ...
 end
 ```
 
-### `C_Item.RequestLoadItemDataByID(item)` / `C_Item.RequestLoadItemData(itemLocation)`
+### `C_Item.GetItemLink(itemLocation)`
 
-Asks the engine to fetch the item's data from the server if not already
-cached. Returns `true` if the request was initiated (or the input was
-parseable to an itemID), `false` for malformed input. Fire-and-forget —
-the engine handles the round-trip; the data lands in the cache when the
-server responds.
-
-Fires `ITEM_DATA_LOAD_RESULT(itemID, success)` when the data lands in
-the cache, matching the modern API. Synchronously fired when the item
-was already cached (so polling code paths still work), asynchronously
-fired when the engine's SMSG response handler completes a network
-fetch.
-
-> **Vanilla quirk:** the engine has no native bool format code — `success`
-> arrives as `1`/`0` (number), not `true`/`false`. Idiomatic check is
-> `if success == 1 then ...`.
+Returns the fully-decorated per-instance hyperlink for the item at
+the location — same string `GetContainerItemLink(bag, slot)` or
+`GetInventoryItemLink("player", slot)` would return for the same
+slot. Enchant ID, random-suffix, and any other per-instance data
+attached to the CGItem are preserved.
 
 ```lua
-local f = CreateFrame("Frame")
-f:RegisterEvent("ITEM_DATA_LOAD_RESULT")
-f:SetScript("OnEvent", function()
-    -- vanilla 1.12: event payload is in `arg1`, `arg2`, ... globals
-    if event == "ITEM_DATA_LOAD_RESULT" and arg2 == 1 then
-        local _, type = C_Item.GetItemInfoInstant(arg1)
-        -- ...
-    end
-end)
-C_Item.RequestLoadItemDataByID(2589)
+local link = C_Item.GetItemLink({bagID = 0, slotIndex = 1})
+-- "|cffa335ee|Hitem:16539:911:::::::70::::::::::|h[General's Silk Boots]|h|r"
+--                          ^^^ — enchant ID (Speed +15%) preserved
 ```
 
-### `C_Item.GetItemSpell(item)`
+Implemented by reading the location table's fields and tail-calling
+the engine's link script function (`Script_GetContainerItemLink` at
+`0x004F9930` for bag locations, `Script_GetInventoryItemLink` at
+`0x004C8C10` for equipment slots). The link string is built by the
+engine off the live CGItem, so it always matches what other
+addons see via the older positional-arg APIs.
 
-Returns `(spellName, spellID)` for the on-use spell attached to an
-item (potions, trinkets, scrolls, hearthstone, food/drink, etc.),
-or `nil` for items without one (vendor trash, regular gear, weapons
-with passive procs).
+### `C_Item.GetItemLocation(itemGUID)`
 
-`item` accepts the same input shapes as `GetItemInfo` — a numeric
-itemID, a chat-link `"|cffffffff|Hitem:6948:0:0:0|h[...]|h|r"`
-fragment, or a `"item:NNN"` short form.
+Reverse lookup from a GUID string (the format `C_Item.GetItemGUID`
+returns) to an `itemLocation` table identifying the slot currently
+holding that item. Returns `nil` if the GUID isn't resident in the
+walked scope.
 
 ```lua
-C_Item.GetItemSpell(6948)
--- "Hearthstone", 8690
-
-C_Item.GetItemSpell(13442)
--- "Mighty Rage Potion", 17528
-
-C_Item.GetItemSpell(11288)  -- a soulstone (trigger=4, not ON_USE)
--- nil
-
-C_Item.GetItemSpell(2589)   -- Linen Cloth, no spell
--- nil
+local guid = C_Item.GetItemGUID({equipmentSlotIndex = INVSLOT_HEAD})
+-- player moves item to bag, drops it, etc. — guid stays valid across
+-- bag/equipment rearrangements until the item leaves the session
+local loc = C_Item.GetItemLocation(guid)
+-- loc might now be { bagID = 1, slotIndex = 4 }, or nil if sold
 ```
 
-Returns the **ON_USE** spell only. Vanilla items can carry up to 5
-spell entries in their `ItemStats_C` record, each with its own
-trigger code:
+Modern WoW returns an `ItemLocation` mixin object; we return a plain
+table with the same field shape every other `C_Item.*` API in
+ClassicAPI accepts as input (`{equipmentSlotIndex=N}` or
+`{bagID=B, slotIndex=S}`), so the result pipes straight into
+`C_Item.GetItemQuality(loc)`, `C_Item.GetItemLink(loc)`, etc.
 
-| Trigger | Meaning | Surfaced by `GetItemSpell`? |
-|---|---|---|
-| 0 | `ON_USE` | **yes** |
-| 1 | `ON_EQUIP` (passive aura on gear) | no |
-| 2 | `CHANCE_ON_HIT` (weapon procs) | no |
-| 4 | `SOULSTONE` (on-death) | no |
-| 5 | `ON_USE_NO_DELAY` | no (TODO: should we add this?) |
-| 6 | `LEARN_SPELL` (recipes) | no |
+**Walked scope.** Character-pane equipment (slots 1..19) + backpack
+(bagID 0) + the four equipped bags (bagIDs 1..4). Bank and keyring
+are NOT walked — same scope as the rest of the `C_Container.*`
+family. Worst case is ~80 slot lookups; fine for sporadic use, not
+appropriate for per-frame polling.
 
-This matches modern WoW's `GetItemSpell`, which only reports on-use
-triggers. Addons that need the other trigger types (proc auras,
-recipe targets) should reach into the cache directly — the spell
-slots are at `ItemStats +0x11C` (5 spell IDs) and `+0x130` (5 trigger
-codes).
+**Implementation.** We don't go through the engine's typed
+object-by-GUID helper at `0x00468460` (the one used for the auction-
+sell slot) because that path asserts on bad input — stale GUIDs
+from addon-side caching would crash the client. Instead we walk
+equipment + bag slots, read each CGItem's GUID, and compare. Misses
+return nil; hits never need a fallback.
 
-**Auto-warmup on cache miss.** Items not yet in the local cache
-return `nil` and silently kick off an `SMSG_ITEM_QUERY_SINGLE`
-request. A second call after `GET_ITEM_INFO_RECEIVED` lands the
-data. Same warmup pattern as `C_Item.GetItemFamily` and the rest of
-our cache-backed accessors.
+### `C_Item.GetItemMaxStackSize(itemLocation)` / `C_Item.GetItemMaxStackSizeByID(item)`
 
-### `OffhandHasWeapon()`
-
-Returns `true` if the player has a one-handed weapon (or off-hand-only
-weapon) equipped in the off-hand slot, `false` otherwise. Used by
-dual-wield checks and any addon backporting modern weapon-equipment
-logic.
-
-Returns `false` for:
-
-- Empty off-hand
-- Shields (`INVTYPE_SHIELD`)
-- Held items — tomes, orbs, librams (`INVTYPE_HOLDABLE`)
-- Off-hand item data not yet cached (typically only on first login,
-  before the engine has the item record; warms up after a peek)
-
-Returns `true` for `INVTYPE_WEAPON` (any one-handed weapon — sword,
-axe, mace, dagger, fist) and `INVTYPE_WEAPONOFFHAND` (off-hand-only
-weapons). Two-handers occupy the main-hand slot exclusively, so they
-never apply.
+Returns the item type's max stack size — what you'd find as the 8th
+return of `GetItemInfo(item)`. `1` for non-stackable items; `5`, `20`,
+`200`, etc. for stackables. Different from `C_Item.GetStackCount` /
+the engine's `GetContainerItemInfo`, which return the **current**
+count in a specific slot.
 
 ```lua
-if OffhandHasWeapon() then
-    -- Apply mainhand+offhand poison, refresh dual-wield rotation, etc.
-end
+local cap = C_Item.GetItemMaxStackSizeByID(2589)  -- Linen Cloth → 20
 ```
 
-### `C_Item.IsEquippableItem(item)`
-
-Returns `true` if `item` can be equipped in any character-pane slot,
-`false` otherwise. Reads `m_inventoryType` from the cached ItemStats
-record — INVTYPE_NON_EQUIP (value `0`) is the only "not equippable"
-value, so any non-zero inventory type passes (head, neck, weapon,
-shield, holdable, …).
-
-`item` is an itemID number or `"item:N..."` link. Item names aren't
-accepted — vanilla has no name→ID resolver, and equippability is an
-itemID-keyed property anyway.
-
-Returns `false` for uncached items (no async load fired). If you
-need it to wait for the cache, call `C_Item.RequestLoadItemDataByID`
-first and re-check on `ITEM_DATA_LOAD_RESULT`.
-
-```lua
-C_Item.IsEquippableItem(12640)  -- Lionheart Helm → true
-C_Item.IsEquippableItem(6948)   -- Hearthstone → false
-```
-
-### `C_Item.IsEquippedItem(item)`
-
-Returns `true` if `item` is currently equipped in any of the 19
-character-pane slots, `false` otherwise. Walks slots 1..19 in order and
-short-circuits on the first match.
-
-`item` accepts the same shapes as `GetItemInfo`:
-
-| Form | Example | Match strategy |
-|------|---------|----------------|
-| itemID | `2589` | exact `itemID` equality |
-| bare link | `"item:2589:0:0:0"` | parses the first numeric field |
-| chat link | `\124cffffffff\124Hitem:2589:0:0:0\124h[Linen Cloth]\124h\124r` | extracts itemID after `\124Hitem:` |
-| name | `"Linen Cloth"` | case-insensitive match against the cached `m_name[0]` of each equipped item |
-
-Returns `false` (no Lua error) for invalid input — `nil`, empty string,
-or a string that doesn't parse as any of the above.
-
-The name-match path requires the candidate equipped item to be in the
-client item cache; equipped items are always cached, so this is a
-non-issue in practice.
-
-```lua
-if C_Item.IsEquippedItem(2589) then
-    -- Linen Cloth is equipped (silly example — pick a wearable item)
-end
-
--- From a chat link click:
-if C_Item.IsEquippedItem(itemLink) then ...
-
--- By localized name:
-if C_Item.IsEquippedItem("Thunderfury, Blessed Blade of the Windseeker") then ...
-```
-
-### `C_Item.EquipItemByName(itemInfo [, dstSlot])`
-
-Finds the first item in the player's bags matching `itemInfo` and
-equips it. With `dstSlot` (a 1-based character-pane slot, 1..19),
-equips to that specific slot; without, the engine auto-picks based on
-the item's inventory type.
-
-`itemInfo` accepts the same shapes as
-[`C_Item.IsEquippedItem`](#c_itemisequippeditemitem) — itemID number,
-bare `"item:N"` string, full chat link, or a localized item name. Name
-matches are case-insensitive against the cached `m_name[0]`.
-
-Returns nothing. Silently no-ops when:
-
-- the input is `nil`, an empty string, or otherwise unparseable
-- no matching item is in bags (already-equipped items aren't moved —
-  matches modern API behavior)
-- the engine refuses the equip — combat, locked item, type mismatch
-  with `dstSlot`, locked equipment slot, etc.
-
-Two paths based on `dstSlot`:
-
-- **Explicit `dstSlot` (1..19): cursor-free direct swap.** Calls the
-  engine's own `FUN_INVENTORY_SWAP` (`0x005E0C40`) — the same
-  primitive `Script_EquipCursorItem` dispatches to after resolving
-  cursor state. We hand it the source item GUID, source container
-  GUID, source linear slot, and target paperdoll slot; the engine
-  builds and sends the CMSG_SWAP_INV_ITEM (or CMSG_AUTOEQUIP_ITEM
-  for cross-container) packet through its normal pipeline. **The
-  cursor is never read or written.** An item already on the cursor
-  stays on the cursor.
-- **No `dstSlot` (engine auto-picks slot from inventory type):**
-  falls back to the cursor-pickup + `AutoEquipCursorItem` path
-  because 1.12's auto-pick logic reads off cursor state. For this
-  path only, the function refuses to operate (no-op) when
-  `CursorHasItem()` is already true, to avoid clobbering whatever's
-  held.
-
-```lua
--- By itemID, auto-pick slot:
-C_Item.EquipItemByName(2589)
-
--- By name, force into off-hand (slot 17):
-C_Item.EquipItemByName("Linen Cloth", 17)
-
--- From a chat link:
-C_Item.EquipItemByName(itemLink)
-```
-
-### `C_Item.UseItemByName(itemInfo [, unit])`
-
-Finds the first item in the player's bags matching `itemInfo` and
-uses it. Returns nothing; silently no-ops when:
-
-- the input is `nil`, an empty string, or otherwise unparseable
-- no matching item is in bags
-- the engine refuses the use — cooldown, locked item, level
-  requirement, etc.
-
-`itemInfo` accepts the same shapes as
-[`C_Item.EquipItemByName`](#c_itemequipitembynameiteminfo--dstslot) —
-itemID number, bare `"item:N"` string, full chat link, or a localized
-item name. Name matches are case-insensitive against the cached
-`m_name[0]`.
-
-The optional `unit` argument is a unit token (`"player"`, `"target"`,
-`"focus"`, `"partyN"`, `"raidN"`, `"nameplateN"`, …) used as the cast
-target for items that fire a spell (scrolls, traps, on-use targeted
-effects). For self-use items (hearthstone, potions, food) the engine
-overwrites the target with the item's own GUID before dispatch, so
-passing a `unit` to those is harmless and has no effect. Unrecognized
-strings are treated as "no target" rather than raising, matching the
-silently-no-op contract of `itemInfo`.
-
-```lua
-C_Item.UseItemByName("Hearthstone")                       -- hearth home
-C_Item.UseItemByName(6948)                                -- same thing, by ID
-C_Item.UseItemByName("Major Healing Potion")
-C_Item.UseItemByName("Scroll of Stamina IV", "target")    -- buff your tank
-```
-
-Mirrors 3.3.5's `Script_UseItemByName` structure: locate the item
-directly, then hand the `CGItem *` to the engine's by-pointer use
-primitive at `0x005D8D00`. That primitive dispatches internally based
-on item type (food, potion, on-use spell, scroll, quiver, ...) so a
-single call covers every item category. We skip
-`Script_UseContainerItem` entirely — its branches for repair vendor,
-spell-cast targeting, and drop-on-bag cursor modes don't apply to an
-addon-issued call from a clean cursor.
-
-### `C_Item.DoesItemExist(itemLocation)` / `C_Item.DoesItemExistByID(item)`
-
-Existence checks straight off the engine's inventory manager (location
-form) and item cache (ID form). No `GetItemInfo` chaining — both
-functions read directly from the structures they need.
-
-- `C_Item.DoesItemExist(itemLocation)` — `true` iff the equipment-slot
-  or `(bagID, slotIndex)` location resolves to a populated inventory
-  slot on the active player. Empty slots, missing bags, or malformed
-  tables return `false`.
-- `C_Item.DoesItemExistByID(item)` — `true` iff the cache currently
-  has data for `item`. Cache miss returns `false` and kicks off the
-  network query in the background; a follow-up call after
-  [`GET_ITEM_INFO_RECEIVED`](#c_itemrequestloaditemdatabyiditem--c_itemrequestloaditemdataitemlocation)
-  will succeed. Accepts a numeric `itemID`, a bare `"item:NNN..."`
-  string, or a full chat link.
-
-```lua
-if C_Item.DoesItemExist({equipmentSlotIndex = INVSLOT_HEAD}) then ... end
-if C_Item.DoesItemExistByID(6948) then ... end
-```
+Single `uint32` read at cache record `+0x60` (`m_stackable`). By-ID
+form fires a background cache fill on miss and returns nil; re-call
+after `GET_ITEM_INFO_RECEIVED`.
 
 ### `C_Item.GetItemName(itemLocation)` / `C_Item.GetItemNameByID(item)`
 
@@ -4128,6 +3815,25 @@ if C_Item.GetItemQualityByID(itemID) >= LE_ITEM_QUALITY_RARE then
     -- highlight rare-or-better drop
 end
 ```
+
+### `C_Item.GetItemSellPrice(itemLocation)` / `C_Item.GetItemSellPriceByID(item)`
+
+Returns the vendor sell price in copper, **per unit** (multiply by
+stack count for the per-stack value). Matches the 11th return of
+modern WoW's `GetItemInfo`. Returns `nil` on cache miss / invalid
+input. Cache miss fires a background fill so a follow-up call after
+`GET_ITEM_INFO_RECEIVED` returns the value.
+
+```lua
+local unit = C_Item.GetItemSellPriceByID(2589)   -- Linen Cloth → 25 (copper)
+local stack = unit * C_Item.GetItemMaxStackSizeByID(2589)
+```
+
+Single `uint32` read at cache record `+0x28` (`m_sellPrice`). Vanilla
+1.12 doesn't surface this in tooltips — the field is populated on
+every sellable item but the engine's tooltip code never reads it —
+so this function exposes data that's been sitting in the cache
+unused.
 
 ### `C_Item.GetItemSetID(itemLocation)` / `C_Item.GetItemSetIDByID(item)`
 
@@ -4186,123 +3892,55 @@ Reads `ItemSet.dbc` directly — no cache warm-up needed (DBCs load at
 boot). Returns `nil` for `setID == 0`, out-of-range IDs, or rows
 that don't exist.
 
-### `C_Item.GetItemSellPrice(itemLocation)` / `C_Item.GetItemSellPriceByID(item)`
+### `C_Item.GetItemSpell(item)`
 
-Returns the vendor sell price in copper, **per unit** (multiply by
-stack count for the per-stack value). Matches the 11th return of
-modern WoW's `GetItemInfo`. Returns `nil` on cache miss / invalid
-input. Cache miss fires a background fill so a follow-up call after
-`GET_ITEM_INFO_RECEIVED` returns the value.
+Returns `(spellName, spellID)` for the on-use spell attached to an
+item (potions, trinkets, scrolls, hearthstone, food/drink, etc.),
+or `nil` for items without one (vendor trash, regular gear, weapons
+with passive procs).
 
-```lua
-local unit = C_Item.GetItemSellPriceByID(2589)   -- Linen Cloth → 25 (copper)
-local stack = unit * C_Item.GetItemMaxStackSizeByID(2589)
-```
-
-Single `uint32` read at cache record `+0x28` (`m_sellPrice`). Vanilla
-1.12 doesn't surface this in tooltips — the field is populated on
-every sellable item but the engine's tooltip code never reads it —
-so this function exposes data that's been sitting in the cache
-unused.
-
-### `C_Item.GetCurrentItemLevel(itemLocation)` / `C_Item.GetDetailedItemLevelInfo(item)`
-
-Returns the item's base ilvl from `m_itemLevel` (cache record `+0x38`).
-Vanilla 1.12 has no per-instance scaling (no upgrades, no warforging),
-so "current" and "base" item level are always identical — both APIs
-return the same single value. Modern `GetDetailedItemLevelInfo` is
-spec'd to return `(current, isPreview, base)`; we push only the
-current level, callers that care about the extra returns will see
-`nil` for them.
+`item` accepts the same input shapes as `GetItemInfo` — a numeric
+itemID, a chat-link `"|cffffffff|Hitem:6948:0:0:0|h[...]|h|r"`
+fragment, or a `"item:NNN"` short form.
 
 ```lua
-local ilvl = C_Item.GetCurrentItemLevel({equipmentSlotIndex = INVSLOT_HEAD})
+C_Item.GetItemSpell(6948)
+-- "Hearthstone", 8690
+
+C_Item.GetItemSpell(13442)
+-- "Mighty Rage Potion", 17528
+
+C_Item.GetItemSpell(11288)  -- a soulstone (trigger=4, not ON_USE)
+-- nil
+
+C_Item.GetItemSpell(2589)   -- Linen Cloth, no spell
+-- nil
 ```
 
-### `GetAverageItemLevel()`
+Returns the **ON_USE** spell only. Vanilla items can carry up to 5
+spell entries in their `ItemStats_C` record, each with its own
+trigger code:
 
-Returns `(avgItemLevel, avgItemLevelEquipped)` — modern WoW's
-2-tuple shape. `avgItemLevelEquipped` is the arithmetic mean over
-the player's currently-worn equipment slots; `avgItemLevel` is the
-same metric but extended to include best-per-slot upgrades found
-anywhere in the player's bags and bank.
+| Trigger | Meaning | Surfaced by `GetItemSpell`? |
+|---|---|---|
+| 0 | `ON_USE` | **yes** |
+| 1 | `ON_EQUIP` (passive aura on gear) | no |
+| 2 | `CHANCE_ON_HIT` (weapon procs) | no |
+| 4 | `SOULSTONE` (on-death) | no |
+| 5 | `ON_USE_NO_DELAY` | no (TODO: should we add this?) |
+| 6 | `LEARN_SPELL` (recipes) | no |
 
-Slots considered: `INVSLOT_HEAD..INVSLOT_TABARD` (1..19) minus
-shirt (4) and tabard (19) = 17 candidate slots. Bag-walk uses the
-same `invType → slotMask` mapping as `GetInventoryItemsForSlot`.
+This matches modern WoW's `GetItemSpell`, which only reports on-use
+triggers. Addons that need the other trigger types (proc auras,
+recipe targets) should reach into the cache directly — the spell
+slots are at `ItemStats +0x11C` (5 spell IDs) and `+0x130` (5 trigger
+codes).
 
-```lua
-local overall, equipped = GetAverageItemLevel()
--- overall:  best-per-slot ilvl across equipped + bags + bank
--- equipped: ilvl of currently-worn items only
-```
-
-**Fixed denominator.** Empty slots count toward the denominator
-(contributing 0 to the sum). Removing a piece of gear always
-lowers `avgItemLevelEquipped` — matches modern's behavior
-(verified against retail Wow.exe at `552.4375 × 16 = 8839`
-exactly). Vanilla addons of the GearScore era used populated-only
-count; this implementation deliberately differs.
-
-**Max-of-two-divisors fairness.** A 2H weapon wielder has an
-intentionally empty offhand (slot 17) — counting it as 0 in a
-17-divisor sum would unfairly penalize them. We compute a second
-candidate excluding slot 17 from both numerator and denominator
-(16 slots), and return the max. Sword+shield characters typically
-win the all-17 path; 2H wielders win the no-OH path. Same trick
-the 4.3.4 client uses at `FUN_0097E0F0`'s tail.
-
-**No double-counting.** Each bag/bank item is assigned to **one**
-candidate slot via greedy fit — a trinket in your bag fills one
-trinket slot (the empty/lower-best one), not both. Without this
-gate, moving a trinket from equipped to bag would inflate the
-"overall" count and drag the average down (because the same item
-would count for both trinket slots).
-
-**Bank is walked** even if the bank window has never been opened
-this session — the GUID array at `invMgr + 0x04` is populated
-from server data at login. Bypasses the bank-window gate on
-`GetItemBySlot` the same way `C_Item.GetItemCount` does.
-
-Limitations:
-- Items not yet in the ItemStats cache are skipped from the
-  running totals and a warmup is queued; the next call after
-  `ITEM_DATA_LOAD_RESULT` lands picks them up.
-- The full 4.3.4 weapon `qsort` dance — handling 2H-equipped vs.
-  1H + OH-in-bag comparisons — is not replicated. Edge case in
-  vanilla where you'd notice a difference is narrow.
-
-### `C_Item.GetItemMaxStackSize(itemLocation)` / `C_Item.GetItemMaxStackSizeByID(item)`
-
-Returns the item type's max stack size — what you'd find as the 8th
-return of `GetItemInfo(item)`. `1` for non-stackable items; `5`, `20`,
-`200`, etc. for stackables. Different from `C_Item.GetStackCount` /
-the engine's `GetContainerItemInfo`, which return the **current**
-count in a specific slot.
-
-```lua
-local cap = C_Item.GetItemMaxStackSizeByID(2589)  -- Linen Cloth → 20
-```
-
-Single `uint32` read at cache record `+0x60` (`m_stackable`). By-ID
-form fires a background cache fill on miss and returns nil; re-call
-after `GET_ITEM_INFO_RECEIVED`.
-
-### `C_Item.GetStackCount(itemLocation)`
-
-Returns the **current** stack count in a specific slot — distinct
-from `C_Item.GetItemCount(item)`, which sums every stack of that
-itemID across the player's inventory. Useful when an addon needs to
-know "this specific stack has 13/20", not "I have 47 total".
-
-```lua
-local n = C_Item.GetStackCount({bagID = 0, slotIndex = 1})
--- 13 (the bag's first slot has 13 of whatever item)
-```
-
-Reads `ITEM_FIELD_STACK_COUNT` directly off the item's
-`m_objectFields` — same field `GetContainerItemInfo` returns as
-`itemCount`. Returns `0` for empty / unresolvable locations.
+**Auto-warmup on cache miss.** Items not yet in the local cache
+return `nil` and silently kick off an `SMSG_ITEM_QUERY_SINGLE`
+request. A second call after `GET_ITEM_INFO_RECEIVED` lands the
+data. Same warmup pattern as `C_Item.GetItemFamily` and the rest of
+our cache-backed accessors.
 
 ### `C_Item.GetItemUniqueness(itemLocation)` / `C_Item.GetItemUniquenessByID(item)`
 
@@ -4343,54 +3981,108 @@ Modern WoW populates the category half for items like Brewfest Mug
 or Heart of Azeroth ("Unique-Equipped: Eye of Azshara"). Vanilla
 has no such items, so the category fields stay nil/0.
 
-### `C_Item.GetItemLink(itemLocation)`
+### `C_Item.GetStackCount(itemLocation)`
 
-Returns the fully-decorated per-instance hyperlink for the item at
-the location — same string `GetContainerItemLink(bag, slot)` or
-`GetInventoryItemLink("player", slot)` would return for the same
-slot. Enchant ID, random-suffix, and any other per-instance data
-attached to the CGItem are preserved.
+Returns the **current** stack count in a specific slot — distinct
+from `C_Item.GetItemCount(item)`, which sums every stack of that
+itemID across the player's inventory. Useful when an addon needs to
+know "this specific stack has 13/20", not "I have 47 total".
 
 ```lua
-local link = C_Item.GetItemLink({bagID = 0, slotIndex = 1})
--- "|cffa335ee|Hitem:16539:911:::::::70::::::::::|h[General's Silk Boots]|h|r"
---                          ^^^ — enchant ID (Speed +15%) preserved
+local n = C_Item.GetStackCount({bagID = 0, slotIndex = 1})
+-- 13 (the bag's first slot has 13 of whatever item)
 ```
 
-Implemented by reading the location table's fields and tail-calling
-the engine's link script function (`Script_GetContainerItemLink` at
-`0x004F9930` for bag locations, `Script_GetInventoryItemLink` at
-`0x004C8C10` for equipment slots). The link string is built by the
-engine off the live CGItem, so it always matches what other
-addons see via the older positional-arg APIs.
+Reads `ITEM_FIELD_STACK_COUNT` directly off the item's
+`m_objectFields` — same field `GetContainerItemInfo` returns as
+`itemCount`. Returns `0` for empty / unresolvable locations.
 
-### `C_Item.GetItemInventoryType(itemLocation)` / `C_Item.GetItemInventoryTypeByID(item)`
+### `C_Item.IsBound(itemLocation)`
 
-Returns the numeric `Enum.InventoryType` straight off the cache
-record's `m_inventoryType` field (`+0x2C`) — the integer sibling of
-`GetItemInfoInstant`'s 4th return (which gives the `INVTYPE_*` string).
-
-| Value | Constant              | Slot                        |
-|------:|-----------------------|-----------------------------|
-| 0     | `INVTYPE_NON_EQUIP_IGNORE` | non-equippable        |
-| 1     | `INVTYPE_HEAD`        | head                         |
-| 2     | `INVTYPE_NECK`        | neck                         |
-| …     | …                     | …                            |
-| 20    | `INVTYPE_ROBE`        | chest (full-body robes)      |
-| 26    | `INVTYPE_RANGEDRIGHT` | ranged                       |
-| 27    | `INVTYPE_QUIVER`      | quiver/ammo pouch            |
-
-Vanilla items only produce values `0..28`; the higher modern
-constants (`INVTYPE_PROFESSION_*`, `INVTYPE_EQUIPABLESPELL_*`, etc.)
-were introduced post-vanilla and are never returned. Modern
-backport code that compares against the higher enum values still
-resolves correctly because vanilla items just don't carry those
-types.
+Returns `true` if the item at the given location is soulbound, `false` otherwise
+(including when the slot is empty or the location is malformed). The 1.12
+client tracks the soulbound bit on each item instance directly; previously
+the only way to read it from Lua was a scan-tooltip hack
+(`SetBagItem` + string-compare against the localized `ITEM_SOULBOUND`
+constant) — slow, locale-fragile, and one of the hottest paths during bag
+updates.
 
 ```lua
-local t = C_Item.GetItemInventoryTypeByID(19019)  -- Thunderfury: 17 = INVTYPE_2HWEAPON
-if t == 1 then -- head
-    ...
+if C_Item.IsBound({equipmentSlotIndex = INVSLOT_HEAD}) then ... end
+if C_Item.IsBound({bagID = 0, slotIndex = 1}) then ... end
+if C_Item.IsBound(itemGUID) then ... end
+```
+
+### `C_Item.IsEquippableItem(item)`
+
+Returns `true` if `item` can be equipped in any character-pane slot,
+`false` otherwise. Reads `m_inventoryType` from the cached ItemStats
+record — INVTYPE_NON_EQUIP (value `0`) is the only "not equippable"
+value, so any non-zero inventory type passes (head, neck, weapon,
+shield, holdable, …).
+
+`item` is an itemID number or `"item:N..."` link. Item names aren't
+accepted — vanilla has no name→ID resolver, and equippability is an
+itemID-keyed property anyway.
+
+Returns `false` for uncached items (no async load fired). If you
+need it to wait for the cache, call `C_Item.RequestLoadItemDataByID`
+first and re-check on `ITEM_DATA_LOAD_RESULT`.
+
+```lua
+C_Item.IsEquippableItem(12640)  -- Lionheart Helm → true
+C_Item.IsEquippableItem(6948)   -- Hearthstone → false
+```
+
+### `C_Item.IsEquippedItem(item)`
+
+Returns `true` if `item` is currently equipped in any of the 19
+character-pane slots, `false` otherwise. Walks slots 1..19 in order and
+short-circuits on the first match.
+
+`item` accepts the same shapes as `GetItemInfo`:
+
+| Form | Example | Match strategy |
+|------|---------|----------------|
+| itemID | `2589` | exact `itemID` equality |
+| bare link | `"item:2589:0:0:0"` | parses the first numeric field |
+| chat link | `\124cffffffff\124Hitem:2589:0:0:0\124h[Linen Cloth]\124h\124r` | extracts itemID after `\124Hitem:` |
+| name | `"Linen Cloth"` | case-insensitive match against the cached `m_name[0]` of each equipped item |
+
+Returns `false` (no Lua error) for invalid input — `nil`, empty string,
+or a string that doesn't parse as any of the above.
+
+The name-match path requires the candidate equipped item to be in the
+client item cache; equipped items are always cached, so this is a
+non-issue in practice.
+
+```lua
+if C_Item.IsEquippedItem(2589) then
+    -- Linen Cloth is equipped (silly example — pick a wearable item)
+end
+
+-- From a chat link click:
+if C_Item.IsEquippedItem(itemLink) then ...
+
+-- By localized name:
+if C_Item.IsEquippedItem("Thunderfury, Blessed Blade of the Windseeker") then ...
+```
+
+### `C_Item.IsItemDataCachedByID(item)` / `C_Item.IsItemDataCached(itemLocation)`
+
+Returns `true` if the item's static data is currently in the client-side
+item cache, `false` otherwise. The "ByID" variant takes an itemID or
+"item:NNN"-style string; the location variant takes the modern
+`{equipmentSlotIndex=}` / `{bagID=, slotIndex=}` table.
+
+These read the cache without firing a server query — pair with
+`RequestLoadItemData(ByID)` if you need to ensure the data is loaded
+before checking.
+
+```lua
+if not C_Item.IsItemDataCachedByID(itemID) then
+    C_Item.RequestLoadItemDataByID(itemID)
+    -- (poll IsItemDataCachedByID on a timer until true)
 end
 ```
 
@@ -4509,6 +4201,51 @@ C_Item.LockItemByGUID(guid)
 Same caveats as `LockItem` — purely client-side, doesn't affect any
 real engine transaction state.
 
+### `C_Item.RequestLoadItemDataByID(item)` / `C_Item.RequestLoadItemData(itemLocation)`
+
+Asks the engine to fetch the item's data from the server if not already
+cached. Returns `true` if the request was initiated (or the input was
+parseable to an itemID), `false` for malformed input. Fire-and-forget —
+the engine handles the round-trip; the data lands in the cache when the
+server responds.
+
+Fires `ITEM_DATA_LOAD_RESULT(itemID, success)` when the data lands in
+the cache, matching the modern API. Synchronously fired when the item
+was already cached (so polling code paths still work), asynchronously
+fired when the engine's SMSG response handler completes a network
+fetch.
+
+> **Vanilla quirk:** the engine has no native bool format code — `success`
+> arrives as `1`/`0` (number), not `true`/`false`. Idiomatic check is
+> `if success == 1 then ...`.
+
+```lua
+local f = CreateFrame("Frame")
+f:RegisterEvent("ITEM_DATA_LOAD_RESULT")
+f:SetScript("OnEvent", function()
+    -- vanilla 1.12: event payload is in `arg1`, `arg2`, ... globals
+    if event == "ITEM_DATA_LOAD_RESULT" and arg2 == 1 then
+        local _, type = C_Item.GetItemInfoInstant(arg1)
+        -- ...
+    end
+end)
+C_Item.RequestLoadItemDataByID(2589)
+```
+
+### `C_Item.UnlockAllItems()`
+
+Sweep clear of every CGItem the engine knows about — same primitive
+the engine itself runs on `PLAYER_LEAVING_WORLD`. One
+`ITEM_LOCK_CHANGED` fires at the end.
+
+```lua
+C_Item.UnlockAllItems()
+```
+
+Cheapest recovery if you don't know which item is stuck. Same caveat
+as `UnlockItem`: this is purely client-side state — it won't cancel
+any pending server-side transactions.
+
 ### `C_Item.UnlockItem(itemLocation)`
 
 Force-clear the client-side lock on one item. Recovery primitive —
@@ -4529,72 +4266,46 @@ sweep is logout). This call gives you an in-session escape hatch.
 > update will set the lock right back. For cursor-cancel semantics,
 > pair with vanilla-native `ClearCursor()`.
 
-### `C_Item.UnlockAllItems()`
+### `C_Item.UseItemByName(itemInfo [, unit])`
 
-Sweep clear of every CGItem the engine knows about — same primitive
-the engine itself runs on `PLAYER_LEAVING_WORLD`. One
-`ITEM_LOCK_CHANGED` fires at the end.
+Finds the first item in the player's bags matching `itemInfo` and
+uses it. Returns nothing; silently no-ops when:
 
-```lua
-C_Item.UnlockAllItems()
-```
+- the input is `nil`, an empty string, or otherwise unparseable
+- no matching item is in bags
+- the engine refuses the use — cooldown, locked item, level
+  requirement, etc.
 
-Cheapest recovery if you don't know which item is stuck. Same caveat
-as `UnlockItem`: this is purely client-side state — it won't cancel
-any pending server-side transactions.
+`itemInfo` accepts the same shapes as
+[`C_Item.EquipItemByName`](#c_itemequipitembynameiteminfo--dstslot) —
+itemID number, bare `"item:N"` string, full chat link, or a localized
+item name. Name matches are case-insensitive against the cached
+`m_name[0]`.
 
-### `C_Item.GetItemGUID(itemLocation)`
-
-Returns the per-instance 64-bit GUID of the item at the location,
-formatted as `"0xHHHHHHHHLLLLLLLL"` (16 hex digits, hi dword first).
-Same format `UnitGUID` uses — 1.12 GUIDs are plain qwords with no
-`"Item-Server-..."`-style prefix scheme (modern's prefix format
-arrived in 6.x). Returns `nil` for empty / invalid locations.
-
-```lua
-local guid = C_Item.GetItemGUID({equipmentSlotIndex = INVSLOT_HEAD})
--- "0x40000000000DEFCA"
-```
-
-Reads CGItem instance block at `+0x08` → GUID qword at `+0x00`.
-The GUID is stable per-character-session and survives moves between
-bags / character pane, so it's the right identifier for "this exact
-item instance" — equipment-set tracking, soulbind matching, or any
-addon code that needs to follow a single item across slot moves.
-
-### `C_Item.GetItemLocation(itemGUID)`
-
-Reverse lookup from a GUID string (the format `C_Item.GetItemGUID`
-returns) to an `itemLocation` table identifying the slot currently
-holding that item. Returns `nil` if the GUID isn't resident in the
-walked scope.
+The optional `unit` argument is a unit token (`"player"`, `"target"`,
+`"focus"`, `"partyN"`, `"raidN"`, `"nameplateN"`, …) used as the cast
+target for items that fire a spell (scrolls, traps, on-use targeted
+effects). For self-use items (hearthstone, potions, food) the engine
+overwrites the target with the item's own GUID before dispatch, so
+passing a `unit` to those is harmless and has no effect. Unrecognized
+strings are treated as "no target" rather than raising, matching the
+silently-no-op contract of `itemInfo`.
 
 ```lua
-local guid = C_Item.GetItemGUID({equipmentSlotIndex = INVSLOT_HEAD})
--- player moves item to bag, drops it, etc. — guid stays valid across
--- bag/equipment rearrangements until the item leaves the session
-local loc = C_Item.GetItemLocation(guid)
--- loc might now be { bagID = 1, slotIndex = 4 }, or nil if sold
+C_Item.UseItemByName("Hearthstone")                       -- hearth home
+C_Item.UseItemByName(6948)                                -- same thing, by ID
+C_Item.UseItemByName("Major Healing Potion")
+C_Item.UseItemByName("Scroll of Stamina IV", "target")    -- buff your tank
 ```
 
-Modern WoW returns an `ItemLocation` mixin object; we return a plain
-table with the same field shape every other `C_Item.*` API in
-ClassicAPI accepts as input (`{equipmentSlotIndex=N}` or
-`{bagID=B, slotIndex=S}`), so the result pipes straight into
-`C_Item.GetItemQuality(loc)`, `C_Item.GetItemLink(loc)`, etc.
-
-**Walked scope.** Character-pane equipment (slots 1..19) + backpack
-(bagID 0) + the four equipped bags (bagIDs 1..4). Bank and keyring
-are NOT walked — same scope as the rest of the `C_Container.*`
-family. Worst case is ~80 slot lookups; fine for sporadic use, not
-appropriate for per-frame polling.
-
-**Implementation.** We don't go through the engine's typed
-object-by-GUID helper at `0x00468460` (the one used for the auction-
-sell slot) because that path asserts on bad input — stale GUIDs
-from addon-side caching would crash the client. Instead we walk
-equipment + bag slots, read each CGItem's GUID, and compare. Misses
-return nil; hits never need a fallback.
+Mirrors 3.3.5's `Script_UseItemByName` structure: locate the item
+directly, then hand the `CGItem *` to the engine's by-pointer use
+primitive at `0x005D8D00`. That primitive dispatches internally based
+on item type (food, potion, on-use spell, scroll, quiver, ...) so a
+single call covers every item category. We skip
+`Script_UseContainerItem` entirely — its branches for repair vendor,
+spell-cast targeting, and drop-on-bag cursor modes don't apply to an
+addon-issued call from a clean cursor.
 
 ### `Get*ItemID` — companions to the engine's `Get*ItemLink` family
 
@@ -4659,6 +4370,295 @@ end
 > the deliverable). `GetTradeSkillItemID` returns the produced
 > itemID; `GetCraftSpellID` returns the recipe spellID — because
 > there's no produced item to point at.
+
+### `GetAverageItemLevel()`
+
+Returns `(avgItemLevel, avgItemLevelEquipped)` — modern WoW's
+2-tuple shape. `avgItemLevelEquipped` is the arithmetic mean over
+the player's currently-worn equipment slots; `avgItemLevel` is the
+same metric but extended to include best-per-slot upgrades found
+anywhere in the player's bags and bank.
+
+Slots considered: `INVSLOT_HEAD..INVSLOT_TABARD` (1..19) minus
+shirt (4) and tabard (19) = 17 candidate slots. Bag-walk uses the
+same `invType → slotMask` mapping as `GetInventoryItemsForSlot`.
+
+```lua
+local overall, equipped = GetAverageItemLevel()
+-- overall:  best-per-slot ilvl across equipped + bags + bank
+-- equipped: ilvl of currently-worn items only
+```
+
+**Fixed denominator.** Empty slots count toward the denominator
+(contributing 0 to the sum). Removing a piece of gear always
+lowers `avgItemLevelEquipped` — matches modern's behavior
+(verified against retail Wow.exe at `552.4375 × 16 = 8839`
+exactly). Vanilla addons of the GearScore era used populated-only
+count; this implementation deliberately differs.
+
+**Max-of-two-divisors fairness.** A 2H weapon wielder has an
+intentionally empty offhand (slot 17) — counting it as 0 in a
+17-divisor sum would unfairly penalize them. We compute a second
+candidate excluding slot 17 from both numerator and denominator
+(16 slots), and return the max. Sword+shield characters typically
+win the all-17 path; 2H wielders win the no-OH path. Same trick
+the 4.3.4 client uses at `FUN_0097E0F0`'s tail.
+
+**No double-counting.** Each bag/bank item is assigned to **one**
+candidate slot via greedy fit — a trinket in your bag fills one
+trinket slot (the empty/lower-best one), not both. Without this
+gate, moving a trinket from equipped to bag would inflate the
+"overall" count and drag the average down (because the same item
+would count for both trinket slots).
+
+**Bank is walked** even if the bank window has never been opened
+this session — the GUID array at `invMgr + 0x04` is populated
+from server data at login. Bypasses the bank-window gate on
+`GetItemBySlot` the same way `C_Item.GetItemCount` does.
+
+Limitations:
+- Items not yet in the ItemStats cache are skipped from the
+  running totals and a warmup is queued; the next call after
+  `ITEM_DATA_LOAD_RESULT` lands picks them up.
+- The full 4.3.4 weapon `qsort` dance — handling 2H-equipped vs.
+  1H + OH-in-bag comparisons — is not replicated. Edge case in
+  vanilla where you'd notice a difference is narrow.
+
+### `GetInventoryItemDurability(invSlot)`
+
+Returns `(current, maximum)` durability for the player's equipped item
+at `invSlot` (1-based, character-pane slots 1..19), or nothing if the
+slot is empty or the item has no durability concept (rings, trinkets,
+necks, backs, shirts, tabards, etc.).
+
+```
+current, maximum = GetInventoryItemDurability(invSlot)
+```
+
+```lua
+local cur, max = GetInventoryItemDurability(INVSLOT_CHEST)
+if cur then
+    -- cur, max are positive integers (e.g. 65, 65 for full chest)
+end
+
+-- Items without durability return nothing — both locals are nil:
+local cur, max = GetInventoryItemDurability(INVSLOT_FINGER1)
+-- cur == nil, max == nil
+```
+
+> **Player-only.** Matches modern API: 3.3.5+ `GetInventoryItemDurability`
+> takes only the slot, no unit token. Inspect targets / party members'
+> equipment durability isn't broadcast in 1.12, so we couldn't expose it
+> for other units even if we wanted to.
+
+> **`(0, max)` vs nothing.** Items that have a durability concept but
+> are currently broken (`current == 0`, `max > 0`) still return
+> `(0, max)`. The "nothing" return is reserved for items that have no
+> durability fields populated at all — `max` is the discriminator,
+> matching the engine's own `GetInventoryItemBroken` logic.
+
+Reads ITEM_FIELD_DURABILITY (+0xA0) and ITEM_FIELD_MAXDURABILITY
+(+0xA4) directly off the CGItem's m_objectFields descriptor at `+0x114`
+— same descriptor [`C_Item.IsBound`](#c_itemisbounditemlocation) reads
+FLAGS from. No DBC indirection.
+
+### `GetInventoryItemID(unit, slot)`
+
+Returns the itemID of the item equipped at `slot` (1-based) on `unit`,
+or `nil` if the slot is empty / the unit isn't valid / the unit doesn't
+expose its equipment to the local client. Same arg shape as 1.12's
+`GetInventoryItemLink(unit, slot)` — drop-in for code that just needs
+the ID and would otherwise have to parse the link string.
+
+- For `"player"` (and any token resolving to the local player, e.g.
+  `"target"` when self-targeted): walks the private inventory manager.
+  Supports the full slot range (equipment 1..19, bag slots 20..23,
+  bank slots, etc.) — same range `GetItemBySlot` accepts internally.
+- For other player-controlled units (`"target"`, `"party1"..party4"`,
+  inspect targets): reads the unit's broadcast visible-items array.
+  Equipment slots 1..19 only.
+- For NPCs / creatures: returns `nil`. The visible-items array isn't
+  populated for non-player-controlled units in 1.12, so we gate this
+  on `UnitPlayerControlled` to avoid the engine crash that
+  `GetInventoryItemLink` itself would trigger on the same input.
+
+```lua
+local id = GetInventoryItemID("player", INVSLOT_HEAD)
+if id then
+    local _, type, subtype = C_Item.GetItemInfoInstant(id)
+    -- ...
+end
+
+-- Inspect a party member without parsing a hyperlink:
+local headID = GetInventoryItemID("party1", INVSLOT_HEAD)
+```
+
+### `GetInventoryItemRepairCost(invSlot)`
+
+Returns the cost in copper to repair the player's equipped item at
+`invSlot`. Same value `GameTooltip:SetInventoryItem` returns as its
+third out-parameter.
+
+```
+copperCost = GetInventoryItemRepairCost(invSlot)
+```
+
+```lua
+local cost = GetInventoryItemRepairCost(INVSLOT_CHEST)
+if cost > 0 then
+    -- e.g. cost == 12345
+end
+```
+
+Returns `0` for slots that are empty, items without a durability
+concept, fully-repaired items, or items whose stats aren't cached yet
+(rare — happens briefly after login before SMSG_ITEM_QUERY_RESPONSE
+arrives for newly-seen items). The "no return" path is reserved for
+invalid input (non-numeric slot).
+
+> **Player-only**, same constraint as
+> [`GetInventoryItemDurability`](#getinventoryitemdurabilityinvslot)
+> — other units' durability isn't broadcast in 1.12.
+
+> **Discount is vendor-context-dependent.** The faction-rep + PvP
+> rank discount is only applied when the player has a merchant
+> window open (i.e. has received `SMSG_LIST_INVENTORY`). Called from
+> anywhere else, you get the raw, undiscounted base cost.
+>
+> The engine tracks the current merchant via globals
+> `DAT_00BDDFA0/A4` (the merchant's GUID), set when the merchant
+> frame opens and zeroed when it closes. The helper short-circuits
+> the discount path when those globals are zero.
+>
+> For consistent "what will I pay" semantics inside addons, only
+> trust this value when `MerchantFrame:IsShown()` is true — or call
+> it once per merchant-visit and cache.
+
+Calls the engine's own per-item repair-cost helper at `0x004FAF30`,
+which is the same function `Script_GameTooltip_SetInventoryItem`
+calls for its repairCost return. The raw cost comes from
+`DurabilityCosts.dbc` (indexed by item subclass and slot type) ×
+`DurabilityQuality.dbc` (indexed by item quality); the discount —
+when applicable — stacks faction reputation with the merchant
+(Friendly+ unlocks a base 5%) and PvP rank (Sergeant Major+ adds
+another 5%, Knight-Lieutenant+ stacks one more).
+
+This is a ClassicAPI addition — modern WoW has no standalone Lua
+function for per-item repair cost; the only way to read it there is
+the tooltip's third return value. We expose it directly because the
+underlying calculation is already in the engine and a Lua function
+is the natural surface.
+
+### `GetInventoryItemsForSlot(slot, returnTable [, transmogrify])`
+
+Populates `returnTable` with every item in the player's equipment
+and bags that's eligible to be equipped in `slot` (1..19). Returned
+table is keyed by the packed [ItemLocation
+bitfield](#equipmentset) — same encoding
+`C_EquipmentSet.GetItemLocations` uses — with the itemLink as the
+value. Returns the same `returnTable` reference for chaining.
+
+```lua
+local t = {}
+GetInventoryItemsForSlot(16, t)   -- mainhand
+for loc, link in pairs(t) do
+    -- loc is a number like 0x00300103; link is "|c…|Hitem:…|h[…]|h|r"
+end
+```
+
+| slot | Eligible InventoryTypes |
+|------|-------------------------|
+| 1 HEAD, 2 NECK, …, 10 HANDS | The slot's matching InventoryType |
+| 11, 12 FINGER | INVTYPE_FINGER (11) — items appear under both ring slots |
+| 13, 14 TRINKET | INVTYPE_TRINKET (12) |
+| 15 BACK | INVTYPE_CLOAK (16) |
+| 16 MAINHAND | INVTYPE_WEAPON (13), INVTYPE_2HWEAPON (17), INVTYPE_WEAPONMAINHAND (21) |
+| 17 OFFHAND | INVTYPE_WEAPON (13), INVTYPE_SHIELD (14), INVTYPE_WEAPONOFFHAND (22), INVTYPE_HOLDABLE (23) |
+| 18 RANGED | INVTYPE_RANGED (15), INVTYPE_THROWN (25), INVTYPE_RANGEDRIGHT (26) |
+| 5 CHEST | INVTYPE_CHEST (5), INVTYPE_ROBE (20) |
+| 19 TABARD | INVTYPE_TABARD (19) |
+
+Compatibility check is a single bitwise AND against a static
+`invType → slotMask` table — same shape and values as 3.3.5's table
+at `DAT_00A2D288` (used by `Script_GetInventoryItemsForSlot` via
+`FUN_007082B0`), with two adjustments for vanilla:
+
+- 2H weapons (`INVTYPE_2HWEAPON`) confined to the mainhand slot
+  only. 3.3.5 allowed offhand for the titanic-grip era; vanilla has
+  no such mechanic and the server would reject the equip anyway.
+- `INVTYPE_WEAPONMAINHAND` / `WEAPONOFFHAND` confined to their
+  literal slot rather than the looser "either hand" 3.3.5 allowed.
+
+The `transmogrify` arg is accepted and ignored. Stock 1.12 has no
+transmog system to query against, and the modern flag's effect
+(broader cross-eligibility for visual swaps) reduces to the
+regular equip check here. Private servers like Turtle WoW layer
+their own transmog systems on top of vanilla; this function
+doesn't currently plumb the flag through to any of them.
+
+> **Bank items aren't included.** Vanilla's `GetItemBySlot` gates
+> bank slots on a banker GUID that's only set while the bank window
+> is open; modern WoW behaves the same way (bank shows up only when
+> the bank UI is open). We don't walk bank slots — addons that want
+> bank inclusion need their own bank scan with the bank UI open.
+
+### `GetItemIcon(itemID)` / `C_Item.GetItemIcon(itemLocation)` / `C_Item.GetItemIconByID(item)`
+
+Three accessors that all return the icon path for an item, differing only in
+how you address the item:
+
+| Function                             | Input                     |
+|--------------------------------------|---------------------------|
+| `GetItemIcon(itemID)`                | numeric itemID (global)   |
+| `C_Item.GetItemIcon(itemLocation)`   | `{equipmentSlotIndex=N}` or `{bagID=B, slotIndex=S}` |
+| `C_Item.GetItemIconByID(item)`       | numeric itemID OR `"item:NNN"` string (full chat links work) |
+
+All three return the icon path string (e.g. `"Interface\\Icons\\INV_Misc_Rune_01"`),
+or `nil` if the item isn't in the client-side cache, the slot is empty, or
+the display info record is missing. The path is suitable for direct use
+with `texture:SetTexture(...)`.
+
+```lua
+local path = GetItemIcon(6948)                                -- "Interface\\Icons\\INV_Misc_Rune_01"
+local path = C_Item.GetItemIcon({equipmentSlotIndex = INVSLOT_HEAD})
+local path = C_Item.GetItemIconByID("|cff...|Hitem:6948:0:0:0|h[Hearthstone]|h|r")
+```
+
+> **`iconID`-vs-path deviation.** Modern WoW returns these as a
+> `fileID:number` (specifically `iconFileID` in Classic Era 1.15.x). 1.12
+> has no fileID system — same situation as
+> [`C_Spell.GetSpellTexture`](#c_spellgetspelltexturespellid) and
+> [`C_Spell.GetSpellInfo`](#c_spellgetspellinfospellid)'s `iconID` field.
+> We surface the path string everywhere for consistency.
+
+Equivalent to the legacy global `GetItemIcon` (since 1.x) and the
+`C_Item.GetItemIcon` / `GetItemIconByID` family added in 10.x.
+
+### `OffhandHasWeapon()`
+
+Returns `true` if the player has a one-handed weapon (or off-hand-only
+weapon) equipped in the off-hand slot, `false` otherwise. Used by
+dual-wield checks and any addon backporting modern weapon-equipment
+logic.
+
+Returns `false` for:
+
+- Empty off-hand
+- Shields (`INVTYPE_SHIELD`)
+- Held items — tomes, orbs, librams (`INVTYPE_HOLDABLE`)
+- Off-hand item data not yet cached (typically only on first login,
+  before the engine has the item record; warms up after a peek)
+
+Returns `true` for `INVTYPE_WEAPON` (any one-handed weapon — sword,
+axe, mace, dagger, fist) and `INVTYPE_WEAPONOFFHAND` (off-hand-only
+weapons). Two-handers occupy the main-hand slot exclusively, so they
+never apply.
+
+```lua
+if OffhandHasWeapon() then
+    -- Apply mainhand+offhand poison, refresh dual-wield rotation, etc.
+end
+```
 
 ## Macros
 
