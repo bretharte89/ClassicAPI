@@ -47,6 +47,7 @@
 
 #include "Game.h"
 #include "Offsets.h"
+#include "bindings/Inject.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -248,6 +249,14 @@ void DecideSource() {
 int __stdcall FileRead_h(int unused, const char *path, void **outBuf,
                          size_t *outSize, size_t extraBytes,
                          int flag1, int flag2) {
+    // FrameXML Bindings.xml gets an inline splice for our TARGETING
+    // additions — see `bindings/Inject.cpp`. Returns true with the
+    // patched buffer ready for the engine's binding parser to consume.
+    if (Bindings::Inject::TryHandle(unused, path, outBuf, outSize,
+                                    extraBytes, flag1, flag2, FileRead_o)) {
+        return 1;
+    }
+
     const char *suffix = StripAddonPrefix(path);
     if (suffix == nullptr) {
         // Path isn't under `Interface\AddOns\!!!ClassicAPI\` — straight
