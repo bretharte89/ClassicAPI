@@ -45,7 +45,6 @@ build instructions.
   - [`C_Container.UseHearthstone()`](#c_containerusehearthstone)
   - [`C_Container.SwapItems(srcBag, srcSlot, dstBag, dstSlot)`](#c_containerswapitemssrcbag-srcslot-dstbag-dstslot)
   - [`C_Container.MoveItem(srcBag, srcSlot, dstBag, dstSlot, count)`](#c_containermoveitemsrcbag-srcslot-dstbag-dstslot-count)
-  - [`C_Item.UseItemByName(itemInfo [, unit])`](#c_itemuseitembynameiteminfo--unit)
 
 - [CVar](#cvar)
   - [`C_CVar.GetCVarBool(cvar)`](#c_cvargetcvarboolcvar)
@@ -175,6 +174,7 @@ build instructions.
   - [`C_Item.IsEquippableItem(item)`](#c_itemisequippableitemitem)
   - [`C_Item.IsEquippedItem(item)`](#c_itemisequippeditemitem)
   - [`C_Item.EquipItemByName(itemInfo [, dstSlot])`](#c_itemequipitembynameiteminfo--dstslot)
+  - [`C_Item.UseItemByName(itemInfo [, unit])`](#c_itemuseitembynameiteminfo--unit)
   - [`C_Item.DoesItemExist(itemLocation)` / `C_Item.DoesItemExistByID(item)`](#c_itemdoesitemexititemlocation--c_itemdoesitemexistbyiditem)
   - [`C_Item.GetItemName(itemLocation)` / `C_Item.GetItemNameByID(item)`](#c_itemgetitemnameitemlocation--c_itemgetitemnamebyiditem)
   - [`C_Item.GetItemQuality(itemLocation)` / `C_Item.GetItemQualityByID(item)`](#c_itemgetitemqualityitemlocation--c_itemgetitemqualitybyiditem)
@@ -1208,47 +1208,6 @@ constraint as `SwapItems`.
 > (`CMSG_SPLIT_ITEM`, opcode 0x10E), so the cursor is never touched.
 
 Send is fire-and-forget (same as `SwapItems`).
-
-### `C_Item.UseItemByName(itemInfo [, unit])`
-
-Finds the first item in the player's bags matching `itemInfo` and
-uses it. Returns nothing; silently no-ops when:
-
-- the input is `nil`, an empty string, or otherwise unparseable
-- no matching item is in bags
-- the engine refuses the use — cooldown, locked item, level
-  requirement, etc.
-
-`itemInfo` accepts the same shapes as
-[`C_Item.EquipItemByName`](#c_itemequipitembynameiteminfo--dstslot) —
-itemID number, bare `"item:N"` string, full chat link, or a localized
-item name. Name matches are case-insensitive against the cached
-`m_name[0]`.
-
-The optional `unit` argument is a unit token (`"player"`, `"target"`,
-`"focus"`, `"partyN"`, `"raidN"`, `"nameplateN"`, …) used as the cast
-target for items that fire a spell (scrolls, traps, on-use targeted
-effects). For self-use items (hearthstone, potions, food) the engine
-overwrites the target with the item's own GUID before dispatch, so
-passing a `unit` to those is harmless and has no effect. Unrecognized
-strings are treated as "no target" rather than raising, matching the
-silently-no-op contract of `itemInfo`.
-
-```lua
-C_Item.UseItemByName("Hearthstone")                       -- hearth home
-C_Item.UseItemByName(6948)                                -- same thing, by ID
-C_Item.UseItemByName("Major Healing Potion")
-C_Item.UseItemByName("Scroll of Stamina IV", "target")    -- buff your tank
-```
-
-Mirrors 3.3.5's `Script_UseItemByName` structure: locate the item
-directly, then hand the `CGItem *` to the engine's by-pointer use
-primitive at `0x005D8D00`. That primitive dispatches internally based
-on item type (food, potion, on-use spell, scroll, quiver, ...) so a
-single call covers every item category. We skip
-`Script_UseContainerItem` entirely — its branches for repair vendor,
-spell-cast targeting, and drop-on-bag cursor modes don't apply to an
-addon-issued call from a clean cursor.
 
 ## CVar
 
@@ -4080,6 +4039,47 @@ C_Item.EquipItemByName("Linen Cloth", 17)
 -- From a chat link:
 C_Item.EquipItemByName(itemLink)
 ```
+
+### `C_Item.UseItemByName(itemInfo [, unit])`
+
+Finds the first item in the player's bags matching `itemInfo` and
+uses it. Returns nothing; silently no-ops when:
+
+- the input is `nil`, an empty string, or otherwise unparseable
+- no matching item is in bags
+- the engine refuses the use — cooldown, locked item, level
+  requirement, etc.
+
+`itemInfo` accepts the same shapes as
+[`C_Item.EquipItemByName`](#c_itemequipitembynameiteminfo--dstslot) —
+itemID number, bare `"item:N"` string, full chat link, or a localized
+item name. Name matches are case-insensitive against the cached
+`m_name[0]`.
+
+The optional `unit` argument is a unit token (`"player"`, `"target"`,
+`"focus"`, `"partyN"`, `"raidN"`, `"nameplateN"`, …) used as the cast
+target for items that fire a spell (scrolls, traps, on-use targeted
+effects). For self-use items (hearthstone, potions, food) the engine
+overwrites the target with the item's own GUID before dispatch, so
+passing a `unit` to those is harmless and has no effect. Unrecognized
+strings are treated as "no target" rather than raising, matching the
+silently-no-op contract of `itemInfo`.
+
+```lua
+C_Item.UseItemByName("Hearthstone")                       -- hearth home
+C_Item.UseItemByName(6948)                                -- same thing, by ID
+C_Item.UseItemByName("Major Healing Potion")
+C_Item.UseItemByName("Scroll of Stamina IV", "target")    -- buff your tank
+```
+
+Mirrors 3.3.5's `Script_UseItemByName` structure: locate the item
+directly, then hand the `CGItem *` to the engine's by-pointer use
+primitive at `0x005D8D00`. That primitive dispatches internally based
+on item type (food, potion, on-use spell, scroll, quiver, ...) so a
+single call covers every item category. We skip
+`Script_UseContainerItem` entirely — its branches for repair vendor,
+spell-cast targeting, and drop-on-bag cursor modes don't apply to an
+addon-issued call from a clean cursor.
 
 ### `C_Item.DoesItemExist(itemLocation)` / `C_Item.DoesItemExistByID(item)`
 
