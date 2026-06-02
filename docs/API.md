@@ -45,7 +45,7 @@ build instructions.
   - [`C_Container.UseHearthstone()`](#c_containerusehearthstone)
   - [`C_Container.SwapItems(srcBag, srcSlot, dstBag, dstSlot)`](#c_containerswapitemssrcbag-srcslot-dstbag-dstslot)
   - [`C_Container.MoveItem(srcBag, srcSlot, dstBag, dstSlot, count)`](#c_containermoveitemsrcbag-srcslot-dstbag-dstslot-count)
-  - [`C_Item.UseItemByName(itemInfo)`](#c_itemuseitembynameiteminfo)
+  - [`C_Item.UseItemByName(itemInfo [, unit])`](#c_itemuseitembynameiteminfo--unit)
 
 - [CVar](#cvar)
   - [`C_CVar.GetCVarBool(cvar)`](#c_cvargetcvarboolcvar)
@@ -1209,7 +1209,7 @@ constraint as `SwapItems`.
 
 Send is fire-and-forget (same as `SwapItems`).
 
-### `C_Item.UseItemByName(itemInfo)`
+### `C_Item.UseItemByName(itemInfo [, unit])`
 
 Finds the first item in the player's bags matching `itemInfo` and
 uses it. Returns nothing; silently no-ops when:
@@ -1225,10 +1225,20 @@ itemID number, bare `"item:N"` string, full chat link, or a localized
 item name. Name matches are case-insensitive against the cached
 `m_name[0]`.
 
+The optional `unit` argument is a unit token (`"player"`, `"target"`,
+`"focus"`, `"partyN"`, `"raidN"`, `"nameplateN"`, …) used as the cast
+target for items that fire a spell (scrolls, traps, on-use targeted
+effects). For self-use items (hearthstone, potions, food) the engine
+overwrites the target with the item's own GUID before dispatch, so
+passing a `unit` to those is harmless and has no effect. Unrecognized
+strings are treated as "no target" rather than raising, matching the
+silently-no-op contract of `itemInfo`.
+
 ```lua
-C_Item.UseItemByName("Hearthstone")         -- hearth home
-C_Item.UseItemByName(6948)                  -- same thing, by ID
+C_Item.UseItemByName("Hearthstone")                       -- hearth home
+C_Item.UseItemByName(6948)                                -- same thing, by ID
 C_Item.UseItemByName("Major Healing Potion")
+C_Item.UseItemByName("Scroll of Stamina IV", "target")    -- buff your tank
 ```
 
 Mirrors 3.3.5's `Script_UseItemByName` structure: locate the item
@@ -1239,12 +1249,6 @@ single call covers every item category. We skip
 `Script_UseContainerItem` entirely — its branches for repair vendor,
 spell-cast targeting, and drop-on-bag cursor modes don't apply to an
 addon-issued call from a clean cursor.
-
-For target-required items (scrolls, traps), the engine reads
-cursor-target state at call time, which a Lua-side caller can pre-set
-with `TargetUnit("...")`. For self-use items (hearthstone, potions,
-food) the engine substitutes the player even if a different target is
-present, so no pre-setup is needed.
 
 ## CVar
 
