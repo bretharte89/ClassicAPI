@@ -18,6 +18,18 @@ enum Offsets {
     FUN_INVALID_FUNCTION_PTR_CHECK = 0x42A320,
     FUN_LOAD_SCRIPT_FUNCTIONS = 0x490250,
 
+    // Fatal-error dispatcher. `__fastcall(uint code)`. Writes `code`
+    // to `DAT_00882738` and chains into the process-teardown path;
+    // `FUN_00403BC0` reads the code at exit and shows a localized
+    // popup keyed off it. Code `10` = "interface files are corrupt"
+    // — the engine fires this from FrameXML's `FUN_0048FBF0` hash
+    // mismatch and per-addon `FUN_0051F240` hash mismatch (plus
+    // other call sites we haven't pinned down by byte pattern).
+    // Hooked by `Security::FrameXMLBypass` to suppress code 10 so
+    // our in-memory file modifications (Bindings.xml splice +
+    // embedded `!!!ClassicAPI` addon) don't trigger termination.
+    FUN_FATAL_ERROR = 0x00401560,
+
     // Master glue Lua init — clean linear caller of all 5 glue batch
     // trampolines (60 main + 11 char-select + 24 char-create + 10 realm
     // + 4 frame globals = 109 total). Body: 0x0046ABB0..0x0046ABD2,
