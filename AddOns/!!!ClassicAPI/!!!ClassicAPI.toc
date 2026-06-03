@@ -4,7 +4,8 @@
 ## Version: DEV
 ## Author: Brues
 
-GlobalStrings.lua
+locales\locales.xml
+
 Compat.lua
 Util\Print.lua
 Util\Constants.lua
