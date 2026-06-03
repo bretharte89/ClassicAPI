@@ -2053,6 +2053,67 @@ enum Offsets {
     // to cast next", so we check this slot too.
     VAR_QUEUED_CAST_SPELL = 0x00CECAA8,
 
+    // Spell-placement state bitmask. Non-zero when the engine is
+    // waiting on user input for an in-progress cast — the AoE reticle,
+    // unit-target cursor, trade-target cursor, etc. Bits encode what
+    // kind of input is needed; the engine's click handlers read this
+    // to decide whether a click was relevant. Read by
+    // `Script_SpellIsTargeting` via `FUN_006E48A0` (returns
+    // `state != 0`). Bits the engine OR-sets via `FUN_006E5250` when
+    // entering placement (subset relevant to us):
+    //   - `0x20` source world location needed
+    //   - `0x40` dest world location needed
+    // The `0x60` mask therefore identifies "ground-target placement"
+    // (vs. unit-target, trade-target, etc.). See `Spell::AtCursor`.
+    VAR_SPELL_PLACEMENT_STATE = 0x00CECAC0,
+    SPELL_PLACEMENT_GROUND_MASK = 0x60,
+
+    // `FUN_006E60F0(float *xyz)` — commits the in-flight ground-target
+    // placement at the given world position. Reads three contiguous
+    // floats from `xyz`; checks the placement-state mask
+    // (`VAR_SPELL_PLACEMENT_STATE`) to decide whether this is a
+    // source-coord (`0x20`) or dest-coord (`0x40`) commit; clears the
+    // matching bit and stores the coords into engine globals which the
+    // cast-finalize path then reads. Self-gates when neither bit is
+    // set — safe no-op for unit-target placement. Called by the engine
+    // itself when a player left-clicks ground while the reticle is up.
+    FUN_COMMIT_PLACEMENT_COORDS = 0x006E60F0,
+
+    // `FUN_006E4900()` — cancels in-flight placement mode. Internally
+    // checks `VAR_SPELL_PLACEMENT_STATE != 0` and, if so, fires the
+    // cast-cancel path via `FUN_006E4940(0x1C)`. Safe to call when no
+    // placement is active (no-ops). Wraps the action behind
+    // `Script_SpellStopTargeting`.
+    FUN_STOP_PLACEMENT = 0x006E4900,
+
+    // `*VAR_WORLDFRAME_CLICK_INFO` is a pointer to the engine's
+    // CWorldFrame "click info" struct — the data block where the input
+    // dispatcher stashes "what is the cursor pointed at right now"
+    // after every mouse motion. Allocated at world enter, populated
+    // continuously by the rendering pipeline (viewport bounds and
+    // camera position at fixed offsets) and the OS message pump
+    // (cursor screen pos). NULL when not in world.
+    //   - `+0x350` (uint32) click type after last raycast:
+    //       `0` = no hit
+    //       `1` = world / terrain hit
+    //       `2` = unit / object hit
+    //   - `+0x360..+0x368` (3 floats) hit world position (when type == 1)
+    VAR_WORLDFRAME_CLICK_INFO = 0x00B4B2BC,
+    OFF_CLICK_INFO_TYPE = 0x350,
+    OFF_CLICK_INFO_COORDS = 0x360,
+
+    // `FUN_00481F00(void *clickInfo)` — refreshes the cursor's "what
+    // am I pointed at?" state on demand. Internally reads cursor
+    // screen pos from input state at `[clickInfo+0xA0]+0x1118/+0x111C`,
+    // calls the screen→world ray builder at `FUN_004813B0` (uses
+    // viewport bounds at `[clickInfo+0x390..+0x39C]` plus camera
+    // position at `[clickInfo+0x65B8]+8/+0xC/+0x10`), then raycasts
+    // via `FUN_0069BFF0` (terrain + WMO intersection). Writes click
+    // type to `[clickInfo+0x350]` and hit coords to
+    // `[clickInfo+0x360..+0x368]`. Safe to call from arbitrary code
+    // as long as the player is in-world.
+    FUN_REFRESH_CURSOR_RAYCAST = 0x00481F00,
+
     // `Script_CastSpellByName` — engine's Lua wrapper for the
     // `CastSpellByName(name [, onSelf])` global. `int __fastcall(void *L)`
     // — standard Lua C function ABI. Reads `name` from stack[1] (string)
@@ -2061,6 +2122,16 @@ enum Offsets {
     // to the engine's cast path at `FUN_004B3300`. Returns 0 (no Lua
     // results). Callable directly from C++ — push args on stack, call.
     FUN_SCRIPT_CAST_SPELL_BY_NAME = 0x004B4AB0,
+
+    // Inner spell-cast dispatcher — `__fastcall(slot, bookType, targetGuidLo,
+    // targetGuidHi)`. `Script_CastSpellByName` calls this after resolving
+    // the spell name to a spellbook slot. For ground-target spells, the
+    // engine enters placement mode (sets `VAR_SPELL_PLACEMENT_STATE`)
+    // and returns; placement is resolved later by mouse-click or
+    // programmatically via `FUN_COMMIT_PLACEMENT_COORDS`. Passing (0, 0)
+    // for the GUID is the "no implicit target" form — engine falls back
+    // to the player's current selected target.
+    FUN_SPELL_CAST_DISPATCH = 0x004B3300,
 
     // Macro "primary spell" parser — `__fastcall(MacroEntry *entry)`.
     // Walks the macro body (stored at `entry + OFF_MACRO_BODY`) line

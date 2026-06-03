@@ -96,6 +96,26 @@ bool FindByGUID(void *L, uint64_t guid, ByGUIDResult *out);
 // for link-decoration purposes. Stomps the Lua stack.
 bool FindByItemID(void *L, int itemID, ByGUIDResult *out);
 
+} // namespace Item::Location
+
+// Forward-declare for `FindByArgInBags` below.
+namespace Item::Arg { struct Resolved; }
+
+namespace Item::Location {
+
+// Walks the player's bags (0..4 only — no equipment) looking for the
+// first item matching `arg`. `arg.itemID > 0` ⇒ direct ID compare;
+// otherwise `arg.name` is matched case-insensitively against the
+// cached `ItemStats_C.m_name[0]` of each candidate. On hit, populates
+// `out->bagID` / `out->slotIndex` / `out->item` and sets
+// `equipmentSlotIndex = 0`. Stomps the Lua stack.
+//
+// Used by the by-name action APIs (`C_Item.EquipItemByName`,
+// `C_Item.UseItemByName`, `C_Item.UseAtCursor`) — none of them want
+// equipment in the candidate pool (the engine doesn't equip-from-
+// equipped or use-from-equipped; the item has to be in bags first).
+bool FindByArgInBags(void *L, const Item::Arg::Resolved &arg, ByGUIDResult *out);
+
 // Parses the `"0xHHHHHHHHLLLLLLLL"` GUID string format
 // `C_Item.GetItemGUID` returns. Strict: requires exactly `0x` prefix
 // + 16 case-insensitive hex digits. Returns false (and leaves `*out`

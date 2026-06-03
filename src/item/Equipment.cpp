@@ -166,49 +166,6 @@ int __fastcall Script_C_Item_IsEquippedItem(void *L) {
     return 1;
 }
 
-// Walks bags 0..4 looking for an item matching `arg`. On hit, sets
-// `*outBag` / `*outSlot` / `*outItem` and returns true.
-//
-// itemID match is direct; name match peeks the item-cache record's
-// `m_name[0]` and compares case-insensitively. Stomps the Lua stack
-// per the helpers it calls.
-bool FindItemInBags(void *L, const Item::Arg::Resolved &arg, int *outBag, int *outSlot,
-                    const uint8_t **outItem) {
-    for (int bag = 0; bag <= 4; ++bag) {
-        const int slotCount = Item::Location::GetBagSlotCount(bag);
-        for (int slot = 1; slot <= slotCount; ++slot) {
-            const uint8_t *item = Item::Location::ResolveBag(L, bag, slot);
-            if (item == nullptr) continue;
-
-            const int id = Item::ID::FromCGItem(item);
-            if (id == 0) continue;
-
-            if (arg.itemID > 0) {
-                if (id == arg.itemID) {
-                    *outBag = bag;
-                    *outSlot = slot;
-                    *outItem = item;
-                    return true;
-                }
-                continue;
-            }
-
-            auto *record = PeekItemRecord(static_cast<uint32_t>(id));
-            if (record == nullptr) continue;
-            const char *name = *reinterpret_cast<const char *const *>(
-                record + Offsets::OFF_ITEMSTATS_NAME);
-            if (name == nullptr) continue;
-            if (_stricmp(name, arg.name) == 0) {
-                *outBag = bag;
-                *outSlot = slot;
-                *outItem = item;
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
 // `C_Item.EquipItemByName(itemInfo [, dstSlot])` — finds the first
 // item in the player's bags matching `itemInfo` (itemID, link, or
 // name) and equips it.
@@ -255,14 +212,13 @@ int __fastcall Script_C_Item_EquipItemByName(void *L) {
     reinterpret_cast<int(__fastcall *)(void *)>(
         Offsets::FUN_SCRIPT_CLEAR_CURSOR)(L);
 
-    int bag = -1, slot = -1;
-    const uint8_t *cgItem = nullptr;
-    if (!FindItemInBags(L, arg, &bag, &slot, &cgItem)) {
+    Item::Location::ByGUIDResult found;
+    if (!Item::Location::FindByArgInBags(L, arg, &found)) {
         return 0;
     }
 
     if (hasDstSlot) {
-        Item::Swap::FromBag(cgItem, bag, slot, dstSlot);
+        Item::Swap::FromBag(found.item, found.bagID, found.slotIndex, dstSlot);
         return 0;
     }
 
@@ -273,8 +229,8 @@ int __fastcall Script_C_Item_EquipItemByName(void *L) {
     // — `Script_AutoEquipCursorItem` is a thin wrapper that just
     // resolves the local player and calls this with flag=0.
     Game::Lua::SetTop(L, 0);
-    Game::Lua::PushNumber(L, static_cast<double>(bag));
-    Game::Lua::PushNumber(L, static_cast<double>(slot));
+    Game::Lua::PushNumber(L, static_cast<double>(found.bagID));
+    Game::Lua::PushNumber(L, static_cast<double>(found.slotIndex));
     auto pickup = reinterpret_cast<ScriptFn_t>(Offsets::FUN_SCRIPT_PICKUP_CONTAINER_ITEM);
     pickup(L);
 

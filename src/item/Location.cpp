@@ -16,7 +16,10 @@
 #include "../Game.h"
 #include "../Offsets.h"
 #include "../guid/Guid.h"
+#include "Arg.h"
 #include "ID.h"
+
+#include <cstring>
 
 namespace Item::Location {
 
@@ -180,6 +183,44 @@ bool FindByItemID(void *L, int itemID, ByGUIDResult *out) {
         }
     }
 
+    return false;
+}
+
+bool FindByArgInBags(void *L, const Item::Arg::Resolved &arg, ByGUIDResult *out) {
+    if (arg.itemID <= 0 && arg.name == nullptr)
+        return false;
+
+    for (int bagID = 0; bagID <= 4; ++bagID) {
+        const int slotCount = GetBagSlotCount(bagID);
+        for (int slotIndex = 1; slotIndex <= slotCount; ++slotIndex) {
+            auto *item = ResolveBag(L, bagID, slotIndex);
+            if (item == nullptr)
+                continue;
+
+            const int id = Item::ID::FromCGItem(item);
+            if (id == 0)
+                continue;
+
+            if (arg.itemID > 0) {
+                if (id != arg.itemID)
+                    continue;
+            } else {
+                auto *record = PeekItemRecord(static_cast<uint32_t>(id));
+                if (record == nullptr)
+                    continue;
+                const char *name = *reinterpret_cast<const char *const *>(
+                    record + Offsets::OFF_ITEMSTATS_NAME);
+                if (name == nullptr || _stricmp(name, arg.name) != 0)
+                    continue;
+            }
+
+            out->equipmentSlotIndex = 0;
+            out->bagID = bagID;
+            out->slotIndex = slotIndex;
+            out->item = item;
+            return true;
+        }
+    }
     return false;
 }
 
