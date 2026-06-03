@@ -11,7 +11,7 @@
 // You should have received a copy of the GNU Lesser General Public License along with
 // ClassicAPI. If not, see <https://www.gnu.org/licenses/>.
 
-// Inject ClassicAPI-owned bindings into the engine's TARGETING group.
+// Inject ClassicAPI-owned bindings into a chosen engine section.
 //
 // Why a file-read hook rather than an addon-side Bindings.xml: vanilla
 // stores every binding in a single linearly-indexed table, and the
@@ -22,32 +22,36 @@
 // renders orphaned at the very bottom of the keybind list rather than
 // under TARGETING.
 //
-// To land inside TARGETING, the binding's display index has to fall
-// between HEADER_TARGETING and HEADER_INTERFACE. The cleanest way to
-// arrange that is to splice the bindings into the FrameXML file the
-// engine itself parses, so they take their indices from the same
-// running counter every native binding does.
+// To land inside a specific section, the binding's display index has
+// to fall between that section's `HEADER_*` entry and the next one.
+// The cleanest way to arrange that is to splice the bindings into the
+// FrameXML file the engine itself parses, so they take their indices
+// from the same running counter every native binding does.
 //
-// Splice site: just before `<Binding name="TOGGLECHARACTER0"` (the
-// first INTERFACE-section entry). Our injected bindings inherit
-// TARGETING from the preceding `header="TARGETING"` declaration on
-// `TARGETNEARESTENEMY` (the engine never re-asserts a header on each
-// binding — group membership is positional). They appear at the tail
-// of TARGETING, just after PETATTACK / ATTACKTARGET.
+// What gets spliced is driven by `src/bindings/Bindings.xml`. The
+// root `<Bindings header="X">` tag names the engine section to extend
+// (e.g. `"TARGETING"`); the inner `<Binding>` children are spliced
+// verbatim. The splicer locates `header="X"` in the engine file
+// (which appears on the first binding of section X), then the next
+// `header="..."` after that (start of the following section), and
+// inserts our content just before that next-section marker — so our
+// entries land at the tail of section X. If X is the last section in
+// the file, the splice goes just before `</Bindings>`.
 //
 // The engine's binding parser is `FUN_004b6f70`. It calls
 // `FUN_FILE_READ` (`0x00648620`) to load the file, then walks `<Binding>`
 // elements assigning each the next display index from a running
 // counter. By the time our injected bindings are processed, the
-// engine has already emitted HEADER_TARGETING and a sequence of
-// TARGETING entries; ours append to that sequence and HEADER_INTERFACE
-// follows.
+// engine has already emitted the section's `HEADER_*` and a sequence
+// of native entries; ours append to that sequence and the next
+// section's header follows.
 
 #include "Inject.h"
 #include "Offsets.h"
 
 #include "embedded_bindings.h"
 
+#include <cstdio>
 #include <cstring>
 
 namespace Bindings::Inject {
@@ -56,22 +60,19 @@ namespace {
 
 constexpr const char *kFrameXMLBindingsPath = "Interface\\FrameXML\\Bindings.xml";
 
-// First INTERFACE-section binding. Splicing immediately before this
-// puts our entries at the tail of the TARGETING block.
-constexpr const char *kSpliceMarker = "<Binding name=\"TOGGLECHARACTER0\"";
-
-// Extracts the inner content between the outer `<Bindings>` /
-// `</Bindings>` tags of our embedded XML fragment. The wrapper exists
-// so the source file (`src/bindings/Bindings.xml`) is a well-formed
-// XML document on its own; at splice time only the inner elements
-// belong in the engine's binding list. Resolved once and cached.
+// Parsed view of `src/bindings/Bindings.xml`:
+//   - `header` is the value of `header="..."` on the root `<Bindings>`
+//     tag. Tells the splicer which engine section to extend.
+//   - `innerData / innerSize` point at the bytes between the
+//     `<Bindings ...>` opening and `</Bindings>` closing tags.
 //
-// Returns {nullptr, 0} if the embedded buffer doesn't look like a
-// `<Bindings>...</Bindings>` document — defensive, this shouldn't
-// happen with a build-time-validated source.
-struct InnerXml {
-    const char *data;
-    size_t size;
+// All-zero fields mean "embedded buffer is malformed" — defensive,
+// shouldn't happen since the source is build-time-validated. Splice
+// is skipped (engine sees its original Bindings.xml unchanged).
+struct EmbeddedConfig {
+    char header[64];
+    const char *innerData;
+    size_t innerSize;
 };
 
 // Advances `p` past any `<!-- ... -->` comment block starting at the
@@ -108,25 +109,104 @@ const char *FindOutsideComment(const char *start, const char *end, const char *m
     return nullptr;
 }
 
-InnerXml ResolveInnerXml() {
+// Parses `header="X"` out of the byte range `[tagStart, tagEnd)` (the
+// opening `<Bindings ...>` tag). Copies the value into `out` (size
+// `outSize`) and returns true on success.
+bool ExtractHeaderAttr(const char *tagStart, const char *tagEnd,
+                       char *out, size_t outSize) {
+    static constexpr const char kAttr[] = "header=\"";
+    constexpr size_t kAttrLen = sizeof(kAttr) - 1;
+    for (const char *p = tagStart; p + kAttrLen < tagEnd; ++p) {
+        if (std::memcmp(p, kAttr, kAttrLen) != 0) continue;
+        const char *valStart = p + kAttrLen;
+        const char *valEnd = valStart;
+        while (valEnd < tagEnd && *valEnd != '"') ++valEnd;
+        const size_t len = static_cast<size_t>(valEnd - valStart);
+        if (len == 0 || len + 1 > outSize) return false;
+        std::memcpy(out, valStart, len);
+        out[len] = '\0';
+        return true;
+    }
+    return false;
+}
+
+EmbeddedConfig ResolveEmbeddedConfig() {
+    EmbeddedConfig out = {};
     const char *content = reinterpret_cast<const char *>(kEmbeddedBindingsXml);
     const char *end = content + kEmbeddedBindingsXmlSize;
 
-    // Locate `<Bindings>` opening tag (skipping any comment blocks
+    // Locate `<Bindings` opening tag (skipping any comment blocks
     // that mention the tag literally for documentation purposes).
     const char *open = FindOutsideComment(content, end, "<Bindings");
-    if (open == nullptr) return {nullptr, 0};
+    if (open == nullptr) return out;
 
-    // Skip to the closing `>` of the opening tag.
-    const char *innerStart = open;
-    while (innerStart < end && *innerStart != '>') ++innerStart;
-    if (innerStart == end) return {nullptr, 0};
-    ++innerStart;
+    // Find the closing `>` of the opening tag.
+    const char *tagEnd = open;
+    while (tagEnd < end && *tagEnd != '>') ++tagEnd;
+    if (tagEnd == end) return out;
 
+    // Pull out the `header="..."` attribute. Required — this tells
+    // the splicer which engine section to extend.
+    if (!ExtractHeaderAttr(open, tagEnd, out.header, sizeof(out.header)))
+        return out;
+
+    const char *innerStart = tagEnd + 1;
     const char *close = FindOutsideComment(innerStart, end, "</Bindings>");
-    if (close == nullptr || close < innerStart) return {nullptr, 0};
+    if (close == nullptr || close < innerStart) {
+        out.header[0] = '\0';
+        return out;
+    }
 
-    return {innerStart, static_cast<size_t>(close - innerStart)};
+    out.innerData = innerStart;
+    out.innerSize = static_cast<size_t>(close - innerStart);
+    return out;
+}
+
+// Computes the byte offset in the engine's Bindings.xml buffer where
+// our entries should be spliced — i.e., the tail of the section
+// identified by `headerName`. Strategy:
+//
+//   1. Find `header="<HEADER>"` in the engine's buffer (skipping
+//      comments). This is the attribute the engine itself uses on
+//      the FIRST binding of each section, so this finds where that
+//      section *starts*.
+//   2. Find the NEXT `header="` after that. That marks the start of
+//      the FOLLOWING section.
+//   3. Back up from that next-header position to the `<` of the
+//      `<Binding` tag containing it — that's our splice point.
+//   4. If there's no next header (last section in the file), splice
+//      just before `</Bindings>`.
+//
+// Returns `nullptr` if step 1 fails (header missing from engine file
+// — e.g., a heavily-modified FrameXML). Caller falls back to passing
+// the original buffer through unchanged.
+const char *FindSplicePosition(const char *content, size_t size,
+                              const char *headerName) {
+    const char *end = content + size;
+
+    char headerNeedle[80];
+    std::snprintf(headerNeedle, sizeof(headerNeedle),
+                  "header=\"%s\"", headerName);
+
+    const char *sectionStart = FindOutsideComment(content, end, headerNeedle);
+    if (sectionStart == nullptr) return nullptr;
+
+    // Walk past the matched attribute, then look for the next
+    // `header="` anywhere later in the file.
+    const char *afterCurrent = sectionStart + std::strlen(headerNeedle);
+    const char *nextHeader = FindOutsideComment(afterCurrent, end, "header=\"");
+
+    if (nextHeader != nullptr) {
+        // Back up to the `<` of the `<Binding` tag that owns this
+        // next-header attribute — that `<` is where the next section
+        // visually starts, and we splice immediately before it.
+        const char *p = nextHeader;
+        while (p > content && *p != '<') --p;
+        return p;
+    }
+
+    // Last section in the file — splice just before `</Bindings>`.
+    return FindOutsideComment(content, end, "</Bindings>");
 }
 
 char NormalizeChar(char c) {
@@ -146,16 +226,6 @@ bool PathEqualsCI(const char *a, const char *b) {
 using SMemAlloc_t = void *(__stdcall *)(size_t size, const char *file, int line, int flags);
 using SMemFree_t = void(__stdcall *)(void *buf, const char *file, int line, int flags);
 
-const char *FindMarker(const char *content, size_t size, const char *marker) {
-    const size_t markerLen = std::strlen(marker);
-    if (size < markerLen) return nullptr;
-    for (size_t i = 0; i + markerLen <= size; ++i) {
-        if (std::memcmp(content + i, marker, markerLen) == 0)
-            return content + i;
-    }
-    return nullptr;
-}
-
 } // namespace
 
 bool TryHandle(int unused, const char *path, void **outBuf, size_t *outSize,
@@ -173,26 +243,29 @@ bool TryHandle(int unused, const char *path, void **outBuf, size_t *outSize,
     if (readOk == 0 || origBuf == nullptr)
         return false;
 
-    const char *content = static_cast<const char *>(origBuf);
-    const char *splice = FindMarker(content, origSize, kSpliceMarker);
-    if (splice == nullptr) {
-        // Marker missing — likely a modified or non-vanilla FrameXML
-        // (Turtle patch level, custom build). Pass the original
-        // through unchanged rather than corrupting it.
+    static const EmbeddedConfig config = ResolveEmbeddedConfig();
+    if (config.innerData == nullptr || config.innerSize == 0 ||
+        config.header[0] == '\0') {
+        // Embedded XML is missing the `<Bindings header="...">` root
+        // or the `</Bindings>` close tag. Pass the original through.
         if (outBuf != nullptr) *outBuf = origBuf;
         if (outSize != nullptr) *outSize = origSize;
         return true;
     }
 
-    static const InnerXml inner = ResolveInnerXml();
-    if (inner.data == nullptr || inner.size == 0) {
+    const char *content = static_cast<const char *>(origBuf);
+    const char *splice = FindSplicePosition(content, origSize, config.header);
+    if (splice == nullptr) {
+        // Requested section isn't present in this engine file (heavily
+        // modified FrameXML or different build). Pass through unchanged
+        // rather than risking corruption.
         if (outBuf != nullptr) *outBuf = origBuf;
         if (outSize != nullptr) *outSize = origSize;
         return true;
     }
 
     const size_t splicePos = static_cast<size_t>(splice - content);
-    const size_t newSize = origSize + inner.size;
+    const size_t newSize = origSize + config.innerSize;
 
     auto SMemAlloc = reinterpret_cast<SMemAlloc_t>(Offsets::FUN_STORM_SMEM_ALLOC);
     auto SMemFree = reinterpret_cast<SMemFree_t>(Offsets::FUN_STORM_SMEM_FREE);
@@ -208,8 +281,8 @@ bool TryHandle(int unused, const char *path, void **outBuf, size_t *outSize,
 
     auto *dest = static_cast<char *>(newBuf);
     std::memcpy(dest, content, splicePos);
-    std::memcpy(dest + splicePos, inner.data, inner.size);
-    std::memcpy(dest + splicePos + inner.size,
+    std::memcpy(dest + splicePos, config.innerData, config.innerSize);
+    std::memcpy(dest + splicePos + config.innerSize,
                 content + splicePos, origSize - splicePos);
     if (extraBytes > 0)
         std::memset(dest + newSize, 0, extraBytes);

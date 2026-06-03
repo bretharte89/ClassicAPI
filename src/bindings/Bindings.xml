@@ -1,8 +1,11 @@
-<!-- Spliced into the engine's Interface\FrameXML\Bindings.xml at load
-     time by src/bindings/Inject.cpp. The root element is a wrapper
-     for IDE friendliness; only the inner Binding children are
-     extracted at splice time. -->
-<Bindings>
+<!-- Spliced into the engine's Interface\FrameXML\Bindings.xml at
+     load time by src/bindings/Inject.cpp. The `header` attribute on
+     the root tag tells the splicer which engine section to extend —
+     it picks the appropriate insertion point so the bindings appear
+     at the tail of that group in the keybind UI. The engine's own
+     XML parser ignores attributes on the root tag, so this is
+     metadata for the splicer only. -->
+<Bindings header="TARGETING">
 	<Binding name="FOCUSTARGET">
 		FocusUnit("target");
 	</Binding>
