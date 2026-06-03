@@ -1,0 +1,12 @@
+<!-- Spliced into the engine's Interface\FrameXML\Bindings.xml at load
+     time by src/bindings/Inject.cpp. The root element is a wrapper
+     for IDE friendliness; only the inner Binding children are
+     extracted at splice time. -->
+<Bindings>
+	<Binding name="FOCUSTARGET">
+		FocusUnit("target");
+	</Binding>
+	<Binding name="TARGETFOCUS">
+		TargetUnit("focus");
+	</Binding>
+</Bindings>

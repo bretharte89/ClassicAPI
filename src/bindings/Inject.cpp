@@ -46,6 +46,8 @@
 #include "Inject.h"
 #include "Offsets.h"
 
+#include "embedded_bindings.h"
+
 #include <cstring>
 
 namespace Bindings::Inject {
@@ -58,17 +60,74 @@ constexpr const char *kFrameXMLBindingsPath = "Interface\\FrameXML\\Bindings.xml
 // puts our entries at the tail of the TARGETING block.
 constexpr const char *kSpliceMarker = "<Binding name=\"TOGGLECHARACTER0\"";
 
-// LF-only line endings — vanilla's XML parser is whitespace-tolerant
-// and accepts either LF or CRLF freely. Indentation matches the
-// surrounding file (one leading tab per `<Binding>`).
-constexpr const char *kInjectedXml =
-    "<Binding name=\"FOCUSTARGET\">\n"
-    "\t\tFocusUnit(\"target\");\n"
-    "\t</Binding>\n"
-    "\t<Binding name=\"TARGETFOCUS\">\n"
-    "\t\tTargetUnit(\"focus\");\n"
-    "\t</Binding>\n"
-    "\t";
+// Extracts the inner content between the outer `<Bindings>` /
+// `</Bindings>` tags of our embedded XML fragment. The wrapper exists
+// so the source file (`src/bindings/Bindings.xml`) is a well-formed
+// XML document on its own; at splice time only the inner elements
+// belong in the engine's binding list. Resolved once and cached.
+//
+// Returns {nullptr, 0} if the embedded buffer doesn't look like a
+// `<Bindings>...</Bindings>` document — defensive, this shouldn't
+// happen with a build-time-validated source.
+struct InnerXml {
+    const char *data;
+    size_t size;
+};
+
+// Advances `p` past any `<!-- ... -->` comment block starting at the
+// current position. Returns the new position (past the closing `-->`)
+// if a comment was skipped, or `p` unchanged if no comment was at
+// the current position. Caps at `end` if the comment is unterminated.
+const char *SkipCommentIfAny(const char *p, const char *end) {
+    if (p + 4 > end) return p;
+    if (std::memcmp(p, "<!--", 4) != 0) return p;
+    p += 4;
+    while (p + 3 <= end) {
+        if (std::memcmp(p, "-->", 3) == 0)
+            return p + 3;
+        ++p;
+    }
+    return end;
+}
+
+// Linear scan for `marker` in `[start, end)`, skipping any `<!--...-->`
+// comment blocks (where unrelated occurrences of XML tags might live).
+const char *FindOutsideComment(const char *start, const char *end, const char *marker) {
+    const size_t markerLen = std::strlen(marker);
+    const char *p = start;
+    while (p + markerLen <= end) {
+        const char *afterComment = SkipCommentIfAny(p, end);
+        if (afterComment != p) {
+            p = afterComment;
+            continue;
+        }
+        if (std::memcmp(p, marker, markerLen) == 0)
+            return p;
+        ++p;
+    }
+    return nullptr;
+}
+
+InnerXml ResolveInnerXml() {
+    const char *content = reinterpret_cast<const char *>(kEmbeddedBindingsXml);
+    const char *end = content + kEmbeddedBindingsXmlSize;
+
+    // Locate `<Bindings>` opening tag (skipping any comment blocks
+    // that mention the tag literally for documentation purposes).
+    const char *open = FindOutsideComment(content, end, "<Bindings");
+    if (open == nullptr) return {nullptr, 0};
+
+    // Skip to the closing `>` of the opening tag.
+    const char *innerStart = open;
+    while (innerStart < end && *innerStart != '>') ++innerStart;
+    if (innerStart == end) return {nullptr, 0};
+    ++innerStart;
+
+    const char *close = FindOutsideComment(innerStart, end, "</Bindings>");
+    if (close == nullptr || close < innerStart) return {nullptr, 0};
+
+    return {innerStart, static_cast<size_t>(close - innerStart)};
+}
 
 char NormalizeChar(char c) {
     if (c == '/') return '\\';
@@ -125,9 +184,15 @@ bool TryHandle(int unused, const char *path, void **outBuf, size_t *outSize,
         return true;
     }
 
-    const size_t injectLen = std::strlen(kInjectedXml);
+    static const InnerXml inner = ResolveInnerXml();
+    if (inner.data == nullptr || inner.size == 0) {
+        if (outBuf != nullptr) *outBuf = origBuf;
+        if (outSize != nullptr) *outSize = origSize;
+        return true;
+    }
+
     const size_t splicePos = static_cast<size_t>(splice - content);
-    const size_t newSize = origSize + injectLen;
+    const size_t newSize = origSize + inner.size;
 
     auto SMemAlloc = reinterpret_cast<SMemAlloc_t>(Offsets::FUN_STORM_SMEM_ALLOC);
     auto SMemFree = reinterpret_cast<SMemFree_t>(Offsets::FUN_STORM_SMEM_FREE);
@@ -143,8 +208,8 @@ bool TryHandle(int unused, const char *path, void **outBuf, size_t *outSize,
 
     auto *dest = static_cast<char *>(newBuf);
     std::memcpy(dest, content, splicePos);
-    std::memcpy(dest + splicePos, kInjectedXml, injectLen);
-    std::memcpy(dest + splicePos + injectLen,
+    std::memcpy(dest + splicePos, inner.data, inner.size);
+    std::memcpy(dest + splicePos + inner.size,
                 content + splicePos, origSize - splicePos);
     if (extraBytes > 0)
         std::memset(dest + newSize, 0, extraBytes);

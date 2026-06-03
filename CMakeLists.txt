@@ -47,9 +47,29 @@ add_custom_command(
     COMMENT "Embedding !!!ClassicAPI addon into ${EMBEDDED_CLASSICAPI_HEADER}"
     VERBATIM)
 
+# Bundle `src/bindings/Bindings.xml` (our TARGETING-group additions)
+# into a generated header. `src/bindings/Inject.cpp` extracts the
+# inner `<Binding>` elements from the embedded buffer and splices them
+# into the engine's `Interface\FrameXML\Bindings.xml` at load time.
+set(EMBEDDED_BINDINGS_SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/bindings/Bindings.xml")
+set(EMBEDDED_BINDINGS_HEADER "${CMAKE_BINARY_DIR}/generated/embedded_bindings.h")
+add_custom_command(
+    OUTPUT "${EMBEDDED_BINDINGS_HEADER}"
+    COMMAND ${CMAKE_COMMAND}
+        -DINPUT_FILE=${EMBEDDED_BINDINGS_SRC}
+        -DOUT_HEADER=${EMBEDDED_BINDINGS_HEADER}
+        -DSYMBOL=kEmbeddedBindingsXml
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_file.cmake"
+    DEPENDS
+        "${EMBEDDED_BINDINGS_SRC}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_file.cmake"
+    COMMENT "Embedding bindings XML into ${EMBEDDED_BINDINGS_HEADER}"
+    VERBATIM)
+
 add_library(${PROJECT_NAME} SHARED
     ${SOURCES} ${HEADERS} ${TINYCBOR_SOURCES}
-    ${EMBEDDED_CLASSICAPI_HEADER})
+    ${EMBEDDED_CLASSICAPI_HEADER}
+    ${EMBEDDED_BINDINGS_HEADER})
 
 # Dev-build sentinel — represents "newer than every plausible
 # release". Encoded as v9999.99.99 = 9999 * 10000 + 99 * 100 + 99 =
