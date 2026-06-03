@@ -189,6 +189,7 @@ build instructions.
   - [`C_Item.RequestLoadItemDataByID(item)` / `C_Item.RequestLoadItemData(itemLocation)`](#c_itemrequestloaditemdatabyiditem--c_itemrequestloaditemdataitemlocation)
   - [`C_Item.UnlockAllItems()`](#c_itemunlockallitems)
   - [`C_Item.UnlockItem(itemLocation)`](#c_itemunlockitemitemlocation)
+  - [`C_Item.UseAtCursor(itemInfo)`](#c_itemuseatcursoriteminfo)
   - [`C_Item.UseItemByName(itemInfo [, unit])`](#c_itemuseitembynameiteminfo--unit)
   - [`Get*ItemID` — companions to the engine's `Get*ItemLink` family](#getitemid--companions-to-the-engines-getitemlink-family)
   - [`GetAverageItemLevel()`](#getaverageitemlevel)
@@ -272,6 +273,7 @@ build instructions.
   - [`C_Spell.IsSpellHarmful(spellID)` / `C_Spell.IsSpellHelpful(spellID)`](#c_spellisspellharmfulspellid--c_spellisspellhelpfulspellid)
   - [`GetSpellSchool(spellID)`](#getspellschoolspellid)
   - [`CastSpellNoToggle(name | spellID)`](#castspellnotogglename--spellid)
+  - [`C_Spell.CastAtCursor(spellID)`](#c_spellcastatcursorspellid)
   - [`C_Spell.CancelSpellByID(spellID)` / `CancelSpellByName(name)`](#c_spellcancelspellbyidspellid--cancelspellbynamename)
 
 - [SpellBook](#spellbook)
@@ -4290,6 +4292,37 @@ sweep is logout). This call gives you an in-session escape hatch.
 > update will set the lock right back. For cursor-cancel semantics,
 > pair with vanilla-native `ClearCursor()`.
 
+### `C_Item.UseAtCursor(itemInfo)`
+
+Uses `itemInfo` at the player's current cursor world position —
+ClassicAPI's `[@cursor]` analog for ground-target on-use items
+(Iron Grenade, Bombling, demolition charges, etc.). Returns `true`
+when the cursor-placement leg landed (the item fires at terrain);
+`false` for items that aren't ground-target (the item still fires
+normally with no implicit target), unparseable input, items not in
+bags, cursor over UI / off-screen, etc.
+
+`itemInfo` accepts the same shapes as
+[`C_Item.UseItemByName`](#c_itemuseitembynameiteminfo--unit) — itemID,
+bare `"item:N"`, full chat link, or localized name.
+
+```lua
+C_Item.UseAtCursor(4068)            -- Iron Grenade at cursor
+C_Item.UseAtCursor("Iron Grenade")
+```
+
+Implementation chains the existing item-use path
+(`Item::Location::FindByArgInBags` + `FUN_ITEM_USE`) with
+[`Spell::AtCursor::Resolve`](#c_spellcastatcursorspellid) — same
+cursor-resolution helper `C_Spell.CastAtCursor` uses. When the item
+fires a non-ground-target spell, the cursor leg no-ops and returns
+`false`; the item still uses normally (any implicit target — current
+selection, etc. — applies).
+
+Cancels placement automatically when the cursor isn't on terrain —
+the item-use packet is never sent, so an off-screen click doesn't
+waste the grenade.
+
 ### `C_Item.UseItemByName(itemInfo [, unit])`
 
 Finds the first item in the player's bags matching `itemInfo` and
@@ -6612,6 +6645,46 @@ engine's own global.
 Using this from inside a macro action slot? See
 [`CastSpellNoToggle` as a macro cast line](#castspellnotoggle-as-a-macro-cast-line) below for the additional
 parser support that makes the slot tag correctly for action-bar UIs.
+
+### `C_Spell.CastAtCursor(spellID)`
+
+Casts a ground-target spell at the player's current cursor world
+position, bypassing the manual click on the AoE reticle the engine
+would otherwise require. ClassicAPI's analog of modern's
+`/cast [@cursor] Blizzard`. Returns `true` when the cursor-placement
+leg landed; `false` for non-ground-target spells (cast still fires
+normally on the current target), unknown spellIDs, cursor over UI /
+off-screen, etc.
+
+```lua
+C_Spell.CastAtCursor(10)    -- Blizzard rank 1 at cursor
+C_Spell.CastAtCursor(2120)  -- Flamestrike rank 1 at cursor
+```
+
+Two-stage internally:
+
+1. Initiates the cast through the same path
+   [`CastSpellByName`](docs/API.md#numeric-spellids-in-cast-and-castspellbyname)
+   uses (`FUN_RESOLVE_SPELL_NAME_TO_SLOT` + the engine's cast
+   dispatcher). If the spell needs a ground target, the engine
+   enters placement mode and arms the AoE reticle.
+
+2. Refreshes the cursor's screen→world raycast via
+   `FUN_REFRESH_CURSOR_RAYCAST` (the same internal the engine fires
+   on every mouse move when placement is active), confirms the
+   cursor hit terrain (not a UI frame or a unit), and commits
+   placement via `FUN_COMMIT_PLACEMENT_COORDS` with the resolved
+   `(x, y, z)`. Cancels placement cleanly via `FUN_STOP_PLACEMENT`
+   when the cursor isn't on terrain or when the spell wanted a
+   unit-target rather than ground.
+
+For non-placement spells (regular target casts, self-buffs, etc.)
+the cast fires normally; the placement-resolve no-ops since the
+engine never set the placement flag, and we return `false`.
+
+The companion item version is
+[`C_Item.UseAtCursor`](#c_itemuseatcursoriteminfo) — same chain via
+the item-use path for grenades / on-use ground-target items.
 
 ### `C_Spell.CancelSpellByID(spellID)` / `CancelSpellByName(name)`
 
