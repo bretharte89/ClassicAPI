@@ -1068,6 +1068,26 @@ enum Offsets {
     // With `requestIfMissing=false`, returns NULL if not in cache (no server
     // round-trip) — exactly the "instant" semantics we want.
     FUN_DBCACHE_ITEMSTATS_GET_RECORD = 0x0055BA30,
+    // Item-cache response handler — the function called from
+    // `0x00555140` (success path for `SMSG_ITEM_QUERY_SINGLE_RESPONSE`)
+    // and `0x00555160` (failure path). Parses one or more itemIDs out
+    // of the packet, looks up (or creates) the cache entry per ID,
+    // copies the item data block via `FUN_007c9640` to `entry+0x18`,
+    // sets `[entry+0x1F0]=1` (the loaded byte), then walks the entry's
+    // pending callback list at `[entry+0x1FC]` and invokes each with
+    // `(userData, success)`. High-bit-on itemID in the packet signals
+    // a per-item failure for the batch.
+    //
+    // We hook this to observe any item-cache fill the engine performs
+    // — covers the engine's natural inventory prefetch and any
+    // addon-triggered queries without having to register our own
+    // engine callbacks. Lets `RequestLoadItemData` be purely passive:
+    // we track itemIDs, the engine (or whoever) issues the query, we
+    // see the fill via this hook and fire `ITEM_DATA_LOAD_RESULT`.
+    //
+    // Signature: `__thiscall(void *cache, void *packetReader, int flag)`.
+    // `cache` is the same `VAR_ITEMDB_CACHE` we already use.
+    FUN_ITEMSTATS_CACHE_RESPONSE = 0x0055BDB0,
     // ItemStats_C field offsets we read. Full struct layout in
     // VanillaHelpers's `Game.h` (`struct ItemStats_C`); we only need these.
     OFF_ITEMSTATS_CLASS = 0x00,

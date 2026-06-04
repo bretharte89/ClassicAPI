@@ -93,13 +93,31 @@ static bool BuildIconPath(uint32_t displayInfoID, char *out, size_t outSize) {
     return true;
 }
 
+// `GetItemInfoInstant` is the modern "synchronous, never blocks" item
+// info call. In modern WoW the trailing 6 fields come from client-side
+// `Item-sparse.db2` and so the call always returns the full 7-tuple.
+// 1.12 has no client-side item DB — those fields live only in the
+// network-fed `DBCache_ItemStats`. We mirror the contract by:
+//   - always returning the itemID (echoed from input) so callers using
+//     `GetItemInfoInstant(link_or_id)` as an ID extractor never see nil
+//   - returning the remaining 6 fields from the cache when present,
+//     nil when not (preserving the 7-tuple shape)
+//   - not warming the cache; "Instant" implies no side effects. Callers
+//     that need the full info should use `GetItemInfo`, which already
+//     triggers the warmup via the `Script_GetItemInfo` hook.
 static int __fastcall Script_GetItemInfoInstant(void *L) {
     const int itemID = Item::Arg::ResolveItemID(L, 1);
     if (itemID <= 0)
         return 0;
+
+    Game::Lua::PushNumber(L, static_cast<double>(itemID));
+
     const uint8_t *record = FetchItemRecord(static_cast<uint32_t>(itemID));
-    if (record == nullptr)
-        return 0;
+    if (record == nullptr) {
+        for (int i = 0; i < 6; ++i)
+            Game::Lua::PushNil(L);
+        return 7;
+    }
 
     const uint32_t classID =
         *reinterpret_cast<const uint32_t *>(record + Offsets::OFF_ITEMSTATS_CLASS);
@@ -114,7 +132,6 @@ static int __fastcall Script_GetItemInfoInstant(void *L) {
     if (!BuildIconPath(displayInfoID, iconPath, sizeof(iconPath)))
         iconPath[0] = 0;
 
-    Game::Lua::PushNumber(L, static_cast<double>(itemID));
     Game::Lua::PushString(L, LookupItemClassName(classID));
     Game::Lua::PushString(L, LookupItemSubClassName(classID, subClassID));
     Game::Lua::PushString(L, LookupInvType(invType));

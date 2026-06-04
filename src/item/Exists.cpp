@@ -14,27 +14,11 @@
 #include "Game.h"
 #include "Offsets.h"
 #include "item/Arg.h"
-#include "item/Data.h"
 #include "item/Location.h"
 
 #include <cstdint>
 
 namespace Item::Exists {
-
-namespace {
-
-using GetItemRecord_t = const uint8_t *(__thiscall *)(void *cache, uint32_t itemID,
-                                                      const uint64_t *guid, void *callback,
-                                                      void *userData, int unused);
-
-const uint8_t *PeekItemRecord(uint32_t itemID) {
-    auto fn = reinterpret_cast<GetItemRecord_t>(Offsets::FUN_DBCACHE_ITEMSTATS_GET_RECORD);
-    auto *cache = reinterpret_cast<void *>(Offsets::VAR_ITEMDB_CACHE);
-    const uint64_t zeroGuid = 0;
-    return fn(cache, itemID, &zeroGuid, nullptr, nullptr, 0);
-}
-
-} // namespace
 
 // `C_Item.DoesItemExist(itemLocation)` — true iff the location resolves
 // to a populated inventory slot on the active player. Equipment-slot
@@ -51,27 +35,32 @@ static int __fastcall Script_C_Item_DoesItemExist(void *L) {
     return 1;
 }
 
-// `C_Item.DoesItemExistByID(itemInfo)` — true iff the cache currently
-// has data for this itemID (i.e. `GetItemInfo` would return non-nil
-// right now). Same semantics as the modern function and the existing
-// Lua shim: cache miss → false, but we kick off the network query
-// so a subsequent call after `GET_ITEM_INFO_RECEIVED` will succeed.
+// `C_Item.DoesItemExistByID(itemInfo)` — true if `itemID` looks like a
+// valid item identifier. Modern WoW answers from the client-side item
+// database (Item-sparse.db2) and is independent of whether the network
+// cache has been warmed yet. 1.12 has no client-side DB, so we
+// optimistically accept any positive itemID; callers needing the
+// "is the cache populated?" check should use `IsItemDataCachedByID`.
+//
+// This split matters for `ItemMixin:IsItemEmpty` (FrameXML ItemUtil),
+// which uses `DoesItemExistByID` to gate `ContinueOnItemLoad` — the
+// whole point of `ContinueOnItemLoad` is to wait for an uncached item
+// to load, so the existence check must succeed for items that aren't
+// in the cache yet.
+//
+// We deliberately do NOT auto-warm the cache here. Existence is a pure
+// query about the ID, not a load request — and during early-login
+// (cold WDB, pfQuest's PLAYER_ENTERING_WORLD path) a spurious cache
+// touch can race the engine's natural inventory prefetch and leave the
+// item stuck. Callers wanting to actually load data should use
+// `RequestLoadItemDataByID`; passive readers (`GetItemInfo`,
+// `GetItemNameByID`) already warm on their own miss path.
 //
 // Accepts numeric itemID or `"item:NNN..."` string (including full
-// chat links). Returns false for any input we can't resolve to an
-// itemID; never raises.
+// chat links); never raises.
 static int __fastcall Script_C_Item_DoesItemExistByID(void *L) {
     const int itemID = Item::Arg::ResolveItemID(L, 1);
-    if (itemID <= 0) {
-        Game::Lua::PushBoolean(L, 0);
-        return 1;
-    }
-    if (PeekItemRecord(static_cast<uint32_t>(itemID)) == nullptr) {
-        Item::Data::WarmCache(static_cast<uint32_t>(itemID));
-        Game::Lua::PushBoolean(L, 0);
-        return 1;
-    }
-    Game::Lua::PushBoolean(L, 1);
+    Game::Lua::PushBoolean(L, itemID > 0);
     return 1;
 }
 

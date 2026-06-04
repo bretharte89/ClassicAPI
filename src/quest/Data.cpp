@@ -31,12 +31,10 @@ static const Event::Custom::AutoReserve _reserveQuestDataLoadResult{kQuestDataLo
 // `ret 8` cleans both args. We encode the questID into `userData` at
 // request time so the callback knows which quest completed.
 static void __stdcall QuestLoadCallback(void *userData, int success) {
-    const int slot = Event::Custom::Lookup(kQuestDataLoadResult);
-    if (slot < 0)
-        return;
     const auto questID =
         static_cast<int>(reinterpret_cast<uintptr_t>(userData));
-    Event::Custom::Fire(slot, "%d%d", questID, static_cast<int>(success != 0));
+    Event::Custom::FireIdSuccess(Event::Custom::Lookup(kQuestDataLoadResult),
+                                 questID, success != 0);
 }
 
 static void RequestAndMaybeNotify(uint32_t questID) {
@@ -47,9 +45,8 @@ static void RequestAndMaybeNotify(uint32_t questID) {
     // invoking our callback. Fire the event ourselves so addons get the
     // notification regardless of cache state, matching modern semantics.
     if (wasCached) {
-        const int slot = Event::Custom::Lookup(kQuestDataLoadResult);
-        if (slot >= 0)
-            Event::Custom::Fire(slot, "%d%d", static_cast<int>(questID), 1);
+        Event::Custom::FireIdSuccess(Event::Custom::Lookup(kQuestDataLoadResult),
+                                     static_cast<int>(questID), true);
     }
 }
 
