@@ -40,7 +40,7 @@
 // Same pattern WeirdUtils.dll uses (we reverse-engineered it from
 // `0x10015A74` while figuring this out). The addon load pass then
 // reads each `.lua` file through the same hooked read path —
-// `GlobalStrings.lua`, `Util\Print.lua`, etc. all surface from
+// `Compat.lua`, `Util\Print.lua`, etc. all surface from
 // embedded buffers.
 
 #include "embedded_classicapi.h"
