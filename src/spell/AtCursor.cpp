@@ -41,9 +41,11 @@
 
 #include "Game.h"
 #include "Offsets.h"
+#include "spell/MacroPrimarySpell.h"
 
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 
 namespace Spell::AtCursor {
 
@@ -169,6 +171,28 @@ void RegisterLuaFunctions() {
 }
 
 const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
+
+// Macro-parser pattern: tag macros that call
+// `C_Spell.CastAtCursor(<spellID>)` with the spellID, so action-bar
+// UIs highlight the slot the same way they do for `/cast SpellName`.
+// The Lua call only accepts a numeric spellID, so the extractor just
+// reads a numeric literal — no name resolution needed.
+int ExtractCastAtCursorArg(const char *p, const char *end) {
+    while (p < end && (*p == ' ' || *p == '\t'))
+        ++p;
+    int value = 0;
+    const char *digitStart = p;
+    while (p < end && *p >= '0' && *p <= '9') {
+        if (value > 100000000) // sanity cap before overflow
+            return 0;
+        value = value * 10 + (*p - '0');
+        ++p;
+    }
+    return (p > digitStart && value > 0) ? value : 0;
+}
+
+const Spell::MacroPrimarySpell::PatternAutoRegister _patreg{
+    "C_Spell.CastAtCursor(", &ExtractCastAtCursorArg};
 
 } // namespace
 

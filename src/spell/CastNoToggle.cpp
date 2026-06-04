@@ -42,6 +42,7 @@
 #include "Offsets.h"
 #include "spell/Arg.h"
 #include "spell/Lookup.h"
+#include "spell/MacroPrimarySpell.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -208,141 +209,37 @@ void RegisterLuaFunctions() {
 const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
 
 // ---------------------------------------------------------------------------
-// Macro parser hook
+// Macro parser pattern
 //
-// Without this hook, a macro whose only cast statement is
-// `CastSpellNoToggle("Shoot")` doesn't get tagged in the spell-state
-// cache with the resolved spellID, because the engine's parser
-// (`FUN_004EFE00`) only knows to look for `/cast` slash-aliases and
-// `CastSpellByName("...")`. `IsAutoRepeatAction(macroSlot)` then has
-// nothing to match against the active auto-repeat spell, so the slot
-// fails to highlight in action-bar UIs (pfUI etc.).
-//
-// We hook the parser, let the original run, and if it didn't recognize
-// any pattern (cache field stays 0), scan the body ourselves for our
-// function name and use the engine's own name→spellID resolver to
-// fill in the field.
+// Tags macros containing `CastSpellNoToggle("Name")` with the
+// resolved spellID, so `IsAutoRepeatAction(macroSlot)` reports
+// correctly and action-bar UIs (pfUI etc.) highlight the slot for
+// auto-repeat spells. `Spell::MacroPrimarySpell` owns the parser
+// hook and the line walk; we just declare our `(prefix, extractor)`.
 // ---------------------------------------------------------------------------
 
-using MacroParse_t = void(__fastcall *)(int macroEntry);
-MacroParse_t MacroParse_o = nullptr;
-
-
-// Scan a macro body for `CastSpellNoToggle("<name>")` and return the
-// resolved spellID, or 0 if no recognized invocation is present.
-// Mirrors the engine parser's "first hit wins, line-at-a-time" walk
-// order so behavior is consistent with how `/cast` and
-// `CastSpellByName` are matched.
-int ScanMacroBodyForOurPattern(const char *body) {
-    static constexpr char kPattern[] = "CastSpellNoToggle(";
-    static constexpr size_t kPatternLen = sizeof(kPattern) - 1;
-
-    const char *line = body;
-    while (*line != '\0') {
-        const char *eol = line;
-        while (*eol != '\0' && *eol != '\n')
-            ++eol;
-
-        const char *p = line;
-        const char *end = eol;
-        while (p + kPatternLen <= end) {
-            if (std::memcmp(p, kPattern, kPatternLen) == 0) {
-                p += kPatternLen;
-                while (p < end && (*p == ' ' || *p == '\t'))
-                    ++p;
-                if (p < end && *p == '"') {
-                    ++p;
-                    const char *q = p;
-                    while (q < end && *q != '"')
-                        ++q;
-                    if (q < end) {
-                        const size_t n = static_cast<size_t>(q - p);
-                        if (n > 0 && n < 128) {
-                            char name[128];
-                            std::memcpy(name, p, n);
-                            name[n] = '\0';
-                            const int spellID = Spell::Arg::NameToSpellID(name);
-                            if (spellID > 0)
-                                return spellID;
-                        }
-                    }
-                }
-                break; // matched our prefix on this line; don't double-match
-            }
-            ++p;
-        }
-
-        line = (*eol == '\n') ? eol + 1 : eol;
-    }
-    return 0;
+int ExtractCastSpellNoToggleArg(const char *p, const char *end) {
+    while (p < end && (*p == ' ' || *p == '\t'))
+        ++p;
+    if (p >= end || *p != '"')
+        return 0;
+    ++p;
+    const char *q = p;
+    while (q < end && *q != '"')
+        ++q;
+    if (q >= end)
+        return 0;
+    const size_t n = static_cast<size_t>(q - p);
+    if (n == 0 || n >= 128)
+        return 0;
+    char name[128];
+    std::memcpy(name, p, n);
+    name[n] = '\0';
+    return Spell::Arg::NameToSpellID(name);
 }
 
-// The vanilla parser's per-line stack buffer is 256 bytes. When a
-// macro line exceeds that, the parser's local at `[EBP-4]` (the saved
-// entry pointer) and the saved return address get clobbered with body
-// bytes — observed in a crash with `entry@[EBP-4]` reading as ASCII
-// `"onTi"` (fragment of `"expirationTime"` from a long `/run` line).
-// The bound-check on the line-read function reads correctly in
-// Ghidra, so the overflow path is somewhere we couldn't isolate from
-// static analysis — we settle for a conservative pre-check that
-// skips the original entirely when any line is long enough to risk
-// the bug.
-//
-// 240 (not 256) leaves a safety margin: the parser writes a NUL
-// terminator and may walk one or two bytes past in its loop logic,
-// so we keep clear of the boundary. Macros that hit this branch
-// can't have a `/cast` line anyway (`/cast SpellName(Rank N)` is
-// well under 100 bytes), so losing the engine's `/cast` /
-// `CastSpellByName` tagging is no loss. We still run our own
-// `CastSpellNoToggle` pattern scan since it bound-checks its own
-// extraction.
-bool BodyHasLongLine(const char *body) {
-    if (body == nullptr)
-        return false;
-    constexpr int kMaxSafeLineBytes = 240;
-    int lineLen = 0;
-    for (; *body != '\0'; ++body) {
-        if (*body == '\n') {
-            lineLen = 0;
-        } else if (++lineLen > kMaxSafeLineBytes) {
-            return true;
-        }
-    }
-    return false;
-}
-
-void __fastcall MacroParse_h(int macroEntry) {
-    const char *body = reinterpret_cast<const char *>(
-        macroEntry + Offsets::OFF_MACRO_BODY);
-    int *cacheField = reinterpret_cast<int *>(
-        macroEntry + Offsets::OFF_MACRO_PRIMARY_SPELL);
-
-    if (BodyHasLongLine(body)) {
-        // Skip the engine parser entirely — it overflows on lines
-        // longer than its 256-byte buffer. Mark the cache as "no
-        // recognized cast" (0); our own scan below may still tag it
-        // if it's a `CastSpellNoToggle("...")` macro.
-        *cacheField = 0;
-        const int spellID = ScanMacroBodyForOurPattern(body);
-        if (spellID > 0)
-            *cacheField = spellID;
-        return;
-    }
-
-    MacroParse_o(macroEntry);
-
-    if (*cacheField != 0)
-        return;
-
-    const int spellID = ScanMacroBodyForOurPattern(body);
-    if (spellID > 0)
-        *cacheField = spellID;
-}
-
-const Game::HookAutoRegister _hookreg{
-    Offsets::FUN_MACRO_PARSE_PRIMARY_SPELL,
-    reinterpret_cast<void *>(&MacroParse_h),
-    reinterpret_cast<void **>(&MacroParse_o)};
+const Spell::MacroPrimarySpell::PatternAutoRegister _patreg{
+    "CastSpellNoToggle(", &ExtractCastSpellNoToggleArg};
 
 } // namespace
 
