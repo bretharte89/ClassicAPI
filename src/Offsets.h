@@ -2446,6 +2446,55 @@ enum Offsets {
     LUA_NEXT = 0x6F4450,
     LUA_ERROR = 0x6F4940,
 
+    // `lua_xmove(from, to, n)` — moves the top `n` TValues from one
+    // thread to another. Decrements `from->top` by `n*16`, copies each
+    // 16-byte TValue, increments `to->top`. Needed by the `coroutine.*`
+    // trampolines to shuttle args/returns between the main state and a
+    // suspended coroutine.
+    LUA_X_MOVE = 0x6F2F80,
+    // `lua_newthread(L)` — does GC check, calls inner `luaE_newthread`
+    // at `0x006F6B10` to allocate a new state, pushes it onto L's stack
+    // with type tag 8 (LUA_TTHREAD). Ghidra reports the return as
+    // `void` (decompiler limitation — the inner call's eax flows
+    // through), so callers should retrieve the new state via
+    // `ToPointer(L, -1)` rather than relying on the return value.
+    LUA_NEW_THREAD = 0x6F3030,
+    // `lua_resume(L_co, nargs)` — runs a coroutine. Zero internal
+    // callers in the engine (coroutine library was stripped from the
+    // standard-library registration tables at build time); linker
+    // kept the symbol so it's callable from C. Goes through
+    // `luaD_rawrunprotected` at `0x006F5DAC` for setjmp/longjmp
+    // safety; inner static `resume` helper lives at `0x006F67B0`.
+    LUA_RESUME = 0x6F6620,
+    // `lua_yield(L, nresults)` — flags the current CallInfo to yield
+    // and returns -1. Sets a `0x10` bit on the CI->state field rather
+    // than writing `L->status` directly in this build. Zero internal
+    // callers (same reason as `lua_resume`). Errors with
+    // "attempt to yield across metamethod/C-call boundary" or
+    // "cannot yield a C function" when called from the wrong context.
+    LUA_YIELD = 0x6F6860,
+    // `lua_topointer(L, idx)` — returns the pointer value of a
+    // pointer-valued TValue: type 5 (table), 6 (function), 8 (thread)
+    // return `tvalue[2]` directly; type 2 (lightuserdata) returns its
+    // value; type 7 (userdata) returns the userdata payload (record +
+    // 0x10). Returns 0 for anything else. We use it as `lua_tothread`
+    // — for a known-thread TValue, returns the embedded `lua_State *`.
+    LUA_TO_POINTER = 0x6F3790,
+    // `luaL_argerror(L, narg, msg)` — formats "bad argument #%d to
+    // '%s' (%s)" (or "calling '%s' on bad self (%s)" for method-style
+    // calls) and calls `lua_error`. Doesn't return.
+    LUAL_ARG_ERROR = 0x6F4810,
+    // `lua_iscfunction(L, idx)` — returns 1 if value is a function
+    // closure with the `isC` byte set (`Closure.c.isC == 1`), 0
+    // otherwise. Used by `coroutine.create` to reject C functions
+    // (Lua 5.0 only allows Lua-defined functions as coroutine bodies).
+    LUA_IS_C_FUNCTION = 0x6F34A0,
+    // `lua_tothread(L, idx)` — returns the embedded `lua_State *` for
+    // type-8 (LUA_TTHREAD) TValues, NULL for anything else. Used by
+    // the `coroutine` library to extract the coroutine pointer from a
+    // stack slot.
+    LUA_TO_THREAD = 0x6F3770,
+
     // Global `lua_State *`. The engine keeps one main thread state here; we
     // read it on demand in helpers that run outside a Lua callback (e.g.
     // RegisterTableFunction during LoadScriptFunctions).

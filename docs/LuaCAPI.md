@@ -3,7 +3,9 @@
 Catalogue of the Lua C API functions linked into the client. Vanilla WoW is
 built against **Lua 5.0** (not 5.1), and the entire API plus the auxiliary
 library lives in a contiguous block of `.text` from roughly `0x006F2000` to
-`0x006F5100`. ~120 functions; the public C API is the core of that.
+`0x006F5100`. ~120 functions; the public C API is the core of that. The
+thread / coroutine machinery (`lua_resume`, `lua_yield`, the inner
+`luaE_newthread`) lives slightly higher at `0x006F6000`–`0x006F6900`.
 
 **Cross-verified against two binaries:**
 
@@ -75,6 +77,8 @@ context but not byte-by-byte verified.
 
 | VA           | Function                | Conv.    | Notes                                                       | Conf |
 |--------------|-------------------------|----------|--------------------------------------------------------------|------|
+| `0x006F2F80` | `lua_xmove`             | fastcall | `(from, to, n)` — decr `from->top` by `n*0x10`, copy each 16-byte TValue, incr `to->top`. Used by `coroutine.*` to shuttle args/returns between threads | ★ |
+| `0x006F3030` | `lua_newthread`         | fastcall | GC check then calls inner `luaE_newthread` at `0x006F6B10`; pushes the new state onto L with tag 8 (LUA_TTHREAD). Returns `lua_State *` in eax — Ghidra reports `void` (decompiler artifact) | ★ |
 | `0x006F3070` | `lua_gettop`            | fastcall | `(top - base) >> 4`                                          | ★   |
 | `0x006F3080` | `lua_settop`            | fastcall |                                                              | ✓   |
 | `0x006F30D0` | `lua_remove`            | fastcall | shift-down loop + decr_top; previously misidentified as `lua_pushvalue` | ★ |
@@ -155,7 +159,10 @@ behaviour the comment describes (`push 0; mov edx, 1; mov ecx, L`) is
 | `0x006F4290` | *internal CFunction trampoline* |   | called via `lua_cpcall`                                  | ★   |
 | `0x006F4320` | `lua_load`               | fastcall | reader / loader entry                                    | ★   |
 | `0x006F4370` | `lua_dump`               | fastcall | requires tag 6 + `Closure.isC == 0`                      | ★   |
-| `0x006F4940` | `lua_error`              | cdecl    | `(L, msg)` — args on stack; reaches `luaD_throw` via wrappers | ✓ |
+| `0x006F4940` | `lua_error`              | **cdecl** varargs | `(L, fmt, ...)` — printf-style; engine prepends `luaL_where` then `lua_concat`. Single-string callers OK (cdecl tolerates extra-arg-less calls); user-controlled strings should use `Error(L, "%s", msg)` to avoid format-string interpretation | ✓ |
+| `0x006F6620` | `lua_resume`             | fastcall | `(L_co, nargs) → int`. Zero internal callers (coroutine lib was stripped from registration tables); linker kept the symbol. Stores nargs in a local, calls `luaD_rawrunprotected(L, &resume_inner, &nargs)` at `0x006F5DAC`; inner static helper at `0x006F67B0` | ★ |
+| `0x006F6860` | `lua_yield`              | fastcall | `(L, nresults) → int (-1)`. Sets `0x10` flag on CallInfo state field rather than directly writing `L->status` like later Lua versions. Errors with "attempt to yield across metamethod/C-call boundary" or "cannot yield a C function" when called from the wrong context | ★ |
+| `0x006F6B10` | *internal* `luaE_newthread` | fastcall | Inner allocator called by `lua_newthread` at `0x006F3030`. Allocates the new state, sets tag 8 via the push helper at `0x006F7B20`, inits via `0x006F6C40`, copies global-state fields from the parent. Returns `lua_State *` | ★ |
 
 ### Misc / GC / version
 

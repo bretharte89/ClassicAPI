@@ -49,6 +49,8 @@ constexpr int TYPE_NUMBER = 3;
 constexpr int TYPE_STRING = 4;
 constexpr int TYPE_TABLE = 5;
 constexpr int TYPE_FUNCTION = 6;
+constexpr int TYPE_USERDATA = 7;
+constexpr int TYPE_THREAD = 8;
 
 using lua_isnumber_t = bool(__fastcall *)(void *L, int index);
 using lua_isstring_t = bool(__fastcall *)(void *L, int index);
@@ -76,7 +78,27 @@ using lua_call_t = void(__fastcall *)(void *L, int nargs, int nresults);
 using lua_pcall_t = int(__fastcall *)(void *L, int nargs, int nresults, int errfunc);
 using lua_next_t = int(__fastcall *)(void *L, int idx);
 using lua_type_t = int(__fastcall *)(void *L, int index);
-using lua_error_t = void(__cdecl *)(void *L, const char *);
+// The 1.12 `lua_error` wrapper at `0x6F4940` is actually variadic —
+// it does `lua_pushvfstring(L, fmt, args)` then prepends `luaL_where`
+// and throws. Existing callers pass a single literal (no `%`), which
+// is fine because cdecl tolerates extra-arg-less calls. New callers
+// forwarding user-supplied error strings should use `Error(L, "%s",
+// userMsg)` to avoid format-string interpretation of `%` in the
+// message body.
+using lua_error_t = void(__cdecl *)(void *L, const char *fmt, ...);
+using lua_topointer_t = const void *(__fastcall *)(void *L, int idx);
+using lua_tothread_t = void *(__fastcall *)(void *L, int idx);
+using lua_iscfunction_t = int(__fastcall *)(void *L, int idx);
+using lua_xmove_t = void(__fastcall *)(void *from, void *to, int n);
+// `lua_newthread` returns the new `lua_State *` in eax, but Ghidra
+// infers `void` because the inner call's value just flows through.
+// We declare the return type honestly here; callers that don't want
+// to rely on the calling convention preserving eax can read the
+// thread back from L's top via `ToPointer(L, -1)`.
+using lua_newthread_t = void *(__fastcall *)(void *L);
+using lua_resume_t = int(__fastcall *)(void *L, int nargs);
+using lua_yield_t = int(__fastcall *)(void *L, int nresults);
+using luaL_argerror_t = void(__fastcall *)(void *L, int narg, const char *msg);
 
 extern const lua_isnumber_t IsNumber;
 extern const lua_isstring_t IsString;
@@ -110,6 +132,14 @@ extern const lua_pcall_t PCall;
 extern const lua_next_t Next;
 extern const lua_type_t Type;
 extern const lua_error_t Error;
+extern const lua_topointer_t ToPointer;
+extern const lua_tothread_t ToThread;
+extern const lua_iscfunction_t IsCFunction;
+extern const lua_xmove_t XMove;
+extern const lua_newthread_t NewThread;
+extern const lua_resume_t Resume;
+extern const lua_yield_t Yield;
+extern const luaL_argerror_t ArgError;
 
 // Returns the global `lua_State *` (read on demand from the engine's global).
 // Callable outside a Lua callback, e.g. during LoadScriptFunctions setup.

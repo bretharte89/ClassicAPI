@@ -48,7 +48,15 @@ namespace Lua {
     F(PCall,       lua_pcall,       LUA_PCALL)        \
     F(Next,        lua_next,        LUA_NEXT)         \
     F(Type,        lua_type,        LUA_TYPE)         \
-    F(Error,       lua_error,       LUA_ERROR)
+    F(Error,       lua_error,       LUA_ERROR)        \
+    F(ToPointer,   lua_topointer,   LUA_TO_POINTER)   \
+    F(ToThread,    lua_tothread,    LUA_TO_THREAD)    \
+    F(IsCFunction, lua_iscfunction, LUA_IS_C_FUNCTION)\
+    F(XMove,       lua_xmove,       LUA_X_MOVE)       \
+    F(NewThread,   lua_newthread,   LUA_NEW_THREAD)   \
+    F(Resume,      lua_resume,      LUA_RESUME)       \
+    F(Yield,       lua_yield,       LUA_YIELD)        \
+    F(ArgError,    luaL_argerror,   LUAL_ARG_ERROR)
 
 #define CLASSICAPI_BIND_LUA(Name, Typedef, Offset) \
     const Typedef##_t Name = reinterpret_cast<Typedef##_t>(Offsets::Offset);
