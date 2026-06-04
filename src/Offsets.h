@@ -1202,6 +1202,10 @@ enum Offsets {
     // always at index 0 (some Turtle WoW custom items put it later).
     OFF_ITEMSTATS_SPELL_ID = 0x11C,        // u32[5] — spell ID per slot
     OFF_ITEMSTATS_SPELL_TRIGGER = 0x130,   // u32[5] — trigger code per slot
+    OFF_ITEMSTATS_SPELL_CHARGES = 0x144,   // i32[5] — charges per slot (-1 = infinite)
+    OFF_ITEMSTATS_SPELL_COOLDOWN = 0x158,  // u32[5] — cooldown ms per slot
+    OFF_ITEMSTATS_SPELL_CATEGORY = 0x16C,  // u32[5] — category (groups shared cooldowns)
+    OFF_ITEMSTATS_SPELL_CATEGORY_CD = 0x180, // u32[5] — category cooldown ms
     ITEMSTATS_SPELL_SLOT_COUNT = 5,
     ITEM_SPELLTRIGGER_ON_USE = 0,
 
@@ -1212,6 +1216,63 @@ enum Offsets {
     // uniqueness signal the client has. Derived by summing struct
     // members in VanillaHelpers's `ItemStats_C` definition.
     OFF_ITEMSTATS_MAX_COUNT = 0x5C,
+
+    // Remaining `ItemStats_C` fields used by `C_Item.GetItemData(ByID)`.
+    // Offsets derived from VanillaHelpers's `struct ItemStats_C`
+    // definition (`C:\Git\VanillaHelpers\src\Game.h`), sized to match
+    // the verified anchors above (`+0x60 m_stackable`, `+0x1D0
+    // m_bagFamily`, `+0x1AC m_lockID`, etc.). Block follows the same
+    // ordering as the struct so it's easy to cross-reference.
+    OFF_ITEMSTATS_BUY_PRICE = 0x24,        // u32
+    OFF_ITEMSTATS_ALLOWABLE_CLASS = 0x30,  // u32 — class bitmask, -1 = all
+    OFF_ITEMSTATS_ALLOWABLE_RACE = 0x34,   // u32 — race bitmask, -1 = all
+    OFF_ITEMSTATS_REQUIRED_LEVEL = 0x3C,   // u32
+    OFF_ITEMSTATS_REQUIRED_SKILL = 0x40,   // u32 — SkillLine.dbc row
+    OFF_ITEMSTATS_REQUIRED_SKILL_RANK = 0x44, // u32
+    OFF_ITEMSTATS_REQUIRED_SPELL = 0x48,   // u32 — Spell.dbc row
+    OFF_ITEMSTATS_REQUIRED_HONOR_RANK = 0x4C, // u32
+    OFF_ITEMSTATS_REQUIRED_CITY_RANK = 0x50,  // u32
+    OFF_ITEMSTATS_REQUIRED_FACTION = 0x54, // u32 — Faction.dbc row
+    OFF_ITEMSTATS_REQUIRED_FACTION_RANK = 0x58, // u32 — Friendly/Honored/etc.
+    OFF_ITEMSTATS_STAT_TYPE = 0x68,        // u32[10] — ItemModType enum per slot
+    OFF_ITEMSTATS_STAT_VALUE = 0x90,       // i32[10] — magnitude per slot
+    ITEMSTATS_STAT_SLOT_COUNT = 10,
+    OFF_ITEMSTATS_DAMAGE_MIN = 0xB8,       // f32[5]
+    OFF_ITEMSTATS_DAMAGE_MAX = 0xCC,       // f32[5]
+    OFF_ITEMSTATS_DAMAGE_TYPE = 0xE0,      // u32[5] — schools per damage slot
+    ITEMSTATS_DAMAGE_SLOT_COUNT = 5,
+    OFF_ITEMSTATS_ARMOR = 0xF4,            // u32
+    OFF_ITEMSTATS_RES_HOLY = 0xF8,         // u32 (six resists contiguous)
+    OFF_ITEMSTATS_RES_FIRE = 0xFC,
+    OFF_ITEMSTATS_RES_NATURE = 0x100,
+    OFF_ITEMSTATS_RES_FROST = 0x104,
+    OFF_ITEMSTATS_RES_SHADOW = 0x108,
+    OFF_ITEMSTATS_RES_ARCANE = 0x10C,
+    OFF_ITEMSTATS_DELAY = 0x110,           // u32 — weapon swing time (ms)
+    OFF_ITEMSTATS_AMMO_TYPE = 0x114,       // u32 — ammo subclass for ranged
+    OFF_ITEMSTATS_RANGED_MOD_RANGE = 0x118, // f32 — range modifier on bows/guns
+    OFF_ITEMSTATS_BONDING = 0x194,         // u32 — 0=none, 1=BoP, 2=BoE, 3=BoU, 4=Quest
+    OFF_ITEMSTATS_DESCRIPTION = 0x198,     // char * — flavor text (locale-applied)
+    OFF_ITEMSTATS_PAGE_TEXT = 0x19C,       // u32 — PageText.dbc row (readable books)
+    OFF_ITEMSTATS_LANGUAGE_ID = 0x1A0,     // u32 — language for book text
+    OFF_ITEMSTATS_PAGE_MATERIAL = 0x1A4,   // u32 — book material
+    OFF_ITEMSTATS_START_QUEST = 0x1A8,     // u32 — questID started by right-click
+    OFF_ITEMSTATS_MATERIAL = 0x1B0,        // i32 — material type
+    OFF_ITEMSTATS_SHEATH = 0x1B4,          // u32 — weapon sheath style
+    OFF_ITEMSTATS_RANDOM_PROPERTY = 0x1B8, // i32 — random property template
+    OFF_ITEMSTATS_BLOCK = 0x1BC,           // u32 — shield block value
+    OFF_ITEMSTATS_MAX_DURABILITY = 0x1C4,  // u32
+    OFF_ITEMSTATS_AREA = 0x1C8,            // u32 — bound area (AreaTable.dbc)
+    OFF_ITEMSTATS_MAP = 0x1CC,             // u32 — bound map (Map.dbc)
+
+    // `m_flags` bits we surface as decoded booleans. The OPENABLE bit
+    // (0x4) is verified by the tooltip-builder's reader at 0x0052E323;
+    // the others are documented in the standard 1.12 protocol
+    // (CMaNGOS / TrinityCore `ITEM_FLAG_*`) and exposed as-is. Add
+    // verification anchors as consumers materialize.
+    ITEM_FLAG_CONJURED = 0x2,
+    ITEM_FLAG_LOOTABLE = 0x10,
+    ITEM_FLAG_WRAPPER = 0x200,
 
     // `Spell.dbc` `Name[9]` field at record +0x1E0 (9-locale string
     // array, indexed by `[VAR_LOCALE_INDEX]`). Used by `GetItemSpell`

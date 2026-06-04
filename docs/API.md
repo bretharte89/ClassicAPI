@@ -162,6 +162,7 @@ build instructions.
   - [`C_Item.EquipItemByName(itemInfo [, dstSlot])`](#c_itemequipitembynameiteminfo--dstslot)
   - [`C_Item.GetCurrentItemLevel(itemLocation)` / `C_Item.GetDetailedItemLevelInfo(item)`](#c_itemgetcurrentitemlevelitemlocation--c_itemgetdetaileditemlevelinfoitem)
   - [`C_Item.GetItemCount(itemInfo, [includeBank], [includeUses])`](#c_itemgetitemcountiteminfo-includebank-includeuses)
+  - [`C_Item.GetItemData(itemLocation)` / `C_Item.GetItemDataByID(item)`](#c_itemgetitemdataitemlocation--c_itemgetitemdatabyiditem)
   - [`C_Item.GetItemFamily(item)`](#c_itemgetitemfamilyitem)
   - [`C_Item.GetItemGUID(itemLocation)`](#c_itemgetitemguiditemlocation)
   - [`C_Item.GetItemID(itemLocation)`](#c_itemgetitemiditemlocation)
@@ -3568,6 +3569,143 @@ directly off the CGItem's m_objectFields descriptor at +0x20
 Equivalent to the legacy global `GetItemCount` (since 3.0) and the
 modern `C_Item.GetItemCount` introduced in 10.x.
 
+### `C_Item.GetItemData(itemLocation)` / `C_Item.GetItemDataByID(item)`
+
+ClassicAPI-only kitchen-sink reader: returns a single table with every
+field we can extract from the cached `ItemStats_C` record, so addons
+that need more than a couple of fields don't have to chain a dozen
+`C_Item.*` calls. Saves both stack churn and the cost of redoing the
+cache lookup for every accessor.
+
+```
+data = C_Item.GetItemDataByID(item)        -- numeric id / "item:NNN" / chat link
+data = C_Item.GetItemData(itemLocation)    -- {bagID,slotIndex} or {equipmentSlotIndex}
+```
+
+Returns `nil` if the input doesn't resolve to a valid itemID or the
+item isn't cached yet. Does **not** warm the cache — same passive-
+reader contract as
+[`C_Item.GetItemInfoInstant`](#c_itemgetiteminfoinstantitem).
+Callers that need to wait for cache fill should call
+[`C_Item.RequestLoadItemDataByID`](#c_itemrequestloaditemdatabyiditem--c_itemrequestloaditemdataitemlocation)
+and listen for `ITEM_DATA_LOAD_RESULT`.
+
+Returned table:
+
+| Key | Type | Source / notes |
+|-----|------|---------------|
+| `itemID` | number | Echoed from input. |
+| `name` | string | `m_name[0]` — localized display name. |
+| `description` | string \| nil | `m_description`. Omitted when empty. |
+| `icon` | string \| nil | `"Interface\\Icons\\<name>"`. Omitted when no icon. |
+| `displayInfoID` | number | `m_displayInfoID` → `ItemDisplayInfo.dbc` row. |
+| `quality` | number | 0..5 — see `LE_ITEM_QUALITY_*` enum. |
+| `classID` | number | `m_class` — `ItemClass.dbc` row. |
+| `subclassID` | number | `m_subClass` — `ItemSubClass.dbc` row. |
+| `className` | string | Localized class name (e.g. `"Weapon"`). |
+| `subclassName` | string | Localized subclass name (e.g. `"One-Handed Swords"`). |
+| `inventoryType` | number | `m_inventoryType` — raw integer. |
+| `equipLoc` | string | `"INVTYPE_*"` constant or `""` for non-equippable. |
+| `bindType` | number | `m_bonding` — 0=none, 1=BoP, 2=BoE, 3=BoU, 4=Quest. |
+| `flags` | number | Raw `m_flags` u32. |
+| `isConjured` | bool | Flag bit `0x2`. |
+| `isOpenable` | bool | Flag bit `0x4`. Same bit `C_Item.IsItemOpenable` reads. |
+| `isLootable` | bool | Flag bit `0x10` — has loot generators (right-click loot). |
+| `isWrapper` | bool | Flag bit `0x200` — gift-wrappable. |
+| `maxStackSize` | number | `m_stackable`. |
+| `maxCount` | number | `m_maxCount` — 0=unlimited, 1=unique, otherwise per-character cap. |
+| `containerSlots` | number | `m_containerSlots` — bag slot count, 0 for non-bags. |
+| `bagFamily` | number | `m_bagFamily` converted to modern bitmask (`1 << (id-1)`). |
+| `buyPrice` | number | Vendor buy price in copper. |
+| `sellPrice` | number | Vendor sell price in copper. |
+| `itemLevel` | number | Base ilvl from `ItemSparse`. |
+| `requiredLevel` | number | Minimum character level. |
+| `requiredSkill` | number | `SkillLine.dbc` row, 0=none. |
+| `requiredSkillRank` | number | Skill rank required. |
+| `requiredSpell` | number | `Spell.dbc` row required to learn / use, 0=none. |
+| `requiredHonorRank` | number | PvP honor rank required, 0=none. |
+| `requiredCityRank` | number | Reserved; 0 for vanilla. |
+| `requiredFaction` | number | `Faction.dbc` row, 0=none. |
+| `requiredFactionRank` | number | Reputation tier (Friendly/Honored/…). |
+| `allowableClass` | number | Class bitmask, `-1` = all classes. |
+| `allowableRace` | number | Race bitmask, `-1` = all races. |
+| `armor` | number | Armor value. |
+| `block` | number | Shield block value. |
+| `maxDurability` | number | 0 for items without durability. |
+| `stats` | table | Sparse `{ [statType] = statValue, … }`. Empty for items without stat allocations. |
+| `resistanceHoly` | number | Holy resistance. |
+| `resistanceFire` | number | Fire resistance. |
+| `resistanceNature` | number | Nature resistance. |
+| `resistanceFrost` | number | Frost resistance. |
+| `resistanceShadow` | number | Shadow resistance. |
+| `resistanceArcane` | number | Arcane resistance. |
+| `damageMin` | table | 5-element float array — weapon min damage per damage slot. |
+| `damageMax` | table | 5-element float array. |
+| `damageType` | table | 5-element integer array — damage school per slot. |
+| `delay` | number | Weapon swing time in ms. |
+| `ammoType` | number | Ammo subclass for ranged weapons. |
+| `rangedModRange` | number | Range modifier for bows/guns. |
+| `spells` | table | Sparse array of `{id, trigger, charges, cooldown, category, categoryCooldown}` records — one per non-empty spell slot (up to 5). |
+| `useSpellID` | number \| nil | Convenience — the spellID of the first slot with trigger=ON_USE (0). Omitted when the item has none. Same value [`C_Item.GetItemSpell`](#c_itemgetitemspellitem) returns. |
+| `lockID` | number | `Lock.dbc` row for the item's lock, 0=none. |
+| `itemSet` | number | `ItemSet.dbc` row, 0=not part of a set. |
+| `pageText` | number | `PageText.dbc` row for readable items. |
+| `pageMaterial` | number | Book page material. |
+| `languageID` | number | Language for in-game-readable books. |
+| `startQuest` | number | `Quest` row started by right-clicking this item. |
+| `material` | number | Material type (cloth/leather/metal etc. for hit sounds). |
+| `sheath` | number | Weapon sheath style. |
+| `randomProperty` | number | Random property template id. |
+| `area` | number | `AreaTable.dbc` — bound area for area-locked items, 0=none. |
+| `map` | number | `Map.dbc` — bound map for map-locked items, 0=none. |
+
+```lua
+local data = C_Item.GetItemDataByID(6948)  -- Hearthstone
+-- data.name == "Hearthstone"
+-- data.quality == 1, data.classID == 15, data.subclassID == 0
+-- data.bindType == 1   (BoP)
+-- data.useSpellID == 8690   (the recall spell)
+-- data.maxStackSize == 1, data.maxCount == 1
+
+local sword = C_Item.GetItemDataByID(2092)  -- Worn Shortsword
+-- sword.equipLoc == "INVTYPE_WEAPONMAINHAND"
+-- sword.damageMin[1] == 1.0, sword.damageMax[1] == 2.0, sword.delay == 1900
+-- sword.stats == {}   (no stat allocations on the starter sword)
+```
+
+**Cache state.** The function reads the same `DBCache_ItemStats`
+network cache every other `C_Item.*` reader consults. Items already in
+the player's inventory are typically populated by the engine's natural
+prefetch before `PLAYER_ENTERING_WORLD` returns; for other items
+(quest rewards, AH items, link hovers, etc.) the data lands once a
+`SMSG_ITEM_QUERY_SINGLE_RESPONSE` arrives. Use
+`C_Item.RequestLoadItemDataByID` if you specifically need to trigger
+the load.
+
+**Stats encoding.** The `stats` table is keyed by the **ItemModType**
+enum (vanilla's encoding):
+
+| Key | Meaning |
+|-----|---------|
+| 0 | Mana |
+| 1 | Health |
+| 3 | Agility |
+| 4 | Strength |
+| 5 | Intellect |
+| 6 | Spirit |
+| 7 | Stamina |
+
+Higher-numbered slots (consumable per-second-regen, defense rating,
+hit/crit/dodge/parry chance, weapon/spell-power) only appear on items
+the server actually carries — vanilla 1.12 mostly uses 0..7. Empty
+slots (both type and value zero) are omitted, so iterating `stats`
+yields only the stats actually allocated.
+
+No equivalent in modern WoW — `GetItemInfo` returns the 14-tuple
+piecemeal and `C_Item.GetItemInfo` adds a few more. ClassicAPI's
+`GetItemData` is a single-call superset useful for backporting tooltip
+addons and item-data caches.
+
 ### `C_Item.GetItemFamily(item)`
 
 Returns the BagFamily bitmask for an item — i.e., what kind of
@@ -3678,8 +3816,8 @@ end
 
 Modern-style accessor for the always-available subset of item info — the
 fields that depend only on classification, not on player-specific state.
-Returns immediately from the client-side item cache; no server round-trip,
-no async polling. Returns `nil` if the item isn't in cache.
+Synchronous, side-effect-free: peeks the client-side item cache and
+returns whatever it has without warming or queueing.
 
 Accepts a numeric `itemID` or a string containing `"item:NNN"` (matches both
 the bare `"item:1234"` shorthand and full chat links like
@@ -3692,6 +3830,13 @@ Returns seven values:
 ```
 itemID, itemType, itemSubType, itemEquipLoc, icon, classID, subClassID
 ```
+
+The `itemID` return is always populated for any input that resolves to
+a positive integer (so it's safe to use the function as an ID extractor
+on a link without first warming the cache). The remaining six fields
+come from the cache record when present — when the item isn't cached
+yet they're all `nil`, but the call still returns a 7-tuple so the
+positional shape is preserved.
 
 - `itemType` / `itemSubType` are the localized class / subclass names
   (e.g. `"Weapon"` / `"One-Handed Swords"`), read from `ItemClass.dbc` and
@@ -3706,14 +3851,26 @@ itemID, itemType, itemSubType, itemEquipLoc, icon, classID, subClassID
 
 ```lua
 local id, type, subtype, equipLoc, icon, classID, subClassID
-    = C_Item.GetItemInfoInstant(6948)  -- Hearthstone
+    = C_Item.GetItemInfoInstant(6948)  -- Hearthstone, cached
 -- type="Miscellaneous", subtype="Junk", equipLoc="",
 -- icon="Interface\\Icons\\INV_Misc_Rune_01", classID=15, subClassID=0
+
+local id = C_Item.GetItemInfoInstant("|cff...|Hitem:6948:0:0:0|h[Hearthstone]|h|r")
+-- id == 6948 even when the cache is cold — the call parses the link
+-- to extract the ID without consulting the cache.
 ```
 
 The actual class/subclass values reflect 1.12.1's data, which differs from
 modern WoW. For example, vanilla had no Cloth subclass under Trade Goods —
 Silk Cloth lives at `(7, 0)` in this client, not the modern `(7, 5)`.
+
+> **No auto-warmup.** Unlike `GetItemInfo` or `C_Item.GetItemNameByID`,
+> `GetItemInfoInstant` does not trigger a network query on a cache
+> miss. The "Instant" name is contractual — callers that need the
+> cache populated should use
+> [`C_Item.RequestLoadItemDataByID`](#c_itemrequestloaditemdatabyiditem--c_itemrequestloaditemdataitemlocation)
+> explicitly, or just call `GetItemInfo` (which warms via the
+> `Script_GetItemInfo` hook).
 
 ### `C_Item.GetItemInventoryType(itemLocation)` / `C_Item.GetItemInventoryTypeByID(item)`
 
@@ -4241,22 +4398,40 @@ was already cached (so polling code paths still work), asynchronously
 fired when the engine's SMSG response handler completes a network
 fetch.
 
-> **Vanilla quirk:** the engine has no native bool format code — `success`
-> arrives as `1`/`0` (number), not `true`/`false`. Idiomatic check is
-> `if success == 1 then ...`.
+> **`success` is `1` or `nil`.** The engine's printf-style event
+> dispatcher has no `%b` token, so we encode the boolean as `1` for
+> success / `nil` for failure (leaning on `lua_pushstring(NULL)` →
+> `lua_pushnil`). `if success then …` distinguishes them correctly —
+> `nil` is falsy, `1` is truthy. Same encoding as `GET_ITEM_INFO_RECEIVED`
+> and `QUEST_DATA_LOAD_RESULT`.
 
 ```lua
 local f = CreateFrame("Frame")
 f:RegisterEvent("ITEM_DATA_LOAD_RESULT")
 f:SetScript("OnEvent", function()
     -- vanilla 1.12: event payload is in `arg1`, `arg2`, ... globals
-    if event == "ITEM_DATA_LOAD_RESULT" and arg2 == 1 then
+    if event == "ITEM_DATA_LOAD_RESULT" and arg2 then
         local _, type = C_Item.GetItemInfoInstant(arg1)
         -- ...
     end
 end)
 C_Item.RequestLoadItemDataByID(2589)
 ```
+
+> **Engine-aligned cache strategy.** `RequestLoadItemData` does NOT
+> eagerly create a cache entry. Empirically (e.g. pfQuest calling it
+> at addon-load / PLAYER_ENTERING_WORLD against a cleared WDB), pre-
+> creating the entry races the engine's natural inventory prefetch
+> and can leave the item permanently pending — the engine sees the
+> entry exists and skips its own `SMSG_ITEM_QUERY_SINGLE`, while our
+> early query gets dropped. Instead we track the itemID and hook the
+> engine's `SMSG_ITEM_QUERY_SINGLE_RESPONSE` handler at `0x0055BDB0`:
+> when the engine fills any entry, we sweep tracked items and fire
+> `ITEM_DATA_LOAD_RESULT` for matches. For items the engine doesn't
+> prefetch (quest rewards, AH browse targets, etc.) we escalate after
+> ~60 ticks by calling `CacheFetch` ourselves — by then engine state
+> has settled and our query goes through normally. Hard timeout at
+> ~1200 ticks (~20–40s) fires `ITEM_DATA_LOAD_RESULT(itemID, nil)`.
 
 ### `C_Item.UnlockAllItems()`
 
@@ -5626,9 +5801,11 @@ cache. Synchronously fired when the data was already cached
 `SMSG_QUEST_QUERY_RESPONSE` lands when the engine had to round-trip to the
 server.
 
-> **Vanilla quirk:** the engine has no native bool format code — `success`
-> arrives as `1`/`0` (number), not `true`/`false`, just like
-> `ITEM_DATA_LOAD_RESULT`. Idiomatic check is `if success == 1 then ...`.
+> **`success` is `1` or `nil`.** The engine's printf-style event
+> dispatcher has no `%b` token, so we encode the boolean as `1` for
+> success / `nil` for failure. `if success then ...` works as expected
+> (`nil` falsy, `1` truthy). Same encoding as `ITEM_DATA_LOAD_RESULT`
+> and `GET_ITEM_INFO_RECEIVED`.
 
 > **Vanilla limitation:** for *invalid* questIDs (ones the server doesn't
 > have), the 1.12 server silently drops the query — it doesn't send a
