@@ -93,6 +93,15 @@ using ItemLoadCallback_t = void(__stdcall *)(void *userData, int success);
 // VanillaHelpers documented as `requestIfMissing` — that slot is reused
 // as a local immediately after entry, never read. The trigger for the
 // request path is `callback != NULL`.
+//
+// The 6th arg IS used elsewhere though: when non-zero, the engine
+// walks the entry's existing pending-callback list and skips the
+// append if a node with matching `(callback, userData)` is already
+// queued. We always pass `1` so that bursts of `WarmCache` calls for
+// the same itemID (e.g. Bagnon enumerating the same slot repeatedly
+// while the SMSG_ITEM_QUERY_SINGLE_RESPONSE is in flight) collapse to
+// a single callback registration — otherwise the response fires our
+// `GET_ITEM_INFO_RECEIVED` once per call.
 static const uint8_t *CacheFetch(uint32_t itemID, ItemLoadCallback_t callback) {
     auto fn = reinterpret_cast<GetItemRecord_t>(Offsets::FUN_DBCACHE_ITEMSTATS_GET_RECORD);
     auto *cache = reinterpret_cast<void *>(Offsets::VAR_ITEMDB_CACHE);
@@ -100,7 +109,7 @@ static const uint8_t *CacheFetch(uint32_t itemID, ItemLoadCallback_t callback) {
     void *cb = reinterpret_cast<void *>(callback);
     void *userData =
         callback ? reinterpret_cast<void *>(static_cast<uintptr_t>(itemID)) : nullptr;
-    return fn(cache, itemID, &zeroGuid, cb, userData, 0);
+    return fn(cache, itemID, &zeroGuid, cb, userData, 1);
 }
 
 // Resolves an item-location table at stack idx to the itemID by walking
