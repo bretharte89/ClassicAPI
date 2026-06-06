@@ -93,6 +93,7 @@ build instructions.
   - [`PLAYER_FOCUS_CHANGED` event](#player_focus_changed-event)
   - [`QUEST_ACCEPTED` event](#quest_accepted-event)
   - [`QUEST_TURNED_IN` event](#quest_turned_in-event)
+  - [`UNIT_FACTION` event (fire-coverage fix)](#unit_faction-event-fire-coverage-fix)
   - [`UPDATE_SHAPESHIFT_FORM` event](#update_shapeshift_form-event)
 
 - [Expansion](#expansion)
@@ -2170,6 +2171,75 @@ quest invalidated, etc.). Only fires on a real successful turn-in.
 > sends it after committing the turn-in (XP / money / item awards
 > done, quest removed from log). Hooking the packet handler gives
 > us the same signal modern WoW's event uses.
+
+### `UNIT_FACTION` event (fire-coverage fix)
+
+`UNIT_FACTION` already exists in the vanilla event table — addons can
+register for it — but the 1.12 engine **never fires it** on several
+paths where modern WoW (3.3.5+) does. We restore the modern firing
+semantics so addons that observe `UNIT_FACTION` stop missing state
+changes.
+
+Payload is unchanged from modern: `arg1` is the unit token string,
+always `"player"` for these paths (you can only toggle / sync rep on
+the local player).
+
+```lua
+local f = CreateFrame("Frame")
+f:RegisterEvent("UNIT_FACTION")
+f:SetScript("OnEvent", function()
+    if event == "UNIT_FACTION" and arg1 == "player" then
+        RefreshFactionUI()
+    end
+end)
+```
+
+**Paths that now fire `UNIT_FACTION("player")`:**
+
+| Path | Trigger | Detection |
+|------|---------|-----------|
+| `FactionToggleAtWar` | Lua call to toggle AT_WAR | Slot's flag byte changed (skips PEACE_FORCED no-ops, looting-blocked attempts, standing-blocked attempts) |
+| `SetFactionInactive` / `SetFactionActive` | Lua call to toggle INACTIVE | Slot's flag byte changed |
+| `SMSG_SET_FACTION_STANDINGS` | Server rep-change push (kills, quest turn-ins, etc.) | Any byte in the 64-entry flag array changed — catches AT_WAR side-effect flips when standing crosses the -3000 threshold |
+| `SMSG_SET_FACTION_ATWAR` | Server force-change of AT_WAR (faction reset, server-side state push) | Unconditional after byte write |
+| `SMSG_INITIALIZE_FACTIONS` | Server initial faction sync at login | Unconditional after table populated |
+
+The last one fixes the case where addons relying on `UNIT_FACTION`
+(rather than `PLAYER_LOGIN` / `VARIABLES_LOADED`) miss the initial
+load entirely on vanilla.
+
+**Not yet covered:**
+- Unit-faction-template changes for *non-player* units (mind control,
+  charm, server-side faction scripts). Modern WoW fires
+  `UNIT_FACTION` on the affected unit token; the vanilla broad helper
+  isn't hooked here yet. Mostly affects nameplate / threat addons in
+  rare encounter mechanics.
+
+**Implementation notes**
+
+`FactionToggleAtWar` / `SetFactionInactive` / `SetFactionActive`'s
+inner setters (`FUN_004D5FD0`, `FUN_004D60F0`) write to the rep slot's
+flag byte and send the corresponding CMSG, but never call the
+engine's "fire UNIT_FACTION on this unit" dispatcher. 3.3.5 added a
+`FUN_0071F8F0(player, 0)` call to both paths whose inner
+`FUN_0060BF10(playerGUID, UNIT_FACTION_id)` broadcasts the event for
+every unit token referencing the local player.
+
+Since `FactionToggleAtWar` only ever runs for the player and the only
+unit token resolving to the player is `"player"`, we fire
+`UNIT_FACTION("player")` directly via the engine's printf-style
+dispatcher (`FUN_FIRE_EVENT`) — same observable result without
+re-deriving the vanilla broad helper. We resolve `UNIT_FACTION`'s
+event-table slot lazily by name (`Event::Custom::LookupByName`) so we
+stay correct against any DLL combination that reshuffles the table.
+
+For the two SMSG-bound flag-flip paths (`SetFactionStandings`,
+`SetFactionInactive`-but-from-server), we snapshot the 64-entry rep
+slot flag-byte array before the original handler runs and compare
+after — single fire if any byte changed. The bulk snapshot is 64
+byte reads (cheap) and naturally handles the case where one packet
+carries multiple rep updates whose threshold crossings ripple AT_WAR
+state across unrelated slots.
 
 ### `UPDATE_SHAPESHIFT_FORM` event
 

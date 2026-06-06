@@ -1784,6 +1784,10 @@ enum Offsets {
     // Note: the bit's MEANING is "can't toggle" — `canToggleAtWar` is
     // its inverse, NOT its value.
     REP_SLOT_FLAG_PEACE_FORCED = 0x10,
+    // INACTIVE flag — set by `Script_SetFactionInactive` (the "Inactive"
+    // collapsible category in FactionFrame). Toggles via
+    // `FUN_FACTION_SET_INACTIVE`; same byte as AT_WAR and PEACE_FORCED.
+    REP_SLOT_FLAG_INACTIVE = 0x20,
     MAX_REP_SLOTS = 64,
 
     // Static reaction-band threshold tables, indexed by reaction band
@@ -1802,6 +1806,81 @@ enum Offsets {
     // watched faction", which `Script_GetWatchedFactionInfo` checks
     // against `FUN_004D5620(slot)`'s return.
     OFF_CGPLAYER_INFO_WATCHED_REP_LIST_ID = 0x10C4,
+
+    // `FactionSetAtWar(factionID, newState)` — `__fastcall(ecx = factionID,
+    // edx = char newState)`. The sole worker behind
+    // `Script_FactionToggleAtWar` (`0x004D6950`); the script wrapper just
+    // reads the current at-war flag, negates it, and tail-calls here.
+    //
+    // Validates (only when turning OFF) that current standing ≥ -3000,
+    // resolves factionID → repListID, bails if the player is in a loot
+    // session (UNIT_FIELD_FLAGS bit `0x80000`, error code `0x1A1`),
+    // mutates the rep-slot flag byte (`AT_WAR` gated by `PEACE_FORCED`),
+    // and sends `CMSG_SET_FACTION_ATWAR` (opcode `0x125`).
+    //
+    // **Does NOT fire `UNIT_FACTION`** — a vanilla engine omission. 3.3.5
+    // added a `FUN_0071F8F0(player, 0)` call here, whose inner
+    // `FUN_0060BF10(playerGUID, UNIT_FACTION_id)` dispatches the event
+    // for every unit token referencing the player. We polyfill by
+    // hooking this function and firing `UNIT_FACTION("player")` post-
+    // original (see `src/faction/UnitFactionPolyfill.cpp`).
+    FUN_FACTION_SET_AT_WAR = 0x004D5FD0,
+
+    // `FactionSetInactive(factionID, newState)` — `__fastcall(ecx = factionID,
+    // edx = char newState)`. Inner setter behind `Script_SetFactionInactive`
+    // (`0x004D69B0`, sets INACTIVE bit) and `Script_SetFactionActive`
+    // (`0x004D6A00`, clears it) — both script wrappers tail-call here.
+    //
+    // Resolves factionID → repListID via `FUN_004D5600`, mutates the
+    // rep-slot flag byte (sets/clears `INACTIVE` = `0x20`), writes via
+    // `FUN_004D5FC0`, sends `CMSG_SET_FACTION_INACTIVE` (opcode `0x317`),
+    // then calls `FUN_004D5C40` (recompute displayed-list, fire
+    // `UPDATE_FACTION` event `0x174`).
+    //
+    // **Does NOT fire `UNIT_FACTION`** — same engine omission as the at-
+    // war setter. Polyfilled in `src/faction/UnitFactionPolyfill.cpp`.
+    FUN_FACTION_SET_INACTIVE = 0x004D60F0,
+
+    // SMSG_SET_FACTION_ATWAR handler — `__stdcall(uint32_t opcode,
+    // void *packet)`. Fires when the server force-changes the player's
+    // at-war state on a faction (e.g., a flag the player can't toggle
+    // changes server-side, or faction reset). Reads `(u32 repListID,
+    // u8 flags)`, mutates AT_WAR on the slot accordingly, writes via
+    // `FUN_004D5FC0`, then fires `UPDATE_FACTION` (event `0x174`).
+    //
+    // **Does NOT fire `UNIT_FACTION`** — 3.3.5 does (unconditionally
+    // after the byte write). Polyfilled in
+    // `src/faction/UnitFactionPolyfill.cpp`.
+    FUN_SMSG_SET_FACTION_ATWAR = 0x004D56B0,
+
+    // SMSG_INITIALIZE_FACTIONS handler — `__stdcall(uint32_t opcode,
+    // void *packet)`. Fires once at login from the SMSG dispatcher. Reads
+    // a count, then loops `(u8 flags, i32 standing)` pairs into the
+    // 64-entry rep slot array: `FUN_004D5FC0(slot, flags)` +
+    // `FUN_004D6330(slot, standing, 0 /*notify*/)`. Trailing
+    // `FUN_004D5430` rebuilds the displayed-list snapshot, then fires
+    // `UPDATE_FACTION` (event `0x174`).
+    //
+    // **Does NOT fire `UNIT_FACTION`** — modern WoW does. Addons that
+    // observe UNIT_FACTION miss the initial sync entirely in vanilla.
+    // Polyfilled in `src/faction/UnitFactionPolyfill.cpp`.
+    FUN_SMSG_INITIALIZE_FACTIONS = 0x004D5640,
+
+    // SMSG_SET_FACTION_STANDINGS handler — `__stdcall(uint32_t opcode,
+    // void *packet)`. Fires once per server-pushed rep change (kills,
+    // quest turn-ins, etc.). Reads count, loops `(flags, standing)`
+    // pairs, calling `FUN_004D6330(slot, standing, 1 /*notify*/)` which
+    // routes through `FUN_REPUTATION_FIRE_NOTIFY` for the
+    // `CHAT_MSG_COMBAT_FACTION_CHANGE` dispatch.
+    //
+    // Also mutates AT_WAR / VISIBLE flag bits as standing crosses
+    // thresholds (e.g., recovering to -2999 clears the force-set AT_WAR
+    // from "below Hated"). **Vanilla doesn't fire `UNIT_FACTION` for
+    // these side-effect flag flips**; modern 3.3.5 does. Polyfilled in
+    // `src/faction/UnitFactionPolyfill.cpp` — snapshots the 64-entry
+    // flag-byte array before/after and fires a single
+    // `UNIT_FACTION("player")` if any bit changed.
+    FUN_SMSG_SET_FACTION_STANDINGS = 0x004D5760,
 
     // `__fastcall(ecx = factionID, edx = signedDelta)`. This is the
     // engine's "reputation changed, fire the chat event" notify

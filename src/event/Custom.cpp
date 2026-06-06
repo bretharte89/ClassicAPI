@@ -105,6 +105,23 @@ int Lookup(const char *name) {
     return -1;
 }
 
+int LookupByName(const char *name) {
+    if (name == nullptr)
+        return -1;
+    auto *base = *reinterpret_cast<uint8_t **>(Offsets::VAR_EVENT_TABLE_BASE_PTR);
+    const int count = *reinterpret_cast<int *>(Offsets::VAR_EVENT_TABLE_COUNT);
+    if (base == nullptr || count <= 0)
+        return -1;
+    for (int i = 0; i < count; ++i) {
+        const char *entryName = *reinterpret_cast<const char *const *>(
+            base + i * Offsets::EVENT_ENTRY_STRIDE +
+            Offsets::OFF_EVENT_ENTRY_NAME);
+        if (entryName != nullptr && std::strcmp(entryName, name) == 0)
+            return i;
+    }
+    return -1;
+}
+
 void RetryClaims() {
     for (int i = 0; i < g_reservedCount; ++i) {
         if (g_reserved[i].slot < 0)

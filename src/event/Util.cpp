@@ -12,35 +12,9 @@
 // ClassicAPI. If not, see <https://www.gnu.org/licenses/>.
 
 #include "Game.h"
-#include "Offsets.h"
-
-#include <cstdint>
-#include <cstring>
+#include "event/Custom.h"
 
 namespace Event::Util {
-
-// Walks the same `EventEntry` array that `Frame::RegisterEvent` strcmps
-// against (base at `[VAR_EVENT_TABLE_BASE_PTR]`, count at
-// `[VAR_EVENT_TABLE_COUNT]`, stride 0x10, name field at +0x00). This is
-// the source of truth for "events the engine will accept registration
-// for", so it picks up anything we've injected via `Event::Custom::Register`
-// in addition to all built-in events.
-static bool IsKnownEventName(const char *needle) {
-    auto *base = *reinterpret_cast<uint8_t **>(Offsets::VAR_EVENT_TABLE_BASE_PTR);
-    const int count = *reinterpret_cast<int *>(Offsets::VAR_EVENT_TABLE_COUNT);
-    if (base == nullptr || count <= 0)
-        return false;
-    for (int i = 0; i < count; i++) {
-        const uint8_t *entry = base + i * Offsets::EVENT_ENTRY_STRIDE;
-        const char *name = *reinterpret_cast<const char *const *>(
-            entry + Offsets::OFF_EVENT_ENTRY_NAME);
-        if (name == nullptr)
-            continue;
-        if (std::strcmp(name, needle) == 0)
-            return true;
-    }
-    return false;
-}
 
 static int __fastcall Script_IsEventValid(void *L) {
     if (Game::Lua::Type(L, 1) != Game::Lua::TYPE_STRING) {
@@ -52,7 +26,7 @@ static int __fastcall Script_IsEventValid(void *L) {
         Game::Lua::PushBool(L, 0);
         return 1;
     }
-    Game::Lua::PushBoolean(L, IsKnownEventName(needle));
+    Game::Lua::PushBoolean(L, Event::Custom::LookupByName(needle) >= 0);
     return 1;
 }
 

@@ -47,7 +47,21 @@ struct AutoReserve {
 // claimed (e.g. before the first Lua-side `RegisterEvent` has
 // triggered `RetryClaims`). Slot indices may change across `/reload`,
 // so call this at fire time rather than caching the value.
+//
+// Only consults our reservation cache — for engine-defined events
+// (UNIT_FACTION, BAG_UPDATE, etc.) use `LookupByName`.
 int Lookup(const char *name);
+
+// Walks the live engine event table at `[VAR_EVENT_TABLE_BASE_PTR]`
+// looking for an entry whose name strcmps equal to `name`. Returns
+// the slot index, or -1 if no entry matches.
+//
+// Works for both engine-defined events AND our `AutoReserve`-claimed
+// custom events (both populate the same table). Slightly slower than
+// `Lookup` (O(table size) vs O(reservations)) — prefer `Lookup` for
+// names we've reserved. Use this for engine-defined events we want to
+// fire ourselves (e.g., polyfilling missing event dispatches).
+int LookupByName(const char *name);
 
 // Dispatches a custom event via the engine's printf-style event
 // dispatcher at `FUN_FIRE_EVENT` (`0x00703F50`). `format` is a
