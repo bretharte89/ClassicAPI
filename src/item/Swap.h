@@ -82,9 +82,15 @@ bool Containers(void *L, int srcBag, int srcSlot, int dstBag, int dstSlot);
 //   - `dst` same item & fits maxStack    → merges `count` into dst
 //   - `dst` different item / overflow    → server rejects (no partial)
 //
-// Source must be occupied with at least `count` items; server rejects
-// if not. Returns false locally only on bad args or unresolvable bags.
-// All other validation is server-side — same as `Containers` above.
+// Source must be occupied with at least `count` items. Locally
+// validates `count <= srcStack` (server would reject otherwise with
+// `EQUIP_ERR_COULDNT_SPLIT_ITEMS` — fail fast). When `count ==
+// srcStack` ("move the whole stack"), routes through `Containers`
+// instead — vanilla's `CMSG_SPLIT_ITEM` rejects splits that would
+// leave the source empty, but `CMSG_SWAP_ITEM` handles the case
+// (merges into a matching destination stack, swaps otherwise).
+// Returns false locally on bad args, unresolvable bags, or
+// `count > srcStack`; all other validation is server-side.
 //
 // Requires Lua state for the same reason as `Containers`: the source
 // CGItem lookup goes through `Item::Location::ResolveBag`. Stomps the

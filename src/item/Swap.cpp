@@ -254,6 +254,24 @@ bool MoveCount(void *L, int srcBag, int srcSlot, int dstBag, int dstSlot, int co
     if (srcItem == nullptr)
         return false;
 
+    // Vanilla server rejects `CMSG_SPLIT_ITEM` when count == srcStack
+    // (`EQUIP_ERR_COULDNT_SPLIT_ITEMS`) — conceptually "split N off,
+    // leave residual", and splitting the entire stack would leave
+    // source empty. The drag-and-drop UI's "drop whole stack on
+    // matching stack" goes through CMSG_SWAP_ITEM instead, which the
+    // server treats as a merge for same-item destinations (up to
+    // maxStack). Route there for count == srcStack so callers don't
+    // have to special-case "move everything".
+    auto *srcDescriptor = *reinterpret_cast<const uint8_t *const *>(
+        srcItem + Offsets::OFF_ITEM_DESCRIPTOR);
+    const int srcStack = srcDescriptor == nullptr ? 0 :
+        static_cast<int>(*reinterpret_cast<const uint32_t *>(
+            srcDescriptor + Offsets::OFF_DESCRIPTOR_STACK_COUNT));
+    if (count > srcStack)
+        return false; // server would reject anyway; fail fast and locally
+    if (count == srcStack)
+        return Containers(L, srcBag, srcSlot, dstBag, dstSlot);
+
     void *player = ResolvePlayer();
     if (player == nullptr)
         return false;
