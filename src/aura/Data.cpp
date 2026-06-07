@@ -110,6 +110,13 @@ const uint8_t *FindPlayerBuffEntry(uint32_t spellID) {
 // what Lua's `GetTime()` returns (engineMs * 0.001), so converting
 // `expirationMs * 0.001` lands directly on the same timeline addons
 // compare against on the Lua side. No epoch reconciliation needed.
+//
+// **Read as `uint32_t`**: GetTickCount overflows `INT_MAX` at ~24.86
+// days of system uptime. A signed read flips negative past that
+// point, which broke a `<= 0` early-bail that was supposed to catch
+// only the "no timing" (0) sentinel. The engine's own arithmetic
+// works on the unsigned tick because both sides of `expiration -
+// currentMs` wrap together.
 double PlayerBuffExpirationSeconds(const uint8_t *entry) {
     if (entry == nullptr)
         return 0.0;
@@ -117,12 +124,12 @@ double PlayerBuffExpirationSeconds(const uint8_t *entry) {
         entry + Offsets::OFF_PLAYER_BUFF_SLOT_CODE);
     if (slotCode < 0)
         return 0.0;
-    auto *expirationTable = reinterpret_cast<const int *>(
+    auto *expirationTable = reinterpret_cast<const uint32_t *>(
         static_cast<uintptr_t>(Offsets::VAR_PLAYER_BUFF_EXPIRATION_TABLE));
-    const int expirationMs = expirationTable[slotCode];
-    if (expirationMs <= 0)
+    const uint32_t expirationMs = expirationTable[slotCode];
+    if (expirationMs == 0)
         return 0.0;
-    return static_cast<double>(static_cast<uint32_t>(expirationMs)) * 0.001;
+    return static_cast<double>(expirationMs) * 0.001;
 }
 
 // Computes the spell's base duration in seconds via Spell.dbc →
