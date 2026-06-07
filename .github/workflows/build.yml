@@ -16,14 +16,6 @@ jobs:
         with:
           submodules: recursive
 
-      # Stamp the addon's TOC version from the tag (drops the leading `v`)
-      # BEFORE CMake configure, so the embed step picks up the stamped TOC.
-      # The DLL bundles AddOns/!!!ClassicAPI/ at build time — see the
-      # `embed_addon` custom command in CMakeLists.txt and the file-read
-      # hook in src/addons/Embedded.cpp.
-      #
-      # Branch builds skip this — leaves the TOC's literal `## Version: DEV`
-      # in place so the DLL identifies as a dev build at runtime.
       - name: Stamp embedded TOC version
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
@@ -33,16 +25,17 @@ jobs:
           (Get-Content $toc) -replace '^## Version:.*', "## Version: $version" |
             Set-Content $toc
 
-      - name: Configure
+      - name: Configure (tag)
+        if: startsWith(github.ref, 'refs/tags/v')
         run: cmake -B build -A Win32 "-DCLASSICAPI_TAG=${{ github.ref_name }}"
+
+      - name: Configure (branch)
+        if: "!startsWith(github.ref, 'refs/tags/v')"
+        run: cmake -B build -A Win32
 
       - name: Build
         run: cmake --build build --config Release
 
-      # Every commit uploads the built DLL as a workflow artifact —
-      # downloadable from the run page for ~90 days. Lets you grab a
-      # pre-release DLL without cutting a tag. The `name` includes the
-      # short SHA so multiple runs in the same branch don't overwrite.
       - name: Upload artifact
         if: "!startsWith(github.ref, 'refs/tags/v')"
         uses: actions/upload-artifact@v4
