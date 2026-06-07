@@ -286,7 +286,10 @@ enum Offsets {
     // holds the local player's 64-bit GUID, and the visible-object
     // iterator at FUN_CLNT_OBJ_MGR_ENUM_VISIBLE_OBJECTS walks its
     // +0xAC list. Useful for "is this GUID me?" checks without
-    // round-tripping through Lua.
+    // round-tripping through Lua. Also a NULL-check proxy for "is
+    // the object manager initialised" — engine iterators deref this
+    // unconditionally on entry, so callers must skip on the glue /
+    // character-select screen.
     VAR_LOCAL_PLAYER_PTR = 0x00B41414,
     OFF_LOCAL_PLAYER_GUID = 0xC0,
     // `__fastcall(ecx = const char *token) → uint64_t GUID` — the
@@ -3351,6 +3354,174 @@ enum Offsets {
     VAR_LOOT_LOOTABLE = 0x00B71BA0,
     LOOT_SLOT_STRIDE = 0x1C,
     LOOT_MAX_SLOTS = 0x10,
+    // Per-slot field offsets within a `VAR_LOOT_SLOTS + slot * 0x1C`
+    // entry. Decoded from `Script_GetLootSlotInfo` and the populator
+    // at `FUN_004C1CB0`:
+    //   +0x00  itemID         (Script_GetLootSlotInfo's first push)
+    //   +0x04  displayInfoID  (icon lookup via DBC index)
+    //   +0x08  count          (FUN_004C22E0 reads `[base+0x8]`)
+    //   +0x0C  ?
+    //   +0x10  ?
+    //   +0x14  wire-slot byte (the server-side slot index — what
+    //          `CMSG_LOOT_ITEM` expects; differs from the local
+    //          densely-packed index when the response had gaps)
+    OFF_LOOT_SLOT_COUNT = 0x08,
+    OFF_LOOT_SLOT_WIRE_INDEX = 0x14,
+
+    // `__fastcall(uint userFacingSlot, char *outBuf, int bufSize) →
+    // const char *outBuf` — builds the loot-slot hyperlink string
+    // (e.g. `|cff1eff00|Hitem:12345:0:0:0|h[Item Name]|h|r`) and
+    // copies it into `outBuf`. Returns the buffer pointer on success,
+    // `NULL` if no loot window is open, the slot is empty, or the
+    // item's cache record isn't loaded yet. Used by
+    // `Script_GetLootSlotLink` at `0x004C2D20`.
+    //
+    // `userFacingSlot` is the post-`__ftol`-decrement slot index — the
+    // same shape Lua's `LootSlot(slot)` produces internally after
+    // `dec eax`:
+    //   - When coin is present (`VAR_LOOT_LOOTABLE != 0`), input `0`
+    //     is the coin slot itself and returns NULL; subsequent
+    //     internal items live at `userFacingSlot = internal_slot + 1`
+    //     (the function dec's again inside).
+    //   - When no coin, `userFacingSlot = internal_slot` directly.
+    // The internal `_GetRecord` call inside uses `callback = NULL`, so
+    // the link is a pure cache hit — no network request gets queued
+    // when the cache is cold, just a NULL return.
+    FUN_LOOT_SLOT_LINK_BUILDER = 0x004C2670,
+
+    // `__stdcall(uint8_t slotByte)` — sends `CMSG_LOOT_ITEM` (opcode
+    // `0x108`) carrying the wire-protocol slot byte for the currently-
+    // open loot window. Built directly from the engine's packet
+    // primitives — bypasses the `Script_LootSlot` Lua wrapper at
+    // `FUN_004C2790`, which routes through a `param_2 != 0`
+    // BoP-confirm-after-dialog branch that's of no use to us. The
+    // server cheerfully takes whatever slot you send for the current
+    // loot session; no client-side BoP confirmation gate.
+    //
+    // **Calling convention matters.** The callee reads its arg from
+    // `[ebp+8]` (stack) and ends with `ret 4`. Mis-typedef'ing as
+    // `__fastcall` produces a stack-corrupting caller — symptoms are
+    // delayed crashes on unrelated vtable reads.
+    FUN_CMSG_LOOT_ITEM = 0x005E1AD0,
+
+    // UNIT_DYNAMIC_FLAGS within `m_objectFields`. Standard
+    // server-driven dynamic-state bitmask. Empirically verified by
+    // cross-referencing three `Script_*` accessors that all read
+    // bytes at `[m_objectFields + 0x224]`:
+    //   - `Script_UnitIsTapped` (`0x00519C90`): `test [eax+0x224], 0x04`
+    //   - `Script_UnitIsTappedByPlayer` (`0x00519D00`): `test [eax+0x224], 0x08`
+    //   - `Script_UnitIsDead` (`0x00517AC0`): `[eax+0x224] >> 5 & 1`
+    // Bit values match CMaNGOS conventions: 0x01 LOOTABLE,
+    // 0x02 TRACK_UNIT, 0x04 TAPPED, 0x08 TAPPED_BY_PLAYER,
+    // 0x10 SPECIALINFO, 0x20 DEAD, 0x40 REFER_A_FRIEND_LINKED,
+    // 0x80 ZONE_OUT. The +0x224 offset is significantly later than
+    // CMaNGOS-doc'd vanilla (which puts DYNAMIC_FLAGS at field 0x46
+    // = +0x118) — yet another non-uniform shift in 1.12.1's actual
+    // UNIT_FIELD layout. Direct empirical read is the authority.
+    OFF_UNIT_FIELD_DYNAMIC_FLAGS = 0x224,
+    UNIT_DYNFLAG_LOOTABLE = 0x01,
+    UNIT_DYNFLAG_DEAD = 0x20,
+
+    // UNIT_FIELD_BOUNDINGRADIUS within m_objectFields — single
+    // float, the unit's interact-radius in world yards. Both
+    // `FUN_005EC110` (interact-state check) and `FUN_005DF130`
+    // (CMSG_LOOT sender) compute the interaction-range threshold
+    // as `target_radius + player_radius + INTERACT_REACH`, clamped
+    // to a floor of `MIN_INTERACT_RANGE`. Verified at `0x005EC1A4`
+    // where the function reads
+    // `[(target_m_objectFields) + 0x1F0]`.
+    OFF_UNIT_FIELD_BOUNDING_RADIUS = 0x1F0,
+
+    // `__thiscall(player, target, useDistanceCheck)` — engine's
+    // CMSG_LOOT sender for **dead mobs** (CGCreature_C with
+    // DYNFLAG_LOOTABLE set). Pre-checks: `FUN_005EC110` interact
+    // validity + `FUN_006003A0` lootability (target dead + bit 0 of
+    // `m_objectFields[+0x224]` set) + local player not in a state
+    // that forbids interaction. Releases any open loot window before
+    // sending the new request.
+    //
+    // `useDistanceCheck` is the auto-walk gate:
+    //   - `1` (engine default): if target out of range, start
+    //     walking toward it and *don't* send CMSG_LOOT. If in range,
+    //     send normally.
+    //   - `0`: skip the range check; send immediately. The server
+    //     enforces server-side range, so OOR sends silently fail
+    //     rather than walking the player toward distant corpses —
+    //     the right pick for AoE-loot-style callers.
+    //
+    // Engine callsite at `FUN_0060FA20` (right-click world handler)
+    // resolves the target via
+    // `ClntObjMgrObjectPtr(TYPEMASK_UNIT, ..., guid)` first, same as
+    // we do.
+    //
+    // Distinct from the sibling sender at `0x005DF130`, which gates
+    // on `FUN_CGCORPSE_IS_LOOTABLE` (player corpses only) instead of
+    // the mob path. The CGCorpse helper is documented immediately
+    // below.
+    FUN_CMSG_LOOT_UNIT = 0x005DF2A0,
+
+    // `__fastcall(int loot_response_struct, undefined4 coin, int unk)`
+    // — master loot-window state controller. Called by the
+    // `SMSG_LOOT_RESPONSE` handler tail (via `FUN_0048F3A0`) and by
+    // `CloseLoot`-inner (via `FUN_0048F200(0, 0, 0)`). Two phases:
+    //   - **Close prior**: if `VAR_LOOT_GUID_LO/HI != 0`, clears
+    //     them, releases item-cache callbacks for the prior slots,
+    //     fires `LOOT_CLOSED` (event id `0x10D`).
+    //   - **Open new**: if `param_1 != 0`, copies the GUID from
+    //     `[param_1 + 8]` into `VAR_LOOT_GUID_LO/HI`, zeroes
+    //     `VAR_LOOT_SLOTS`, walks 16 slots populating itemID via
+    //     `FUN_005EBC90(slot)` and sibling helpers, sets
+    //     `VAR_LOOT_LOOTABLE = param_2` (coin), then fires
+    //     `LOOT_OPENED` (event id `0x10B`).
+    // Both event fires go through `FUN_FIRE_EVENT_NO_ARGS` —
+    // intercepting that function lets a caller swallow the events
+    // without touching this one.
+    FUN_LOOT_CONTROLLER = 0x004C1CB0,
+
+    // `__fastcall(int eventID)` — engine's no-args event dispatcher,
+    // the lighter-weight sibling of `FUN_FIRE_EVENT` (variadic).
+    // Called from ~100 sites across the engine, including the
+    // `LOOT_OPENED` / `LOOT_CLOSED` fires inside
+    // `FUN_LOOT_CONTROLLER`. Hooking it lets us conditionally swallow
+    // specific event ids while leaving the rest untouched — the
+    // mechanism we use to do silent scan loops without flickering
+    // the `LootFrame`. Fan-in is wide but call frequency is
+    // event-driven (state changes only), not per-frame, so per-call
+    // overhead from a hooked predicate is negligible.
+    FUN_FIRE_EVENT_NO_ARGS = 0x00703E50,
+
+    // `__fastcall(int sendRelease, char earlyReturnOnGameObject,
+    // char showError)` — engine's "close the current loot window"
+    // inner. Behavior keyed off args:
+    //   - `sendRelease` (ECX): if non-zero, builds and sends
+    //     `CMSG_LOOT_RELEASE` (opcode `0x15F`) for the current loot
+    //     target before clearing client state.
+    //   - `earlyReturnOnGameObject` (EDX): if non-zero, bails early
+    //     when the loot target is a game object that's been
+    //     interacted with in a particular way (fishing-style?).
+    //   - `showError` (stack): if non-zero, calls `FUN_00496720(0x87)`
+    //     to display a "cannot close loot" error.
+    // Side effects: clears `[player + 0x1D28/+0x1D2C]` (the player's
+    // prior-interact GUID slots), then calls `FUN_004C1CB0(0, 0, 0)`
+    // which clears `VAR_LOOT_GUID_LO/HI`, zeroes `VAR_LOOT_SLOTS`,
+    // and fires the `LOOT_CLOSED` event (`0x10D`). Use
+    // `(1, 0, 0)` for a clean release + clear.
+    FUN_CLOSE_LOOT_INNER = 0x0048F200,
+
+    // `CGCorpse::IsLootable(this)` — `__fastcall(corpse) → uint`,
+    // tests bit 0 of `[corpse_m_objectFields + 0x78]`. Specific to
+    // `TYPEMASK_CORPSE` (player corpses) — `+0x78` of a CGCorpse_C's
+    // m_objectFields holds dynamic flags with bit 0 = LOOTABLE. The
+    // same offset in CGUnit_C / CGPlayer_C's m_objectFields holds
+    // BYTES_0 (race / class / gender / power type), so this helper
+    // returns nonsense for live units (e.g. it returns 1 for Human
+    // players because race=1 has bit 0 = 1). Used by the engine's
+    // right-click-on-corpse handler at `FUN_005D6BF0` to gate
+    // CMSG_LOOT for player corpses, and from `FUN_005DF130` (one of
+    // two CMSG_LOOT senders) for the same corpse path. Don't reuse
+    // for live-unit lootability — use `OFF_UNIT_FIELD_DYNAMIC_FLAGS`
+    // bit 0 against a CGUnit instead.
+    FUN_CGCORPSE_IS_LOOTABLE = 0x005D6E20,
 
     // Merchant inventory: flat array at `0xBDD118`, stride 0x1C,
     // itemID at `entry+4`. The "flag" globals are actually the

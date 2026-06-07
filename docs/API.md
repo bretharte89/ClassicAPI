@@ -88,6 +88,7 @@ build instructions.
   - [`EQUIPMENT_SWAP_PENDING` event](#equipment_swap_pending-event)
   - [`EQUIPMENT_SWAP_FINISHED` event](#equipment_swap_finished-event)
   - [`FACTION_STANDING_CHANGED` event](#faction_standing_changed-event)
+  - [`LOOT_SCAN_COMPLETED` event](#loot_scan_completed-event)
   - [`MODIFIER_STATE_CHANGED` event](#modifier_state_changed-event)
   - [`NAME_PLATE_CREATED` / `NAME_PLATE_UNIT_ADDED` / `NAME_PLATE_UNIT_REMOVED` events](#name_plate_created--name_plate_unit_added--name_plate_unit_removed-events)
   - [`PLAYER_FOCUS_CHANGED` event](#player_focus_changed-event)
@@ -209,6 +210,14 @@ build instructions.
   - [`GetInventoryItemsForSlot(slot, returnTable [, transmogrify])`](#getinventoryitemsforslotslot-returntable--transmogrify)
   - [`GetItemIcon(itemID)` / `C_Item.GetItemIcon(itemLocation)` / `C_Item.GetItemIconByID(item)`](#getitemiconitemid--c_itemgetitemiconitemlocation--c_itemgetitemiconbyiditem)
   - [`OffhandHasWeapon()`](#offhandhasweapon)
+
+- [Loot](#loot)
+  - [`C_Loot.GetNearbyLootableUnits()`](#c_lootgetnearbylootableunits)
+  - [`C_Loot.LootUnit(guid)`](#c_lootlootunitguid)
+  - [`C_Loot.LootUnitItem(guid, itemID)`](#c_lootlootunititemguid-itemid)
+  - [`C_Loot.ScanNearbyLoot()`](#c_lootscannearbyloot)
+  - [`C_Loot.IsScanInProgress()`](#c_lootisscaninprogress)
+  - [`C_Loot.GetLastScanResults()`](#c_lootgetlastscanresults)
 
 - [Macros](#macros)
   - [Numeric spellIDs in `/cast` and `CastSpellByName`](#numeric-spellids-in-cast-and-castspellbyname)
@@ -1970,6 +1979,29 @@ snapshot of `(factionID, newStanding, repGained)` is captured before
 forwarding, which [`C_Reputation.GetLastStandingChange`](#c_reputationgetlaststandingchange)
 exposes — so addons can read the structured payload from inside the
 chat event without re-parsing the localized string.
+
+### `LOOT_SCAN_COMPLETED` event
+
+Fires (no payload) once a [`C_Loot.ScanNearbyLoot()`](#c_lootscannearbyloot)
+call has finished walking every reachable corpse. Handler should call
+[`C_Loot.GetLastScanResults()`](#c_lootgetlastscanresults) to read the
+collected `{ guid, coin, items }` array.
+
+```lua
+local f = CreateFrame("Frame")
+f:RegisterEvent("LOOT_SCAN_COMPLETED")
+f:SetScript("OnEvent", function()
+    local results = C_Loot.GetLastScanResults()
+    -- ... process results
+end)
+C_Loot.ScanNearbyLoot()
+```
+
+Fires exactly once per `ScanNearbyLoot()` call regardless of
+outcome — even if every corpse timed out and the results table is
+empty. Doesn't fire spuriously for scans triggered by other addons
+(only one scan runs at a time; concurrent attempts return `false`
+from `ScanNearbyLoot`). See the Loot section for the full scan flow.
 
 ### `MODIFIER_STATE_CHANGED` event
 
@@ -5109,6 +5141,177 @@ if OffhandHasWeapon() then
     -- Apply mainhand+offhand poison, refresh dual-wield rotation, etc.
 end
 ```
+
+## Loot
+
+Programmatic loot operations that vanilla 1.12's Lua surface doesn't
+expose: enumerate nearby lootable corpses, open a loot session against
+one by GUID, take a specific item out of one without going through the
+visible `LootFrame`, and pre-scan every reachable corpse to build a
+picker table before any cursor work. Foundation for AoE-loot,
+auto-loot-by-filter, and similar addons that 1.12's stock
+`LootSlot` / `LootSlotInfo` flow can't drive.
+
+All `guid` args are hex-string GUIDs in the same form `UnitGUID`
+returns (`"0xF130..."`). All `itemID` args are integers.
+
+### `C_Loot.GetNearbyLootableUnits()`
+
+Returns a 1-indexed array of `{ guid = "0x..." }` subtables, one per
+visible unit that the server has flagged lootable AND that's within
+the engine's right-click-loot interact range. Empty table pre-login,
+when no lootable units are in range, or when the local player has no
+loot rights on visible corpses (the server only sets the lootable
+flag for clients with rights).
+
+```lua
+for _, unit in ipairs(C_Loot.GetNearbyLootableUnits()) do
+    C_Loot.LootUnit(unit.guid)
+end
+```
+
+The interact-range check matches what the engine uses for the
+hover-to-loot cursor — slightly tighter than melee range, looser than
+"on top of." Server still enforces real range on the resulting
+`CMSG_LOOT`; in-client OOR requests just silently get no response.
+
+### `C_Loot.LootUnit(guid)`
+
+Opens a loot session against the given corpse. The loot window
+appears asynchronously via the normal `LOOT_OPENED` event once
+`SMSG_LOOT_RESPONSE` arrives — same flow as right-clicking the
+corpse, just dispatched programmatically.
+
+No return value. Silent no-op when:
+- The object manager is NULL (glue / character-select).
+- The GUID doesn't resolve to a visible unit (out of render range,
+  despawned, wrong typemask).
+- The local player pointer can't be resolved.
+
+Errors only on bad Lua usage (missing arg, unparseable GUID).
+
+```lua
+-- Loot everything in range, one corpse at a time. With autoloot on,
+-- the engine drains each window automatically; without it, you
+-- still get the visible loot frame per corpse.
+for _, unit in ipairs(C_Loot.GetNearbyLootableUnits()) do
+    C_Loot.LootUnit(unit.guid)
+end
+```
+
+`useDistanceCheck` is hardcoded off — the engine won't try to
+auto-walk the player toward a corpse just out of range. That'd be a
+surprise side effect for an AoE-loot loop.
+
+### `C_Loot.LootUnitItem(guid, itemID)`
+
+Takes a specific item from a specific corpse without using the
+visible loot frame's slot list. Dispatches `CMSG_LOOT_ITEM` directly.
+
+Two paths, picked automatically:
+
+1. **Fast path** — the corpse's loot window is already open for the
+   requested target. Synchronously finds the slot, sends the take
+   packet, returns `true` if the slot was found / `false` if not.
+2. **Async path** — opens the corpse's window first (same wire as
+   `C_Loot.LootUnit`), waits for the response, then sends the take
+   packet automatically. Returns `true` once the request is queued.
+   No "did it succeed" event; observe `BAG_UPDATE` / `ITEM_PUSH` to
+   confirm.
+
+`false` immediately when:
+- Args missing or wrong types (raises an error, not returns false).
+- Another `LootUnitItem` is mid-flight (one at a time).
+- The world isn't loaded.
+- The target GUID doesn't resolve to a visible unit.
+- (sync path only) No slot in the open window holds the itemID.
+
+The send bypasses vanilla's BoP-confirmation dialog. Server still
+enforces all real permissions (loot rights, distance, master-loot
+rules); the BoP prompt is purely a client-side courtesy that callers
+of a programmatic API have already opted out of.
+
+```lua
+-- Scan, then take just one specific item out of one specific corpse.
+C_Loot.ScanNearbyLoot()  -- LOOT_SCAN_COMPLETED → results below
+local results = C_Loot.GetLastScanResults()
+local guid = results[1].guid
+local itemID = results[1].items[1].itemID
+C_Loot.LootUnitItem(guid, itemID)
+```
+
+### `C_Loot.ScanNearbyLoot()`
+
+Initiates a pre-scan: opens each lootable corpse in range one at a
+time, scrapes its slot contents (itemID, count, item link), closes
+the window, advances. The `LOOT_OPENED` / `LOOT_CLOSED` events are
+suppressed for the duration of the scan so `LootFrame` and other
+listeners don't react — the scan is invisible to addons that aren't
+opted in.
+
+Returns `true` if the scan was queued, `false` if another scan is
+already in progress or the world isn't loaded. Completion is signaled
+via the [`LOOT_SCAN_COMPLETED`](#loot_scan_completed-event) event;
+results are read via [`C_Loot.GetLastScanResults()`](#c_lootgetlastscanresults).
+
+```lua
+local f = CreateFrame("Frame")
+f:RegisterEvent("LOOT_SCAN_COMPLETED")
+f:SetScript("OnEvent", function()
+    for _, corpse in ipairs(C_Loot.GetLastScanResults()) do
+        for _, item in ipairs(corpse.items) do
+            ChatFrame1:AddMessage(item.link or ("item:"..item.itemID))
+        end
+    end
+end)
+C_Loot.ScanNearbyLoot()
+```
+
+Per-corpse step timeout is ~3-6 seconds (180 WorldTick frames) so a
+single dropped server response doesn't hang the whole scan. Failed
+corpses simply don't appear in the results.
+
+### `C_Loot.IsScanInProgress()`
+
+Returns `true` while a `ScanNearbyLoot` call is mid-flight, `false`
+otherwise. Use to gate re-scan attempts so addons don't spam-call
+during the engine's per-corpse round-trip.
+
+### `C_Loot.GetLastScanResults()`
+
+Returns the most-recent completed-scan results as a 1-indexed array:
+
+```lua
+{
+    [1] = {
+        guid = "0x...",    -- corpse GUID
+        coin = 1234,       -- copper amount; 0 if no coin
+        items = {
+            [1] = {
+                itemID = 2589,
+                count  = 4,
+                link   = "|cff...|Hitem:2589:0:0:0|h[Linen Cloth]|h|r",
+                                   -- omitted if cache entry wasn't loaded
+            },
+            ...
+        },
+    },
+    ...
+}
+```
+
+Empty table before the first scan completes. Replaced wholesale by
+each new scan — re-read after `LOOT_SCAN_COMPLETED` rather than
+caching the table.
+
+The `link` field is the engine's full hyperlink (color + payload +
+display name + reset). Random-suffix items like "Stringy Wolf Meat
+of the Bear" survive round-trip — the link encodes the per-instance
+enchant / suffix / unique fields, not just the base itemID. For
+tooltip display, extract the payload form via
+`string.match(link, "|H(item:[^|]+)|h")` — vanilla's `SetHyperlink`
+requires the literal `"item:"` prefix and rejects full `|cff...|Hitem...|h`
+input.
 
 ## Macros
 
