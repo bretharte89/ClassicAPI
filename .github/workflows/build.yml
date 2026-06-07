@@ -1,9 +1,9 @@
-name: Release
+name: Build
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches: ['**']
+    tags: ['v*']
 
 permissions:
   contents: write
@@ -21,7 +21,11 @@ jobs:
       # The DLL bundles AddOns/!!!ClassicAPI/ at build time — see the
       # `embed_addon` custom command in CMakeLists.txt and the file-read
       # hook in src/addons/Embedded.cpp.
+      #
+      # Branch builds skip this — leaves the TOC's literal `## Version: DEV`
+      # in place so the DLL identifies as a dev build at runtime.
       - name: Stamp embedded TOC version
+        if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         run: |
           $version = '${{ github.ref_name }}' -replace '^v',''
@@ -35,7 +39,19 @@ jobs:
       - name: Build
         run: cmake --build build --config Release
 
+      # Every commit uploads the built DLL as a workflow artifact —
+      # downloadable from the run page for ~90 days. Lets you grab a
+      # pre-release DLL without cutting a tag. The `name` includes the
+      # short SHA so multiple runs in the same branch don't overwrite.
+      - name: Upload artifact
+        if: "!startsWith(github.ref, 'refs/tags/v')"
+        uses: actions/upload-artifact@v4
+        with:
+          name: ClassicAPI-${{ github.sha }}
+          path: build/Release/ClassicAPI.dll
+
       - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: build/Release/ClassicAPI.dll
