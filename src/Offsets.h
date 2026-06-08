@@ -3622,9 +3622,36 @@ enum Offsets {
     // `+0x120`. (The engine's `Script_GetInboxItem` passes a per-
     // entry completion callback at `0x004AF0A0` to GetRecord; for
     // ID-only retrieval we skip the callback.)
+    //
+    // Entries also carry per-instance modifiers at `+0x12C`
+    // (enchantID), `+0x134` (suffix factor), `+0x138` (random
+    // property ID), etc. — `Script_GameTooltip_SetInboxItem` at
+    // `0x005354C0` copies them onto the tooltip object to render a
+    // fully-decorated tooltip. We don't expose them in
+    // `GetInboxItemLink` because 3.3.5's same function only emits
+    // basic itemID-only links (`FUN_0061E290(itemID)`); per-instance
+    // data only fully manifests when the player takes the item and
+    // the engine spawns a real CGItem.
     VAR_INBOX_ENTRIES = 0x00B6EF54,
     VAR_INBOX_COUNT = 0x00B6EFC0,
     OFF_INBOX_ENTRY_ITEM_ID = 0x120,
+
+    // SendMail attached item — the engine stores the attached item's
+    // 64-bit GUID at these globals when the player drops an item onto
+    // the SendMail slot (`SetSendMailItem` / `ClickSendMailItemButton`).
+    // Cleared to zero by `ClearSendMail` and on `MAIL_CLOSED`. Vanilla
+    // allows exactly one attachment per outgoing mail (modern WoW lifted
+    // this to 12+; we ignore the modern `attachmentIndex` arg since only
+    // index 1 is meaningful).
+    //
+    // The attached item still exists as a live CGItem in the player's
+    // inventory until the mail is actually sent, so the GUID resolves
+    // via `FUN_GET_OBJECT_BY_GUID(OBJECT_TYPE_ITEM, ...)`. That lets
+    // `GetSendMailItemLink` return the full per-instance link (enchant
+    // / random suffix preserved) by feeding the resolved CGItem to
+    // `Item::Link::FromCGItem`.
+    VAR_SEND_MAIL_ITEM_GUID_LO = 0x00B6EF90,
+    VAR_SEND_MAIL_ITEM_GUID_HI = 0x00B6EF94,
 
     // Craft window (engineering, alchemy, etc. before the "trade
     // skill" overhaul). Same slot-indirection shape as inbox: the

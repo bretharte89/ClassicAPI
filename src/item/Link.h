@@ -13,6 +13,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 namespace Item::Link {
@@ -27,5 +28,16 @@ namespace Item::Link {
 // same output `GetInventoryItemLink` / `GetContainerItemLink` would
 // produce for the same slot.
 const char *FromCGItem(const uint8_t *cgItem);
+
+// Builds a basic itemID-only hyperlink (`"|cffRRGGBB|Hitem:N:0:0:0|h[Name]|h|r"`)
+// into `out` from the cached ItemStats record for `itemID`. No
+// enchant / random-suffix decoration — use this when the caller has
+// only an itemID and no live CGItem (mail inbox attachments, cursor
+// drag-source items, vendor roster previews). Returns true on
+// success, false if the item isn't cached or the buffer is too small.
+//
+// `outSize` should be at least 256 to comfortably fit the longest
+// possible link (`item:` payload + colored prefix + bracketed name).
+bool BasicFromItemID(uint32_t itemID, char *out, size_t outSize);
 
 } // namespace Item::Link

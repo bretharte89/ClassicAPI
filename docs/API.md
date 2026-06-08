@@ -225,6 +225,10 @@ build instructions.
   - [`GetMacroSpell(macroSlot)`](#getmacrospellmacroslot)
   - [`GetMacroIcons` / `GetMacroItemIcons` / `GetLooseMacroIcons` / `GetLooseMacroItemIcons`](#getmacroicons--getmacroitemicons--getloosemacroicons--getloosemacroitemicons)
 
+- [Mail](#mail)
+  - [`GetSendMailItemLink([attachmentIndex])`](#getsendmailitemlinkattachmentindex)
+  - [`GetInboxItemLink(messageIndex[, attachmentIndex])`](#getinboxitemlinkmessageindex-attachmentindex)
+
 - [Map](#map)
   - [`C_Map.GetBestMapForUnit(unitToken)`](#c_mapgetbestmapforunitunittoken)
 
@@ -5484,6 +5488,74 @@ MPQ will appear in both the loose and mpq lists).
 
 The vanilla legacy globals `GetNumMacroIcons` / `GetMacroIconInfo`
 remain available unchanged.
+
+## Mail
+
+Backports of modern WoW's mail-attachment link getters. Both follow
+the modern signature including the optional `attachmentIndex` arg
+(added with TBC's multi-attachment mail), even though vanilla 1.12
+only supports one attachment per message — pass-through compatibility
+for addons originally written against later API versions. Any
+`attachmentIndex` other than `1` is treated as no-op.
+
+Both functions return `(link, itemID)` — modern returns just `link`,
+but `itemID` is cheap to surface at the same lookup site and saves
+callers a `string.match` on the link.
+
+### `GetSendMailItemLink([attachmentIndex])`
+
+Returns the **fully-decorated per-instance** hyperlink for the item
+currently attached to the outgoing-mail slot, plus that item's
+`itemID`. Same enchant / random-suffix / unique-ID decoration as
+`GetContainerItemLink` would return for the same item back in the
+player's bag — the attached item still exists as a live CGItem until
+the mail is sent, so the link builder has full instance state to
+draw from.
+
+Returns nothing when:
+- No item is attached.
+- `attachmentIndex` is anything other than `nil` or `1`.
+- The attachment's CGItem can't be resolved (shouldn't normally
+  happen — engine writes the GUID on attach and clears it on detach).
+
+```lua
+local link, itemID = GetSendMailItemLink()
+if link then
+    ChatFrame1:AddMessage("Attached: " .. link .. " (id " .. itemID .. ")")
+end
+```
+
+### `GetInboxItemLink(messageIndex[, attachmentIndex])`
+
+Returns the **basic itemID-only** hyperlink (`|cff…|Hitem:N:0:0:0|h[Name]|h|r`)
+for the item attached to inbox message `messageIndex` (1-based),
+plus the `itemID`.
+
+**Why basic-link instead of per-instance:** vanilla inbox entries do
+store per-instance modifiers inline (enchant at `+0x12C`, suffix
+factor at `+0x134`, random property at `+0x138` — the same fields
+`GameTooltip:SetInboxItem` copies onto the tooltip to render a fully-
+decorated preview). We intentionally ignore them in the link to match
+modern 3.3.5's behavior — its `GetInboxItemLink` calls the
+itemID-only link builder (`FUN_0061E290(itemID)`) and ignores the
+per-instance fields. Per-instance data only fully manifests on the
+client side once the player takes the item out of the mail and the
+engine spawns a real CGItem; the inbox-entry fields are display-only
+hints used by the tooltip builder.
+
+Errors on missing or non-numeric `messageIndex`. Returns nothing when:
+- `messageIndex` is out of range (`< 1` or `> GetInboxNumItems()`).
+- The message slot is empty / has no attached item.
+- `attachmentIndex` is anything other than `nil` or `1`.
+
+```lua
+for i = 1, GetInboxNumItems() do
+    local link, itemID = GetInboxItemLink(i)
+    if link then
+        ChatFrame1:AddMessage(i .. ": " .. link .. " (id " .. itemID .. ")")
+    end
+end
+```
 
 ## Map
 
