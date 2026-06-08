@@ -4213,7 +4213,7 @@ return nil; hits never need a fallback.
 
 ### `C_Item.GetItemMaxStackSize(itemLocation)` / `C_Item.GetItemMaxStackSizeByID(item)`
 
-Returns the item type's max stack size — what you'd find as the 8th
+Returns the item type's max stack size — what you'd find as the 7th
 return of `GetItemInfo(item)`. `1` for non-stackable items; `5`, `20`,
 `200`, etc. for stackables. Different from `C_Item.GetStackCount` /
 the engine's `GetContainerItemInfo`, which return the **current**
