@@ -1,5 +1,3 @@
-if GetLocale() ~= "enUS" then return end
-
 BINDING_NAME_FOCUSTARGET = "Focus Target";
 BINDING_NAME_TARGETFOCUS = "Target Focus";
 FOCUSTARGET = "Focus Target";
