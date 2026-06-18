@@ -182,6 +182,73 @@ int PushFromNameCacheEntry(void *L, const char *name,
     return 7;
 }
 
+// `UnitNameFromGUID(guid)` → `(name, realm)`. Modern WoW backport;
+// vanilla 1.12 doesn't expose any GUID → name accessor at the Lua
+// surface, so addons that need to resolve a chat link or combat-log
+// GUID currently have to round-trip through `Script_GetPlayerInfoByGUID`
+// and discard 5 of the 7 returns. This is the same lookup with the
+// extra DBC reads (class / race / sex) skipped.
+//
+// `realm` is always `""` in vanilla — the engine's
+// `OFF_PLAYER_INFO_REALM` field is left blank for same-realm
+// characters, and vanilla has no cross-realm interaction. We still
+// push a string (empty) rather than nil so callers don't have to
+// special-case the second return; modern WoW returns nil for same-
+// realm, but `realm == ""` is just as easy to gate on.
+//
+// Returns nothing on:
+//   - Missing or non-string arg (raises an error rather than return).
+//   - Unparseable GUID string.
+//   - Zero / NULL GUID.
+//   - GUID not present in engine cache AND not in persistent NameCache
+//     (i.e., we've never seen this player).
+//
+// Doesn't trigger a network query on miss — calling this on a
+// never-encountered GUID is a clean nil-return, same as
+// `GetPlayerInfoByGUID`. Use `C_PlayerCache.RememberPlayer` (or wait
+// for the engine's own SMSG_NAME_QUERY_RESPONSE) to populate.
+int __fastcall Script_UnitNameFromGUID(void *L) {
+    if (!Game::Lua::IsString(L, 1)) {
+        Game::Lua::Error(L, "Usage: UnitNameFromGUID(\"0x...\")");
+        return 0;
+    }
+    const char *guidStr = Game::Lua::ToString(L, 1);
+    uint32_t hi, lo;
+    if (!ParseGUID(guidStr, hi, lo))
+        return 0;
+    if (hi == 0 && lo == 0)
+        return 0;
+
+    auto fn = reinterpret_cast<LookupOrFetch_t>(Offsets::FUN_PLAYER_INFO_LOOKUP);
+    auto *cache = reinterpret_cast<void *>(
+        static_cast<uintptr_t>(Offsets::VAR_PLAYER_NAME_CACHE));
+
+    uint64_t cookie = 0;
+    const uint8_t *entry = fn(cache, lo, hi, &cookie,
+                              nullptr, nullptr, 0);
+    if (entry != nullptr) {
+        const char *name = reinterpret_cast<const char *>(
+            entry + Offsets::OFF_PLAYER_INFO_NAME);
+        const char *realm = reinterpret_cast<const char *>(
+            entry + Offsets::OFF_PLAYER_INFO_REALM);
+        if (name == nullptr || *name == '\0')
+            return 0;
+        Game::Lua::PushString(L, name);
+        Game::Lua::PushString(L, realm ? realm : "");
+        return 2;
+    }
+
+    // Engine miss — fall back to the persistent NameCache.
+    const std::string *cachedName = nullptr;
+    const NameCache::Entry *cached = NameCache::Lookup(
+        (static_cast<uint64_t>(hi) << 32) | lo, &cachedName);
+    if (cached == nullptr || cachedName == nullptr || cachedName->empty())
+        return 0;
+    Game::Lua::PushString(L, cachedName->c_str());
+    Game::Lua::PushString(L, "");
+    return 2;
+}
+
 // `C_PlayerCache.GetPlayerInfoByName(name)` — name-keyed lookup over
 // the persistent NameCache. Returns `(localizedClass, englishClass,
 // localizedRace, englishRace, sex, name, realm, guid)` or nothing if
@@ -212,6 +279,8 @@ int __fastcall Script_C_PlayerCache_GetPlayerInfoByName(void *L) {
 static void RegisterLuaFunctions() {
     Game::Lua::RegisterGlobalFunction("GetPlayerInfoByGUID",
                                        &Script_GetPlayerInfoByGUID);
+    Game::Lua::RegisterGlobalFunction("UnitNameFromGUID",
+                                       &Script_UnitNameFromGUID);
     Game::Lua::RegisterTableFunction("C_PlayerCache", "GetPlayerInfoByName",
                                      &Script_C_PlayerCache_GetPlayerInfoByName);
 }

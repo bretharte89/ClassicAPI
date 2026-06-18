@@ -249,6 +249,7 @@ build instructions.
 
 - [NameCache](#namecache)
   - [`GetPlayerInfoByGUID(guid)`](#getplayerinfobyguidguid)
+  - [`UnitNameFromGUID(guid)`](#unitnamefromguidguid)
   - [`C_PlayerCache.GetPlayerInfoByName(name)`](#c_playercachegetplayerinfobynamename)
   - [`C_PlayerInfo.GUIDIsPlayer(guid)` / `GUIDIsCreature` / `GUIDIsPet` / `GUIDIsGameObject`](#c_playerinfoguidisplayerguid--guidiscreature--guidispet--guidisgameobject)
   - [`C_CreatureInfo.GetCreatureID(guid)`](#c_creatureinfogetcreatureidguid)
@@ -6002,6 +6003,35 @@ Returns `nil` only when both the engine and persistent caches miss.
 instance lives at `0x00C0E228`; entry layout (name, realm, race,
 sex, class) was reverse-engineered from the
 `SMSG_NAME_QUERY_RESPONSE` write path at `0x0055F310`.
+
+### `UnitNameFromGUID(guid)`
+
+Returns `name, realm` for the player identified by `guid`, or `nil`
+if no player with that GUID has been encountered yet. Same lookup
+chain as [`GetPlayerInfoByGUID`](#getplayerinfobyguidguid) (engine
+NameCache, persistent on-disk fallback when enabled) — just narrower
+return shape for callers that only need the name.
+
+```lua
+local name, realm = UnitNameFromGUID(UnitGUID("target"))
+if name then
+    ChatFrame1:AddMessage("Target: " .. name)
+end
+
+-- Resolving a chat link
+local name, realm = UnitNameFromGUID("0x0000000000000777")
+```
+
+`realm` is always `""` in vanilla — the engine doesn't populate
+per-player realm names and 1.12 has no cross-realm interaction.
+We push the empty string rather than `nil` to match the convention
+of the other player-info accessors; addons can gate on `realm == ""`.
+
+Doesn't trigger a network query on miss. To populate an unknown
+GUID, either let the engine receive a `SMSG_NAME_QUERY_RESPONSE`
+through normal chat/target interaction, or call
+[`C_PlayerCache.RememberPlayer`](#c_playercacherememberplayerguid-name-classtoken)
+explicitly.
 
 ### `C_PlayerCache.GetPlayerInfoByName(name)`
 
