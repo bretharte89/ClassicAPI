@@ -405,6 +405,23 @@ enum Offsets {
     // descriptor at +0x114 — these are sibling classes under CGObject
     // with class-specific descriptor offsets.
     OFF_UNIT_DESCRIPTOR = 0x110,
+
+    // CGCreature client-side creature-data cache row. Populated by the
+    // engine when an NPC GUID becomes visible (the same row the
+    // `CreatureCache` SMSG fills with the templated NPC's name,
+    // subname, etc.). NULL for unsynced units or for player CGUnits
+    // (players don't have a row in this cache — their name comes from
+    // the SMSG_NAME_QUERY_RESPONSE-fed name cache at `0x00C0E228`).
+    //
+    // Layout of the cache row:
+    //   +0x00  ?
+    //   +0x0C  name C-string ptr (alias of UNIT_NAME for creatures)
+    //   +0x10  subName C-string ptr  ("Innkeeper", "<Master Trainer>", etc.)
+    //
+    // Used by `Script_UnitName`'s creature path and by VanillaMinimapTracking's
+    // subname-based blip filter (`src/Blips.cpp::ExtractUnitSubName`).
+    OFF_UNIT_CREATURE_CACHE_ROW = 0xB30,
+    OFF_CREATURE_CACHE_SUB_NAME = 0x10,
     // Pointer to the CGUnit's 8-byte GUID at `*(CGUnit + 0x08)`. Verified
     // in `Script_GetInventoryItemLink` at `0x004C8CB0`-`0x004C8CB5`:
     // `mov eax, [esi+8]; mov edi, [eax]; mov ecx, [eax+4]` reads the

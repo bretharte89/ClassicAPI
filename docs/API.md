@@ -347,6 +347,7 @@ build instructions.
 - [Unit](#unit)
   - [`UnitGUID(unit)`](#unitguidunit)
   - [`UnitTokenFromGUID(guid)`](#unittokenfromguidguid)
+  - [`UnitSubName(unit)`](#unitsubnameunit)
   - [`GetUnitSpeed(unit)`](#getunitspeedunit)
   - [`UnitClassBase(unit)`](#unitclassbaseunit)
   - [`UnitRaceBase(unit)`](#unitracebaseunit)
@@ -8280,6 +8281,33 @@ end
 > that don't match any currently-resolvable token — including
 > ex-targets, ex-mouseover units, distant players seen in the chat
 > log, etc. The engine simply doesn't address those by token.
+
+### `UnitSubName(unit)`
+
+Returns the NPC's subtitle / title string (the small italic text
+under their name in the tooltip): `"Innkeeper"`, `"Stable Master"`,
+`"<Master Engineer>"`, etc. Returns `nil` for players, unsynced
+NPCs, and NPCs with no subtitle.
+
+```lua
+/dump UnitSubName("target")
+-- "Innkeeper"             (Stormwind innkeep)
+-- "<Auction House>"       (auctioneer)
+-- nil                     (a player, or a wolf in the woods)
+```
+
+Modern WoW returns the subtitle as `UnitName`'s second return;
+vanilla 1.12's `UnitName` returns only one value, leaving no
+direct route to the subtitle. Addons that wanted it had to scrape
+`GameTooltip` text, which is fragile and required the unit to be
+hovered. `UnitSubName` reads it straight off the engine's creature
+cache (`[unit + 0xB30] → [+0x10]`), no tooltip round-trip.
+
+Coverage caveat: the creature cache row is populated when an NPC
+becomes visible to the client AND the server has sent its
+`CMSG_CREATURE_QUERY_RESPONSE`. The first time a fresh NPC appears
+the row may be briefly NULL — usually only one or two frames.
+Subsequent calls succeed once the response lands.
 
 ### `GetUnitSpeed(unit)`
 
