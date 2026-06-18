@@ -41,6 +41,7 @@
 #include "guid/Guid.h"
 
 #include <cstdint>
+#include <cstring>
 
 namespace Player::Info {
 
@@ -185,28 +186,37 @@ int PushFromNameCacheEntry(void *L, const char *name,
 // `UnitNameFromGUID(guid)` → `(name, realm)`. Modern WoW backport;
 // vanilla 1.12 doesn't expose any GUID → name accessor at the Lua
 // surface, so addons that need to resolve a chat link or combat-log
-// GUID currently have to round-trip through `Script_GetPlayerInfoByGUID`
-// and discard 5 of the 7 returns. This is the same lookup with the
-// extra DBC reads (class / race / sex) skipped.
+// GUID can't get a name without round-tripping through a unit token.
 //
-// `realm` is always `""` in vanilla — the engine's
-// `OFF_PLAYER_INFO_REALM` field is left blank for same-realm
-// characters, and vanilla has no cross-realm interaction. We still
-// push a string (empty) rather than nil so callers don't have to
-// special-case the second return; modern WoW returns nil for same-
-// realm, but `realm == ""` is just as easy to gate on.
+// Resolution order (matches vanilla's own `Script_UnitName` at
+// `0x00517020`):
+//   1. Resolve the GUID through the object manager. Any currently-
+//      synced unit — player you can see, NPC in interact range,
+//      target / mouseover / party / raid member — gets a `CGObject *`
+//      back. Call the engine's canonical polymorphic name getter
+//      `FUN_OBJECT_GET_NAME` on it; this routes through the player
+//      NameCache for players AND the creature cache for NPCs, so it
+//      works for both with a single call.
+//   2. If the unit isn't currently synced (ex-target who logged off,
+//      player encountered earlier in chat but no longer visible),
+//      fall back to the persistent NameCache (when enabled).
+//
+// `realm` is always `""` in vanilla — the engine doesn't populate
+// per-player realm names and 1.12 has no cross-realm interaction.
+// We push the empty string rather than nil so callers don't have to
+// special-case the second return; modern WoW returns nil, but
+// `realm == ""` is just as easy to gate on.
 //
 // Returns nothing on:
 //   - Missing or non-string arg (raises an error rather than return).
 //   - Unparseable GUID string.
 //   - Zero / NULL GUID.
-//   - GUID not present in engine cache AND not in persistent NameCache
-//     (i.e., we've never seen this player).
+//   - GUID not resolvable in the object manager AND not in persistent
+//     NameCache (i.e., we've never seen this unit).
 //
-// Doesn't trigger a network query on miss — calling this on a
-// never-encountered GUID is a clean nil-return, same as
-// `GetPlayerInfoByGUID`. Use `C_PlayerCache.RememberPlayer` (or wait
-// for the engine's own SMSG_NAME_QUERY_RESPONSE) to populate.
+// Doesn't trigger a network query on miss — passive read, same as
+// `GetPlayerInfoByGUID`. Use `C_PlayerCache.RememberPlayer` or let
+// the engine populate via normal interaction.
 int __fastcall Script_UnitNameFromGUID(void *L) {
     if (!Game::Lua::IsString(L, 1)) {
         Game::Lua::Error(L, "Usage: UnitNameFromGUID(\"0x...\")");
@@ -219,26 +229,36 @@ int __fastcall Script_UnitNameFromGUID(void *L) {
     if (hi == 0 && lo == 0)
         return 0;
 
-    auto fn = reinterpret_cast<LookupOrFetch_t>(Offsets::FUN_PLAYER_INFO_LOOKUP);
-    auto *cache = reinterpret_cast<void *>(
-        static_cast<uintptr_t>(Offsets::VAR_PLAYER_NAME_CACHE));
+    // Object-manager path — TYPEMASK_OBJECT (0x01) is permissive; the
+    // name getter at `FUN_OBJECT_GET_NAME` does its own type check and
+    // safely returns the "UNKNOWNOBJECT" sentinel for non-unit
+    // objects (gameobjects etc.), so we just gate on the sentinel
+    // rather than pre-filtering by typemask.
+    using ObjectPtr_t = void *(__fastcall *)(uint32_t typeMask,
+                                              const char *debugMsg,
+                                              uint32_t guidLo,
+                                              uint32_t guidHi,
+                                              int debugCode);
+    using GetName_t = const char *(__thiscall *)(void *obj, int *outFlags);
 
-    uint64_t cookie = 0;
-    const uint8_t *entry = fn(cache, lo, hi, &cookie,
-                              nullptr, nullptr, 0);
-    if (entry != nullptr) {
-        const char *name = reinterpret_cast<const char *>(
-            entry + Offsets::OFF_PLAYER_INFO_NAME);
-        const char *realm = reinterpret_cast<const char *>(
-            entry + Offsets::OFF_PLAYER_INFO_REALM);
-        if (name == nullptr || *name == '\0')
-            return 0;
-        Game::Lua::PushString(L, name);
-        Game::Lua::PushString(L, realm ? realm : "");
-        return 2;
+    auto objectPtr = reinterpret_cast<ObjectPtr_t>(
+        Offsets::FUN_CLNT_OBJ_MGR_OBJECT_PTR);
+    void *obj = objectPtr(Offsets::TYPEMASK_OBJECT, nullptr, lo, hi, 0);
+    if (obj != nullptr) {
+        auto getName = reinterpret_cast<GetName_t>(Offsets::FUN_OBJECT_GET_NAME);
+        const char *name = getName(obj, nullptr);
+        if (name != nullptr && *name != '\0' &&
+            std::strcmp(name, "UNKNOWNOBJECT") != 0 &&
+            std::strcmp(name, "Unknown Being") != 0) {
+            Game::Lua::PushString(L, name);
+            Game::Lua::PushString(L, "");
+            return 2;
+        }
     }
 
-    // Engine miss — fall back to the persistent NameCache.
+    // Object-manager miss / sentinel — fall back to the persistent
+    // NameCache (when enabled). Covers ex-units no longer in the
+    // engine's sync window.
     const std::string *cachedName = nullptr;
     const NameCache::Entry *cached = NameCache::Lookup(
         (static_cast<uint64_t>(hi) << 32) | lo, &cachedName);
