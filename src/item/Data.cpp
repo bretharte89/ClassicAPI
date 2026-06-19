@@ -147,41 +147,54 @@ static int __fastcall Script_IsItemDataCached(void *L) {
     return 1;
 }
 
-// Pending explicit-request tracking. We deliberately do NOT eagerly
-// create cache entries when an addon calls `C_Item.RequestLoadItemData`
-// at addon-load / PLAYER_ENTERING_WORLD time — empirically (pfQuest),
-// pre-creating the entry blocks the engine's natural prefetch path
-// from issuing a fresh `SMSG_ITEM_QUERY_SINGLE`. The entry stays in a
-// permanently-pending state because nothing ever sends the query.
+// Pending-request tracking. We deliberately do NOT eagerly create cache
+// entries during the startup window — empirically (pfQuest), pre-creating
+// the entry at addon-load / PLAYER_ENTERING_WORLD time, before the
+// engine's network/opcode dispatch has settled, blocks the engine's
+// natural prefetch from issuing a fresh `SMSG_ITEM_QUERY_SINGLE`. The
+// entry stays permanently pending because nothing ever sends the query.
+// This applies to BOTH paths into the cache:
+//   - explicit `C_Item.RequestLoadItemData(ByID)`
+//   - implicit `WarmCache` (the `GetItemInfo` hook + every `GetItem*`
+//     getter's cache-miss warmup) — see `WarmCache`.
 //
-// Instead we hook the engine's item-cache response handler at
-// `FUN_ITEMSTATS_CACHE_RESPONSE` (the function that fills cache
-// entries on `SMSG_ITEM_QUERY_SINGLE_RESPONSE`). After the engine
-// finishes filling any entries and walking its own callback lists,
-// we sweep our pending set and fire `ITEM_DATA_LOAD_RESULT(itemID, 1)`
-// for any tracked items that now resolve. The engine's natural
-// prefetch (for player-inventory items) takes care of the actual
-// `SMSG_ITEM_QUERY_SINGLE` for us.
+// Both route through `Track`, which records the item without touching
+// the cache while `g_settled` is false. We hook the engine's item-cache
+// response handler at `FUN_ITEMSTATS_CACHE_RESPONSE` (the function that
+// fills cache entries on `SMSG_ITEM_QUERY_SINGLE_RESPONSE`); after the
+// engine finishes filling entries and walking its own callback lists, we
+// sweep our pending set and fire the per-item completion event for any
+// tracked item that now resolves. The engine's natural prefetch (for
+// player-inventory items) takes care of the actual query for us.
 //
-// For items the engine *doesn't* naturally prefetch (e.g. quest
-// reward IDs the player has never owned), we escalate after
-// `kEscalateTicks` by issuing our own `CacheFetch` with a no-op
+// For items the engine *doesn't* naturally prefetch (e.g. quest reward
+// IDs the player has never owned), `OnWorldTick` escalates once the
+// startup gate has settled by issuing our own `CacheFetch` with a no-op
 // callback — that creates the entry and queues the query, and the
 // response handler hook still fires our event when the data lands.
-// `kMaxWaitTicks` is the hard timeout that gives up and fires
-// `ITEM_DATA_LOAD_RESULT(itemID, nil)`.
+// `kMaxWaitTicks` is the hard timeout that gives up and fires the
+// completion event with failure.
 struct Pending {
     uint32_t itemID;
     int ticksWaiting;
     bool requestIssued;
+    bool implicit; // true: fire GET_ITEM_INFO_RECEIVED; false: ITEM_DATA_LOAD_RESULT
+    bool failed;   // set by the escalation callback on a server "no such item" reply
 };
 
-constexpr int kMaxPending = 64;
-constexpr int kEscalateTicks = 60;
+constexpr int kMaxPending = 512;
 constexpr int kMaxWaitTicks = 1200;
+// World ticks after which we assume the engine's startup
+// network/opcode-dispatch state has settled and eager queries are safe.
+// Also latched the moment the engine's own response handler fires (a
+// response proves dispatch is live) — see `ItemStatsCacheResponse_h`.
+// One-way latch; see the relog note in `WarmCache`.
+constexpr int kSettleTicks = 60;
 
 static Pending g_pending[kMaxPending];
 static int g_pendingCount = 0;
+static bool g_settled = false;
+static int g_worldTicks = 0;
 
 static int FindPending(uint32_t itemID) {
     for (int i = 0; i < g_pendingCount; ++i) {
@@ -197,27 +210,92 @@ static void RemovePendingAt(int idx) {
         g_pending[idx] = g_pending[g_pendingCount];
 }
 
-// No-op callback for the escalation path — we just need a non-null
-// callback pointer so the engine's `_GetRecord` queues the query.
-// The response handler hook will detect the fill and fire the event;
-// this callback doesn't need to do anything.
-static void __stdcall ItemLoadCallback_NoOp(void * /*userData*/, int /*success*/) {}
+// Callback for the escalation path. The engine queues the query when we
+// pass a non-null callback to `_GetRecord`; it then invokes this with the
+// itemID smuggled through `userData`. On a successful fill the engine has
+// already set the entry's loaded flag, so the response-handler sweep
+// reports success — we do nothing here. On a server failure (high-bit
+// itemID in `SMSG_ITEM_QUERY_SINGLE_RESPONSE`) the engine does NOT set the
+// loaded flag (verified in `FUN_0055BDB0`), so the sweep can't detect it;
+// we mark the pending entry failed so the sweep / tick fires failure
+// immediately instead of waiting out `kMaxWaitTicks`.
+static void __stdcall ItemLoadCallback_Escalated(void *userData, int success) {
+    if (success)
+        return;
+    const auto itemID = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(userData));
+    const int idx = FindPending(itemID);
+    if (idx >= 0)
+        g_pending[idx].failed = true;
+}
 
-static void RequestAndMaybeNotify(uint32_t itemID) {
-    // Already loaded — fire success synchronously.
+static void FireByTag(uint32_t itemID, bool success, bool implicit) {
+    if (implicit)
+        FireGetItemInfoReceived(static_cast<int>(itemID), success);
+    else
+        FireItemDataLoadResult(static_cast<int>(itemID), success);
+}
+
+// Records an item we owe a completion event for, WITHOUT eagerly
+// creating the cache entry. During the startup window (before
+// `g_settled`) this is the only safe way to "request" an item: calling
+// `CacheFetch` with a callback now would create an orphan entry the
+// engine's prefetch then skips, leaving it permanently pending (see the
+// block comment above). `OnWorldTick` issues the actual query once
+// settled, and the response-handler sweep fires the event — tagged
+// implicit (GET_ITEM_INFO_RECEIVED) or explicit (ITEM_DATA_LOAD_RESULT).
+// Returns false only when the request was dropped because the pending
+// set is full (the caller is still tracking nothing). All other outcomes
+// — already-loaded, already-tracking, newly-tracked — return true.
+static bool Track(uint32_t itemID, bool implicit) {
     if (CacheFetch(itemID, nullptr) != nullptr) {
-        FireItemDataLoadResult(static_cast<int>(itemID), true);
-        return;
+        // Already loaded. Explicit RequestLoadItemData fires its
+        // completion event synchronously (modern API contract). Implicit
+        // warmup mirrors the engine's already-loaded shortcut, which does
+        // not re-invoke the callback — so a cache hit fires nothing.
+        if (!implicit)
+            FireItemDataLoadResult(static_cast<int>(itemID), true);
+        return true;
     }
-    // Already tracking — second request just dedups.
-    if (FindPending(itemID) >= 0)
-        return;
+    const int idx = FindPending(itemID);
+    if (idx >= 0) {
+        // Already tracking. An explicit request supersedes a pending
+        // implicit one so the explicit caller's ITEM_DATA_LOAD_RESULT is
+        // honored (the two events are mutually exclusive per fill).
+        if (!implicit)
+            g_pending[idx].implicit = false;
+        return true;
+    }
     if (g_pendingCount >= kMaxPending)
-        return;
+        return false;
     g_pending[g_pendingCount].itemID = itemID;
     g_pending[g_pendingCount].ticksWaiting = 0;
     g_pending[g_pendingCount].requestIssued = false;
+    g_pending[g_pendingCount].implicit = implicit;
+    g_pending[g_pendingCount].failed = false;
     ++g_pendingCount;
+    return true;
+}
+
+static bool RequestAndMaybeNotify(uint32_t itemID) { return Track(itemID, /*implicit=*/false); }
+
+// Fires + removes a pending entry if it has resolved either way: loaded
+// (engine set the flag) → success, or `failed` (escalation callback saw a
+// server rejection) → failure. Returns true if it fired and removed the
+// entry at `i`, so callers must NOT advance their index when it does.
+static bool TryCompletePending(int i) {
+    const uint32_t itemID = g_pending[i].itemID;
+    const bool implicit = g_pending[i].implicit;
+    if (CacheFetch(itemID, nullptr) != nullptr) {
+        RemovePendingAt(i);
+        FireByTag(itemID, true, implicit);
+        return true;
+    }
+    if (g_pending[i].failed) {
+        RemovePendingAt(i);
+        FireByTag(itemID, false, implicit);
+        return true;
+    }
+    return false;
 }
 
 // Response handler hook. After the engine fills cache entries from
@@ -237,16 +315,17 @@ static void __fastcall ItemStatsCacheResponse_h(void *cache, void * /*edx_unused
                                                  void *packetReader, int flag) {
     using Trampoline_t = void(__fastcall *)(void *cache, void *edx, void *packetReader, int flag);
     reinterpret_cast<Trampoline_t>(ItemStatsCacheResponse_o)(cache, nullptr, packetReader, flag);
+    // The engine just processed an item-query response, which proves its
+    // network/opcode dispatch is live — eager queries are safe from here
+    // on. Latch the startup gate so `WarmCache` stops deferring.
+    g_settled = true;
     // Sweep pending — the engine just finished filling any matching
-    // entries. Peek (no callback) returns non-null iff the entry's
-    // loaded flag is set.
+    // entries (and, on the failure branch, invoked our escalation
+    // callback which marked any rejected items `failed`). Fire whatever
+    // resolved this response, success or failure.
     for (int i = 0; i < g_pendingCount;) {
-        const uint32_t itemID = g_pending[i].itemID;
-        if (CacheFetch(itemID, nullptr) != nullptr) {
-            RemovePendingAt(i);
-            FireItemDataLoadResult(static_cast<int>(itemID), true);
+        if (TryCompletePending(i))
             continue;
-        }
         ++i;
     }
 }
@@ -258,23 +337,34 @@ static const Game::HookAutoRegister _hookCacheResponse{
 
 // Escalation + timeout. The hook covers the happy path (engine fills
 // cache → we fire). This tick is only responsible for:
-//   1. Issuing a query for items the engine doesn't naturally prefetch
-//      (e.g. quest rewards) — wait `kEscalateTicks` so we don't race
-//      the engine's startup-time state machine, then call CacheFetch
-//      with a no-op callback. The engine sends the SMSG, the response
-//      handler hook fires the event when the response lands.
-//   2. Giving up after `kMaxWaitTicks` for items that never resolve
-//      (bad itemID, server doesn't respond, etc.) — fire failure.
+//   1. Latching the startup gate via a tick-count fallback, in case no
+//      engine response arrives early enough to latch it first.
+//   2. Issuing a query for items the engine doesn't naturally prefetch
+//      (e.g. quest rewards) — but only once `g_settled`, so we don't
+//      race the engine's startup-time state machine. The engine sends
+//      the SMSG, the response handler hook fires the event when the
+//      response lands.
+//   3. Firing failure immediately for items the server rejected (the
+//      escalation callback marked them `failed`), and as a last resort
+//      giving up after `kMaxWaitTicks` for items that never resolve at
+//      all (lost query, server silent) — fire failure.
 static void OnWorldTick() {
+    if (!g_settled && ++g_worldTicks >= kSettleTicks)
+        g_settled = true;
     for (int i = 0; i < g_pendingCount;) {
-        if (!g_pending[i].requestIssued && g_pending[i].ticksWaiting >= kEscalateTicks) {
-            CacheFetch(g_pending[i].itemID, &ItemLoadCallback_NoOp);
+        if (!g_pending[i].requestIssued && g_settled) {
+            CacheFetch(g_pending[i].itemID, &ItemLoadCallback_Escalated);
             g_pending[i].requestIssued = true;
         }
+        // A server rejection (marked by the escalation callback) resolves
+        // the item as failure without waiting out the timeout.
+        if (TryCompletePending(i))
+            continue;
         if (g_pending[i].ticksWaiting >= kMaxWaitTicks) {
             const uint32_t itemID = g_pending[i].itemID;
+            const bool implicit = g_pending[i].implicit;
             RemovePendingAt(i);
-            FireItemDataLoadResult(static_cast<int>(itemID), false);
+            FireByTag(itemID, false, implicit);
             continue;
         }
         ++g_pending[i].ticksWaiting;
@@ -291,7 +381,24 @@ static const Tick::WorldTick::AutoSubscribe _tickSub{&OnWorldTick};
 // `ITEM_DATA_LOAD_RESULT`), matching modern semantics for ambient
 // cache fills.
 void WarmCache(uint32_t itemID) {
-    CacheFetch(itemID, &ItemLoadCallback_Implicit);
+    // Post-settle (steady state): query immediately for lowest latency.
+    // The engine invokes our implicit callback when the data lands.
+    if (g_settled) {
+        CacheFetch(itemID, &ItemLoadCallback_Implicit);
+        return;
+    }
+    // Startup window: do NOT eagerly create the cache entry — that
+    // orphans it (the engine's prefetch skips already-existing entries,
+    // and our SMSG goes into a hole while dispatch isn't ready), leaving
+    // the item permanently nil for the session. This is the exact race
+    // that broke pfQuest/Questie scanning at PLAYER_ENTERING_WORLD. Defer
+    // through the pending set instead; OnWorldTick issues the query once
+    // settled and the response-handler sweep fires GET_ITEM_INFO_RECEIVED.
+    //
+    // NOTE: g_settled is a one-way latch per process. The race this
+    // guards is the initial-login cold-WDB window. On relog the WDB is
+    // already warm so cold-fetch pressure is minimal; we don't re-arm it.
+    Track(itemID, /*implicit=*/true);
 }
 
 // Hook for `Script_GetItemInfo`. Pre-warms the cache from arg 1, then
@@ -314,8 +421,8 @@ static int __fastcall Script_RequestLoadItemDataByID(void *L) {
         Game::Lua::PushBoolean(L, 0);
         return 1;
     }
-    RequestAndMaybeNotify(static_cast<uint32_t>(itemID));
-    Game::Lua::PushBoolean(L, 1);
+    const bool accepted = RequestAndMaybeNotify(static_cast<uint32_t>(itemID));
+    Game::Lua::PushBoolean(L, accepted ? 1 : 0);
     return 1;
 }
 
@@ -329,8 +436,8 @@ static int __fastcall Script_RequestLoadItemData(void *L) {
         Game::Lua::PushBoolean(L, 0);
         return 1;
     }
-    RequestAndMaybeNotify(static_cast<uint32_t>(itemID));
-    Game::Lua::PushBoolean(L, 1);
+    const bool accepted = RequestAndMaybeNotify(static_cast<uint32_t>(itemID));
+    Game::Lua::PushBoolean(L, accepted ? 1 : 0);
     return 1;
 }
 
