@@ -12,4 +12,9 @@
 	<Binding name="TARGETFOCUS">
 		TargetUnit("focus");
 	</Binding>
+	<Binding name="AOELOOT">
+          if not C_Loot.IsScanInProgress() then
+		     C_Loot.ScanNearbyLoot()
+          end
+	</Binding>
 </Bindings>

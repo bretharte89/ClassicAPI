@@ -1,3 +1,4 @@
+AOELOOT = "AoE Loot"
 BINDING_NAME_FOCUSTARGET = "Focus Target";
 BINDING_NAME_TARGETFOCUS = "Target Focus";
 FOCUSTARGET = "Focus Target";
