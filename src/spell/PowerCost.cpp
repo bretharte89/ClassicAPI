@@ -39,6 +39,7 @@
 #include "Offsets.h"
 #include "spell/Arg.h"
 #include "spell/Lookup.h"
+#include "unit/Power.h"
 
 #include <cstdint>
 
@@ -50,18 +51,6 @@ using GetSpellCost_t = uint32_t(__fastcall *)(int spellID, int unit);
 
 constexpr int OFF_POWER_TYPE = 0x7C;        // int PowerType
 constexpr int OFF_MANA_COST_PERCENT = 0x270; // int, % of base resource (0 = flat)
-
-// Power token by PowerType, matching the engine's POWER_TYPE strings.
-const char *PowerToken(int powerType) {
-    switch (powerType) {
-    case 0: return "MANA";
-    case 1: return "RAGE";
-    case 2: return "FOCUS";
-    case 3: return "ENERGY";
-    case 4: return "HAPPINESS";
-    default: return ""; // e.g. health-cost spells (PowerType -2)
-    }
-}
 
 uint32_t EffectiveCost(int spellID) {
     return reinterpret_cast<GetSpellCost_t>(Offsets::FUN_GET_SPELL_COST)(spellID, 0);
@@ -87,7 +76,7 @@ int __fastcall Script_GetSpellPowerCost(void *L) {
     Game::Lua::PushNumber(L, 1.0);                           // key 1
     Game::Lua::NewTable(L);                                  // entry (top)
     Game::Lua::SetFieldNumber(L, "type", static_cast<double>(powerType));
-    Game::Lua::SetFieldString(L, "name", PowerToken(powerType));
+    Game::Lua::SetFieldString(L, "name", Unit::Power::PowerTypeToken(powerType));
     Game::Lua::SetFieldNumber(L, "cost", static_cast<double>(cost));
     Game::Lua::SetFieldNumber(L, "minCost", static_cast<double>(cost));
     Game::Lua::SetFieldNumber(L, "costPercent", static_cast<double>(costPercent));

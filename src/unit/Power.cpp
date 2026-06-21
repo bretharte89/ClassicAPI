@@ -33,10 +33,28 @@
 
 #include "Game.h"
 #include "Offsets.h"
+#include "unit/Power.h"
 
 #include <cstdint>
 
 namespace Unit::Power {
+
+// Modern power-type tokens. Vanilla descriptor byte values 0..4 map
+// to MANA/RAGE/FOCUS/ENERGY/HAPPINESS. 5/6 (Runes / Runic Power)
+// can't appear on a 1.12 unit but we map them anyway in case a
+// private server pushes one through.
+const char *PowerTypeToken(int type) {
+    switch (type) {
+    case 0: return "MANA";
+    case 1: return "RAGE";
+    case 2: return "FOCUS";
+    case 3: return "ENERGY";
+    case 4: return "HAPPINESS";
+    case 5: return "RUNES";
+    case 6: return "RUNIC_POWER";
+    }
+    return "UNKNOWN";
+}
 
 namespace {
 
@@ -68,22 +86,6 @@ uint32_t PowerDivisor(int type) {
     return table[type];
 }
 
-// Modern power-type tokens. Vanilla descriptor byte values 0..4 map
-// to MANA/RAGE/FOCUS/ENERGY/HAPPINESS. 5/6 (Runes / Runic Power)
-// can't appear on a 1.12 unit but we map them anyway in case a
-// private server pushes one through.
-const char *PowerTypeToken(int type) {
-    switch (type) {
-    case 0: return "MANA";
-    case 1: return "RAGE";
-    case 2: return "FOCUS";
-    case 3: return "ENERGY";
-    case 4: return "HAPPINESS";
-    case 5: return "RUNES";
-    case 6: return "RUNIC_POWER";
-    }
-    return "UNKNOWN";
-}
 
 // `Enum.PowerType` — modern Blizzard-style enum table. Slot 4 is
 // `Happiness` in 1.12 (pet happiness 0..3); modern retail relabels
