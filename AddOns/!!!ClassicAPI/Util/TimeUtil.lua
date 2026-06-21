@@ -68,6 +68,15 @@ function SecondsToClock(seconds, displayZeroHours)
     end
 end
 
+-- 1.12's native unit strings are bare labels ("Hr", "Min") with no `%d`,
+-- unlike modern's "%d Hr"; insert the count correctly for either shape.
+local function FormatUnit(fmt, count)
+    if string.find(fmt, "%%d") then
+        return string.format(fmt, count);
+    end
+    return count .. " " .. fmt;
+end
+
 function SecondsToTime(seconds, noSeconds, notAbbreviated, maxCount, roundUp)
     local time = "";
     local count = 0;
@@ -82,7 +91,7 @@ function SecondsToTime(seconds, noSeconds, notAbbreviated, maxCount, roundUp)
         count = count + 1;
         tempTime = (count == maxCount and roundUp) and math.ceil(seconds / SECONDS_PER_DAY)
             or math.floor(seconds / SECONDS_PER_DAY);
-        time = string.format(notAbbreviated and D_DAYS or DAYS_ABBR, tempTime);
+        time = FormatUnit(notAbbreviated and D_DAYS or DAYS_ABBR, tempTime);
         seconds = math.mod(seconds, SECONDS_PER_DAY);
     end
     if count < maxCount and seconds >= SECONDS_PER_HOUR * threshold then
@@ -90,7 +99,7 @@ function SecondsToTime(seconds, noSeconds, notAbbreviated, maxCount, roundUp)
         if time ~= "" then time = time .. TIME_UNIT_DELIMITER; end
         tempTime = (count == maxCount and roundUp) and math.ceil(seconds / SECONDS_PER_HOUR)
             or math.floor(seconds / SECONDS_PER_HOUR);
-        time = time .. string.format(notAbbreviated and D_HOURS or HOURS_ABBR, tempTime);
+        time = time .. FormatUnit(notAbbreviated and D_HOURS or HOURS_ABBR, tempTime);
         seconds = math.mod(seconds, SECONDS_PER_HOUR);
     end
     if count < maxCount and seconds >= SECONDS_PER_MIN * threshold then
@@ -98,12 +107,12 @@ function SecondsToTime(seconds, noSeconds, notAbbreviated, maxCount, roundUp)
         if time ~= "" then time = time .. TIME_UNIT_DELIMITER; end
         tempTime = (count == maxCount and roundUp) and math.ceil(seconds / SECONDS_PER_MIN)
             or math.floor(seconds / SECONDS_PER_MIN);
-        time = time .. string.format(notAbbreviated and D_MINUTES or MINUTES_ABBR, tempTime);
+        time = time .. FormatUnit(notAbbreviated and D_MINUTES or MINUTES_ABBR, tempTime);
         seconds = math.mod(seconds, SECONDS_PER_MIN);
     end
     if count < maxCount and seconds > 0 and not noSeconds then
         if time ~= "" then time = time .. TIME_UNIT_DELIMITER; end
-        time = time .. string.format(notAbbreviated and D_SECONDS or SECONDS_ABBR, seconds);
+        time = time .. FormatUnit(notAbbreviated and D_SECONDS or SECONDS_ABBR, seconds);
     end
     return time;
 end
