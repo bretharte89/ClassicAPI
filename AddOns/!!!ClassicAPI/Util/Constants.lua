@@ -118,10 +118,11 @@ FACTION_LABELS_FROM_STRING = {
 	["Alliance"] = FACTION_ALLIANCE,
 }
 
--- PLAYER_FACTION_COLORS is built in Util/ColorUtil.lua, not here: it
--- references the PLAYER_FACTION_COLOR_* color objects, which Color.lua
--- only materializes (from C_UIColor) at a later load step. Defining it
--- here captured nils and produced an empty table.
+PLAYER_FACTION_COLORS =
+{
+	[0] = PLAYER_FACTION_COLOR_HORDE,
+	[1] = PLAYER_FACTION_COLOR_ALLIANCE,
+};
 
 WOW_PROJECT_MAINLINE = 1;
 WOW_PROJECT_CLASSIC = 2;

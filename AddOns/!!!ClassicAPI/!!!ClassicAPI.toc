@@ -8,14 +8,14 @@ locales\locales.xml
 
 Compat.lua
 Util\Print.lua
+Util\Mixin.lua
+Util\Color.lua
 Util\Constants.lua
 Util\String.lua
-Util\Mixin.lua
 Util\TableUtil.lua
 Util\MathUtil.lua
 Util\CallbackRegistry.lua
 Util\GlobalCallbackRegistry.lua
-Util\Color.lua
 Util\ColorUtil.lua
 Util\ItemLocation.lua
 Util\EventUtil.lua
