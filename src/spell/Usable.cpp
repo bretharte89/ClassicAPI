@@ -25,11 +25,12 @@ namespace Spell::Usable {
 namespace {
 
 using ResolveUnitToken_t = void *(__fastcall *)(const char *token);
+using GetSpellCost_t = uint32_t(__fastcall *)(int spellID, int unit);
 
 // Spell.dbc record field offsets we read for usability. Fully documented
 // in CLAUDE.md.
 constexpr int OFF_SPELL_POWER_TYPE = 0x7C; // int8: 0=mana, 1=rage, 2=focus, 3=energy, 4=happiness
-constexpr int OFF_SPELL_MANA_COST = 0x80;  // u32 base cost
+constexpr int OFF_SPELL_MANA_COST = 0x80;  // u32 base cost (fallback only)
 
 // Returns true if the player knows `spellID` per the engine's spell-
 // knowledge bitmap at `[VAR_PLAYER_SPELL_BITMAP]`. Same check
@@ -135,8 +136,9 @@ bool HasReagents(void *L, const uint8_t *record) {
 //   3. Player descriptor is reachable (post-login).
 //   4. Player is alive (HEALTH > 0).
 //   5. Spell is not on cooldown (engine cooldown helper).
-//   6. Player has enough power for `ManaCost` of the spell's
-//      `PowerType`. Only this failure flips `noMana=true`.
+//   6. Player has enough power for the spell's *effective* cost (talent
+//      reductions applied) of its `PowerType`. Only this flips
+//      `noMana=true`.
 //   7. Player has all required reagents in bags (Reagent[8] /
 //      ReagentCount[8] from the spell record).
 //
@@ -170,16 +172,23 @@ Usability ComputeUsability(void *L, int spellID) {
     if (IsOnCooldown(spellID))
         return r;
 
-    // Mana check is the only one that flips noMana.
+    // Mana check is the only one that flips noMana. Use the engine's
+    // effective-cost helper (op-14 SpellMod + descriptor power-cost mods +
+    // ManaCostPercent), so talent reductions like Frost Channeling count —
+    // not just the base ManaCost. Falls back to base if the engine can't
+    // resolve a cost (shouldn't happen here: the player descriptor
+    // resolved above, so it has a player context).
     const int powerType = static_cast<int>(*reinterpret_cast<const int8_t *>(
         record + OFF_SPELL_POWER_TYPE));
     if (powerType >= 0 && powerType <= 4) {
-        const int manaCost = static_cast<int>(*reinterpret_cast<const uint32_t *>(
-            record + OFF_SPELL_MANA_COST));
-        if (manaCost > 0) {
+        auto getCost = reinterpret_cast<GetSpellCost_t>(Offsets::FUN_GET_SPELL_COST);
+        uint32_t cost = getCost(spellID, 0 /* local player */);
+        if (cost == 0xFFFFFFFF)
+            cost = *reinterpret_cast<const uint32_t *>(record + OFF_SPELL_MANA_COST);
+        if (cost > 0) {
             const int currentPower = *reinterpret_cast<const int *>(
                 desc + Offsets::OFF_UNIT_FIELD_POWER1 + powerType * 4);
-            if (currentPower < manaCost) {
+            if (currentPower < static_cast<int>(cost)) {
                 r.noMana = true;
                 return r;
             }
