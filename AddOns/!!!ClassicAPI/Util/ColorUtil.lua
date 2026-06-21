@@ -7,6 +7,16 @@ do
 	end
 end
 
+-- Built here (not in Constants.lua) because it references the
+-- PLAYER_FACTION_COLOR_* objects, which Color.lua materializes from
+-- C_UIColor — and ColorUtil.lua loads after Color.lua, so they exist by
+-- now. (Constants.lua loads earlier, where they were still nil.)
+PLAYER_FACTION_COLORS =
+{
+	[0] = PLAYER_FACTION_COLOR_HORDE,
+	[1] = PLAYER_FACTION_COLOR_ALLIANCE,
+};
+
 function ExtractColorValueFromHex(str, index)
 	return tonumber(string.sub(str, index, index + 1), 16) / 255;
 end
