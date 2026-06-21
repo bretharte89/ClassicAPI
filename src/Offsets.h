@@ -2381,6 +2381,18 @@ enum Offsets {
     VAR_SPELL_RECORDS = 0x00C0D788,            // SpellRecord *records[spellID]
     VAR_SPELL_RECORD_COUNT = 0x00C0D78C,       // max spellID
 
+    // SpellMechanic.dbc — maps a SpellMechanic ID to its localized
+    // name. Standard 5-DWORD DBC instance at 0x00C0D7BC; records ptr at
+    // +0x08, count at +0x0C (see docs/DBCs.md). Records are 1-based
+    // (records[mechanicID]); the engine only ever uses the table for
+    // existence/bounds checks (FUN_006e9ca0, FUN_00612df0, FUN_006e8eb0
+    // case 0x8d all do `records[id] != 0`), never reading the name — so
+    // the name offset below follows the canonical 2-column
+    // (ID + localized Name) DBC schema rather than an engine-reader anchor.
+    VAR_SPELLMECHANIC_RECORDS = 0x00C0D7C4,    // SpellMechanicRecord *records[mechanicID]
+    VAR_SPELLMECHANIC_COUNT = 0x00C0D7C8,      // max mechanic ID
+    OFF_SPELLMECHANIC_NAME = 0x04,             // char *name[9], locale-indexed
+
     // Spell.dbc School field — 0-based integer at record +0x04.
     // Verified empirically against Fireball (133) → School=2 (Fire)
     // and Frostbolt (116) → School=4 (Frost) on Octo 1.12.1. Vanilla
@@ -3710,6 +3722,15 @@ enum Offsets {
     OFF_SPELL_RECORD_EFFECT_APPLY_AURA_NAME = 0x16C,  // int32[3]
     OFF_SPELL_RECORD_EFFECT_MISC_VALUE = 0x1A8,       // int32[3]
     SPELL_RECORD_EFFECT_COUNT = 3,
+
+    // Spell.dbc Mechanic field — the spell-level SpellMechanic ID (→
+    // SpellMechanic.dbc), 0 = none. Field 5 of the record
+    // (ID, School, Category, castUI, Dispel, Mechanic), which lands at
+    // +0x14 given Attributes (field 6) is verified at +0x18. Cross-
+    // confirmed by FUN_006e9ca0 (the mechanic-immunity check), which
+    // reads `spellRec[+0x14]` as the spell's mechanic when the per-
+    // effect EffectMiscValue is 0. Read by C_Spell.GetSpellMechanicByID.
+    OFF_SPELL_RECORD_MECHANIC = 0x14,
     SPELL_AURA_MOD_SHAPESHIFT = 36,
     SPELL_AURA_MOUNTED = 78,
 
