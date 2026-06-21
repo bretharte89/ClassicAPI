@@ -2313,45 +2313,55 @@ that want this behavior on Octo-style multi-DLL clients can
 fall back to debouncing `BAG_UPDATE` themselves via an
 `OnUpdate` timer.
 
-## 68. `UnitChannelInfo(unit)` / `UnitCastingInfo(unit)` — medium
+## ~~68. `UnitChannelInfo(unit)` / `UnitCastingInfo(unit)`~~ — DONE
 
-Modern signatures return `(name, _, texture, startMs, endMs, _, _,
-spellID)` for the unit's currently channeled / cast spell. 1.12
-exposes nothing equivalent — the closest is `SPELLCAST_CHANNEL_*`
-events, which only fire for the local player and don't carry
-spellID payloads.
+Shipped in [src/spell/Cast.cpp](src/spell/Cast.cpp): `UnitCastingInfo`,
+`CastingInfo`, `UnitChannelInfo`, `ChannelInfo`. Verified in-game —
+Blizzard channel `(…, 907894314, 907902314, …, 10187)` (8s), Conjure Food
+cast `(…, 907928268, 907931268, …, 28612)` (3s), `GetTime()*1000` falls
+between start/end.
 
-The data is sitting in the broadcast descriptor:
+**The start/end-time hunt resolved with a firm negative**, confirmed via
+the cross-binary technique. 3.3.5's `Script_UnitCastingInfo`
+(`0x00611DF0`) / `Script_UnitChannelInfo` (`0x00612090`) read cast times
+from **per-unit CGUnit fields** (cast `+0xa6c/+0xa78/+0xa7c`, channel
+`+0xa80/+0xa84/+0xa88`) — TBC/WotLK additions that don't exist in the
+1.12 CGUnit (the tell: 1.12's *player* cast spellID is a global,
+`VAR_CURRENT_CAST_SPELL`, not a unit field). 1.12 stores no cast times
+anywhere readable; the cast bar is Lua-driven off `SPELLCAST_START`, and
+remote units' casts are transient spell-visual objects
+(`FUN_0060d7c0`), not a queryable record. The cast-timer globals at
+`0x00cee8d4..e4` are a shared visual-system slot (written for *any*
+channeling unit via `FUN_00612a30 → FUN_0060d7c0`), so they're not
+player-safe.
 
-- `UNIT_FIELD_CHANNEL_SPELL` at descriptor `+0x228` (already in
-  `Offsets.h` as `OFF_UNIT_FIELD_CHANNEL_SPELL`). Verified via the
-  warlock/clicker/fishing diffs in the `IsAssistingRitual` session
-  — non-zero = currently channeling that spell.
-- `UNIT_FIELD_CHANNEL_OBJECT` at descriptor `+0x38/+0x3C`
-  (`OFF_UNIT_FIELD_CHANNEL_OBJECT`). 64-bit GUID of the channel
-  target — bobber for fishing, lock for lockpicking, etc. Zero for
-  channels that don't bind to a GameObject (warlock spells, Ritual
-  of Summoning).
+So timing is **self-tracked for the local player** on `WorldTick`:
+- cast: `VAR_CURRENT_CAST_SPELL` 0→nonzero → `startMs = FUN_OS_TICKCOUNT_MS`,
+  `endMs = start + SpellCastTimes base ms`. Instant casts (cast time 0)
+  and channels are filtered out of the cast path.
+- channel: player's broadcast `UNIT_FIELD_CHANNEL_SPELL` (`+0x228`),
+  `endMs = start + SpellDuration base ms`.
 
-That gives us spellID immediately, and `name` + `texture` via the
-existing `GetSpellInfo(spellID)` chain. Worth shipping a partial
-function that omits the `startMs`/`endMs` returns and let callers
-do their own duration estimation off `SPELLCAST_CHANNEL_START` —
-or hunt for the per-unit cast-time fields the engine uses for the
-local castbar.
+`FUN_OS_TICKCOUNT_MS` shares `GetTime()`'s epoch (×0.001), so the ms
+values feed addon progress math directly. Other units: channel
+spellID/name/texture from the broadcast `+0x228` (no times); regular
+casts return nil (no vanilla data).
 
-What's missing for the full modern signature: the start/end-time
-fields. The local player has `Script_SpellStopCasting`-adjacent
-state at fixed VAs (`m_castingSpellId`, `m_castStartMs`,
-`m_castEndMs`) — but for *other* units we'd need to either find
-broadcast UpdateFields holding the same, or compute end-time on
-the client from `Spell.dbc`'s cast time when we see a fresh
-UNIT_FIELD_CHANNEL_SPELL value. The 5.4.8/3.3.5 binaries are the
-right next stop for this.
+`isTradeskill` is real — `SPELL_ATTR_TRADESPELL` (Attributes bit 0x20,
+the version-stable bit 3.3.5's Script_UnitCastingInfo reads). Verified:
+Rough Blasting Powder (Engineering) → true, Conjure Food → false.
 
-Companion field to investigate while we're in here: `desc 0x1320`
-captures the *prior* channeled spellID after the channel ends —
-see entry #71 for what that's about.
+Cast time is the **effective** time, not base: we call the engine's
+cast-time helper `FUN_006e3340` (base + level scaling + cast-time SpellMod
+op 10 + the caster's haste/cast-speed multiplier at descriptor +0x22c) —
+the same helper the engine's own cast-start uses, so our end time matches
+the cast bar. Verified: talented Frostbolt (Improved Frostbolt -0.5s)
+reads 2.5s, not the 3.0s base. (Calling the helper beats replicating op 10
+via `Spell::Mod`, which would miss the cast-speed multiplier.)
+
+**Follow-up:** `delayTimeMs` pushback tracking (currently 0).
+
+Companion field (`desc 0x1320`, prior channeled spell) — see entry #71.
 
 ## 69. `IsGathering()` — easy (local player only)
 

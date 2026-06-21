@@ -627,6 +627,18 @@ enum Offsets {
     // tick count in EAX).
     FUN_OS_TICKCOUNT_MS = 0x0042B790,
 
+    // Effective cast time (ms) for a spell, fully resolved:
+    // `__fastcall uint32_t(int spellID, int unit /*0 = local player*/,
+    // int flag /*0 = clamp negatives to 0*/)`. Computes
+    // SpellCastTimes base + level scaling, applies the cast-time
+    // SpellMod (op 10, via FUN_006e6af0), then multiplies by the
+    // caster's cast-speed/haste mod (descriptor +0x22c). This is the
+    // exact helper the engine's own cast-start path (FUN_006ec910)
+    // uses for the cast-bar end time, so reading it keeps our
+    // UnitCastingInfo end time in lockstep with the engine. 0 for
+    // instant / no-cast-time spells.
+    FUN_GET_CAST_TIME = 0x006E3340,
+
     // Spell.dbc `m_durationIndex` field — pointer into SpellDuration.dbc.
     // Verified via `FUN_004E44B0` (`0x004e44b0`) and `FUN_006EA000`
     // (`0x006ea000`), both of which read `[spellRec + 0x78]` and use

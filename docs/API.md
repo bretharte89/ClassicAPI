@@ -301,6 +301,8 @@ build instructions.
   - [`CastSpellNoToggle(name | spellID)`](#castspellnotogglename--spellid)
   - [`C_Spell.CastAtCursor(spellID)`](#c_spellcastatcursorspellid)
   - [`C_Spell.CancelSpellByID(spellID)` / `CancelSpellByName(name)`](#c_spellcancelspellbyidspellid--cancelspellbynamename)
+  - [`UnitCastingInfo(unit)` / `CastingInfo()`](#unitcastinginfounit--castinginfo)
+  - [`UnitChannelInfo(unit)` / `ChannelInfo()`](#unitchannelinfounit--channelinfo)
 
 - [SpellBook](#spellbook)
   - [`FindSpellBookSlotByID(spellID)`](#findspellbookslotbyidspellid)
@@ -7514,6 +7516,74 @@ input (e.g. `"Power Word: Fortitude(Rank 4)"`) is **not** parsed —
 pass the plain name. Multi-rank buffs match on first-found; if you
 have multiple ranks of the same buff active (unusual but possible with
 e.g. paladin blessings before talent merge), the first slot wins.
+
+### `UnitCastingInfo(unit)` / `CastingInfo()`
+
+Returns the unit's in-progress **regular cast** (not a channel), or
+`nil` if it isn't casting. `CastingInfo()` is `UnitCastingInfo("player")`
+without the unit-token lookup.
+
+```
+name, displayName, textureID, startTimeMs, endTimeMs, isTradeskill,
+  castID, notInterruptible, castingSpellID, castBarID, delayTimeMs
+    = UnitCastingInfo(unit)
+```
+
+```lua
+-- mid-cast:
+UnitCastingInfo("player")
+-- "Conjure Food", "Conjure Food", "Interface\\Icons\\INV_Misc_Food_...",
+--  907928268, 907931268, false, nil, false, 28612, nil, 0
+```
+
+`startTimeMs`/`endTimeMs` share `GetTime()`'s epoch (`GetTime()*1000`),
+so progress is `(GetTime()*1000 - startTimeMs) / (endTimeMs - startTimeMs)`.
+
+> **Local player only.** Vanilla 1.12 stores no cast times anywhere
+> readable (the cast bar is Lua-driven off `SPELLCAST_START`), and it
+> tracks regular casts for nobody but you — other units' casts exist
+> only as transient animation visuals. So `UnitCastingInfo(otherUnit)`
+> returns `nil`. We self-track the player's cast on a per-frame tick
+> (`VAR_CURRENT_CAST_SPELL`), stamping `startTimeMs = now` and
+> `endTimeMs = now + base cast time`. Instant casts return `nil` (no
+> cast bar). See [`UnitChannelInfo`](#unitchannelinfounit--channelinfo)
+> for channels, which *are* visible on other units.
+>
+> `isTradeskill` is real — the spell's `SPELL_ATTR_TRADESPELL` flag, so
+> profession recipe casts (smelting, cooking/enchanting recipes, …)
+> return `true` while regular spells return `false`. `endTimeMs` reflects
+> the **effective** cast time (the engine's own cast-time helper: base +
+> level scaling + cast-time talents like Improved Frostbolt + the
+> haste/cast-speed multiplier), so it matches the in-game cast bar — e.g.
+> a Mage's talented Frostbolt reads 2.5s, not the 3.0s base. Fields
+> vanilla can't fill are structurally-correct placeholders:
+> `castID`/`castBarID` = `nil`, `notInterruptible` = `false`,
+> `delayTimeMs` = `0`.
+
+### `UnitChannelInfo(unit)` / `ChannelInfo()`
+
+Returns the unit's in-progress **channel**, or `nil` if it isn't
+channeling. `ChannelInfo()` is `UnitChannelInfo("player")` without the
+token lookup.
+
+```
+name, displayName, textureID, startTimeMs, endTimeMs, isTradeskill,
+  notInterruptible, spellID = UnitChannelInfo(unit)
+```
+
+```lua
+ChannelInfo()
+-- "Blizzard", "Blizzard", "Interface\\Icons\\Spell_Frost_IceStorm",
+--  907894314, 907902314, false, false, 10187
+```
+
+Unlike casts, the channeled spellID **is** broadcast for every unit
+(`UNIT_FIELD_CHANNEL_SPELL`), so `UnitChannelInfo("target")` works on
+other units — returning `name`/`displayName`/`textureID`/`spellID` with
+**`nil` start/end times** (we only track the local player's channel
+start). For the player, the full timing is present
+(`endTimeMs - startTimeMs` = channel duration). Same placeholder fields
+as `UnitCastingInfo`.
 
 ## SpellBook
 

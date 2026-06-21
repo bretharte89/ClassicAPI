@@ -1,0 +1,290 @@
+// This file is part of ClassicAPI.
+//
+// ClassicAPI is free software: you can redistribute it and/or modify it under the terms
+// of the GNU Lesser General Public License as published by the Free Software Foundation, either
+// version 3 of the License, or (at your option) any later version.
+//
+// ClassicAPI is distributed in the hope that it will be useful, but WITHOUT ANY
+// WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+// PURPOSE. See the GNU Lesser General Public License for more details.
+//
+// You should have received a copy of the GNU Lesser General Public License along with
+// ClassicAPI. If not, see <https://www.gnu.org/licenses/>.
+
+// Cast / channel info — `UnitCastingInfo`, `CastingInfo`,
+// `UnitChannelInfo`, `ChannelInfo`.
+//
+// Vanilla 1.12 stores NO cast start/end times anywhere readable (unlike
+// 3.3.5+, which keeps them per-unit on the CGUnit). The cast bar is
+// Lua-driven off `SPELLCAST_START(duration)` + `GetTime()`. So we
+// self-track the LOCAL PLAYER's cast/channel on `WorldTick`:
+//   - cast: `VAR_CURRENT_CAST_SPELL` (the player cast-bar spellID
+//     global). On a 0->nonzero transition we stamp startMs = now and
+//     endMs = now + base cast time (SpellCastTimes.dbc). Instant casts
+//     (cast time 0) and channels are filtered out here — a channel has
+//     no cast time and surfaces through the channel field instead.
+//   - channel: the player's broadcast `UNIT_FIELD_CHANNEL_SPELL`
+//     (descriptor +0x228). endMs = now + base channel duration
+//     (SpellDuration.dbc).
+// `now` is the engine ms clock (`FUN_OS_TICKCOUNT_MS`), the same source
+// Lua's `GetTime()` scales by 0.001 — so startMs/endMs are directly
+// comparable to `GetTime()*1000` in addon progress math.
+//
+// Scope (vanilla ceiling, confirmed against the binary — see TODO #68):
+//   - Player casts/channels: full timing.
+//   - Other units' CHANNELS: spellID/name/texture from the broadcast
+//     +0x228 field, but no times (we don't track per-remote-unit start).
+//   - Other units' regular CASTS: nil. Vanilla doesn't store them — the
+//     casting animation is driven by transient spell-visual objects, not
+//     a queryable cast record.
+//
+// Modern-signature fields vanilla can't fill are structurally-correct
+// placeholders: castID / castBarID = nil, notInterruptible = false,
+// isTradeskill = false (no readable flag in 1.12), delayTimeMs = 0.
+
+#include "Game.h"
+#include "Offsets.h"
+#include "dbc/Lookup.h"
+#include "spell/Lookup.h"
+#include "tick/WorldTick.h"
+
+#include <cstdint>
+
+namespace Spell::Cast {
+
+namespace {
+
+using ResolveUnitToken_t = void *(__fastcall *)(const char *token);
+using TickMs_t = uint32_t(__fastcall *)();
+using GetCastTime_t = uint32_t(__fastcall *)(int spellID, int unit, int flag);
+
+// Spell.dbc record field offsets (mirrors Spell::Info's locals).
+constexpr int OFF_NAME = 0x1E0;            // localized name[9]
+constexpr int OFF_ICON_ID = 0x1D4;         // -> SpellIcon.dbc
+constexpr int OFF_ATTRIBUTES = 0x18;       // u32 Attributes flags
+constexpr int OFF_SUBRECORD_VALUE = 0x04;  // SpellIcon path field
+
+// SPELL_ATTR_TRADESPELL — set on profession recipe casts (enchant,
+// cooking with a cast, etc.). The version-stable `isTradeskill` source:
+// 3.3.5's Script_UnitCastingInfo reads bit 0x20 of Attributes (at +0x10
+// there, +0x18 here — the bit value is the same across builds).
+constexpr uint32_t SPELL_ATTR_TRADESPELL = 0x20;
+
+struct TrackedSpell {
+    int spellID; // 0 = not casting / channeling
+    int startMs;
+    int endMs;
+};
+
+TrackedSpell g_cast{0, 0, 0};
+TrackedSpell g_channel{0, 0, 0};
+int g_lastCast = 0;
+int g_lastChannel = 0;
+
+int NowMs() { return static_cast<int>(reinterpret_cast<TickMs_t>(Offsets::FUN_OS_TICKCOUNT_MS)()); }
+
+void *Resolve(const char *token) {
+    return reinterpret_cast<ResolveUnitToken_t>(Offsets::FUN_RESOLVE_UNIT_TOKEN)(token);
+}
+
+// Effective cast time (ms) for the local player, 0 if instant. Uses the
+// engine's own cast-time helper (base + level scaling + cast-time SpellMod
+// op 10 + the caster's haste/cast-speed multiplier), so our end time
+// matches the engine's cast bar exactly — including talents like a Mage's
+// faster casts. Unit arg 0 = local player; flag 0 clamps negatives to 0.
+int CastTimeMs(int spellID) {
+    return static_cast<int>(
+        reinterpret_cast<GetCastTime_t>(Offsets::FUN_GET_CAST_TIME)(spellID, 0, 0));
+}
+
+// Base channel duration (ms) for a spell, 0 if none.
+int ChannelDurationMs(int spellID) {
+    const uint8_t *rec = Spell::Lookup::RecordForID(spellID);
+    if (rec == nullptr)
+        return 0;
+    const int idx = *reinterpret_cast<const int *>(rec + Offsets::OFF_SPELL_DURATION_INDEX);
+    const uint8_t *dr = DBC::Record(Offsets::VAR_SPELLDURATION_RECORDS,
+                                    Offsets::VAR_SPELLDURATION_COUNT,
+                                    static_cast<uint32_t>(idx));
+    if (dr == nullptr)
+        return 0;
+    const int ms = *reinterpret_cast<const int *>(dr + Offsets::OFF_SPELLDURATION_BASE_MS);
+    return ms > 0 ? ms : 0; // negative = "infinite"; channels are finite
+}
+
+// The local player's currently-channeled spellID (broadcast +0x228), or 0.
+int PlayerChannelSpell() {
+    void *p = Resolve("player");
+    if (p == nullptr)
+        return 0;
+    auto *desc = *reinterpret_cast<const uint8_t *const *>(
+        static_cast<const uint8_t *>(p) + Offsets::OFF_UNIT_DESCRIPTOR);
+    if (desc == nullptr)
+        return 0;
+    return *reinterpret_cast<const int *>(desc + Offsets::OFF_UNIT_FIELD_CHANNEL_SPELL);
+}
+
+const char *SpellName(const uint8_t *rec) {
+    const int locale = *reinterpret_cast<int *>(Offsets::VAR_LOCALE_INDEX);
+    return *reinterpret_cast<const char *const *>(rec + OFF_NAME + locale * 4);
+}
+
+bool IsTradeskill(const uint8_t *rec) {
+    return (*reinterpret_cast<const uint32_t *>(rec + OFF_ATTRIBUTES) & SPELL_ATTR_TRADESPELL) != 0;
+}
+
+// Spell icon texture path, or "" if there's no icon record. SpellIcon.dbc
+// already stores the full "Interface\Icons\..." path (unlike item icons,
+// which are bare filenames) — so it's used verbatim, no prefix.
+const char *SpellIconPath(const uint8_t *rec) {
+    const int iconID = *reinterpret_cast<const int *>(rec + OFF_ICON_ID);
+    const uint8_t *iconRec = DBC::Record(Offsets::VAR_SPELL_ICON_RECORDS,
+                                         Offsets::VAR_SPELL_ICON_COUNT,
+                                         static_cast<uint32_t>(iconID));
+    if (iconRec == nullptr)
+        return "";
+    const char *path = *reinterpret_cast<const char *const *>(iconRec + OFF_SUBRECORD_VALUE);
+    return (path != nullptr) ? path : "";
+}
+
+// Pushes UnitCastingInfo's 11-tuple from a tracked cast, or nothing (nil)
+// if there's no active cast.
+int PushCastInfo(void *L, const TrackedSpell &c) {
+    if (c.spellID == 0)
+        return 0;
+    const uint8_t *rec = Spell::Lookup::RecordForID(c.spellID);
+    if (rec == nullptr)
+        return 0;
+    const char *name = SpellName(rec);
+    Game::Lua::PushString(L, name);                          // 1 name
+    Game::Lua::PushString(L, name);                          // 2 displayName
+    Game::Lua::PushString(L, SpellIconPath(rec));            // 3 textureID (path)
+    Game::Lua::PushNumber(L, static_cast<double>(c.startMs)); // 4 startTimeMs
+    Game::Lua::PushNumber(L, static_cast<double>(c.endMs));   // 5 endTimeMs
+    Game::Lua::PushBool(L, IsTradeskill(rec));               // 6 isTradeskill
+    Game::Lua::PushNil(L);                                   // 7 castID
+    Game::Lua::PushBool(L, false);                           // 8 notInterruptible
+    Game::Lua::PushNumber(L, static_cast<double>(c.spellID)); // 9 castingSpellID
+    Game::Lua::PushNil(L);                                   // 10 castBarID
+    Game::Lua::PushNumber(L, 0);                             // 11 delayTimeMs
+    return 11;
+}
+
+// Pushes UnitChannelInfo's 8-tuple. `haveTimes` is false for remote units
+// (we only track the local player's channel start), pushing nil times.
+int PushChannelInfo(void *L, int spellID, int startMs, int endMs, bool haveTimes) {
+    if (spellID == 0)
+        return 0;
+    const uint8_t *rec = Spell::Lookup::RecordForID(spellID);
+    if (rec == nullptr)
+        return 0;
+    const char *name = SpellName(rec);
+    Game::Lua::PushString(L, name);                          // 1 name
+    Game::Lua::PushString(L, name);                          // 2 text / displayName
+    Game::Lua::PushString(L, SpellIconPath(rec));            // 3 textureID (path)
+    if (haveTimes) {
+        Game::Lua::PushNumber(L, static_cast<double>(startMs)); // 4 startTimeMs
+        Game::Lua::PushNumber(L, static_cast<double>(endMs));   // 5 endTimeMs
+    } else {
+        Game::Lua::PushNil(L);
+        Game::Lua::PushNil(L);
+    }
+    Game::Lua::PushBool(L, IsTradeskill(rec));               // 6 isTradeskill
+    Game::Lua::PushBool(L, false);                           // 7 notInterruptible
+    Game::Lua::PushNumber(L, static_cast<double>(spellID));   // 8 spellID
+    return 8;
+}
+
+// True if the unit at stack index 1 resolves to the local player.
+bool ArgIsPlayer(void *L) {
+    if (!Game::Lua::IsString(L, 1))
+        return false;
+    const char *token = Game::Lua::ToString(L, 1);
+    if (token == nullptr)
+        return false;
+    void *u = Resolve(token);
+    return u != nullptr && u == Resolve("player");
+}
+
+} // namespace
+
+// Per-frame: detect the player's cast/channel start, stamp times.
+void OnWorldTick() {
+    const int now = NowMs();
+
+    const int cast = *reinterpret_cast<const int *>(Offsets::VAR_CURRENT_CAST_SPELL);
+    if (cast != g_lastCast) {
+        const int dur = (cast != 0) ? CastTimeMs(cast) : 0;
+        if (cast != 0 && dur > 0) {
+            g_cast = {cast, now, now + dur};
+        } else {
+            g_cast.spellID = 0; // 0, instant, or channel — no cast bar
+        }
+        g_lastCast = cast;
+    }
+
+    const int chan = PlayerChannelSpell();
+    if (chan != g_lastChannel) {
+        if (chan != 0) {
+            g_channel = {chan, now, now + ChannelDurationMs(chan)};
+        } else {
+            g_channel.spellID = 0;
+        }
+        g_lastChannel = chan;
+    }
+}
+
+static const Tick::WorldTick::AutoSubscribe _tickSub{&OnWorldTick};
+
+// `CastingInfo()` — local player's cast, no token lookup.
+static int __fastcall Script_CastingInfo(void *L) { return PushCastInfo(L, g_cast); }
+
+// `UnitCastingInfo(unit)` — only the local player has regular-cast data
+// in vanilla; any other unit returns nil.
+static int __fastcall Script_UnitCastingInfo(void *L) {
+    if (!Game::Lua::IsString(L, 1)) {
+        Game::Lua::Error(L, "Usage: UnitCastingInfo(\"unit\")");
+        return 0;
+    }
+    if (ArgIsPlayer(L))
+        return PushCastInfo(L, g_cast);
+    return 0;
+}
+
+// `ChannelInfo()` — local player's channel, no token lookup.
+static int __fastcall Script_ChannelInfo(void *L) {
+    return PushChannelInfo(L, g_channel.spellID, g_channel.startMs, g_channel.endMs, true);
+}
+
+// `UnitChannelInfo(unit)` — full timing for the player; spellID/name/
+// texture (no times) for other units via the broadcast +0x228 field.
+static int __fastcall Script_UnitChannelInfo(void *L) {
+    if (!Game::Lua::IsString(L, 1)) {
+        Game::Lua::Error(L, "Usage: UnitChannelInfo(\"unit\")");
+        return 0;
+    }
+    const char *token = Game::Lua::ToString(L, 1);
+    void *u = (token != nullptr) ? Resolve(token) : nullptr;
+    if (u == nullptr)
+        return 0;
+    if (u == Resolve("player"))
+        return PushChannelInfo(L, g_channel.spellID, g_channel.startMs, g_channel.endMs, true);
+
+    auto *desc = *reinterpret_cast<const uint8_t *const *>(
+        static_cast<const uint8_t *>(u) + Offsets::OFF_UNIT_DESCRIPTOR);
+    if (desc == nullptr)
+        return 0;
+    const int spellID = *reinterpret_cast<const int *>(desc + Offsets::OFF_UNIT_FIELD_CHANNEL_SPELL);
+    return PushChannelInfo(L, spellID, 0, 0, /*haveTimes*/ false);
+}
+
+static void RegisterLuaFunctions() {
+    Game::Lua::RegisterGlobalFunction("UnitCastingInfo", &Script_UnitCastingInfo);
+    Game::Lua::RegisterGlobalFunction("CastingInfo", &Script_CastingInfo);
+    Game::Lua::RegisterGlobalFunction("UnitChannelInfo", &Script_UnitChannelInfo);
+    Game::Lua::RegisterGlobalFunction("ChannelInfo", &Script_ChannelInfo);
+}
+
+static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
+
+} // namespace Spell::Cast
