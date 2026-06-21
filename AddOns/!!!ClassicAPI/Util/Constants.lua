@@ -106,13 +106,17 @@ BAG_ITEM_QUALITY_COLORS =
 };
 
 -- faction
-PLAYER_FACTION_GROUP = PLAYER_FACTION_GROUP or
-{
-	[0] = "Horde",
-	[1] = "Alliance",
-	Horde = 0,
-	Alliance = 1,
+PLAYER_FACTION_GROUP = { [0] = "Horde", [1] = "Alliance", Horde = 0, Alliance = 1 };
+
+FACTION_LABELS = {
+	[0] = FACTION_HORDE,
+	[1] = FACTION_ALLIANCE,
 };
+
+FACTION_LABELS_FROM_STRING = {
+	["Horde"] = FACTION_HORDE,
+	["Alliance"] = FACTION_ALLIANCE,
+}
 
 PLAYER_FACTION_COLORS =
 {
