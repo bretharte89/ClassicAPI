@@ -5,20 +5,13 @@
 -- The currency/cost helpers (C_CurrencyInfo etc.) are omitted. GetMoneyString
 -- uses text symbols, not coin texture markup (markup doesn't render in 1.12).
 --
--- FrameXML format-string globals are defined with `or` fallbacks so we
--- honor a native/localized value when present and degrade sanely otherwise.
-
-LARGE_NUMBER_SEPERATOR = LARGE_NUMBER_SEPERATOR or ",";
-PERCENTAGE_STRING = PERCENTAGE_STRING or "%d%%";
-GENERIC_FRACTION_STRING = GENERIC_FRACTION_STRING or "%d/%d";
+-- The FrameXML format-string globals these functions consume
+-- (LARGE_NUMBER_SEPERATOR, PERCENTAGE_STRING, GOLD_AMOUNT_SYMBOL, …) are
+-- defined in the locale layer (locales/enUS.lua), which loads first.
 
 COPPER_PER_SILVER = 100;
 SILVER_PER_GOLD = 100;
 COPPER_PER_GOLD = COPPER_PER_SILVER * SILVER_PER_GOLD;
-
-GOLD_AMOUNT_SYMBOL = GOLD_AMOUNT_SYMBOL or "g";
-SILVER_AMOUNT_SYMBOL = SILVER_AMOUNT_SYMBOL or "s";
-COPPER_AMOUNT_SYMBOL = COPPER_AMOUNT_SYMBOL or "c";
 
 function FormatLargeNumber(amount)
     amount = tostring(amount);

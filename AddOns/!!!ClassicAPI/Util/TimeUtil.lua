@@ -6,31 +6,16 @@
 -- SecondsFormatterMixin (the modern replacement) is omitted — it's a heavy
 -- mixin class little addon code targets on classic.
 --
--- 5.0 notes: `%` -> math.mod, `s:format()` -> string.format. FrameXML
--- format-string globals get `or` fallbacks so native/localized values win
--- when present.
+-- 5.0 notes: `%` -> math.mod, `s:format()` -> string.format. The FrameXML
+-- format-string globals these functions consume (DAYS_ABBR, D_HOURS,
+-- HOURS_MINUTES_SECONDS, the *_ONELETTER_ABBR set, …) are defined in the
+-- locale layer (locales/enUS.lua), which loads first.
 
 SECONDS_PER_MIN = 60;
 SECONDS_PER_HOUR = 60 * SECONDS_PER_MIN;
 SECONDS_PER_DAY = 24 * SECONDS_PER_HOUR;
 SECONDS_PER_MONTH = 30 * SECONDS_PER_DAY;
 SECONDS_PER_YEAR = 12 * SECONDS_PER_MONTH;
-
-D_DAYS = D_DAYS or "%d Days";
-D_HOURS = D_HOURS or "%d Hours";
-D_MINUTES = D_MINUTES or "%d Minutes";
-D_SECONDS = D_SECONDS or "%d Seconds";
-DAYS_ABBR = DAYS_ABBR or "%d Day(s)";
-HOURS_ABBR = HOURS_ABBR or "%d Hr";
-MINUTES_ABBR = MINUTES_ABBR or "%d Min";
-SECONDS_ABBR = SECONDS_ABBR or "%d Sec";
-DAY_ONELETTER_ABBR = DAY_ONELETTER_ABBR or "%d d";
-HOUR_ONELETTER_ABBR = HOUR_ONELETTER_ABBR or "%d h";
-MINUTE_ONELETTER_ABBR = MINUTE_ONELETTER_ABBR or "%d m";
-SECOND_ONELETTER_ABBR = SECOND_ONELETTER_ABBR or "%d s";
-TIME_UNIT_DELIMITER = TIME_UNIT_DELIMITER or " ";
-HOURS_MINUTES_SECONDS = HOURS_MINUTES_SECONDS or "%d:%02d:%02d";
-MINUTES_SECONDS = MINUTES_SECONDS or "%d:%02d";
 
 function SecondsToMinutes(seconds)
     return seconds / SECONDS_PER_MIN;
