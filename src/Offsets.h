@@ -649,6 +649,15 @@ enum Offsets {
     // folds in the descriptor cost mods).
     FUN_GET_SPELL_COST = 0x006E31B0,
 
+    // Effective spell/channel duration (ms):
+    // `__fastcall int(const void *spellRecord, int unit /*0 = player,
+    // nonzero = pet*/, int skipMod /*0 = apply mods*/)`. SpellDuration
+    // base + level scaling (capped at the row's max), then the duration
+    // SpellMod (op 1). Same `unit` selector as the cast-time/cost helpers.
+    // Used for UnitChannelInfo's channel end time. Note: takes the spell
+    // RECORD pointer, not a spellID.
+    FUN_GET_SPELL_DURATION = 0x006EA000,
+
     // Spell.dbc `m_durationIndex` field — pointer into SpellDuration.dbc.
     // Verified via `FUN_004E44B0` (`0x004e44b0`) and `FUN_006EA000`
     // (`0x006ea000`), both of which read `[spellRec + 0x78]` and use

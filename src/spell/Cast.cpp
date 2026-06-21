@@ -57,6 +57,7 @@ namespace {
 using ResolveUnitToken_t = void *(__fastcall *)(const char *token);
 using TickMs_t = uint32_t(__fastcall *)();
 using GetCastTime_t = uint32_t(__fastcall *)(int spellID, int unit, int flag);
+using GetDuration_t = int(__fastcall *)(const uint8_t *spellRecord, int unit, int skipMod);
 
 // Spell.dbc record field offsets (mirrors Spell::Info's locals).
 constexpr int OFF_NAME = 0x1E0;            // localized name[9]
@@ -97,18 +98,15 @@ int CastTimeMs(int spellID) {
         reinterpret_cast<GetCastTime_t>(Offsets::FUN_GET_CAST_TIME)(spellID, 0, 0));
 }
 
-// Base channel duration (ms) for a spell, 0 if none.
+// Effective channel duration (ms) for the local player, 0 if none. Uses
+// the engine's own duration helper (SpellDuration base + level scaling +
+// duration SpellMod op 1), mirroring how the cast time is sourced, so the
+// channel end time matches the engine. Unit arg 0 = local player.
 int ChannelDurationMs(int spellID) {
     const uint8_t *rec = Spell::Lookup::RecordForID(spellID);
     if (rec == nullptr)
         return 0;
-    const int idx = *reinterpret_cast<const int *>(rec + Offsets::OFF_SPELL_DURATION_INDEX);
-    const uint8_t *dr = DBC::Record(Offsets::VAR_SPELLDURATION_RECORDS,
-                                    Offsets::VAR_SPELLDURATION_COUNT,
-                                    static_cast<uint32_t>(idx));
-    if (dr == nullptr)
-        return 0;
-    const int ms = *reinterpret_cast<const int *>(dr + Offsets::OFF_SPELLDURATION_BASE_MS);
+    const int ms = reinterpret_cast<GetDuration_t>(Offsets::FUN_GET_SPELL_DURATION)(rec, 0, 0);
     return ms > 0 ? ms : 0; // negative = "infinite"; channels are finite
 }
 
