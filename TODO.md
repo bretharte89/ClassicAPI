@@ -782,24 +782,25 @@ The probe helpers (`_classicapi_ProbeSpellRecord`,
 `_classicapi_FindSpellField`) were temporarily exposed to derive the
 offset and removed in the same commit that shipped `GetSpellSchool`.
 
-## 38. `GetSpellRadius(spellID)` — easy
+## ~~38. `GetSpellRadius(spellID)`~~ — DONE
 
-Returns the AOE radius in yards, or `nil` for non-AOE spells.
-`Spell.dbc` has a `SpellRadiusIndex` field that points into
-`SpellRadius.dbc` (instance at `0x00C0D7A8` per `docs/DBCs.md`,
-already wired up via `VAR_SPELL_RANGE_RECORDS`-style helpers in
-`src/spell/Info.cpp`).
+Shipped in [src/spell/Radius.cpp](src/spell/Radius.cpp) as
+`C_Spell.GetSpellRadius(spellID)` plus the vanilla-positional
+`GetSpellRadius(slot, bookType)`. Returns the AOE radius in yards, or
+`nil` for non-AOE spells.
 
-Stride and field layout for `SpellRadius.dbc`: needs derivation
-(should be `{id, radius_min, radius, radius_max}` per the public
-schema, but verify). Sub-DBC lookup pattern matches what
-`LookupSubRecord` already does in `Info.cpp` for icon / cast time /
-range.
+The radius is **per-effect**, not a single spell-level field: `Spell.dbc`
+has `EffectRadiusIndex[3]` at record `+0x160` (verified by decompiling
+`FUN_006e6350`, which reads `spellRec[+0x160]`/`[+0x164]` for effects
+0/1). Each non-zero index resolves into `SpellRadius.dbc` (records
+`0x00C0D7B0`, count `0x00C0D7B4`), record shape
+`{ id@+0, radius@+4 (f32), radiusPerLevel@+8 (f32), ... }`. We return the
+largest base radius across the three effects. Base radius only — the
+engine adds `radiusPerLevel * casterLevel`, but that needs a unit context
+and modern `GetSpellRadius` reports the base value.
 
-Useful for AOE damage trackers, ground-effect addons, and any aura
-library that wants to render an indicator radius. Modern WoW exposes
-this via `GetSpellRadius` (deprecated) or returns from
-`C_Spell.GetSpellInfo`.
+See `OFF_SPELL_RECORD_EFFECT_RADIUS_INDEX`, `VAR_SPELL_RADIUS_RECORDS`,
+`OFF_SPELL_RADIUS_VALUE` in [src/Offsets.h](src/Offsets.h).
 
 ## ~~39. `GetFactionParentID(factionID)`~~ — DONE
 

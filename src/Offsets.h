@@ -2418,6 +2418,17 @@ enum Offsets {
     VAR_SPELL_CAST_TIMES_RECORDS = 0x00C0D878, // SpellCastTimes.dbc
     VAR_SPELL_CAST_TIMES_COUNT = 0x00C0D87C,
 
+    // SpellRadius.dbc — AOE radius records, indexed by a spell's
+    // EffectRadiusIndex (see OFF_SPELL_RECORD_EFFECT_RADIUS_INDEX). Record
+    // shape: { id@+0, radius@+4 (f32), radiusPerLevel@+8 (f32), ... }.
+    // Verified by decompiling FUN_006e6350 (the engine's effective-radius
+    // helper), which reads `radiusRec[+4]` as the base radius and
+    // `radiusRec[+8] * casterLevel` as the per-level term. Read by
+    // GetSpellRadius (base radius only — no level scaling).
+    VAR_SPELL_RADIUS_RECORDS = 0x00C0D7B0,
+    VAR_SPELL_RADIUS_COUNT = 0x00C0D7B4,
+    OFF_SPELL_RADIUS_VALUE = 0x04,             // base radius, f32
+
     // SpellDispelType.dbc — maps dispel-type IDs (1..N) to localized
     // names like "Magic", "Curse", "Disease", "Poison". Used by
     // `Script_UnitDebuff` to fill its third return value. Standard
@@ -3722,6 +3733,12 @@ enum Offsets {
     OFF_SPELL_RECORD_EFFECT_APPLY_AURA_NAME = 0x16C,  // int32[3]
     OFF_SPELL_RECORD_EFFECT_MISC_VALUE = 0x1A8,       // int32[3]
     SPELL_RECORD_EFFECT_COUNT = 3,
+
+    // Per-effect EffectRadiusIndex[3] → SpellRadius.dbc. Verified by
+    // FUN_006e6350, which reads spellRec[+0x160] (effect 0) and
+    // spellRec[+0x164] (effect 1) as radius indices. 0 = effect has no
+    // radius. Read by GetSpellRadius.
+    OFF_SPELL_RECORD_EFFECT_RADIUS_INDEX = 0x160,     // int32[3]
 
     // Spell.dbc Mechanic field — the spell-level SpellMechanic ID (→
     // SpellMechanic.dbc), 0 = none. Field 5 of the record

@@ -280,6 +280,7 @@ build instructions.
   - [`C_Spell.GetSpellLink(spellID)`](#c_spellgetspelllinkspellid)
   - [`C_Spell.GetSpellDescription(spellID)`](#c_spellgetspelldescriptionspellid)
   - [`C_Spell.GetSpellMechanicByID(spellID)`](#c_spellgetspellmechanicbyidspellid)
+  - [`C_Spell.GetSpellRadius(spellID)` / `GetSpellRadius(slot, bookType)`](#c_spellgetspellradiusspellid--getspellradiusslot-booktype)
   - [`C_Spell.GetSpellReagents(spellID)`](#c_spellgetspellreagentsspellid)
   - [`C_Spell.GetSpellSubtext(spellIdentifier)`](#c_spellgetspellsubtextspellidentifier)
   - [`IsPassiveSpell(spellID)` / `IsPassiveSpell(slot, bookType)`](#ispassivespellspellid--ispassivespellslot-booktype)
@@ -6884,6 +6885,36 @@ column is exactly what this function returns):
 > **No mechanic `30`.** The table tops out at `27`. Sap and Gouge report
 > `14` (incapacitated) in 1.12 — the `30` ("sapped") value used by some
 > addon tables is a later-expansion addition and has no row here.
+
+### `C_Spell.GetSpellRadius(spellID)` / `GetSpellRadius(slot, bookType)`
+
+Returns the spell's AOE radius in yards, or `nil` for a non-AOE spell
+(no effect carries a radius). Works for any spell, not just ones the
+player has learned.
+
+```lua
+C_Spell.GetSpellRadius(1449)   -- Arcane Explosion → 10 (AOE)
+C_Spell.GetSpellRadius(133)    -- Fireball          → nil (single-target)
+GetSpellRadius(10, "spell")    -- 10th player-book slot, by spellbook position
+```
+
+Two signatures matching the dual-signature shape used elsewhere in this
+backport (`GetSpellInfo`, `SpellHasRange`, …): the namespaced form takes
+a modern spell *identifier* (numeric ID or name); the bare global takes
+the vanilla `(slot, bookType)` spellbook position, where `bookType`
+follows the `GetSpellName` convention — `"pet"` → pet book, `"spell"`
+(or any non-pet / omitted value) → player book.
+
+Reads `Spell.dbc`'s per-effect `EffectRadiusIndex[3]` (`+0x160`) and
+resolves each into `SpellRadius.dbc`; since a spell's effects can each
+carry their own radius, the **largest** base radius across the three
+effects is returned.
+
+> **Base radius only — no caster scaling.** The engine's internal radius
+> helper adds `radiusPerLevel * casterLevel`, but that needs a unit
+> context; like modern `GetSpellRadius` this returns the spell's base
+> radius. Both DBCs are resident from boot, so the call is synchronous
+> with no caching.
 
 ### `C_Spell.GetSpellReagents(spellID)`
 
