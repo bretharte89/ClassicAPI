@@ -12,8 +12,16 @@
 // ClassicAPI. If not, see <https://www.gnu.org/licenses/>.
 
 // `C_Spell.GetSpellRadius(spellID)` and the parallel
-// `GetSpellRadius(slot, bookType)` — the spell's AOE radius in yards, or
-// nil for a non-AOE spell (no effect carries a radius).
+// `GetSpellRadius(slot, bookType)` -> (baseRadius, modifiedRadius)
+//
+// Returns the spell's AOE radius in yards, or nil for a non-AOE spell
+// (no effect carries a radius). Two values:
+//   - baseRadius     — the raw SpellRadius.dbc value (caster-independent,
+//                      what an AOE tracker watching other units wants)
+//   - modifiedRadius — baseRadius with the LOCAL PLAYER's spell modifiers
+//                      (talents / items, e.g. a Mage's Arctic Reach)
+//                      applied. Equal to baseRadius when the player has
+//                      no matching modifier.
 //
 // Two signatures mirroring the other dual-signature spell globals
 // (`GetSpellInfo`, `SpellHasRange`, etc.): the namespaced form takes a
@@ -22,24 +30,26 @@
 // `GetSpellName` convention: `"pet"` → pet book, anything else (or
 // omitted) → player book.
 //
-// Reads `Spell.dbc`'s per-effect `EffectRadiusIndex[3]` and resolves each
-// into `SpellRadius.dbc`; since a spell's effects can each have their own
-// radius, we return the largest base radius found across the three
-// effects.
+// baseRadius reads `Spell.dbc`'s per-effect `EffectRadiusIndex[3]` and
+// resolves each into `SpellRadius.dbc`, taking the largest base radius
+// across the three effects. No caster-level scaling (the engine's
+// FUN_006e6350 also adds `radiusPerLevel * casterLevel`, which needs a
+// unit context; modern `GetSpellRadius` reports the base value).
 //
-// Base radius only — no caster-level scaling. The engine's own radius
-// helper (FUN_006e6350) adds `radiusPerLevel * casterLevel`, but that
-// needs a unit context and modern `GetSpellRadius` reports the base
-// value; callers wanting the scaled radius can add it themselves.
+// modifiedRadius applies the local player's SpellMods for op 6 (radius)
+// via `Spell::Mod::Apply`. It is inherently local-player-only — the
+// client tracks spell mods for the player alone, so there's no way to
+// know another caster's talents.
 //
-// Both DBCs are resident from boot, so the lookup is synchronous with no
-// caching.
+// All DBCs / mod tables are resident from boot, so the lookup is
+// synchronous with no caching.
 
 #include "Game.h"
 #include "Offsets.h"
 #include "dbc/Lookup.h"
 #include "spell/Arg.h"
 #include "spell/Lookup.h"
+#include "spell/Mod.h"
 
 #include <cstdint>
 #include <cstring>
@@ -47,12 +57,8 @@
 namespace Spell::Radius {
 
 // Largest base radius across the spell's effects, or a negative sentinel
-// (< 0) if the spell is invalid or no effect has a radius.
-static float MaxRadius(int spellID) {
-    const uint8_t *record = Spell::Lookup::RecordForID(spellID);
-    if (record == nullptr)
-        return -1.0f;
-
+// (< 0) if no effect has a radius.
+static float MaxBaseRadius(const uint8_t *record) {
     float best = -1.0f;
     for (int i = 0; i < Offsets::SPELL_RECORD_EFFECT_COUNT; ++i) {
         const int radiusIndex = *reinterpret_cast<const int *>(
@@ -69,13 +75,19 @@ static float MaxRadius(int spellID) {
     return best;
 }
 
-// Pushes the radius for `spellID`, or nil for an invalid / non-AOE spell.
+// Pushes (baseRadius, modifiedRadius) for `spellID`, or nil (0 returns)
+// for an invalid / non-AOE spell.
 static int PushRadiusForSpellID(void *L, int spellID) {
-    const float radius = MaxRadius(spellID);
-    if (radius < 0.0f)
+    const uint8_t *record = Spell::Lookup::RecordForID(spellID);
+    if (record == nullptr)
         return 0; // nil
-    Game::Lua::PushNumber(L, static_cast<double>(radius));
-    return 1;
+    const float base = MaxBaseRadius(record);
+    if (base < 0.0f)
+        return 0; // nil — not an AOE spell
+    Game::Lua::PushNumber(L, static_cast<double>(base));
+    Game::Lua::PushNumber(L,
+        static_cast<double>(Spell::Mod::Apply(record, Offsets::SPELLMOD_OP_RADIUS, base)));
+    return 2;
 }
 
 // `C_Spell.GetSpellRadius(spellID)` — modern spell-identifier form.

@@ -786,8 +786,11 @@ offset and removed in the same commit that shipped `GetSpellSchool`.
 
 Shipped in [src/spell/Radius.cpp](src/spell/Radius.cpp) as
 `C_Spell.GetSpellRadius(spellID)` plus the vanilla-positional
-`GetSpellRadius(slot, bookType)`. Returns the AOE radius in yards, or
-`nil` for non-AOE spells.
+`GetSpellRadius(slot, bookType)`. Returns `(baseRadius, modifiedRadius)`,
+or `nil` for non-AOE spells. `modifiedRadius` applies the local player's
+talent/item radius mods (e.g. Arctic Reach) via the shared `Spell::Mod`
+helper — verified in-game: Frost Nova (10230) → `10, 10` without Arctic
+Reach, `10, 12` with rank 2 (+20%).
 
 The radius is **per-effect**, not a single spell-level field: `Spell.dbc`
 has `EffectRadiusIndex[3]` at record `+0x160` (verified by decompiling

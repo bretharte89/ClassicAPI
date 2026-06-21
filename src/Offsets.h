@@ -1417,6 +1417,10 @@ enum Offsets {
     VAR_CHRCLASSES_COUNT = 0x00C0DEF8,
     OFF_CHRCLASSES_NAMES = 0x14,
     OFF_CHRCLASSES_FILENAME = 0x38,
+    // SpellFamilyName for the class — the gate the SpellMod system
+    // matches a spell's OFF_SPELL_RECORD_FAMILY_NAME against. Read by
+    // FUN_006e6ca0 (`DAT_00cecaac = ChrClasses[classID] + 0x3c`).
+    OFF_CHRCLASSES_SPELL_FAMILY = 0x3C,
 
     // ChrRaces.dbc — standard 5-DWORD class shape at 0x00C0DED8,
     // records-pointer at +0x08, count at +0x0C. 29 columns,
@@ -2428,6 +2432,24 @@ enum Offsets {
     VAR_SPELL_RADIUS_RECORDS = 0x00C0D7B0,
     VAR_SPELL_RADIUS_COUNT = 0x00C0D7B4,
     OFF_SPELL_RADIUS_VALUE = 0x04,             // base radius, f32
+
+    // SpellMod (talent / item) accumulators for the LOCAL PLAYER. Two
+    // parallel tables of int32, indexed [familyFlagBit][op]: flat adds at
+    // VAR_SPELLMOD_FLAT_TABLE, percent adds at VAR_SPELLMOD_PCT_TABLE.
+    // Per-bit stride is 0x74 (29 ops); the op is the dword index (op*4
+    // within a slot). A spell's per-effect value is modified by summing,
+    // over the bits set in its SpellFamilyFlags, flat[bit][op] and
+    // pct[bit][op], then `value = (value + flat) * (100 + pct) * 0.01`.
+    // Gated on the spell's SpellFamilyName matching the player's class
+    // family. Decompiled from FUN_006e6b30 / FUN_006e6bf0 (the engine's
+    // ApplySpellMod), which the radius helper FUN_006e6350 invokes with
+    // op 6. These are single global instances = the local player's mods
+    // (vanilla only tracks spell mods for the local player).
+    VAR_SPELLMOD_FLAT_TABLE = 0x00CEAD60,
+    VAR_SPELLMOD_PCT_TABLE = 0x00CECB30,
+    SPELLMOD_SLOT_STRIDE = 0x74,               // bytes per familyFlagBit row
+    SPELLMOD_SLOT_COUNT = 64,                  // SpellFamilyFlags is 64-bit
+    SPELLMOD_OP_RADIUS = 6,                    // op index for spell radius
 
     // SpellDispelType.dbc — maps dispel-type IDs (1..N) to localized
     // names like "Magic", "Curse", "Disease", "Poison". Used by
@@ -3739,6 +3761,16 @@ enum Offsets {
     // spellRec[+0x164] (effect 1) as radius indices. 0 = effect has no
     // radius. Read by GetSpellRadius.
     OFF_SPELL_RECORD_EFFECT_RADIUS_INDEX = 0x160,     // int32[3]
+
+    // SpellFamily classification, used by the SpellMod system (see
+    // VAR_SPELLMOD_*). Verified from FUN_006e6b30: SpellFamilyName at
+    // +0x280 (gates whether the player's class mods apply), 64-bit
+    // SpellFamilyFlags at +0x284 (selects which familyFlagBit rows to
+    // sum). AttributesEx2 (+0x24) bit 0x20000000 disables spell mods.
+    OFF_SPELL_RECORD_FAMILY_NAME = 0x280,             // u32
+    OFF_SPELL_RECORD_FAMILY_FLAGS = 0x284,            // u64
+    OFF_SPELL_RECORD_ATTRIBUTES_EX2 = 0x24,           // u32
+    SPELL_ATTR_EX2_NO_SPELL_MODS = 0x20000000,
 
     // Spell.dbc Mechanic field — the spell-level SpellMechanic ID (→
     // SpellMechanic.dbc), 0 = none. Field 5 of the record

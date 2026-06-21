@@ -6888,13 +6888,20 @@ column is exactly what this function returns):
 
 ### `C_Spell.GetSpellRadius(spellID)` / `GetSpellRadius(slot, bookType)`
 
-Returns the spell's AOE radius in yards, or `nil` for a non-AOE spell
-(no effect carries a radius). Works for any spell, not just ones the
-player has learned.
+Returns `(baseRadius, modifiedRadius)` — the spell's AOE radius in yards,
+or `nil` for a non-AOE spell (no effect carries a radius). Works for any
+spell, not just ones the player has learned.
+
+- **`baseRadius`** — the raw `SpellRadius.dbc` value; caster-independent,
+  what an AOE tracker watching other units wants.
+- **`modifiedRadius`** — `baseRadius` with the **local player's** talent /
+  item modifiers applied (e.g. a Mage's Arctic Reach). Equal to
+  `baseRadius` when the player has no matching modifier.
 
 ```lua
-C_Spell.GetSpellRadius(1449)   -- Arcane Explosion → 10 (AOE)
-C_Spell.GetSpellRadius(133)    -- Fireball          → nil (single-target)
+C_Spell.GetSpellRadius(122)    -- Frost Nova → 10, 10  (no Arctic Reach)
+C_Spell.GetSpellRadius(122)    -- Frost Nova → 10, 12  (with Arctic Reach r2)
+C_Spell.GetSpellRadius(133)    -- Fireball   → nil      (single-target)
 GetSpellRadius(10, "spell")    -- 10th player-book slot, by spellbook position
 ```
 
@@ -6905,16 +6912,19 @@ the vanilla `(slot, bookType)` spellbook position, where `bookType`
 follows the `GetSpellName` convention — `"pet"` → pet book, `"spell"`
 (or any non-pet / omitted value) → player book.
 
-Reads `Spell.dbc`'s per-effect `EffectRadiusIndex[3]` (`+0x160`) and
-resolves each into `SpellRadius.dbc`; since a spell's effects can each
-carry their own radius, the **largest** base radius across the three
-effects is returned.
+`baseRadius` reads `Spell.dbc`'s per-effect `EffectRadiusIndex[3]`
+(`+0x160`) and resolves each into `SpellRadius.dbc`; since a spell's
+effects can each carry their own radius, the **largest** base radius
+across the three effects is returned.
 
-> **Base radius only — no caster scaling.** The engine's internal radius
-> helper adds `radiusPerLevel * casterLevel`, but that needs a unit
-> context; like modern `GetSpellRadius` this returns the spell's base
-> radius. Both DBCs are resident from boot, so the call is synchronous
-> with no caching.
+> **No caster-level scaling.** The engine's internal radius helper also
+> adds `radiusPerLevel * casterLevel`, but that needs a unit context;
+> like modern `GetSpellRadius` this reports the base value. Talent/item
+> modifiers (the `modifiedRadius` return) **are** applied, via the
+> engine's SpellMod system — but only the **local player's**, since the
+> client tracks spell mods for the player alone (there's no way to know
+> another caster's talents). All DBCs / mod tables are resident from
+> boot, so the call is synchronous with no caching.
 
 ### `C_Spell.GetSpellReagents(spellID)`
 
