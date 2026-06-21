@@ -281,6 +281,7 @@ build instructions.
   - [`C_Spell.GetSpellDescription(spellID)`](#c_spellgetspelldescriptionspellid)
   - [`C_Spell.GetSpellMechanicByID(spellID)`](#c_spellgetspellmechanicbyidspellid)
   - [`C_Spell.GetSpellRadius(spellID)` / `GetSpellRadius(slot, bookType)`](#c_spellgetspellradiusspellid--getspellradiusslot-booktype)
+  - [`C_Spell.GetSpellPowerCost(spellIdentifier)`](#c_spellgetspellpowercostspellidentifier)
   - [`C_Spell.GetSpellReagents(spellID)`](#c_spellgetspellreagentsspellid)
   - [`C_Spell.GetSpellSubtext(spellIdentifier)`](#c_spellgetspellsubtextspellidentifier)
   - [`IsPassiveSpell(spellID)` / `IsPassiveSpell(slot, bookType)`](#ispassivespellspellid--ispassivespellslot-booktype)
@@ -6927,6 +6928,43 @@ across the three effects is returned.
 > client tracks spell mods for the player alone (there's no way to know
 > another caster's talents). All DBCs / mod tables are resident from
 > boot, so the call is synchronous with no caching.
+
+### `C_Spell.GetSpellPowerCost(spellIdentifier)`
+
+Returns an array of `SpellPowerCostInfo` tables, or `nil` if the spell
+isn't found or has no resource cost. Vanilla spells have exactly one
+power cost, so the array holds at most one entry.
+
+```lua
+C_Spell.GetSpellPowerCost(10187)   -- Blizzard, Mage with 3/3 Frost Channeling
+-- { [1] = { type = 0, name = "MANA", cost = 1190, minCost = 1190,
+--           costPercent = 0, costPerSec = 0, requiredAuraID = 0,
+--           hasRequiredAura = false } }
+-- base cost 1400, 15% reduction applied -> 1190
+```
+
+| Field | Meaning |
+|-------|---------|
+| `type` | `Enum.PowerType` — `0` mana, `1` rage, `2` focus, `3` energy, `4` happiness (the spell's `PowerType`) |
+| `name` | power token (`"MANA"`, `"RAGE"`, …) |
+| `cost` | **effective** cost for the local player |
+| `minCost` | `== cost` (vanilla has no optional-cost component) |
+| `costPercent` | the spell's `%`-of-base-resource cost, or `0` for a flat cost |
+| `costPerSec` | `0` (vanilla doesn't expose a per-second channel cost in these terms) |
+| `requiredAuraID` | `0` (no form/aura-conditional costs in 1.12) |
+| `hasRequiredAura` | `false` |
+
+`cost` is the value the engine actually charges — base + level scaling +
+`ManaCostPercent`-of-resource + descriptor power-cost mods + the cost
+SpellMod (talents like Frost Channeling). It comes from the engine's own
+cost helper (`FUN_006e31b0`), so it stays in lockstep with what casting
+the spell deducts.
+
+> **Effective vs. base.** This returns the player-modified cost.
+> [`C_Spell.GetSpellInfo`](#c_spellgetspellinfospellid)'s `cost` field is
+> the **base** `ManaCost` (intrinsic spell data, caster-independent) —
+> same base/modified split as
+> [`GetSpellRadius`](#c_spellgetspellradiusspellid--getspellradiusslot-booktype).
 
 ### `C_Spell.GetSpellReagents(spellID)`
 

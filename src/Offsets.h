@@ -639,6 +639,16 @@ enum Offsets {
     // instant / no-cast-time spells.
     FUN_GET_CAST_TIME = 0x006E3340,
 
+    // Effective power cost (mana/rage/energy/…) for a spell:
+    // `__fastcall uint32_t(int spellID, int unit /*0 = local player*/)`.
+    // Computes ManaCost base + per-level + ManaCostPercent-of-resource,
+    // applies the descriptor power-cost modifiers, then the cost
+    // SpellMod (op 0xE / 14). 0xFFFFFFFF on invalid input / no player.
+    // Read by C_Spell.GetSpellPowerCost (the full helper, like the cast
+    // time one — beats replicating op 14 via Spell::Mod since it also
+    // folds in the descriptor cost mods).
+    FUN_GET_SPELL_COST = 0x006E31B0,
+
     // Spell.dbc `m_durationIndex` field — pointer into SpellDuration.dbc.
     // Verified via `FUN_004E44B0` (`0x004e44b0`) and `FUN_006EA000`
     // (`0x006ea000`), both of which read `[spellRec + 0x78]` and use
