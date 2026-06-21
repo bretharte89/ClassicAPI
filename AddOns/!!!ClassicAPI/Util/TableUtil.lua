@@ -66,7 +66,7 @@ function CreateTableReverseEnumerator(tbl, minIndex, maxIndex)
 end
 
 function tDeleteItem(tbl, item)
-	local size = #tbl;
+	local size = tGetN(tbl);
 	local index = size;
 	while index > 0 do
 		if item == tbl[index] then
@@ -74,7 +74,7 @@ function tDeleteItem(tbl, item)
 		end
 		index = index - 1;
 	end
-	return size - #tbl;
+	return size - tGetN(tbl);
 end
 
 function tIndexOf(tbl, item)
