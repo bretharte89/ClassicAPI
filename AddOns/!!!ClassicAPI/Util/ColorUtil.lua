@@ -20,6 +20,24 @@ function CreateColorFromHexString(hexColor)
 	end
 end
 
+function CreateColorFromRGBAHexString(hexColor)
+	if string.len(hexColor) == 8 then
+		local r, g, b, a = ExtractColorValueFromHex(hexColor, 1), ExtractColorValueFromHex(hexColor, 3), ExtractColorValueFromHex(hexColor, 5), ExtractColorValueFromHex(hexColor, 7);
+		return CreateColor(r, g, b, a);
+	else
+		error("CreateColorFromRGBAHexString input must be hexadecimal digits in this format: RRGGBBAA.", 2);
+	end
+end
+
+function CreateColorFromRGBHexString(hexColor)
+	if string.len(hexColor) == 6 then
+		local r, g, b = ExtractColorValueFromHex(hexColor, 1), ExtractColorValueFromHex(hexColor, 3), ExtractColorValueFromHex(hexColor, 5);
+		return CreateColor(r, g, b, 1);
+	else
+		error("CreateColorFromRGBHexString input must be hexadecimal digits in this format: RRGGBB.", 2);
+	end
+end
+
 function CreateColorFromBytes(r, g, b, a)
 	return CreateColor(r / 255, g / 255, b / 255, a / 255);
 end
@@ -29,6 +47,10 @@ function AreColorsEqual(left, right)
 		return left:IsEqualTo(right);
 	end
 	return left == right;
+end
+
+function IsRGBAEqualToColor(r, g, b, a, color)
+	return (color.r == r) and (color.g == g) and (color.b == b) and (color.a == a);
 end
 
 function GetClassColor(classFilename)
@@ -46,7 +68,23 @@ end
 function GetClassColoredTextForUnit(unit, text)
 	local _, classFilename = UnitClass(unit);
 	local color = GetClassColorObj(classFilename);
-	if (color) then 
+	if (color) then
 		return color:WrapTextInColorCode(text);
 	end
+end
+
+function GetFactionColor(factionGroupTag)
+	-- PLAYER_FACTION_COLORS lives in our Constants.lua; PLAYER_FACTION_GROUP
+	-- is the FrameXML faction-tag -> index map. Guarded so a missing table
+	-- yields nil rather than erroring.
+	local group = PLAYER_FACTION_GROUP and PLAYER_FACTION_GROUP[factionGroupTag];
+	return PLAYER_FACTION_COLORS and PLAYER_FACTION_COLORS[group];
+end
+
+function RGBToColorCode(r, g, b)
+	return string.format("|cff%.2x%.2x%.2x", r * 255, g * 255, b * 255);
+end
+
+function RGBTableToColorCode(rgbTable)
+	return RGBToColorCode(rgbTable.r, rgbTable.g, rgbTable.b);
 end
