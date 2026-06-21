@@ -6866,13 +6866,24 @@ addons otherwise keep because vanilla exposes no Lua reader for the field
 — e.g. crowd-control macro conditionals (`[cc:stun]`, `[cc:fear]`) that
 need to know which mechanic a debuff applies.
 
-> **Mechanic IDs are the vanilla `SpellMechanic.dbc` set (27 rows).**
-> Common CC values: `1` charmed, `2` disoriented, `5` fleeing, `7` rooted,
-> `9` silenced, `10` asleep, `11` ensnared, `12` stunned, `13` frozen,
-> `14` incapacitated, `17` polymorphed, `18` banished, `20` shackled,
-> `21` mounted. Note Sap and Gouge report `14` (incapacitated) in 1.12 —
-> the `30` ("sapped") value used by some addon tables is a later-expansion
-> addition and has no row here.
+The complete `SpellMechanic.dbc` set on 1.12 — all 27 rows (the `name`
+column is exactly what this function returns):
+
+| ID | name | ID | name | ID | name |
+|----|------|----|------|----|------|
+| 1 | `charmed` | 10 | `asleep` | 19 | `shielded` |
+| 2 | `disoriented` | 11 | `ensnared` | 20 | `shackled` |
+| 3 | `disarmed` | 12 | `stunned` | 21 | `mounted` |
+| 4 | `distracted` | 13 | `frozen` | 22 | `seduced` |
+| 5 | `fleeing` | 14 | `incapacitated` | 23 | `turned` |
+| 6 | `clumsy` | 15 | `bleeding` | 24 | `horrified` |
+| 7 | `rooted` | 16 | `healing` | 25 | `invulnerable` |
+| 8 | `pacified` | 17 | `polymorphed` | 26 | `interrupted` |
+| 9 | `silenced` | 18 | `banished` | 27 | `dazed` |
+
+> **No mechanic `30`.** The table tops out at `27`. Sap and Gouge report
+> `14` (incapacitated) in 1.12 — the `30` ("sapped") value used by some
+> addon tables is a later-expansion addition and has no row here.
 
 ### `C_Spell.GetSpellReagents(spellID)`
 
