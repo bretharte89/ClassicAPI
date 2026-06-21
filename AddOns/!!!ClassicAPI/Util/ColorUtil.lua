@@ -74,9 +74,9 @@ function GetClassColoredTextForUnit(unit, text)
 end
 
 function GetFactionColor(factionGroupTag)
-	-- PLAYER_FACTION_COLORS lives in our Constants.lua; PLAYER_FACTION_GROUP
-	-- is the FrameXML faction-tag -> index map. Guarded so a missing table
-	-- yields nil rather than erroring.
+	-- Both PLAYER_FACTION_GROUP (tag -> index) and PLAYER_FACTION_COLORS
+	-- (index -> color) live in our Constants.lua. Guarded defensively in
+	-- case a client variant leaves one unset.
 	local group = PLAYER_FACTION_GROUP and PLAYER_FACTION_GROUP[factionGroupTag];
 	return PLAYER_FACTION_COLORS and PLAYER_FACTION_COLORS[group];
 end
