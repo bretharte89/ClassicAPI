@@ -279,6 +279,7 @@ build instructions.
   - [`GetSpellLink(spellID)` / `GetSpellLink(slot, bookType)`](#getspelllinkspellid--getspelllinkslot-booktype)
   - [`C_Spell.GetSpellLink(spellID)`](#c_spellgetspelllinkspellid)
   - [`C_Spell.GetSpellDescription(spellID)`](#c_spellgetspelldescriptionspellid)
+  - [`C_Spell.GetSpellMechanicByID(spellID)`](#c_spellgetspellmechanicbyidspellid)
   - [`C_Spell.GetSpellReagents(spellID)`](#c_spellgetspellreagentsspellid)
   - [`C_Spell.GetSpellSubtext(spellIdentifier)`](#c_spellgetspellsubtextspellidentifier)
   - [`IsPassiveSpell(spellID)` / `IsPassiveSpell(slot, bookType)`](#ispassivespellspellid--ispassivespellslot-booktype)
@@ -6832,6 +6833,46 @@ local desc = C_Spell.GetSpellDescription(133)  -- Fireball Rank 1
 > same way when called outside a unit context. If you need the
 > "currently displayed" tooltip text with caster scaling, use
 > `GameTooltip:SetSpellByID` and read line strings from there.
+
+### `C_Spell.GetSpellMechanicByID(spellID)`
+
+Returns the spell's mechanic as `(mechanicID, name)` — the standard WoW
+`SpellMechanic` ID and its English name. Works for **any** `spellID`, not
+just spells the player has learned.
+
+Returns:
+- nothing (`nil`) if the spell ID is invalid / out of range
+- `(0, nil)` for a known spell that carries no mechanic
+- `(mechanicID, name)` otherwise
+
+The `name` is always the **enUS** string (locale-independent), because the
+mechanic name is a stable token consumers string-match against
+(`"rooted"`, `"stunned"`, `"polymorphed"`, …) — returning a localized
+value would break that matching across clients. It is `nil` only when the
+mechanic has no `SpellMechanic.dbc` record or no English name; the numeric
+ID is still returned in that case.
+
+```lua
+C_Spell.GetSpellMechanicByID(118)  -- Polymorph        → 17, "polymorphed"
+C_Spell.GetSpellMechanicByID(339)  -- Entangling Roots  → 7,  "rooted"
+C_Spell.GetSpellMechanicByID(133)  -- Fireball          → 0,  nil
+```
+
+This reads `Spell.dbc`'s `Mechanic` field and resolves the name from
+`SpellMechanic.dbc` directly — both DBCs are resident from boot, so the
+call is synchronous with no caching or network round-trip (unlike item
+data). It replaces hand-maintained `spellID → mechanic` lookup tables that
+addons otherwise keep because vanilla exposes no Lua reader for the field
+— e.g. crowd-control macro conditionals (`[cc:stun]`, `[cc:fear]`) that
+need to know which mechanic a debuff applies.
+
+> **Mechanic IDs are the vanilla `SpellMechanic.dbc` set (27 rows).**
+> Common CC values: `1` charmed, `2` disoriented, `5` fleeing, `7` rooted,
+> `9` silenced, `10` asleep, `11` ensnared, `12` stunned, `13` frozen,
+> `14` incapacitated, `17` polymorphed, `18` banished, `20` shackled,
+> `21` mounted. Note Sap and Gouge report `14` (incapacitated) in 1.12 —
+> the `30` ("sapped") value used by some addon tables is a later-expansion
+> addition and has no row here.
 
 ### `C_Spell.GetSpellReagents(spellID)`
 
