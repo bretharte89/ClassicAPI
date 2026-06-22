@@ -201,6 +201,7 @@ build instructions.
   - [`C_Item.UnlockAllItems()`](#c_itemunlockallitems)
   - [`C_Item.UnlockItem(itemLocation)`](#c_itemunlockitemitemlocation)
   - [`C_Item.UseAtCursor(itemInfo)`](#c_itemuseatcursoriteminfo)
+  - [`C_Item.UseAtUnit(itemInfo, unit)`](#c_itemuseatunititeminfo-unit)
   - [`C_Item.UseItemByName(itemInfo [, unit])`](#c_itemuseitembynameiteminfo--unit)
   - [`Get*ItemID` — companions to the engine's `Get*ItemLink` family](#getitemid--companions-to-the-engines-getitemlink-family)
   - [`GetAverageItemLevel()`](#getaverageitemlevel)
@@ -301,6 +302,7 @@ build instructions.
   - [`GetSpellSchool(spellID)`](#getspellschoolspellid)
   - [`CastSpellNoToggle(name | spellID)`](#castspellnotogglename--spellid)
   - [`C_Spell.CastAtCursor(spellID)`](#c_spellcastatcursorspellid)
+  - [`C_Spell.CastAtUnit(spellID, unit)`](#c_spellcastatunitspellid-unit)
   - [`C_Spell.CancelSpellByID(spellID)` / `CancelSpellByName(name)`](#c_spellcancelspellbyidspellid--cancelspellbynamename)
   - [`UnitCastingInfo(unit)` / `CastingInfo()`](#unitcastinginfounit--castinginfo)
   - [`UnitChannelInfo(unit)` / `ChannelInfo()`](#unitchannelinfounit--channelinfo)
@@ -4759,6 +4761,32 @@ Cancels placement automatically when the cursor isn't on terrain —
 the item-use packet is never sent, so an off-screen click doesn't
 waste the grenade.
 
+### `C_Item.UseAtUnit(itemInfo, unit)`
+
+Unit-position analog of
+[`C_Item.UseAtCursor`](#c_itemuseatcursoriteminfo): uses `itemInfo` at
+`unit`'s feet rather than the cursor. ClassicAPI's `[@unit]` for
+ground-target on-use items. `itemInfo` accepts the same forms as
+`UseAtCursor` (itemID, bare `"item:N"`, full chat link, localized
+name); `unit` is any unit token (`"player"`, `"target"`,
+`"mouseover"`, `"party1"`, …).
+
+```lua
+C_Item.UseAtUnit(4068, "target")            -- Iron Grenade at the target's feet
+C_Item.UseAtUnit("Iron Grenade", "player")
+```
+
+Same chain as `UseAtCursor` (`Item::Location::FindByArgInBags` +
+`FUN_ITEM_USE`) but committing the placement at the unit's world
+position via
+[`Spell::AtCursor::CommitAtCoords`](#c_spellcastatunitspellid-unit)
+instead of the cursor raycast. Returns `true` when the placement
+landed at the unit; `false` for non-ground-target items (the item
+still fires with any implicit target), unparseable input,
+item-not-in-bags, or an unresolvable unit. The unit is resolved
+before the item fires, so an absent unit fails without consuming the
+item.
+
 ### `C_Item.UseItemByName(itemInfo [, unit])`
 
 Finds the first item in the player's bags matching `itemInfo` and
@@ -7519,6 +7547,36 @@ engine never set the placement flag, and we return `false`.
 The companion item version is
 [`C_Item.UseAtCursor`](#c_itemuseatcursoriteminfo) — same chain via
 the item-use path for grenades / on-use ground-target items.
+
+### `C_Spell.CastAtUnit(spellID, unit)`
+
+Casts a ground-target spell at `unit`'s feet, bypassing the AoE
+reticle click. ClassicAPI's analog of modern's
+`/cast [@unit] Flamestrike` — `CastAtUnit(spellID, "player")` drops it
+at the player's position, `"target"` at the target's, and so on for
+any unit token (`"mouseover"`, `"party1"`, `"raid7"`, …). Returns
+`true` when the placement landed at the unit; `false` for
+non-ground-target spells (cast still fires normally), unknown
+spellIDs, or a unit with no resolvable position.
+
+```lua
+C_Spell.CastAtUnit(2120, "target")   -- Flamestrike at the target's feet
+C_Spell.CastAtUnit(10, "player")     -- Blizzard centered on yourself
+```
+
+Same two-stage shape as
+[`C_Spell.CastAtCursor`](#c_spellcastatcursorspellid), but instead of
+the cursor raycast, step 2 reads the unit's world position from its
+`GetPosition` virtual (the same one `CheckInteractDistance` /
+`UnitInRange` use) and commits placement there via
+`FUN_COMMIT_PLACEMENT_COORDS`. The unit is resolved *before* the cast
+is dispatched, so an absent/invalid unit fails cleanly without
+leaving the engine armed in placement mode. A genuinely unrecognized
+unit-token string raises the engine's standard "Unknown unit" error,
+matching `UnitHealth("garbage")`.
+
+The companion item version is
+[`C_Item.UseAtUnit`](#c_itemuseatunititeminfo-unit).
 
 ### `C_Spell.CancelSpellByID(spellID)` / `CancelSpellByName(name)`
 

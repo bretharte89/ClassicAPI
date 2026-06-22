@@ -15,41 +15,16 @@
 // uses, applied with a fixed 40-yard threshold.
 
 #include "Game.h"
-#include "Offsets.h"
+#include "unit/Position.h"
 
-#include <cstdint>
 #include <cstring>
 
 namespace Unit::Range {
 
 namespace {
 
-using ResolveUnitToken_t = void *(__fastcall *)(const char *token);
-using GetPosition_t = float *(__thiscall *)(void *self, float outBuf[3]);
-
 constexpr float kRangeYards = 40.0f;
 constexpr float kRangeYardsSq = kRangeYards * kRangeYards;
-
-void *ResolveUnit(const char *token) {
-    if (token == nullptr)
-        return nullptr;
-    auto fn = reinterpret_cast<ResolveUnitToken_t>(Offsets::FUN_RESOLVE_UNIT_TOKEN);
-    return fn(token);
-}
-
-// Calls `obj->vtable[5](outBuf)`. The returned float* may equal
-// outBuf (the object filled it directly) or point at a cached
-// position field on the object — either way, deref it for x/y/z.
-// Returns nullptr if the object's vtable virtual returns null (no
-// known position for this object yet).
-float *ReadPosition(void *obj, float outBuf[3]) {
-    if (obj == nullptr)
-        return nullptr;
-    auto **vtable = *reinterpret_cast<void ***>(obj);
-    auto fn = reinterpret_cast<GetPosition_t>(
-        vtable[Offsets::OFF_CGOBJECT_VTBL_GET_POSITION / 4]);
-    return fn(obj, outBuf);
-}
 
 int __fastcall Script_UnitInRange(void *L) {
     if (!Game::Lua::IsString(L, 1)) {
@@ -69,19 +44,10 @@ int __fastcall Script_UnitInRange(void *L) {
         return 2;
     }
 
-    void *unit = ResolveUnit(token);
-    void *player = ResolveUnit("player");
-    if (unit == nullptr || player == nullptr) {
-        Game::Lua::PushBool(L, false);
-        Game::Lua::PushBool(L, false);
-        return 2;
-    }
-
-    float unitBuf[3] = {};
-    float playerBuf[3] = {};
-    const float *unitPos = ReadPosition(unit, unitBuf);
-    const float *playerPos = ReadPosition(player, playerBuf);
-    if (unitPos == nullptr || playerPos == nullptr) {
+    float unitPos[3] = {};
+    float playerPos[3] = {};
+    if (!Unit::Position::ReadToken(token, unitPos) ||
+        !Unit::Position::ReadToken("player", playerPos)) {
         Game::Lua::PushBool(L, false);
         Game::Lua::PushBool(L, false);
         return 2;

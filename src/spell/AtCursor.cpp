@@ -70,9 +70,17 @@ void CancelPlacement() {
     fn();
 }
 
-} // namespace
+void Commit(const float coords[3]) {
+    auto commit = reinterpret_cast<CommitPlacementCoords_t>(
+        Offsets::FUN_COMMIT_PLACEMENT_COORDS);
+    commit(coords);
+}
 
-bool Resolve() {
+// Shared placement-readiness gate for both the cursor and explicit-
+// coords commit paths. Decision tree (preserved from the original
+// Resolve): no placement → false (no cancel); non-ground placement →
+// cancel + false; not in world → false; otherwise ready → true.
+bool PlacementReady() {
     const uint32_t state = *reinterpret_cast<const uint32_t *>(
         Offsets::VAR_SPELL_PLACEMENT_STATE);
     if (state == 0)
@@ -81,12 +89,25 @@ bool Resolve() {
     if ((state & Offsets::SPELL_PLACEMENT_GROUND_MASK) == 0) {
         // Spell wants a unit / item / corpse / etc. — not ground.
         // Cancel so the cursor recovers; caller learns via the false
-        // return that no cursor-placement happened.
+        // return that no placement happened.
         CancelPlacement();
         return false;
     }
 
-    if (!InWorld())
+    return InWorld();
+}
+
+} // namespace
+
+bool CommitAtCoords(const float coords[3]) {
+    if (!PlacementReady())
+        return false;
+    Commit(coords);
+    return true;
+}
+
+bool Resolve() {
+    if (!PlacementReady())
         return false;
 
     void *clickInfo = *reinterpret_cast<void *const *>(
@@ -114,9 +135,7 @@ bool Resolve() {
     const float *coords = reinterpret_cast<const float *>(
         static_cast<const uint8_t *>(clickInfo) + Offsets::OFF_CLICK_INFO_COORDS);
 
-    auto commit = reinterpret_cast<CommitPlacementCoords_t>(
-        Offsets::FUN_COMMIT_PLACEMENT_COORDS);
-    commit(coords);
+    Commit(coords);
     return true;
 }
 
@@ -126,16 +145,11 @@ using NameToSlot_t = int(__fastcall *)(const char *name, void *out);
 using CastDispatch_t = void(__fastcall *)(unsigned slot, int bookType,
                                            unsigned targetGuidLo, float targetGuidHi);
 
-int __fastcall Script_C_Spell_CastAtCursor(void *L) {
-    if (!Game::Lua::IsNumber(L, 1)) {
-        Game::Lua::PushBool(L, false);
-        return 1;
-    }
-    const int spellID = static_cast<int>(Game::Lua::ToNumber(L, 1));
-    if (spellID <= 0) {
-        Game::Lua::PushBool(L, false);
-        return 1;
-    }
+} // namespace
+
+bool DispatchSpellCast(int spellID) {
+    if (spellID <= 0)
+        return false;
 
     // Hand the spellID off as a numeric string — our `Spell::CastByID`
     // hook on `FUN_RESOLVE_SPELL_NAME_TO_SLOT` translates pure-numeric
@@ -148,17 +162,31 @@ int __fastcall Script_C_Spell_CastAtCursor(void *L) {
         Offsets::FUN_RESOLVE_SPELL_NAME_TO_SLOT);
     int bookType = 0;
     const int slot = nameToSlot(numBuf, &bookType);
-    if (slot < 0) {
-        // Spell not in the player's spellbook — can't cast it from
-        // here either way. Match `CastSpellByName`'s silent failure.
-        Game::Lua::PushBool(L, false);
-        return 1;
-    }
+    if (slot < 0)
+        return false; // not in the player's spellbook
 
     auto dispatch = reinterpret_cast<CastDispatch_t>(
         Offsets::FUN_SPELL_CAST_DISPATCH);
     dispatch(static_cast<unsigned>(slot), bookType,
              0, 0.0f); // no implicit target unit; engine handles placement
+    return true;
+}
+
+namespace {
+
+int __fastcall Script_C_Spell_CastAtCursor(void *L) {
+    if (!Game::Lua::IsNumber(L, 1)) {
+        Game::Lua::PushBool(L, false);
+        return 1;
+    }
+    const int spellID = static_cast<int>(Game::Lua::ToNumber(L, 1));
+
+    // Spell not in the player's spellbook → match `CastSpellByName`'s
+    // silent failure.
+    if (!DispatchSpellCast(spellID)) {
+        Game::Lua::PushBool(L, false);
+        return 1;
+    }
 
     const bool placed = Resolve();
     Game::Lua::PushBool(L, placed);

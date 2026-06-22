@@ -30,4 +30,22 @@ namespace Spell::AtCursor {
 // click-info struct pointer.
 bool Resolve();
 
+// Commits an in-flight ground-target placement at explicit world
+// coords (x, y, z) instead of the cursor raycast. Same placement
+// guards as `Resolve` (no placement active → false; non-ground
+// placement → cancel + false; not in world → false), but skips the
+// cursor entirely. Used by `C_Spell.CastAtUnit` / `C_Item.UseAtUnit`
+// to drop the reticle at a unit's feet. Returns true when the
+// placement was committed.
+bool CommitAtCoords(const float coords[3]);
+
+// Resolves a numeric `spellID` to a spellbook slot and dispatches the
+// cast through the engine — the shared front half of
+// `C_Spell.CastAtCursor` / `CastAtUnit`. For a ground-target spell
+// the engine enters placement mode (commit follows via `Resolve` /
+// `CommitAtCoords`); for a normal spell it fires immediately. Returns
+// true if the cast was dispatched (spell is in the player's
+// spellbook), false otherwise.
+bool DispatchSpellCast(int spellID);
+
 } // namespace Spell::AtCursor
