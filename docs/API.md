@@ -270,6 +270,9 @@ build instructions.
   - [`C_QuestLog.IsQuestDataCachedByID(questID)`](#c_questlogisquestdatacachedbyidquestid)
   - [`GetQuestLogLeaderBoardID(objectiveIndex [, questIndex])`](#getquestlogleaderboardidobjectiveindex--questindex)
 
+- [Screen](#screen)
+  - [`GetPhysicalScreenSize()`](#getphysicalscreensize)
+
 - [Spell](#spell)
   - [`C_Spell.DoesSpellExist(spellID)`](#c_spelldoesspellexistspellid)
   - [`C_Spell.GetSchoolString(schoolMask)`](#c_spellgetschoolstringschoolmask)
@@ -6608,6 +6611,40 @@ A separate function keeps the existing call wire-compatible.
 > Iteration mirrors the engine at `0x004E0110`: walk the NPC/GO array
 > first, skip zero slots, then the item array. 1-based `objectiveIndex`
 > counts only non-empty slots.
+
+## Screen
+
+### `GetPhysicalScreenSize()`
+
+Returns `(widthPixels, heightPixels)` — the display's physical
+resolution in pixels. Modern WoW added this as a native in 7.0
+(Legion); FrameXML's `PixelUtil` builds its entire pixel↔UI-unit
+conversion on it (`768.0 / physicalHeight`), which is what lets addons
+snap frames to whole pixels for crisp borders at fractional UI scales.
+
+```lua
+local w, h = GetPhysicalScreenSize()   -- e.g. 1920, 1080
+```
+
+Vanilla 1.12 has no such native — and no pre-parsed pixel-dimension
+global. `GetScreenWidth()`/`GetScreenHeight()` return UI-space units
+(derived from the UIParent aspect ratio at `[UIParent + 0x7c]`), not
+pixels. The engine only ever holds the current mode as the
+`gxResolution` CVar string (`"WIDTHxHEIGHT"`); both `SetScreenResolution`
+(`0x0048bfd0`) and the display-init path sscanf it on demand rather
+than caching dimensions anywhere. So we read the `gxResolution` CVar
+directly through the engine's by-name lookup (`FUN_FIND_CVAR`, value at
+`+0x20`) and parse it — the same source of truth the engine uses.
+
+Returns `1024, 768` (→ factor 1.0, making PixelUtil a 1:1 no-op) when
+the CVar is missing or unparseable. Caveat: in windowed mode
+`gxResolution` reflects the configured render resolution, which may
+differ from the OS window's client size — vanilla exposes no separate
+window-pixel query.
+
+The companion `PixelUtil` table (`PixelUtil.SetPoint`/`SetSize`/
+`SetStatusBarValue`/…) is provided Lua-side by the ClassicAPI addon and
+consumes this function.
 
 ## Spell
 
