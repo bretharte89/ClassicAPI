@@ -111,9 +111,20 @@ void OnWorldTick() {
 
     const uint32_t flags = *reinterpret_cast<const uint32_t *>(
         ctrl + Offsets::OFF_UI_INPUT_FLAGS);
-    const bool moving        = (flags & Offsets::INPUT_FLAGS_MOVING_ANY) != 0;
     const bool freeLookHeld  = (flags & Offsets::INPUT_FLAG_FREE_LOOK) != 0;
     const bool mouselookHeld = (flags & Offsets::INPUT_FLAG_MOUSELOOK) != 0;
+
+    // MOVING — translational input. The WASD / autorun keys set the
+    // INPUT_FLAGS_MOVING_ANY bits directly. The "hold both mouse
+    // buttons to run forward" gesture does NOT: the engine drives that
+    // forward move at the movement layer (FUN_005103e0 from the button
+    // handler) and actually *clears* the autorun bit on the both-button
+    // press, so no MOVING_ANY bit is ever set. Detect it from the
+    // bit combo instead — both mouselook (RMB) and free-look (LMB)
+    // held means the engine is mouse-steering the character forward.
+    const bool mouseSteerMoving = mouselookHeld && freeLookHeld;
+    const bool moving =
+        (flags & Offsets::INPUT_FLAGS_MOVING_ANY) != 0 || mouseSteerMoving;
 
     // TURNING — latched bit-AND-rotation signal:
     //   STARTED fires when mouselook bit is held AND the body yaw

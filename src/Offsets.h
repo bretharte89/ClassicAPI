@@ -3379,13 +3379,19 @@ enum Offsets {
     // Bits 4-7 — WASD movement-key state. Each `MoveForwardStart`
     // / `StrafeLeftStart` / etc. pushes one of these as the bit
     // mask into the engine's button-press handler. Bit `0x1000` is
-    // the autorun-active flag (set by `ToggleAutoRun` and the
-    // both-mouse-buttons combo). `INPUT_FLAGS_MOVING_ANY` is the
-    // engine's own "is the user currently inputting translational
-    // movement" mask, used to drive `PLAYER_STARTED_MOVING` —
-    // matches modern's "STOPPED fires on key release, even
-    // mid-air" semantics because no physics/airborne bit is
-    // involved.
+    // the autorun-active flag (set by `ToggleAutoRun`).
+    // `INPUT_FLAGS_MOVING_ANY` is the engine's own "is the user
+    // currently inputting translational movement via keys/autorun"
+    // mask, used to drive `PLAYER_STARTED_MOVING` — matches modern's
+    // "STOPPED fires on key release, even mid-air" semantics because
+    // no physics/airborne bit is involved.
+    //
+    // NOTE: the "hold both mouse buttons to run forward" gesture is
+    // NOT in this mask. The button handler (`FUN_00514840`) drives
+    // that forward move directly via `FUN_005103e0` and explicitly
+    // *clears* the autorun bit when both buttons go down. Detect it
+    // from `INPUT_FLAG_MOUSELOOK & INPUT_FLAG_FREE_LOOK` both held
+    // instead — see `Player::InputEvents`.
     INPUT_FLAG_MOVE_FORWARD = 0x10,
     INPUT_FLAG_MOVE_BACKWARD = 0x20,
     INPUT_FLAG_STRAFE_LEFT = 0x40,
