@@ -1,16 +1,3 @@
--- Backport of FrameXML/TimeUtil.lua (feasible subset) to vanilla 1.12 /
--- Lua 5.0.
---
--- Ports the deprecated-but-widely-used duration formatters (SecondsToTime,
--- SecondsToClock, SecondsToTimeAbbrev) plus the unit constants/helpers. The
--- SecondsFormatterMixin (the modern replacement) is omitted — it's a heavy
--- mixin class little addon code targets on classic.
---
--- 5.0 notes: `%` -> math.mod, `s:format()` -> string.format. The FrameXML
--- format-string globals these functions consume (DAYS_ABBR, D_HOURS,
--- HOURS_MINUTES_SECONDS, the *_ONELETTER_ABBR set, …) are defined in the
--- locale layer (locales/enUS.lua), which loads first.
-
 SECONDS_PER_MIN = 60;
 SECONDS_PER_HOUR = 60 * SECONDS_PER_MIN;
 SECONDS_PER_DAY = 24 * SECONDS_PER_HOUR;
@@ -51,68 +38,4 @@ function SecondsToClock(seconds, displayZeroHours)
     else
         return string.format(MINUTES_SECONDS, units.minutes, units.seconds);
     end
-end
-
--- 1.12's native unit strings are bare labels ("Hr", "Min") with no `%d`,
--- unlike modern's "%d Hr"; insert the count correctly for either shape.
-local function FormatUnit(fmt, count)
-    if string.find(fmt, "%%d") then
-        return string.format(fmt, count);
-    end
-    return count .. " " .. fmt;
-end
-
-function SecondsToTime(seconds, noSeconds, notAbbreviated, maxCount, roundUp)
-    local time = "";
-    local count = 0;
-    local tempTime;
-    seconds = roundUp and math.ceil(seconds) or math.floor(seconds);
-    maxCount = maxCount or 2;
-
-    -- With a single term, use a higher 1.5x threshold; with 2+, 1.0x.
-    local threshold = (maxCount > 1) and 1.0 or 1.5;
-
-    if seconds >= SECONDS_PER_DAY * threshold then
-        count = count + 1;
-        tempTime = (count == maxCount and roundUp) and math.ceil(seconds / SECONDS_PER_DAY)
-            or math.floor(seconds / SECONDS_PER_DAY);
-        time = FormatUnit(notAbbreviated and D_DAYS or DAYS_ABBR, tempTime);
-        seconds = math.mod(seconds, SECONDS_PER_DAY);
-    end
-    if count < maxCount and seconds >= SECONDS_PER_HOUR * threshold then
-        count = count + 1;
-        if time ~= "" then time = time .. TIME_UNIT_DELIMITER; end
-        tempTime = (count == maxCount and roundUp) and math.ceil(seconds / SECONDS_PER_HOUR)
-            or math.floor(seconds / SECONDS_PER_HOUR);
-        time = time .. FormatUnit(notAbbreviated and D_HOURS or HOURS_ABBR, tempTime);
-        seconds = math.mod(seconds, SECONDS_PER_HOUR);
-    end
-    if count < maxCount and seconds >= SECONDS_PER_MIN * threshold then
-        count = count + 1;
-        if time ~= "" then time = time .. TIME_UNIT_DELIMITER; end
-        tempTime = (count == maxCount and roundUp) and math.ceil(seconds / SECONDS_PER_MIN)
-            or math.floor(seconds / SECONDS_PER_MIN);
-        time = time .. FormatUnit(notAbbreviated and D_MINUTES or MINUTES_ABBR, tempTime);
-        seconds = math.mod(seconds, SECONDS_PER_MIN);
-    end
-    if count < maxCount and seconds > 0 and not noSeconds then
-        if time ~= "" then time = time .. TIME_UNIT_DELIMITER; end
-        time = time .. FormatUnit(notAbbreviated and D_SECONDS or SECONDS_ABBR, seconds);
-    end
-    return time;
-end
-
--- Returns (formatString, value) for the single largest applicable unit.
-function SecondsToTimeAbbrev(seconds, thresholdOverride)
-    local threshold = thresholdOverride or 1.5;
-    if seconds >= SECONDS_PER_DAY * threshold then
-        return DAY_ONELETTER_ABBR, math.ceil(seconds / SECONDS_PER_DAY);
-    end
-    if seconds >= SECONDS_PER_HOUR * threshold then
-        return HOUR_ONELETTER_ABBR, math.ceil(seconds / SECONDS_PER_HOUR);
-    end
-    if seconds >= SECONDS_PER_MIN * threshold then
-        return MINUTE_ONELETTER_ABBR, math.ceil(seconds / SECONDS_PER_MIN);
-    end
-    return SECOND_ONELETTER_ABBR, seconds;
 end
