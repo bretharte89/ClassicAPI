@@ -32,8 +32,12 @@ function PlayerUtil.GetCurrentSpeed()
     return GetUnitSpeed("player") / 7 * 100
 end
 
+local playerGuid
 function GetPlayerGuid()
-	return UnitGUID("player");
+	if not playerGuid then
+		playerGuid = UnitGUID("player");
+	end
+	return playerGuid;
 end
 
 function IsPlayerGuid(guid)
