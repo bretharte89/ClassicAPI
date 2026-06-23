@@ -35,9 +35,9 @@ end
 local playerGuid
 function GetPlayerGuid()
 	if not playerGuid then
-		playerGuid = UnitGUID("player");
+		playerGuid = UnitGUID("player")
 	end
-	return playerGuid;
+	return playerGuid
 end
 
 function IsPlayerGuid(guid)
