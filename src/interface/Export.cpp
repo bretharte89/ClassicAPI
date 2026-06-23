@@ -27,24 +27,26 @@
 //
 // **How it works (vanilla 1.12 / Octo):**
 //
-// 4.3.4 walked each archive's flat (listfile) name table via an
-// `SFileEnumFiles`-style per-archive iterator. Vanilla exposes a
-// different but equivalent primitive: `FUN_FILE_ENUM` (`0x0042AD10`),
-// the unified virtual-filesystem directory walker the macro-icon
-// loader uses. It lists one directory's immediate children across both
-// loose disk files and mounted MPQs, flagging directories with bit
-// 0x10. We recurse over it with a work-queue (never nesting an
-// enumeration inside its own callback — the find state isn't assumed
-// reentrant), collect every matching file path, then read each via
-// `FUN_FILE_READ` and write it to disk with Win32.
+// Like 4.3.4, we enumerate the mounted archives' `(listfile)` — the
+// flat, full-path file index — rather than walking directories. The
+// vanilla primitive is `FUN_MPQ_ENUM_FILES` (`0x00401470`, the same
+// MPQ walk the macro-icon loader uses): it loops the archive handles
+// and dispatches a callback per listfile entry under a path prefix
+// (here `"Interface\"`). We collect every matching full path (deduped
+// across archives), then read each via `FUN_FILE_READ` and write it to
+// disk with Win32.
 //
-// **Deviation from 4.3.4:** we skip the top-level `Interface\AddOns`
-// subtree. Those files are already loose on disk (the player installed
-// them), so re-exporting them to `BlizzardInterfaceCode\AddOns` would
-// just duplicate the user's own addons — and would also drag in our
-// own embedded `!!!ClassicAPI` redirect. The valuable artifact is
-// Blizzard's FrameXML / GlueXML source, which lives elsewhere under
-// `Interface\`.
+// Don't confuse this with `FUN_0042AD10`, the disk-only
+// `FindFirstFileW` walker — pointing the export at that yields zero
+// MPQ files. See the `FUN_MPQ_ENUM_FILES` note in Offsets.h.
+//
+// We export the full `Interface\` tree, matching 4.3.4 (extension
+// filter only, no path exclusion). That INCLUDES `Interface\AddOns\` —
+// the listfile only indexes MPQ-baked files, so those AddOns entries
+// are Blizzard's own UI addons (Blizzard_AuctionUI, Blizzard_TalentUI,
+// …), which are part of the stock UI source. The player's loose,
+// on-disk addons live in no archive's listfile, so they're never
+// enumerated and never re-exported.
 
 #include "Game.h"
 #include "Offsets.h"
@@ -93,18 +95,6 @@ bool EqualsCI(const char *a, const char *b) {
         if (ca == '\0')
             return true;
     }
-}
-
-// Case-insensitive prefix test: does `s` begin with `prefix`?
-bool StartsWithCI(const char *s, const char *prefix) {
-    for (; *prefix != '\0'; ++s, ++prefix) {
-        char a = *s, b = *prefix;
-        if (a >= 'A' && a <= 'Z') a = static_cast<char>(a + ('a' - 'A'));
-        if (b >= 'A' && b <= 'Z') b = static_cast<char>(b + ('a' - 'A'));
-        if (a != b)
-            return false;
-    }
-    return true;
 }
 
 bool HasExtension(const char *name, const char *const *exts, int count) {
@@ -180,9 +170,7 @@ Collector *g_collector = nullptr;
 int __fastcall CollectCb(const char *fullPath) {
     Collector *c = g_collector;
     if (c != nullptr && fullPath != nullptr &&
-        HasExtension(fullPath, c->exts, c->extCount) &&
-        // Skip the player's own addon tree — already loose on disk.
-        !StartsWithCI(fullPath, "Interface\\AddOns\\")) {
+        HasExtension(fullPath, c->exts, c->extCount)) {
         if (c->seen.insert(fullPath).second)
             c->files.emplace_back(fullPath);
     }

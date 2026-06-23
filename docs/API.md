@@ -868,12 +868,13 @@ ExportInterfaceFiles: wrote 1234 code file(s) to BlizzardInterfaceCode\
 
 Notes:
 
-- The walk skips `Interface\AddOns\` — those files are already loose on
-  disk (you installed them), so re-exporting them would just duplicate
-  your own addons.
 - It enumerates the mounted MPQs' `(listfile)`, so it surfaces whatever
-  the archives actually ship; files present in multiple archives
-  (base + patches) are written once.
+  the archives actually ship — including Blizzard's own UI addons under
+  `Interface\AddOns\Blizzard_*` (AuctionUI, TalentUI, TradeSkillUI,
+  etc.), which are part of the stock UI source. Files present in
+  multiple archives (base + patches) are written once.
+- Your own loose, on-disk addons are *not* exported — they aren't in
+  any archive's listfile, so they're never enumerated.
 - It runs synchronously and briefly freezes the client while it walks
   `Interface\` — expected for a one-shot extraction.
 
