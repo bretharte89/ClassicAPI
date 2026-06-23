@@ -256,11 +256,15 @@ int __fastcall Console_ExportInterfaceFiles(void * /*unused*/, const char *args)
     return 1;
 }
 
-// Register the console command once per process. Both the in-game and
-// glue boot hooks call this; the static latch (plus the registrar's
-// own name-dedup) makes repeat calls harmless. The command name and
-// help string are stored by pointer, so they must be static — string
-// literals satisfy that for the DLL's lifetime.
+// Register the console command. A console command is process-global
+// (not Lua-state-bound) and persists for the whole session, so a single
+// registration at glue boot — the earliest hook, firing at launch
+// before any console can be opened — covers both the login console and
+// in-world. The glue hook re-fires on each world→glue return (logout),
+// so the static latch (plus the registrar's own name-dedup) keeps
+// re-registration a no-op. The command name and help string are stored
+// by pointer, so they must be static — string literals satisfy that
+// for the DLL's lifetime.
 void EnsureRegistered() {
     static bool registered = false;
     if (registered)
@@ -273,8 +277,7 @@ void EnsureRegistered() {
         "Usage: ExportInterfaceFiles art|code");
 }
 
-const Game::ModuleAutoRegister _autoreg{&EnsureRegistered};
-const Game::GlueModuleAutoRegister _autoregGlue{&EnsureRegistered};
+const Game::GlueModuleAutoRegister _autoreg{&EnsureRegistered};
 
 } // namespace
 
