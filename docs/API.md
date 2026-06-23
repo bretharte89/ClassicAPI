@@ -7432,6 +7432,70 @@ addons reading positions 4..8 by index still work.
 Equivalent to the extension of `GetWeaponEnchantInfo` introduced
 in 3.x.
 
+### `C_Item.GetEnchantInfo(enchantID)`
+
+Resolves an item-enchantment ID — the `enchantID` returned by
+[`C_Item.GetWeaponEnchantInfo`](#c_itemgetweaponenchantinfo) for a
+weapon's temporary enchant, and the same IDs item permanent enchants
+use — into a table:
+
+```lua
+local info = C_Item.GetEnchantInfo(enchantID)
+-- info.enchantID = <id>
+-- info.name      = "Crusader"        -- localized display name
+-- info.effects   = { {type=1, amount=0, arg=20007} }
+-- info.spellID   = 20007             -- spell-type enchants only
+```
+
+```lua
+-- A proc/equip enchant → chain its spellID into C_Spell:
+local info = C_Item.GetEnchantInfo(1900)          -- "Crusader"
+if info.spellID then
+    print(C_Spell.GetSpellDescription(info.spellID))  -- the proc's text
+end
+```
+
+`effects` is an array of the record's non-empty effect slots, each
+`{ type, amount, arg }` where `type` is the standard
+`ITEM_ENCHANTMENT_TYPE`:
+
+| type | meaning | carries |
+|------|---------|---------|
+| 1 | combat-proc spell | `arg` = spellID |
+| 2 | weapon damage | `amount` = +damage |
+| 3 | equip spell / aura | `arg` = spellID |
+| 4 | resistance / armor | `amount` = +value |
+| 5 | stat | `arg` = stat index, `amount` = value |
+| 6 | totem | — |
+| 7 | use spell | `arg` = spellID |
+
+For spell types (1/3/7) `arg` is a spellID feedable into
+[`C_Spell.GetSpellInfo`](#getspellinfospellid--getspellinfoslot-booktype) /
+`GetSpellDescription`; the first such id is also surfaced at top level
+as `spellID` for convenience (absent for non-spell enchants like
+sharpening stones).
+
+Returns `nil` for a non-numeric / non-positive id, an out-of-range
+id, or a record with no name.
+
+Reads `SpellItemEnchantment.dbc` (records `0x00C0D7D8`, count
+`0x00C0D7DC`) — the 24-column table every enchant ID indexes:
+`Type[3]@+0x04`, `Amount[3]@+0x10`, `EffectArg[3]@+0x28`,
+`Name[8]@+0x34` (locale-indexed). The layout was verified by parsing
+the on-disk DBC against known records (Crusader 1900 → type 1, arg
+20007; Sharpened +3 → type 2, amount 3). Fully resident from boot, so
+it answers for any enchant ID with no caching or round-trip.
+
+Lives in `C_Item` (not `C_Spell`) because the id originates from
+`C_Item.GetWeaponEnchantInfo` and the concept is an item enchantment —
+`SpellItemEnchantment` is just the DBC's internal name (enchants are
+*implemented* via spell effects).
+
+> **Not derivable: the source item.** The enchant record holds no
+> back-reference to the item that applied it, and vanilla has no
+> client-side reverse index (enchantID → item). Finding it would need
+> an external scraped DB (pfQuest/Questie-style).
+
 ### `IsHarmfulSpell(spell)` / `IsHelpfulSpell(spell)`
 
 Classify a spell as offensive (`IsHarmfulSpell`) or non-offensive

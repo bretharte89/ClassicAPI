@@ -2428,6 +2428,29 @@ enum Offsets {
     VAR_SPELLMECHANIC_COUNT = 0x00C0D7C8,      // max mechanic ID
     OFF_SPELLMECHANIC_NAME = 0x04,             // char *name[9], locale-indexed
 
+    // SpellItemEnchantment.dbc — the table a weapon/item enchant ID
+    // (e.g. the enchantID from `C_Item.GetWeaponEnchantInfo`) indexes.
+    // Records-ptr at instance +0x08, count at +0x0C (instance 0x00C0D7D0).
+    // 24-DWORD records (recordSize 0x60). Layout fully verified by
+    // parsing the on-disk SpellItemEnchantment.dbc against known records
+    // (Crusader 1900: Type[0]=1, Arg[0]=20007 "Holy Strength";
+    // Sharpened+3 id 13: Type[0]=2, Amount[0]=3; Reinforced Armor+8 id 15:
+    // Type[0]=4, Amount[0]=8). OFF_..._NAME (+0x34) is cross-confirmed by
+    // two engine readers (FUN_00496170 / FUN_00495d60) that push
+    // `[rec + 0x34 + VAR_LOCALE_INDEX*4]` as the display name.
+    //   Type[i]   : ITEM_ENCHANTMENT_TYPE — 1=combat-proc spell,
+    //               2=damage, 3=equip spell, 4=resistance, 5=stat,
+    //               6=totem, 7=use spell. 0 = empty slot.
+    //   Amount[i] : magnitude for damage/resist/stat types (min; vanilla
+    //               min==max). 0 for spell types (value lives in the spell).
+    //   Arg[i]    : spellID for spell types (1/3/7); stat index for STAT.
+    VAR_SPELLITEMENCHANT_RECORDS = 0x00C0D7D8, // SpellItemEnchantmentRecord *records[enchantID]
+    VAR_SPELLITEMENCHANT_COUNT = 0x00C0D7DC,   // max enchant ID
+    OFF_SPELLITEMENCHANT_TYPE = 0x04,          // int Type[3]
+    OFF_SPELLITEMENCHANT_AMOUNT = 0x10,        // int Amount[3] (EffectPointsMin)
+    OFF_SPELLITEMENCHANT_ARG = 0x28,           // int EffectArg[3]
+    OFF_SPELLITEMENCHANT_NAME = 0x34,          // char *name[8], locale-indexed
+
     // Spell.dbc School field — 0-based integer at record +0x04.
     // Verified empirically against Fireball (133) → School=2 (Fire)
     // and Frostbolt (116) → School=4 (Frost) on Octo 1.12.1. Vanilla
