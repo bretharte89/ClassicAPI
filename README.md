@@ -99,6 +99,7 @@ when launching with `-console`), not as Lua functions. See the
 |---------|--------------|
 | `ExportInterfaceFiles code` | Extracts Blizzard's UI source (`.lua`/`.xml`/`.toc`/`.xsd`) from the MPQs to `BlizzardInterfaceCode\` |
 | `ExportInterfaceFiles art` | Extracts Blizzard's UI art (`.blp`/`.tga`) from the MPQs to `BlizzardInterfaceArt\` |
+| `ExportDBCFiles` | Extracts the client's `.dbc` tables from the MPQs to `DBFilesClient\` |
 
 ### Events
 

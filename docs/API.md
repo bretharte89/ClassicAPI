@@ -35,6 +35,7 @@ build instructions.
 
 - [Console](#console)
   - [`ExportInterfaceFiles art|code` (console command)](#exportinterfacefiles-artcode-console-command)
+  - [`ExportDBCFiles` (console command)](#exportdbcfiles-console-command)
 
 - [Container](#container)
   - [`C_Container.GetContainerItemID(bagIndex, slotIndex)`](#c_containergetcontaineritemidbagindex-slotindex)
@@ -877,6 +878,37 @@ Notes:
   any archive's listfile, so they're never enumerated.
 - It runs synchronously and briefly freezes the client while it walks
   `Interface\` — expected for a one-shot extraction.
+
+### `ExportDBCFiles` (console command)
+
+A ClassicAPI-original companion to `ExportInterfaceFiles` that dumps
+every `.dbc` table the client loads to `DBFilesClient\` under the working
+directory (next to `WoW.exe`). No subcommand — there's only one thing to
+export.
+
+```
+> ExportDBCFiles
+ExportDBCFiles: wrote 155 .dbc file(s) to DBFilesClient\
+```
+
+Unlike the MPQ `(listfile)` alone (which omits ~18 of the tables the
+client actually loads — mostly cosmetic animation/sound/lookup DBCs that
+Blizzard left out of the index), this unions two sources for a complete
+set:
+
+1. the **MPQ `(listfile)`** under `DBFilesClient\` — catches files that
+   ship in the archives without a loader (e.g. `wowerror_strings.dbc`);
+2. a **`.text` scan for the DBC path-getter pattern**
+   (`mov eax, &"DBFilesClient\X.dbc"; ret`) — the authoritative list of
+   what this build loads. The master DBC init (`FUN_0053f8b0`) is
+   straight-line with no iterable name table, so the per-DBC getters
+   *are* the registry; scanning for them is the same technique that
+   built [docs/DBCs.md](DBCs.md).
+
+Results are deduped case-insensitively. Handy for a local DBC dump to
+inspect schemas/values directly — e.g. verifying a record's column
+layout against a known row, the way `C_Item.GetEnchantInfo`'s effect
+columns were confirmed — without a standalone MPQ extraction tool.
 
 ## Container
 
