@@ -310,8 +310,8 @@ build instructions.
   - [`C_Spell.CastAtCursor(spellID)`](#c_spellcastatcursorspellid)
   - [`C_Spell.CastAtUnit(spellID, unit)`](#c_spellcastatunitspellid-unit)
   - [`C_Spell.CancelSpellByID(spellID)` / `CancelSpellByName(name)`](#c_spellcancelspellbyidspellid--cancelspellbynamename)
-  - [`UnitCastingInfo(unit)` / `CastingInfo()`](#unitcastinginfounit--castinginfo)
-  - [`UnitChannelInfo(unit)` / `ChannelInfo()`](#unitchannelinfounit--channelinfo)
+  - [`C_Spell.UnitCastingInfo(unit)` / `C_Spell.CastingInfo()`](#c_spellunitcastinginfounit--c_spellcastinginfo)
+  - [`C_Spell.UnitChannelInfo(unit)` / `C_Spell.ChannelInfo()`](#c_spellunitchannelinfounit--c_spellchannelinfo)
 
 - [SpellBook](#spellbook)
   - [`FindSpellBookSlotByID(spellID)`](#findspellbookslotbyidspellid)
@@ -7756,21 +7756,31 @@ pass the plain name. Multi-rank buffs match on first-found; if you
 have multiple ranks of the same buff active (unusual but possible with
 e.g. paladin blessings before talent merge), the first slot wins.
 
-### `UnitCastingInfo(unit)` / `CastingInfo()`
+### `C_Spell.UnitCastingInfo(unit)` / `C_Spell.CastingInfo()`
 
 Returns the unit's in-progress **regular cast** (not a channel), or
-`nil` if it isn't casting. `CastingInfo()` is `UnitCastingInfo("player")`
-without the unit-token lookup.
+`nil` if it isn't casting. `C_Spell.CastingInfo()` is
+`C_Spell.UnitCastingInfo("player")` without the unit-token lookup.
+
+> **Under `C_Spell`, not the global `UnitCastingInfo`.** Modern WoW
+> exposes these as globals, but a global here would clobber addons that
+> ship their own vanilla cast-tracking via the `_G.UnitCastingInfo or
+> <fallback>` idiom — e.g. ShaguTweaks' `libcast` scrapes the combat
+> log for **remote/enemy** casts the 1.12 engine never exposes. If we
+> occupied the global, those addons would adopt our player-only version
+> and lose their (superior, for that case) fallback. So we cede the
+> global names and register under `C_Spell` instead. Same for
+> `UnitChannelInfo`/`ChannelInfo`.
 
 ```
 name, displayName, textureID, startTimeMs, endTimeMs, isTradeskill,
   castID, notInterruptible, castingSpellID, castBarID, delayTimeMs
-    = UnitCastingInfo(unit)
+    = C_Spell.UnitCastingInfo(unit)
 ```
 
 ```lua
 -- mid-cast:
-UnitCastingInfo("player")
+C_Spell.UnitCastingInfo("player")
 -- "Conjure Food", "Conjure Food", "Interface\\Icons\\INV_Misc_Food_...",
 --  907928268, 907931268, false, nil, false, 28612, nil, 0
 ```
@@ -7781,11 +7791,11 @@ so progress is `(GetTime()*1000 - startTimeMs) / (endTimeMs - startTimeMs)`.
 > **Local player only.** Vanilla 1.12 stores no cast times anywhere
 > readable (the cast bar is Lua-driven off `SPELLCAST_START`), and it
 > tracks regular casts for nobody but you — other units' casts exist
-> only as transient animation visuals. So `UnitCastingInfo(otherUnit)`
+> only as transient animation visuals. So `C_Spell.UnitCastingInfo(otherUnit)`
 > returns `nil`. We self-track the player's cast on a per-frame tick
 > (`VAR_CURRENT_CAST_SPELL`), stamping `startTimeMs = now` and
 > `endTimeMs = now + base cast time`. Instant casts return `nil` (no
-> cast bar). See [`UnitChannelInfo`](#unitchannelinfounit--channelinfo)
+> cast bar). See [`C_Spell.UnitChannelInfo`](#c_spellunitchannelinfounit--c_spellchannelinfo)
 > for channels, which *are* visible on other units.
 >
 > `isTradeskill` is real — the spell's `SPELL_ATTR_TRADESPELL` flag, so
@@ -7799,30 +7809,32 @@ so progress is `(GetTime()*1000 - startTimeMs) / (endTimeMs - startTimeMs)`.
 > `castID`/`castBarID` = `nil`, `notInterruptible` = `false`,
 > `delayTimeMs` = `0`.
 
-### `UnitChannelInfo(unit)` / `ChannelInfo()`
+### `C_Spell.UnitChannelInfo(unit)` / `C_Spell.ChannelInfo()`
 
 Returns the unit's in-progress **channel**, or `nil` if it isn't
-channeling. `ChannelInfo()` is `UnitChannelInfo("player")` without the
-token lookup.
+channeling. `C_Spell.ChannelInfo()` is `C_Spell.UnitChannelInfo("player")`
+without the token lookup. (Under `C_Spell` rather than the global name
+for the same reason as
+[`C_Spell.UnitCastingInfo`](#c_spellunitcastinginfounit--c_spellcastinginfo).)
 
 ```
 name, displayName, textureID, startTimeMs, endTimeMs, isTradeskill,
-  notInterruptible, spellID = UnitChannelInfo(unit)
+  notInterruptible, spellID = C_Spell.UnitChannelInfo(unit)
 ```
 
 ```lua
-ChannelInfo()
+C_Spell.ChannelInfo()
 -- "Blizzard", "Blizzard", "Interface\\Icons\\Spell_Frost_IceStorm",
 --  907894314, 907902314, false, false, 10187
 ```
 
 Unlike casts, the channeled spellID **is** broadcast for every unit
-(`UNIT_FIELD_CHANNEL_SPELL`), so `UnitChannelInfo("target")` works on
-other units — returning `name`/`displayName`/`textureID`/`spellID` with
-**`nil` start/end times** (we only track the local player's channel
+(`UNIT_FIELD_CHANNEL_SPELL`), so `C_Spell.UnitChannelInfo("target")`
+works on other units — returning `name`/`displayName`/`textureID`/`spellID`
+with **`nil` start/end times** (we only track the local player's channel
 start). For the player, the full timing is present
 (`endTimeMs - startTimeMs` = channel duration). Same placeholder fields
-as `UnitCastingInfo`.
+as `C_Spell.UnitCastingInfo`.
 
 ## SpellBook
 
@@ -8069,7 +8081,7 @@ This is distinct from spell channeling: the function fires for
 *participants* who clicked the portal, not the warlock who cast
 Ritual of Summoning. Vanilla has no Lua surface for this state —
 the engine's `SPELLCAST_CHANNEL_*` events don't fire and
-`CastingInfo()` returns nothing — so addons that want to react to
+`C_Spell.CastingInfo()` returns nothing — so addons that want to react to
 the player being committed to a ritual (e.g. suppress autorun
 toggles, hide nameplate clicks, warn before movement) have no other
 way to detect it.

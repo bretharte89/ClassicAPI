@@ -241,7 +241,7 @@ static int __fastcall Script_CastingInfo(void *L) { return PushCastInfo(L, g_cas
 // in vanilla; any other unit returns nil.
 static int __fastcall Script_UnitCastingInfo(void *L) {
     if (!Game::Lua::IsString(L, 1)) {
-        Game::Lua::Error(L, "Usage: UnitCastingInfo(\"unit\")");
+        Game::Lua::Error(L, "Usage: C_Spell.UnitCastingInfo(\"unit\")");
         return 0;
     }
     if (ArgIsPlayer(L))
@@ -258,7 +258,7 @@ static int __fastcall Script_ChannelInfo(void *L) {
 // texture (no times) for other units via the broadcast +0x228 field.
 static int __fastcall Script_UnitChannelInfo(void *L) {
     if (!Game::Lua::IsString(L, 1)) {
-        Game::Lua::Error(L, "Usage: UnitChannelInfo(\"unit\")");
+        Game::Lua::Error(L, "Usage: C_Spell.UnitChannelInfo(\"unit\")");
         return 0;
     }
     const char *token = Game::Lua::ToString(L, 1);
@@ -277,10 +277,18 @@ static int __fastcall Script_UnitChannelInfo(void *L) {
 }
 
 static void RegisterLuaFunctions() {
-    Game::Lua::RegisterGlobalFunction("UnitCastingInfo", &Script_UnitCastingInfo);
-    Game::Lua::RegisterGlobalFunction("CastingInfo", &Script_CastingInfo);
-    Game::Lua::RegisterGlobalFunction("UnitChannelInfo", &Script_UnitChannelInfo);
-    Game::Lua::RegisterGlobalFunction("ChannelInfo", &Script_ChannelInfo);
+    // Registered under C_Spell rather than as globals to avoid clobbering
+    // the global `UnitCastingInfo` / `UnitChannelInfo` names. Addons that
+    // ship their own vanilla cast-tracking libraries use the
+    // `_G.UnitCastingInfo or <fallback>` idiom (e.g. ShaguTweaks'
+    // libcast.lua scrapes the combat log for remote/enemy casts the 1.12
+    // engine never exposes). Occupying the global makes them adopt our
+    // player-only version and drop their superior fallback — so we cede
+    // the global names and expose the functions here instead.
+    Game::Lua::RegisterTableFunction("C_Spell", "UnitCastingInfo", &Script_UnitCastingInfo);
+    Game::Lua::RegisterTableFunction("C_Spell", "CastingInfo", &Script_CastingInfo);
+    Game::Lua::RegisterTableFunction("C_Spell", "UnitChannelInfo", &Script_UnitChannelInfo);
+    Game::Lua::RegisterTableFunction("C_Spell", "ChannelInfo", &Script_ChannelInfo);
 }
 
 static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
