@@ -242,6 +242,50 @@ void PushLocalizedFormatInt(void *L, const char *globalName,
                             const char *fallback, int n);
 } // namespace Lua
 
+// Developer-console command system — the `~` console available when the
+// client is launched with `-console`. Vanilla maintains a
+// `TSExplicitList<CONSOLECOMMAND>`; these wrap the engine's registrar
+// and output paths. See the "Console commands & Interface file export"
+// section in CLAUDE.md for the underlying offsets and ABI.
+namespace Console {
+
+// Console-command handler ABI: `args` is the command-line text after
+// the command name (empty string when invoked bare). The engine
+// ignores the return value; return 1 by convention.
+using CommandHandler = int(__fastcall *)(void *unused, const char *args);
+
+// Help-grouping categories — the engine's `help` enumerates these nine
+// (in this order). Cosmetic: the value only affects which group `help`
+// lists the command under; the engine doesn't validate it. Values are
+// sequential table indices (graphics=1 confirmed via FUN_0066F6C0, the
+// rest follow the displayed order).
+enum Category {
+    CATEGORY_DEBUG = 0,
+    CATEGORY_GRAPHICS = 1,
+    CATEGORY_CONSOLE = 2,
+    CATEGORY_COMBAT = 3,
+    CATEGORY_GAME = 4,
+    CATEGORY_DEFAULT = 5,
+    CATEGORY_NET = 6,
+    CATEGORY_SOUND = 7,
+    CATEGORY_GM = 8,
+};
+
+// Registers a console command. `name` and `description` are stored BY
+// POINTER (the engine doesn't copy them), so pass string literals or
+// otherwise process-lifetime storage. Dedup-safe: re-registering the
+// same name is a harmless no-op, so it's fine to call from a hook that
+// fires more than once. Safe any time after engine boot — the command
+// table self-initializes on first use. `description` may be nullptr.
+void RegisterCommand(const char *name, CommandHandler handler, int category,
+                     const char *description);
+
+// Writes a line to the console output buffer. No-ops cleanly when the
+// console isn't active, so it's always safe to call.
+void Write(const char *line);
+
+} // namespace Console
+
 // Self-registration for API modules. Each module .cpp declares a file-scope
 // `static const Game::ModuleAutoRegister _r{&RegisterLuaFunctions};`, which
 // chains itself onto a global list at DLL-load time. `RunModuleRegistrations`

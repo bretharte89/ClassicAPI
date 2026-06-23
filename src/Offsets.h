@@ -2820,8 +2820,12 @@ enum Offsets {
     // trailing zeros, hands the buffer to the caller. Caller frees
     // via `FUN_STORM_SMEM_FREE`.
     //
-    //   __cdecl int FileRead(
-    //       int          unused,         // always 0 from engine call sites
+    //   __stdcall int FileRead(    // callee cleans 28 bytes (RET 0x1C);
+    //                              // NOT __cdecl — see src/addons/Embedded.cpp
+    //       int          archive,        // 0 = merged VFS; or an archive
+    //                                    //   handle to read from one MPQ
+    //                                    //   (e.g. FUN_00648FB0 reads its
+    //                                    //   "(listfile)" this way)
     //       const char  *path,           // "Interface\AddOns\X\Y.lua"
     //       void       **outBuf,         // Storm-allocated content
     //       size_t      *outSize,        // optional, may be NULL
@@ -2835,6 +2839,85 @@ enum Offsets {
     // the same Storm allocator the engine uses means the caller's
     // normal `SMemFree` works without us tracking lifetime.
     FUN_FILE_READ = 0x00648620,
+
+    // MPQ file enumerator — walks every mounted archive's `(listfile)`
+    // and invokes a callback for each entry whose path begins with a
+    // given prefix. This is the engine's flat, recursive name walk (the
+    // `SFileEnumFiles` analog), NOT a per-directory find. It's the
+    // function the macro-icon loader `FUN_LOAD_MACRO_ICONS` uses to
+    // surface MPQ-baked icons under `Interface\Icons\`.
+    //
+    //   void __fastcall MpqEnumFiles(
+    //       int         archiveSelector, // ecx — archive-set selector;
+    //                                     //       the loader passes 6.
+    //                                     //       Covers the primary
+    //                                     //       mounted archives plus
+    //                                     //       one selected extra.
+    //       const char *pathPrefix,      // edx — e.g. "Interface\" —
+    //                                     //       only listfile entries
+    //                                     //       under this prefix are
+    //                                     //       reported.
+    //       FileCb      callback,         // per-file callback (below)
+    //       void       *userParam);       // loader passes 0
+    //
+    // The callback is `int __fastcall(const char *fullPath /*ecx*/)`;
+    // `fullPath` is the entry's full archive-relative path (e.g.
+    // "Interface\FrameXML\Foo.lua"). Returning 0 STOPS enumeration —
+    // return non-zero to keep going (note: the OPPOSITE of the disk
+    // find at `FindFirstFileW`). The continue/stop sense is verified in
+    // the per-archive walker `FUN_00648FB0`, whose loop does
+    // `if (... && callback() == 0) break;`.
+    //
+    // Internally: `FUN_00401470` loops the archive-handle array
+    // (`DAT_008826BC`, count `DAT_00882740`) calling the per-archive
+    // listfile walker `FUN_00648FB0`, which reads each archive's
+    // `(listfile)` via `FUN_FILE_READ`, splits on CR/LF, prefix-filters
+    // via a trampoline, and dispatches the callback. Used by
+    // `Interface::Export` (`ExportInterfaceFiles`).
+    //
+    // NB: the sibling `FUN_0042AD10` is a DISK-only walker (it resolves
+    // to kernel32 `FindFirstFileW` and never sees MPQ contents) — don't
+    // confuse the two. The macro `Icons.cpp` callback labels have the
+    // disk/MPQ roles swapped; this entry is the authoritative note.
+    FUN_MPQ_ENUM_FILES = 0x00401470,
+
+    // Console-command registrar — the vanilla equivalent of 4.3.4's
+    // `FUN_00654c90`. Registers a developer-console command (the `~`
+    // console you get when launching with `-console`).
+    //
+    //   int __fastcall RegisterConsoleCommand(
+    //       const char *name,        // ecx — command name; stored BY
+    //                                 //       POINTER (no copy), so must
+    //                                 //       have static lifetime
+    //       Handler     handler,     // edx — see below
+    //       int         category,    // help-grouping category id
+    //       const char *description);// help text, or NULL
+    //   Returns 1 on success, 0 if a command with that name already
+    //   exists (dedup-safe — repeat calls are harmless no-ops). The
+    //   command node is never freed for a static-literal name, so we
+    //   don't need SStrDup the way the event table does.
+    //
+    // The handler is `int __fastcall(void *unused /*ecx*/, const char
+    // *args /*edx*/)`; `args` is the text after the command name
+    // (`*args == '\0'` when invoked bare). Return 1. Categories seen in
+    // the binary: graphics=1, help=2, misc=5 (we use 5, matching
+    // 4.3.4's `ExportInterfaceFiles`); the value is cosmetic (only
+    // affects `help` grouping) and unvalidated by the registrar.
+    //
+    // Self-initializes the command hash table on first use, so it is
+    // safe to call any time after the engine's own console subsystem
+    // boots (well before our glue / load-script hooks fire). Verified
+    // via the bulk graphics registrar `FUN_0066F6C0` and the `help`
+    // command's own registration in `FUN_006400E0`.
+    FUN_CONSOLE_COMMAND_REGISTER = 0x0063F9E0,
+
+    // `ConsoleWrite(const char *line /*ecx*/, int colorFlag /*edx*/)` —
+    // appends a line to the developer console's output buffer. No-ops
+    // cleanly when the console isn't active (gated on the console-init
+    // globals `DAT_00C4EC1C` / `DAT_00C4EC34`), so it's safe to call
+    // unconditionally from a console-command handler. `colorFlag` 0 =
+    // default. Used by `Interface::Export` for "wrote N files" feedback.
+    FUN_CONSOLE_WRITE = 0x0063CB50,
 
     // TOC parser — `__fastcall(this=addonName)`. Already documented in
     // CLAUDE.md under "AddOn registry & hot-reload". Dedup-safe: if

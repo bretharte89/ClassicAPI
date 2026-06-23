@@ -236,6 +236,25 @@ void PushLocalizedFormatInt(void *L, const char *globalName,
 }
 } // namespace Lua
 
+namespace Console {
+namespace {
+using RegisterCommand_t = int(__fastcall *)(const char *name, void *handler,
+                                            int category, const char *description);
+using Write_t = void(__fastcall *)(const char *line, int colorFlag);
+} // namespace
+
+void RegisterCommand(const char *name, CommandHandler handler, int category,
+                     const char *description) {
+    auto fn = reinterpret_cast<RegisterCommand_t>(Offsets::FUN_CONSOLE_COMMAND_REGISTER);
+    fn(name, reinterpret_cast<void *>(handler), category, description);
+}
+
+void Write(const char *line) {
+    auto fn = reinterpret_cast<Write_t>(Offsets::FUN_CONSOLE_WRITE);
+    fn(line, 0);
+}
+} // namespace Console
+
 namespace {
 ModuleAutoRegister *g_moduleHead = nullptr;
 GlueModuleAutoRegister *g_glueModuleHead = nullptr;

@@ -89,6 +89,17 @@ functions, just behavior the stock 1.12 engine didn't have. See the
 | `CastSpellByName("<spellID>")` | Same — numeric strings resolve through the engine's name resolver |
 | `CastSpellNoToggle("<name>")` in a macro | Engine's macro parser now recognizes it as a primary-spell line, so the macro slot in an addon like pfUI highlights when its spell is auto-repeating or its self-aura is active |
 
+### Console commands
+
+Registered on the engine's developer console (the `~` console available
+when launching with `-console`), not as Lua functions. See the
+[Console section in the Lua reference](docs/API.md#console) for details.
+
+| Command | What it does |
+|---------|--------------|
+| `ExportInterfaceFiles code` | Extracts Blizzard's UI source (`.lua`/`.xml`/`.toc`/`.xsd`) from the MPQs to `BlizzardInterfaceCode\` |
+| `ExportInterfaceFiles art` | Extracts Blizzard's UI art (`.blp`/`.tga`) from the MPQs to `BlizzardInterfaceArt\` |
+
 ### Events
 
 | Event | Payload |

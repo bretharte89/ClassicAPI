@@ -33,6 +33,9 @@ build instructions.
 - [Combat](#combat)
   - [`InCombatLockdown()`](#incombatlockdown)
 
+- [Console](#console)
+  - [`ExportInterfaceFiles art|code` (console command)](#exportinterfacefiles-artcode-console-command)
+
 - [Container](#container)
   - [`C_Container.GetContainerItemID(bagIndex, slotIndex)`](#c_containergetcontaineritemidbagindex-slotindex)
   - [`GetItemCooldown(itemInfo)` / `C_Container.GetItemCooldown(itemID)`](#getitemcooldowniteminfo--c_containergetitemcooldownitemid)
@@ -835,6 +838,44 @@ if UnitAffectingCombat("player") then
     -- this is the real check
 end
 ```
+
+## Console
+
+### `ExportInterfaceFiles art|code` (console command)
+
+A **developer-console command** (not a Lua function) — type it into the
+`~` console, which is available when the client is launched with
+`-console`. It extracts Blizzard's stock UI files out of the game's MPQ
+archives onto disk, mirroring the same-named command from later clients
+(4.3.4). Useful for reading the FrameXML / GlueXML source you're
+backporting addons against, or pulling out the default art.
+
+- `ExportInterfaceFiles code` — writes `.lua` / `.xml` / `.toc` /
+  `.xsd` files to `BlizzardInterfaceCode\…`
+- `ExportInterfaceFiles art` — writes `.blp` / `.tga` files to
+  `BlizzardInterfaceArt\…`
+
+Files are written relative to the client's working directory (next to
+`WoW.exe`), preserving their `Interface\…` subtree under the
+destination folder — e.g. `Interface\FrameXML\FrameXML.toc` becomes
+`BlizzardInterfaceCode\FrameXML\FrameXML.toc`. On completion the command
+prints a `wrote N file(s)` line back to the console.
+
+```
+> ExportInterfaceFiles code
+ExportInterfaceFiles: wrote 1234 code file(s) to BlizzardInterfaceCode\
+```
+
+Notes:
+
+- The walk skips `Interface\AddOns\` — those files are already loose on
+  disk (you installed them), so re-exporting them would just duplicate
+  your own addons.
+- It enumerates the mounted MPQs' `(listfile)`, so it surfaces whatever
+  the archives actually ship; files present in multiple archives
+  (base + patches) are written once.
+- It runs synchronously and briefly freezes the client while it walks
+  `Interface\` — expected for a one-shot extraction.
 
 ## Container
 
