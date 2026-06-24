@@ -166,13 +166,18 @@ See [Focus / Bindings](docs/API.md#bindings-focustarget--targetfocus) for the im
 
 ## Installation
 
-Use [VanillaFixes](https://github.com/hannesmann/vanillafixes) to load the
-DLL.
+Download the prebuilt `ClassicAPI.dll` from the
+[latest release](https://github.com/brues-code/ClassicAPI/releases/latest)
+(or [build it yourself](#building)). It's loaded with
+[VanillaFixes](https://github.com/hannesmann/vanillafixes):
 
 1. Install VanillaFixes if it isn't already.
 2. Copy `ClassicAPI.dll` into your game directory.
 3. Add `ClassicAPI.dll` to `dlls.txt`.
 4. Launch the game with `VanillaFixes.exe`.
+
+The bundled `!!!ClassicAPI` addon ships *inside* the DLL — no separate
+addon download or install step needed.
 
 ## Bundled addon: !!!ClassicAPI
 
