@@ -242,7 +242,8 @@ bool IsPlayerCast(const uint8_t *unit, int slot) {
         return false;
     uint64_t casterGuid = 0;
     uint32_t expMs = 0;
-    if (!Aura::Source::Get(UnitGuid(unit), spellID, &casterGuid, &expMs))
+    uint32_t durMs = 0;
+    if (!Aura::Source::Get(UnitGuid(unit), spellID, &casterGuid, &expMs, &durMs))
         return false;
     return casterGuid != 0 && casterGuid == Unit::Identity::PlayerGuid();
 }
@@ -426,9 +427,17 @@ void Push(void *L, const uint8_t *unit, int slot) {
     if (spellID != 0) {
         uint64_t casterGuid = 0;
         uint32_t expMs = 0;
-        if (Aura::Source::Get(UnitGuid(unit), spellID, &casterGuid, &expMs)) {
+        uint32_t durMs = 0;
+        if (Aura::Source::Get(UnitGuid(unit), spellID, &casterGuid, &expMs,
+                              &durMs)) {
             if (expirationTime == 0.0 && expMs != 0)
                 expirationTime = static_cast<double>(expMs) * 0.001;
+            // Prefer the applied (caster-modified) duration so `duration`
+            // stays consistent with `expirationTime` — otherwise a talented
+            // DoT (e.g. Improved Shadow Word: Pain) shows remaining time
+            // exceeding the base `duration`.
+            if (durMs != 0)
+                duration = static_cast<double>(durMs) * 0.001;
             if (casterGuid != 0) {
                 // `sourceUnit` is a token (nil when the caster maps to no
                 // current token); `sourceGUID` is the raw "0x..." GUID and

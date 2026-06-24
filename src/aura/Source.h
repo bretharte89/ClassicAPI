@@ -31,13 +31,15 @@
 
 namespace Aura::Source {
 
-// Looks up the cached caster + expiration for the aura `spellId` currently
-// on the unit identified by `unitGuid`. Returns true and fills the out
-// params on a hit. `*outExpirationMs` is an absolute `GetTickCount`-epoch
-// timestamp (0 = unknown / infinite-duration aura); `*outCaster` is the
-// caster's 64-bit GUID (never 0 on a hit). Returns false on a miss or for
-// zero inputs.
+// Looks up the cached caster + timing for the aura `spellId` currently on
+// the unit identified by `unitGuid`. Returns true and fills the out params
+// on a hit. `*outExpirationMs` is an absolute `GetTickCount`-epoch timestamp
+// (0 = unknown / infinite-duration aura); `*outDurationMs` is the applied
+// duration including the caster's modifiers (talents etc.; 0 = none) — use
+// it for the `duration` field so it stays consistent with `expirationTime`;
+// `*outCaster` is the caster's 64-bit GUID (never 0 on a hit). Returns false
+// on a miss or for zero inputs.
 bool Get(uint64_t unitGuid, uint32_t spellId, uint64_t *outCaster,
-         uint32_t *outExpirationMs);
+         uint32_t *outExpirationMs, uint32_t *outDurationMs);
 
 } // namespace Aura::Source

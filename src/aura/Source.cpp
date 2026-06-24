@@ -104,6 +104,7 @@ struct Entry {
     uint64_t casterGuid;
     uint32_t spellId;
     uint32_t expirationMs; // 0 = infinite / unknown duration
+    uint32_t durationMs;   // applied duration (incl. caster mods); 0 = none
     bool used;
 };
 
@@ -112,7 +113,7 @@ Entry g_cache[kCacheSize];
 int g_writeCursor = 0;
 
 void Store(uint64_t targetGuid, uint32_t spellId, uint64_t casterGuid,
-           uint32_t expirationMs) {
+           uint32_t expirationMs, uint32_t durationMs) {
     if (targetGuid == 0 || spellId == 0 || casterGuid == 0)
         return;
 
@@ -121,6 +122,7 @@ void Store(uint64_t targetGuid, uint32_t spellId, uint64_t casterGuid,
         if (e.used && e.targetGuid == targetGuid && e.spellId == spellId) {
             e.casterGuid = casterGuid;
             e.expirationMs = expirationMs;
+            e.durationMs = durationMs;
             return;
         }
     }
@@ -128,13 +130,13 @@ void Store(uint64_t targetGuid, uint32_t spellId, uint64_t casterGuid,
     const uint32_t now = NowMs();
     for (auto &e : g_cache) {
         if (!e.used || (e.expirationMs != 0 && now >= e.expirationMs)) {
-            e = {targetGuid, casterGuid, spellId, expirationMs, true};
+            e = {targetGuid, casterGuid, spellId, expirationMs, durationMs, true};
             return;
         }
     }
     Entry &slot = g_cache[g_writeCursor];
     g_writeCursor = (g_writeCursor + 1) % kCacheSize;
-    slot = {targetGuid, casterGuid, spellId, expirationMs, true};
+    slot = {targetGuid, casterGuid, spellId, expirationMs, durationMs, true};
 }
 
 // Drop entries whose timed aura has elapsed so the table doesn't fill with
@@ -196,11 +198,11 @@ void __fastcall SpellGo_h(uint64_t *itemGUID, uint64_t *casterGUID,
 
     if (numTargets == 0) {
         // No explicit hit list (self-cast with caster-implicit target).
-        Store(caster, spellId, caster, expirationMs);
+        Store(caster, spellId, caster, expirationMs, durationMs);
         return;
     }
     for (int i = 0; i < numTargets; ++i)
-        Store(targets[i], spellId, caster, expirationMs);
+        Store(targets[i], spellId, caster, expirationMs, durationMs);
 }
 
 const Game::HookAutoRegister _hook{Offsets::FUN_SPELL_GO,
@@ -210,13 +212,14 @@ const Game::HookAutoRegister _hook{Offsets::FUN_SPELL_GO,
 } // namespace
 
 bool Get(uint64_t unitGuid, uint32_t spellId, uint64_t *outCaster,
-         uint32_t *outExpirationMs) {
+         uint32_t *outExpirationMs, uint32_t *outDurationMs) {
     if (unitGuid == 0 || spellId == 0)
         return false;
     for (const auto &e : g_cache) {
         if (e.used && e.targetGuid == unitGuid && e.spellId == spellId) {
             *outCaster = e.casterGuid;
             *outExpirationMs = e.expirationMs;
+            *outDurationMs = e.durationMs;
             return true;
         }
     }
