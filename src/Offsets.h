@@ -695,6 +695,25 @@ enum Offsets {
     // same Octo/Turtle 1.12.1 client). Per-cast frequency, not per-frame.
     FUN_SPELL_GO = 0x006E7A70,
 
+    // `CGUnit_C::OnAuraAdded` — `__thiscall void(CGUnit *unit, uint32_t
+    // slot, uint32_t spellId)` (i.e. `__fastcall(unit /*ecx*/, edx_unused,
+    // slot, spellId)`). Fires for EVERY aura that lands on a tracked unit,
+    // including proc/triggered auras that never produce an `SMSG_SPELL_GO`
+    // (Shadow Weaving, etc.). `Aura::Source` co-hooks it to stamp
+    // expiration for those — it carries no caster, so it fills timing only
+    // and never overwrites an entry `SpellGo` already owns. Per-aura-change
+    // frequency. nampower hooks the same function (its BUFF/DEBUFF events).
+    FUN_ON_AURA_ADDED = 0x006123F0,
+
+    // `CGUnit_C::OnAuraStacksChanged` — `__thiscall void(CGUnit *unit, int
+    // slot, uint8_t stackCount)` (`__fastcall(unit, edx_unused, slot,
+    // stackCount)`). Fires when an existing aura's stack count changes
+    // without a fresh add — e.g. Shadow Weaving climbing 2→3. The slot's
+    // spellID is read from the unit aura array (`OnAuraAdded` gets it as an
+    // arg; here only the slot is given). `Aura::Source` co-hooks it to
+    // re-stamp expiration so stacking-DoT refreshes are picked up.
+    FUN_ON_AURA_STACKS_CHANGED = 0x00612450,
+
     // CGPlayer-side sub-struct, allocated for any player-controlled
     // unit (local self, target, party, raid, inspect targets — all of
     // them). Holds player-specific data that's *not* in the broadcast

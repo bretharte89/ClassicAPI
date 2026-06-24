@@ -9303,22 +9303,44 @@ nameplate visibility flags) vanilla doesn't have.
 `sourceUnit`, `sourceGUID`, and non-player `expirationTime` come from a
 client-side cache that vanilla itself can't provide: the unit aura array
 stores only spell IDs — never the caster, and no cast/expiration timing for
-anyone but the local player. The one place the client sees an aura's caster
-+ a server-authoritative duration is the `SMSG_SPELL_GO` packet at cast
-time. `Aura::Source` co-hooks the engine's `SpellGo` handler
-(`FUN_SPELL_GO`, `0x006E7A70`), parses the hit-target list, and caches
-`(targetGuid, spellId) → { casterGuid, expirationMs }`. `Push` then keys
-into it by the unit's GUID + the aura's spell ID.
+anyone but the local player. `Aura::Source` fills the gap by co-hooking
+three engine functions and caching `(targetGuid, spellId) → { casterGuid,
+expirationMs, durationMs }`; `Push` keys into it by the unit's GUID + the
+aura's spell ID.
+
+- **`SpellGo`** (`FUN_SPELL_GO`, `0x006E7A70`) — the cast packet, the only
+  place the client sees an aura's **caster** + a server-authoritative,
+  caster-modified duration. Fills `sourceUnit`/`sourceGUID` + timing for
+  directly-cast auras.
+- **`OnAuraAdded`** (`0x006123F0`) — fires when any aura first occupies a
+  slot, including proc/triggered auras that emit no `SMSG_SPELL_GO` (Shadow
+  Weaving etc.). Stamps `expirationMs = now + base duration` (no caster).
+- **`OnAuraStacksChanged`** (`0x00612450`) — fires when an existing aura's
+  stack count changes; re-stamps expiration so a climbing stacking debuff
+  (e.g. Shadow Weaving 1→5) refreshes.
+
+Application hooks never overwrite an entry `SpellGo` already owns, so a
+directly-cast aura keeps its talented timing + caster regardless of hook
+order.
 
 Implications:
 
-- **Best-effort.** Only auras applied *after* login (whose cast we
-  observed) carry caster/expiration; auras already up when you logged in,
-  or applied by mechanisms that don't emit `SMSG_SPELL_GO`, leave the
-  defaults (`sourceUnit`/`sourceGUID` nil, non-player `expirationTime` 0).
-- **No nampower dependency.** We parse the engine packet ourselves. nampower
-  (which hooks the same function) need not be loaded; when it is, we simply
-  co-hook the site.
+- **Best-effort.** Only auras observed *after* login carry data; auras
+  already up when you logged in leave the defaults (`sourceUnit`/`sourceGUID`
+  nil, non-player `expirationTime` 0).
+- **Max-stack refresh is a blind spot.** When a stacking debuff is refreshed
+  at *max* stacks (e.g. Shadow Weaving 5→5), no client-visible aura field
+  changes (spellID, stacks, flags, level all identical), so the server sends
+  no UpdateField and the engine fires no callback — there is no packet to
+  hook (verified: the stack-change dispatcher `FUN_00604ea0` calls
+  `OnAuraStacksChanged` unconditionally, so its silence proves nothing
+  arrived). The countdown therefore runs to 0 and the entry evicts; once
+  evicted, `expirationTime` falls back to 0 (unknown) while the aura is still
+  shown. Climbing stacks and single-stack refreshes (re-cast → fresh
+  `SpellGo`) are unaffected.
+- **No nampower dependency.** We parse the engine functions ourselves;
+  nampower (which hooks the same three) need not be loaded — when it is, we
+  co-hook the sites.
 - Entries are evicted once their timed aura elapses, so the cache stays
   bounded; infinite-duration auras persist until overwritten under load.
 

@@ -41,18 +41,11 @@ const uint8_t *Descriptor(const uint8_t *unit) {
         unit + Offsets::OFF_CGUNIT_OBJECT_FIELDS);
 }
 
-// The unit's 64-bit GUID, read through the pointer at `unit + 0x08` to an
-// instance block whose first 8 bytes are the GUID (verified in
-// `Script_GetInventoryItemLink`; see `OFF_UNIT_GUID_PTR`). Used to key into
-// the `Aura::Source` caster/expiration cache. 0 if unresolved.
+// Keys into the `Aura::Source` caster/expiration cache. Thin alias for the
+// shared `Unit::Identity::GuidForObject` so the lookup here and the
+// OnAuraAdded hook in `Aura::Source` read the GUID the same way.
 uint64_t UnitGuid(const uint8_t *unit) {
-    if (unit == nullptr)
-        return 0;
-    const uint8_t *block = *reinterpret_cast<const uint8_t *const *>(
-        unit + Offsets::OFF_UNIT_GUID_PTR);
-    if (block == nullptr)
-        return 0;
-    return *reinterpret_cast<const uint64_t *>(block);
+    return Unit::Identity::GuidForObject(unit);
 }
 
 const uint8_t *SpellRecord(uint32_t spellID) {

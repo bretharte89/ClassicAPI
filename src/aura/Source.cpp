@@ -15,6 +15,7 @@
 
 #include "Source.h"
 
+#include "Data.h"
 #include "Game.h"
 #include "Offsets.h"
 #include "spell/Lookup.h"
@@ -112,15 +113,23 @@ constexpr int kCacheSize = 256;
 Entry g_cache[kCacheSize];
 int g_writeCursor = 0;
 
+// `fromCast` true: the SpellGo hook — authoritative caster + caster-modified
+// (talented) timing. False: the OnAuraAdded application hook — timing only,
+// no caster, and it must not clobber an entry SpellGo already owns (that
+// would replace talented timing with the unmodified base), so it skips
+// entries that already carry a caster.
 void Store(uint64_t targetGuid, uint32_t spellId, uint64_t casterGuid,
-           uint32_t expirationMs, uint32_t durationMs) {
-    if (targetGuid == 0 || spellId == 0 || casterGuid == 0)
+           uint32_t expirationMs, uint32_t durationMs, bool fromCast) {
+    if (targetGuid == 0 || spellId == 0)
         return;
 
     // Update an existing entry for this exact aura instance.
     for (auto &e : g_cache) {
         if (e.used && e.targetGuid == targetGuid && e.spellId == spellId) {
-            e.casterGuid = casterGuid;
+            if (!fromCast && e.casterGuid != 0)
+                return; // SpellGo owns this entry; keep its caster + timing
+            if (casterGuid != 0)
+                e.casterGuid = casterGuid;
             e.expirationMs = expirationMs;
             e.durationMs = durationMs;
             return;
@@ -198,16 +207,72 @@ void __fastcall SpellGo_h(uint64_t *itemGUID, uint64_t *casterGUID,
 
     if (numTargets == 0) {
         // No explicit hit list (self-cast with caster-implicit target).
-        Store(caster, spellId, caster, expirationMs, durationMs);
+        Store(caster, spellId, caster, expirationMs, durationMs, true);
         return;
     }
     for (int i = 0; i < numTargets; ++i)
-        Store(targets[i], spellId, caster, expirationMs, durationMs);
+        Store(targets[i], spellId, caster, expirationMs, durationMs, true);
 }
 
 const Game::HookAutoRegister _hook{Offsets::FUN_SPELL_GO,
                                    reinterpret_cast<void *>(&SpellGo_h),
                                    reinterpret_cast<void **>(&g_origSpellGo)};
+
+// ---- Aura-application co-hooks (timing for proc / triggered auras) -------
+
+// Stamp expiration for an aura that just landed/refreshed on `unit`. Used by
+// both the add and stack-change hooks. No caster is available from these
+// paths, so it stamps timing only with `fromCast=false` — Store skips any
+// entry SpellGo already owns, so a directly-cast aura keeps its talented
+// timing. Base (unmodified) duration is the best estimate without a caster.
+void StampApplication(void *unit, uint32_t spellId) {
+    if (spellId == 0)
+        return;
+    const uint8_t *rec = Spell::Lookup::RecordForID(static_cast<int>(spellId));
+    if (!SpellAppliesAura(rec))
+        return;
+    const uint64_t unitGuid = Unit::Identity::GuidForObject(unit);
+    if (unitGuid == 0)
+        return;
+    const uint32_t durationMs = SpellDurationMs(rec, /*casterIsPlayer*/ false);
+    const uint32_t expirationMs = durationMs > 0 ? NowMs() + durationMs : 0;
+    Store(unitGuid, spellId, /*casterGuid*/ 0, expirationMs, durationMs,
+          /*fromCast*/ false);
+}
+
+// OnAuraAdded — a new aura occupies a slot (gives the spellId directly).
+using OnAuraAdded_t = void(__fastcall *)(void *unit, void *edx, uint32_t slot,
+                                         uint32_t spellId);
+OnAuraAdded_t g_origOnAuraAdded = nullptr;
+
+void __fastcall OnAuraAdded_h(void *unit, void *edx, uint32_t slot,
+                              uint32_t spellId) {
+    g_origOnAuraAdded(unit, edx, slot, spellId);
+    StampApplication(unit, spellId);
+}
+
+const Game::HookAutoRegister _hookAuraAdded{
+    Offsets::FUN_ON_AURA_ADDED, reinterpret_cast<void *>(&OnAuraAdded_h),
+    reinterpret_cast<void **>(&g_origOnAuraAdded)};
+
+// OnAuraStacksChanged — an existing aura's stack count changed (e.g. Shadow
+// Weaving climbing). Only the slot is given, so read the spellID back from
+// the unit's aura array. Re-stamps expiration so stacking refreshes count.
+using OnAuraStacksChanged_t = void(__fastcall *)(void *unit, void *edx,
+                                                 int slot, uint8_t stackCount);
+OnAuraStacksChanged_t g_origOnAuraStacksChanged = nullptr;
+
+void __fastcall OnAuraStacksChanged_h(void *unit, void *edx, int slot,
+                                      uint8_t stackCount) {
+    g_origOnAuraStacksChanged(unit, edx, slot, stackCount);
+    StampApplication(unit, Aura::Data::ReadSpellID(
+                               static_cast<const uint8_t *>(unit), slot));
+}
+
+const Game::HookAutoRegister _hookAuraStacks{
+    Offsets::FUN_ON_AURA_STACKS_CHANGED,
+    reinterpret_cast<void *>(&OnAuraStacksChanged_h),
+    reinterpret_cast<void **>(&g_origOnAuraStacksChanged)};
 
 } // namespace
 

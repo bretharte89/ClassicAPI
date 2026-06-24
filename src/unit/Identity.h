@@ -28,6 +28,14 @@ namespace Unit::Identity {
 // re-dereferencing the globals inline.
 uint64_t PlayerGuid();
 
+// The 64-bit GUID of a resolved CGUnit/CGObject pointer, read through the
+// pointer at `+0x08` to an instance block whose first 8 bytes are the GUID
+// (verified in `Script_GetInventoryItemLink`; see `OFF_UNIT_GUID_PTR`).
+// Returns 0 if `unitObject` or the block pointer is null. Use this for any
+// "GUID of this object pointer" read so callers stay consistent (the aura
+// caster cache keys on it from both the lookup and the OnAuraAdded hook).
+uint64_t GuidForObject(const void *unitObject);
+
 // Resolves a unit token (`"player"`, `"target"`, `"party3"`, …) to its
 // 64-bit GUID, or 0 if the token currently maps to nothing. `"player"` is
 // read from the canonical local-player pointer so it works regardless of
