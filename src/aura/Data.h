@@ -85,12 +85,18 @@ const char *DispelName(uint32_t dispelTypeID);
 //
 // Populates these fields with real data:
 //   name, icon, applications, spellId, dispelName,
-//   isHelpful, isHarmful, timeMod
+//   isHelpful, isHarmful, timeMod, duration
+//
+// And these from the `Aura::Source` SMSG_SPELL_GO cache when available
+// (else their inapplicable default):
+//   expirationTime (player: engine buff table; others: cache; 0 on miss),
+//   sourceUnit     (caster token from the cache; nil on miss),
+//   sourceGUID     (caster "0x..." GUID string; nil on miss — a ClassicAPI
+//                   extension, not in retail AuraData)
 //
 // And these with vanilla-truthful defaults (matches modern's
 // "field present but inapplicable" semantics):
-//   duration=0, expirationTime=0, charges=0, maxCharges=0,
-//   sourceUnit=nil, auraInstanceID=nil, points=nil,
+//   charges=0, maxCharges=0, auraInstanceID=nil, points=nil,
 //   isStealable=false, isBossAura=false, isFromPlayerOrPlayerPet=false,
 //   isNameplateOnly=false, nameplateShowAll=false,
 //   nameplateShowPersonal=false, canApplyAura=false,

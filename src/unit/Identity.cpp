@@ -11,6 +11,8 @@
 // You should have received a copy of the GNU Lesser General Public License along with
 // ClassicAPI. If not, see <https://www.gnu.org/licenses/>.
 
+#include "unit/Identity.h"
+
 #include "Game.h"
 #include "Offsets.h"
 #include "guid/Guid.h"
@@ -44,15 +46,18 @@ using TokenToGUID_t = uint64_t(__fastcall *)(const char *token);
 // `FUN_00468550() != 0` for the same reason — the GUID isn't ready
 // yet. Addons that need the player GUID at boot must wait for
 // `PLAYER_LOGIN`. See the trace notes in commit history.
-static uint64_t ResolveTokenGUID(const char *token) {
-    if (token != nullptr && _stricmp(token, "player") == 0) {
-        auto *player = *reinterpret_cast<uint8_t *const *>(
-            static_cast<uintptr_t>(Offsets::VAR_LOCAL_PLAYER_PTR));
-        if (player == nullptr)
-            return 0;
-        return *reinterpret_cast<const uint64_t *>(
-            player + Offsets::OFF_LOCAL_PLAYER_GUID);
-    }
+uint64_t PlayerGuid() {
+    auto *player = *reinterpret_cast<uint8_t *const *>(
+        static_cast<uintptr_t>(Offsets::VAR_LOCAL_PLAYER_PTR));
+    if (player == nullptr)
+        return 0;
+    return *reinterpret_cast<const uint64_t *>(
+        player + Offsets::OFF_LOCAL_PLAYER_GUID);
+}
+
+uint64_t GuidForToken(const char *token) {
+    if (token != nullptr && _stricmp(token, "player") == 0)
+        return PlayerGuid();
     auto fn = reinterpret_cast<TokenToGUID_t>(Offsets::FUN_TOKEN_TO_GUID);
     return fn(token);
 }
@@ -92,7 +97,7 @@ static int __fastcall Script_UnitGUID(void *L) {
     if (token == nullptr)
         return 0;
 
-    const uint64_t guid = ResolveTokenGUID(token);
+    const uint64_t guid = GuidForToken(token);
     if (guid == 0)
         return 0;
 
@@ -127,25 +132,20 @@ static int __fastcall Script_UnitGUID(void *L) {
 //
 // Returns `nil` if the input string isn't a parseable GUID, or the
 // GUID is zero, or no token currently maps to it.
-static int __fastcall Script_UnitTokenFromGUID(void *L) {
-    if (!Game::Lua::IsString(L, 1)) {
-        Game::Lua::Error(L, "Usage: UnitTokenFromGUID(\"unitGUID\")");
-        return 0;
-    }
-    const char *guidStr = Game::Lua::ToString(L, 1);
-    uint64_t target = 0;
-    if (guidStr == nullptr || !Guid::Parse(guidStr, &target) || target == 0)
-        return 0;
+const char *TokenFromGUID(uint64_t target, char *buf, size_t bufSize) {
+    if (target == 0)
+        return nullptr;
 
+    auto set = [&](const char *token) -> const char * {
+        std::snprintf(buf, bufSize, "%s", token);
+        return buf;
+    };
     auto check = [&](const char *token) -> bool {
-        if (ResolveTokenGUID(token) != target)
-            return false;
-        Game::Lua::PushString(L, token);
-        return true;
+        return GuidForToken(token) == target;
     };
 
-    if (check("player")) return 1;
-    if (check("pet")) return 1;
+    if (check("player")) return set("player");
+    if (check("pet")) return set("pet");
 
     // Cap each indexed-token scan at the actual populated slot
     // count, read straight out of engine memory. Solo skips all 88
@@ -170,22 +170,21 @@ static int __fastcall Script_UnitTokenFromGUID(void *L) {
     if (raidCount > Offsets::RAID_MAX_SLOTS)
         raidCount = Offsets::RAID_MAX_SLOTS;
 
-    char buf[16];
     for (int i = 1; i <= partyCount; ++i) {
-        std::snprintf(buf, sizeof buf, "party%d", i);
-        if (check(buf)) return 1;
+        std::snprintf(buf, bufSize, "party%d", i);
+        if (GuidForToken(buf) == target) return buf;
     }
     for (int i = 1; i <= partyCount; ++i) {
-        std::snprintf(buf, sizeof buf, "partypet%d", i);
-        if (check(buf)) return 1;
+        std::snprintf(buf, bufSize, "partypet%d", i);
+        if (GuidForToken(buf) == target) return buf;
     }
     for (int i = 1; i <= raidCount; ++i) {
-        std::snprintf(buf, sizeof buf, "raid%d", i);
-        if (check(buf)) return 1;
+        std::snprintf(buf, bufSize, "raid%d", i);
+        if (GuidForToken(buf) == target) return buf;
     }
     for (int i = 1; i <= raidCount; ++i) {
-        std::snprintf(buf, sizeof buf, "raidpet%d", i);
-        if (check(buf)) return 1;
+        std::snprintf(buf, bufSize, "raidpet%d", i);
+        if (GuidForToken(buf) == target) return buf;
     }
 
     // Visible nameplates. The ordered list (see
@@ -198,18 +197,35 @@ static int __fastcall Script_UnitTokenFromGUID(void *L) {
         if (plateGuid == 0)
             break;
         if (plateGuid == target) {
-            std::snprintf(buf, sizeof buf, "nameplate%d", i);
-            Game::Lua::PushString(L, buf);
-            return 1;
+            std::snprintf(buf, bufSize, "nameplate%d", i);
+            return buf;
         }
     }
 
-    if (check("target")) return 1;
-    if (check("focus")) return 1;
-    if (check("npc")) return 1;
-    if (check("mouseover")) return 1;
+    if (check("target")) return set("target");
+    if (check("focus")) return set("focus");
+    if (check("npc")) return set("npc");
+    if (check("mouseover")) return set("mouseover");
 
-    return 0;
+    return nullptr;
+}
+
+static int __fastcall Script_UnitTokenFromGUID(void *L) {
+    if (!Game::Lua::IsString(L, 1)) {
+        Game::Lua::Error(L, "Usage: UnitTokenFromGUID(\"unitGUID\")");
+        return 0;
+    }
+    const char *guidStr = Game::Lua::ToString(L, 1);
+    uint64_t target = 0;
+    if (guidStr == nullptr || !Guid::Parse(guidStr, &target) || target == 0)
+        return 0;
+
+    char buf[32];
+    const char *token = TokenFromGUID(target, buf, sizeof buf);
+    if (token == nullptr)
+        return 0;
+    Game::Lua::PushString(L, token);
+    return 1;
 }
 
 static void RegisterLuaFunctions() {

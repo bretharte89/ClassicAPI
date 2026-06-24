@@ -13,6 +13,7 @@
 
 #include "Game.h"
 #include "Offsets.h"
+#include "unit/Identity.h"
 
 #include <cstdint>
 #include <cstring>
@@ -74,14 +75,7 @@ uint16_t LocalPlayerArea() {
         static_cast<uintptr_t>(Offsets::VAR_PLAYER_AREA_ID)));
 }
 
-uint64_t LocalPlayerGUID() {
-    auto *player = *reinterpret_cast<uint8_t *const *>(
-        static_cast<uintptr_t>(Offsets::VAR_LOCAL_PLAYER_PTR));
-    if (player == nullptr)
-        return 0;
-    return *reinterpret_cast<const uint64_t *>(
-        player + Offsets::OFF_LOCAL_PLAYER_GUID);
-}
+uint64_t LocalPlayerGUID() { return Unit::Identity::PlayerGuid(); }
 
 
 // Pushes `area` as a number, or nil if `area == 0`. Vanilla zone 0

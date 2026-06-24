@@ -682,6 +682,19 @@ enum Offsets {
     OFF_SPELLDURATION_PER_LEVEL_MS = 0x08,
     OFF_SPELLDURATION_MAX_MS = 0x0C,
 
+    // `SMSG_SPELL_GO` inner handler — `void __fastcall(uint64_t *itemGUID,
+    // uint64_t *casterGUID, uint32_t spellId, CDataStore *packet)`. The
+    // engine has already decoded item/caster/spell into args; the packet
+    // read cursor sits at the post-header body (castFlags, hit/missed
+    // target lists, target mask). This is the ONLY place the client sees
+    // an aura's *caster* — the unit aura array stores spell IDs but never
+    // who applied them. `Aura::Source` co-hooks this (alongside nampower,
+    // which detours the same function) to cache `(targetGuid, spellId) →
+    // casterGuid` for `C_UnitAuras` sourceUnit + non-player expiration.
+    // Packet layout mirrored from nampower's SpellGoHook (verified on the
+    // same Octo/Turtle 1.12.1 client). Per-cast frequency, not per-frame.
+    FUN_SPELL_GO = 0x006E7A70,
+
     // CGPlayer-side sub-struct, allocated for any player-controlled
     // unit (local self, target, party, raid, inspect targets — all of
     // them). Holds player-specific data that's *not* in the broadcast

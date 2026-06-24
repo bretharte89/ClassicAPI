@@ -37,7 +37,7 @@
 // player object is ready, and stay stable across zone transitions.
 
 #include "Game.h"
-#include "Offsets.h"
+#include "unit/Identity.h"
 
 #include <cstdint>
 
@@ -46,15 +46,7 @@ namespace Player::LoginStatus {
 namespace {
 
 int __fastcall Script_IsLoggedIn(void *L) {
-    auto *player = *reinterpret_cast<const uint8_t *const *>(
-        Offsets::VAR_LOCAL_PLAYER_PTR);
-    if (player == nullptr) {
-        Game::Lua::PushBool(L, false);
-        return 1;
-    }
-    const uint64_t guid = *reinterpret_cast<const uint64_t *>(
-        player + Offsets::OFF_LOCAL_PLAYER_GUID);
-    Game::Lua::PushBool(L, guid != 0);
+    Game::Lua::PushBool(L, Unit::Identity::PlayerGuid() != 0);
     return 1;
 }
 

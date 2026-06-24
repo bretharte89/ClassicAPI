@@ -62,6 +62,7 @@
 #include "Offsets.h"
 #include "guid/Guid.h"
 #include "settings/Account.h"
+#include "unit/Identity.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -467,14 +468,7 @@ UnitBytes0 ReadBytes0(void *unit) {
 // on the local CGPlayer_C type, or it is but returns 0x1 to mean
 // "no remote name; ask the local source." Either way we don't need
 // to cache ourselves — we have the data via every other path.
-uint64_t LocalPlayerGUID() {
-    auto *player = *reinterpret_cast<uint8_t *const *>(
-        static_cast<uintptr_t>(Offsets::VAR_LOCAL_PLAYER_PTR));
-    if (player == nullptr)
-        return 0;
-    return *reinterpret_cast<const uint64_t *>(
-        player + Offsets::OFF_LOCAL_PLAYER_GUID);
-}
+uint64_t LocalPlayerGUID() { return Unit::Identity::PlayerGuid(); }
 
 // Pointer sanity check before dereferencing. The CGObject vftable
 // GetName slot has at least one known case where it returns 0x1

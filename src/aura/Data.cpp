@@ -15,7 +15,10 @@
 
 #include "Game.h"
 #include "Offsets.h"
+#include "aura/Source.h"
 #include "dbc/Lookup.h"
+#include "guid/Guid.h"
+#include "unit/Identity.h"
 
 #include <cstdint>
 #include <cstring>
@@ -36,6 +39,20 @@ const uint8_t *Descriptor(const uint8_t *unit) {
         return nullptr;
     return *reinterpret_cast<const uint8_t *const *>(
         unit + Offsets::OFF_CGUNIT_OBJECT_FIELDS);
+}
+
+// The unit's 64-bit GUID, read through the pointer at `unit + 0x08` to an
+// instance block whose first 8 bytes are the GUID (verified in
+// `Script_GetInventoryItemLink`; see `OFF_UNIT_GUID_PTR`). Used to key into
+// the `Aura::Source` caster/expiration cache. 0 if unresolved.
+uint64_t UnitGuid(const uint8_t *unit) {
+    if (unit == nullptr)
+        return 0;
+    const uint8_t *block = *reinterpret_cast<const uint8_t *const *>(
+        unit + Offsets::OFF_UNIT_GUID_PTR);
+    if (block == nullptr)
+        return 0;
+    return *reinterpret_cast<const uint64_t *>(block);
 }
 
 const uint8_t *SpellRecord(uint32_t spellID) {
@@ -374,8 +391,44 @@ void Push(void *L, const uint8_t *unit, int slot) {
         if (entry != nullptr)
             expirationTime = PlayerBuffExpirationSeconds(entry);
     }
+
+    // Caster + non-player expiration from the SMSG_SPELL_GO cache
+    // (`Aura::Source`), captured at cast time. The vanilla descriptor has
+    // neither. `sourceUnit` applies to any unit; `expirationTime` only
+    // fills in here when the player-buff table above didn't — that table is
+    // authoritative for the player's own auras, the cache covers everyone
+    // else. Both are best-effort: a miss (aura predates login, or the cast
+    // wasn't observed) leaves the modern-truthful defaults untouched.
+    const char *sourceUnit = nullptr;
+    const char *sourceGUID = nullptr;
+    char tokenBuf[32];
+    char guidBuf[Guid::STRING_SIZE];
+    if (spellID != 0) {
+        uint64_t casterGuid = 0;
+        uint32_t expMs = 0;
+        if (Aura::Source::Get(UnitGuid(unit), spellID, &casterGuid, &expMs)) {
+            if (expirationTime == 0.0 && expMs != 0)
+                expirationTime = static_cast<double>(expMs) * 0.001;
+            if (casterGuid != 0) {
+                // `sourceUnit` is a token (nil when the caster maps to no
+                // current token); `sourceGUID` is the raw "0x..." GUID and
+                // is set whenever we have a caster — a ClassicAPI extension
+                // (not in retail AuraData) that survives the caster leaving
+                // token range and doubles as a unit token under SuperWoW.
+                sourceUnit = Unit::Identity::TokenFromGUID(
+                    casterGuid, tokenBuf, sizeof tokenBuf);
+                sourceGUID = Guid::FormatAsString(casterGuid, guidBuf,
+                                                  sizeof guidBuf);
+            }
+        }
+    }
+
     Game::Lua::SetFieldNumber(L, "duration", duration);
     Game::Lua::SetFieldNumber(L, "expirationTime", expirationTime);
+    if (sourceUnit != nullptr)
+        Game::Lua::SetFieldString(L, "sourceUnit", sourceUnit);
+    if (sourceGUID != nullptr)
+        Game::Lua::SetFieldString(L, "sourceGUID", sourceGUID);
     Game::Lua::SetFieldNumber(L, "charges", 0);
     Game::Lua::SetFieldNumber(L, "maxCharges", 0);
     Game::Lua::SetFieldNumber(L, "timeMod", 1);
@@ -391,10 +444,11 @@ void Push(void *L, const uint8_t *unit, int slot) {
     Game::Lua::SetFieldBool(L, "shouldConsolidate", false);
     Game::Lua::SetFieldBool(L, "isRaid", false);
 
-    // `sourceUnit`, `auraInstanceID`, `points` deliberately omitted
-    // — modern returns nil for those when they don't apply, and
-    // Lua reading a missing key yields nil, so the table doesn't
-    // need an explicit entry.
+    // `sourceUnit` / `sourceGUID` are set above when the `Aura::Source`
+    // cache has a caster for this aura; left unset (→ nil) on a miss.
+    // `auraInstanceID` and `points` are deliberately omitted — modern
+    // returns nil for those when they don't apply, and Lua reading a
+    // missing key yields nil, so the table doesn't need an explicit entry.
 }
 
 } // namespace Aura::Data

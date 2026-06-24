@@ -9271,11 +9271,13 @@ selects.
 | `isHelpful` | boolean | true for slot < 32 |
 | `isHarmful` | boolean | true for slot >= 32 |
 | `duration` | number | base applied duration in seconds, looked up via `Spell.dbc → SpellDuration.dbc` with level scaling. Talent / glyph duration extensions (Improved PW:F, etc.) aren't reflected here — those are baked into `expirationTime` on the caster's side. Returns 0 for spells flagged "no duration" (passives, paladin auras, infinite buffs) |
-| `expirationTime` | number | populated for `unit == "player"` (read from the engine's player-buff table at `0x00BC6040`; same data `GetPlayerBuffTimeLeft` returns). Always `0` for all other units — vanilla server only broadcasts cast/duration for the local player's own auras. `expirationTime - GetTime()` gives the true remaining time (including any talent extensions) |
+| `expirationTime` | number | for `unit == "player"`, read from the engine's player-buff table at `0x00BC6040` (same data `GetPlayerBuffTimeLeft` returns). For any other unit, taken from the `Aura::Source` cache (cast time + duration captured from `SMSG_SPELL_GO`; see below). `0` when neither source has it. `expirationTime - GetTime()` gives the true remaining time |
+| `sourceUnit` | string | unit token of the caster (`"player"`, `"raid7"`, `"nameplate1"`, …), resolved from the `Aura::Source` cache. `nil` if the cast wasn't observed or the caster maps to no current token |
+| `sourceGUID` | string | caster's `"0x…"` GUID string from the same cache. **ClassicAPI extension — not a retail `AuraData` field.** Set whenever a caster is known, including when `sourceUnit` is `nil` (caster left token range). Stable for the session, unlike the volatile nameplate token; doubles as a unit token under SuperWoW. `nil` on a cache miss |
 | `charges` / `maxCharges` | number | always `0` — vanilla has stacks, not charges |
 | `timeMod` | number | always `1` — vanilla has no haste-affected auras |
 | `isStealable`, `isBossAura`, `isFromPlayerOrPlayerPet`, `isNameplateOnly`, `nameplateShowAll`, `nameplateShowPersonal`, `canApplyAura`, `shouldConsolidate`, `isRaid` | boolean | always `false` — modern UI concepts vanilla doesn't have |
-| `sourceUnit`, `auraInstanceID`, `points` | (absent) | omitted from the table — Lua read yields nil, matching modern semantics for "field doesn't apply" |
+| `auraInstanceID`, `points` | (absent) | omitted from the table — Lua read yields nil, matching modern semantics for "field doesn't apply" |
 
 ### Filter parsing
 
@@ -9283,8 +9285,34 @@ The optional `filter` string is a pipe-separated set of upper-case
 tokens, matching modern syntax (`"HELPFUL"`, `"HARMFUL"`,
 `"HELPFUL|PLAYER"`, etc.). Only `HELPFUL` (default) and `HARMFUL`
 are honored on vanilla; other tokens (`PLAYER` / `RAID` /
-`CANCELABLE` / `INCLUDE_NAME_PLATE_ONLY`) are accepted but no-op —
-they'd need source-GUID tracking or systems vanilla doesn't have.
+`CANCELABLE` / `INCLUDE_NAME_PLATE_ONLY`) are accepted but no-op.
+(`PLAYER` is now technically derivable — `sourceGUID` vs. the player
+GUID — but filtering on it isn't wired in yet; `RAID` / nameplate
+flags still need systems vanilla doesn't have.)
+
+### Caster & timing (`Aura::Source`)
+
+`sourceUnit`, `sourceGUID`, and non-player `expirationTime` come from a
+client-side cache that vanilla itself can't provide: the unit aura array
+stores only spell IDs — never the caster, and no cast/expiration timing for
+anyone but the local player. The one place the client sees an aura's caster
++ a server-authoritative duration is the `SMSG_SPELL_GO` packet at cast
+time. `Aura::Source` co-hooks the engine's `SpellGo` handler
+(`FUN_SPELL_GO`, `0x006E7A70`), parses the hit-target list, and caches
+`(targetGuid, spellId) → { casterGuid, expirationMs }`. `Push` then keys
+into it by the unit's GUID + the aura's spell ID.
+
+Implications:
+
+- **Best-effort.** Only auras applied *after* login (whose cast we
+  observed) carry caster/expiration; auras already up when you logged in,
+  or applied by mechanisms that don't emit `SMSG_SPELL_GO`, leave the
+  defaults (`sourceUnit`/`sourceGUID` nil, non-player `expirationTime` 0).
+- **No nampower dependency.** We parse the engine packet ourselves. nampower
+  (which hooks the same function) need not be loaded; when it is, we simply
+  co-hook the site.
+- Entries are evicted once their timed aura elapses, so the cache stays
+  bounded; infinite-duration auras persist until overwritten under load.
 
 ### `C_UnitAuras.GetAuraDataByIndex(unit, index [, filter])`
 
