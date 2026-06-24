@@ -131,6 +131,10 @@ build instructions.
   - [`C_FriendList.SendWhoQueryByName(name)`](#c_friendlistsendwhoquerybynamename)
   - [`C_FriendList.IsWhoQueryPending()`](#c_friendlistiswhoquerypending)
 
+- [GameObject](#gameobject)
+  - [`C_GameObjectInfo.GetGameObjectInfoByID(gameObjectID)`](#c_gameobjectinfogetgameobjectinfobyidgameobjectid)
+  - [`C_GameObjectInfo.RequestLoadGameObjectByID(gameObjectID)`](#c_gameobjectinforequestloadgameobjectbyidgameobjectid)
+
 - [GameTooltip](#gametooltip)
   - [`GameTooltip:SetSpellByID(spellID)`](#gametooltipsetspellbyidspellid)
   - [`GameTooltip:SetTalentByID(talentID)`](#gametooltipsettalentbyidtalentid)
@@ -2999,6 +3003,48 @@ contribute to the same pending window. This is acceptable for the
 "suppress popup for any in-flight DLL-issued query" use case;
 addons that need per-call tracking should manage their own ticket
 state on top.
+
+## GameObject
+
+The gameobject analog of [`C_CreatureInfo`](#creature) — reads the
+client-side gameobject cache (`gameobjectcache.wdb`, fed by
+`SMSG_GAMEOBJECT_QUERY_RESPONSE`) by GO entry ID.
+
+### `C_GameObjectInfo.GetGameObjectInfoByID(gameObjectID)`
+
+Synchronous **peek** — returns a table for a cached gameobject, `nil`
+otherwise:
+
+```lua
+local info = C_GameObjectInfo.GetGameObjectInfoByID(47297)
+-- { gameObjectID = 47297, name = "Mesa Elevator", type = 11, displayID = 360 }
+```
+
+`type` is the `GameObjectType` (0=door, 1=button, 3=chest, 5=generic,
+6=trap, 10=goober, …). Field offsets verified against the binary
+(name `[block+0x08]`) and real `gameobjectcache.wdb` rows (Mesa
+Elevator 47297→type 11; Windrunner 176250→type 15 displayID 7087).
+
+### `C_GameObjectInfo.RequestLoadGameObjectByID(gameObjectID)`
+
+Asynchronously fetches an uncached gameobject — issues
+`SMSG_GAMEOBJECT_QUERY` and fires **`GAMEOBJECT_DATA_LOAD_RESULT(
+gameObjectID, success)`** when it lands, after which
+`GetGameObjectInfoByID` returns its data. Returns `true` if accepted;
+fires synchronously on a cache hit. Same shape as
+[`C_CreatureInfo.RequestLoadCreatureByID`](#c_creatureinforequestloadcreaturebyidcreatureid),
+and rides the same shared `Cache::QueryLoad` dispatcher (the gameobject
+cache is a sibling class of the creature cache with its own
+`_GetRecord`/parser, hooked separately).
+
+```lua
+local f = CreateFrame("Frame")
+f:RegisterEvent("GAMEOBJECT_DATA_LOAD_RESULT")
+f:SetScript("OnEvent", function()  -- arg1 = gameObjectID, arg2 = success
+    if arg2 then local info = C_GameObjectInfo.GetGameObjectInfoByID(arg1) end
+end)
+C_GameObjectInfo.RequestLoadGameObjectByID(7000032)
+```
 
 ## GameTooltip
 

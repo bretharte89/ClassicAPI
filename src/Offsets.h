@@ -1987,27 +1987,24 @@ enum Offsets {
     // by the cache factory (FUN_00554b40 -> FUN_00556060 with sig
     // 'BOMW', "creaturecache.wdb", recordSize 0x60).
     VAR_CREATURE_CACHE = 0x00C0E354,
-    // Generic cache `_GetRecord` — `__thiscall(cache, id, const u64 *guid,
+    // Creature-cache `_GetRecord` — `__thiscall(cache, id, const u64 *guid,
     // void *callback, void *userData, char dedup)`. Returns the data
     // block (entry+0x18) when loaded; with `callback==0` it only peeks
     // (no query), with a non-null callback it fires the network query on
-    // a miss. Used by the creature/gameobject caches directly (the item
-    // and quest caches have their own type-specific wrappers). Verified
-    // via FUN_00604600 (`FUN_00556aa0(creatureID, &guid, cb, 0, 0)`).
-    FUN_CACHE_GET_RECORD = 0x00556AA0,
-    // Generic cache response parser — `__thiscall(cache, packetReader,
-    // flag)`. Creature/gameobject (and the other generic-parser caches)
-    // route their `SMSG_*_QUERY_RESPONSE` through this: it fills the
-    // entry's data block (`FUN_007c8120`), sets the loaded flag, and
-    // walks the entry's pending-callback list. The item and quest caches
-    // use their own specialized parsers (`FUN_ITEMSTATS_CACHE_RESPONSE`
-    // etc.), so hooking this is conflict-free. `Cache::QueryLoad` hooks
-    // it once and dispatches by cache instance to fire the per-cache
-    // `*_DATA_LOAD_RESULT` event. The creature-specific wrapper that
-    // calls it (the registered SMSG handler) is `FUN_005550E0`.
-    FUN_CACHE_QUERY_RESPONSE = 0x00556E20,
+    // a miss. Class-specific (reads the loaded flag at entry+0x50);
+    // gameobjects are a sibling class with a different layout and their
+    // own `_GetRecord` (FUN_GAMEOBJECT_GET_RECORD). Verified via
+    // FUN_00604600 (`FUN_00556aa0(creatureID, &guid, cb, 0, 0)`).
+    FUN_CREATURE_GET_RECORD = 0x00556AA0,
+    // Creature-cache response parser — `__thiscall(cache, packetReader,
+    // flag)`. Fills the entry data block, sets the loaded flag (entry+0x50),
+    // and walks the entry's pending-callback list. The creature SMSG
+    // handler `FUN_005550E0` calls it with ecx=the creature cache.
+    // `Cache::QueryLoad` hooks it to fire CREATURE_DATA_LOAD_RESULT. The
+    // item/quest caches have their own parsers, so it's conflict-free.
+    FUN_CREATURE_QUERY_RESPONSE = 0x00556E20,
     // Creature-query record field offsets, within the data block returned
-    // by FUN_CACHE_GET_RECORD. Anchored by rank@+0x20 (read by the
+    // by FUN_CREATURE_GET_RECORD. Anchored by rank@+0x20 (read by the
     // classification helper FUN_00605620 as `[block+0x20]`) and the
     // wire/WDB field order (Name[4], SubName, typeFlags, type, family,
     // rank, unk, petSpellDataId, displayId), cross-checked against real
@@ -2020,6 +2017,32 @@ enum Offsets {
     OFF_CREATURE_FAMILY = 0x1C,    // CreatureFamily
     OFF_CREATURE_RANK = 0x20,      // 0=normal,1=elite,2=rareelite,3=worldboss,4=rare
     OFF_CREATURE_DISPLAYID = 0x2C, // creature model display ID
+
+    // GameObject cache (gameobjectcache.wdb, SMSG_GAMEOBJECT_QUERY_RESPONSE).
+    // Sibling cache class to creature (constructed by FUN_00554B90 ->
+    // FUN_00557bd0, sig 'BOGW', recordSize 0x5E) — same struct shape but a
+    // different vtable (0x0080913C) and a LARGER entry (loaded flag at
+    // entry+0x98, not +0x50), so it has its own `_GetRecord` and parser.
+    VAR_GAMEOBJECT_CACHE = 0x00C0E318,
+    // GO `_GetRecord`, same signature as the creature one. Verified via
+    // FUN_0062dc10 (`FUN_00558560(goEntry, &guid, 0,0,0)` then reads the
+    // GO name at `[block+0x08]`).
+    FUN_GAMEOBJECT_GET_RECORD = 0x00558560,
+    // GO response parser — `__thiscall(cache, packetReader, flag)`. The GO
+    // SMSG handler `FUN_00555100` calls it with ecx=the GO cache. Distinct
+    // from the creature parser (sets loaded flag at entry+0x98), so
+    // `Cache::QueryLoad` hooks it separately to fire GAMEOBJECT_DATA_LOAD_RESULT.
+    FUN_GAMEOBJECT_QUERY_RESPONSE = 0x005588E0,
+    // GO-query record field offsets, within the data block returned by
+    // FUN_GAMEOBJECT_GET_RECORD. Wire/WDB order: type, displayId, Name[4],
+    // then a 24-int data[] array. name@+0x08 verified (FUN_0062dc10 reads
+    // `[block+0x08]` as the name); type@+0x00 / displayId@+0x04 follow from
+    // the field order, cross-checked against real gameobjectcache.wdb rows
+    // (Windrunner type 15 displayId 7087; Mesa Elevator 47297 type 11
+    // displayId 360).
+    OFF_GAMEOBJECT_TYPE = 0x00,      // GameObjectType (0=door,3=chest,…)
+    OFF_GAMEOBJECT_DISPLAYID = 0x04, // model display ID
+    OFF_GAMEOBJECT_NAME = 0x08,      // char *Name[4]; [0] is the primary name
 
     // Action bar slot table — `uint[120]` (max slot index `< 0x78`).
     // Each entry is a packed action descriptor; top 4 bits are the type

@@ -62,7 +62,7 @@ using GetCacheRecord_t = const uint8_t *(__thiscall *)(void *cache, uint32_t id,
                                                        void *userData, char dedup);
 
 const uint8_t *PeekCreature(uint32_t creatureID) {
-    auto fn = reinterpret_cast<GetCacheRecord_t>(Offsets::FUN_CACHE_GET_RECORD);
+    auto fn = reinterpret_cast<GetCacheRecord_t>(Offsets::FUN_CREATURE_GET_RECORD);
     auto *cache = reinterpret_cast<void *>(Offsets::VAR_CREATURE_CACHE);
     const uint64_t zeroGuid = 0;
     return fn(cache, creatureID, &zeroGuid, nullptr, nullptr, 0);
@@ -128,7 +128,7 @@ void RegisterLuaFunctions() {
     Game::Lua::RegisterTableFunction("C_CreatureInfo", "RequestLoadCreatureByID",
                                      &Script_RequestLoadCreatureByID);
     Cache::QueryLoad::Register(reinterpret_cast<void *>(Offsets::VAR_CREATURE_CACHE),
-                               kCreatureDataLoadResult);
+                               kCreatureDataLoadResult, Offsets::FUN_CREATURE_GET_RECORD);
 }
 
 const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};

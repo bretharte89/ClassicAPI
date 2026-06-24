@@ -24,27 +24,26 @@ namespace Cache::QueryLoad {
 
 namespace {
 
-// Generic cache `_GetRecord` (FUN_CACHE_GET_RECORD). callback=nullptr →
-// pure hash-table peek (returns the loaded data block or nullptr, no
-// query). Non-null callback → also fires the network query on a miss and
-// stores `(callback, userData)` on the entry's pending list. dedup=1 so
-// repeat fetches for the same id before the response lands don't queue
-// the callback twice.
+// A cache class's `_GetRecord`. callback=nullptr → pure peek (returns the
+// loaded data block or nullptr, no query). Non-null callback → also fires
+// the network query on a miss and stores `(callback, userData)` on the
+// entry's pending list. dedup=1 so repeat fetches for the same id before
+// the response lands don't queue the callback twice.
 using GetCacheRecord_t = const uint8_t *(__thiscall *)(void *cache, uint32_t id,
                                                        const uint64_t *guid, void *callback,
                                                        void *userData, char dedup);
 
-// Generic response parser we hook (FUN_CACHE_QUERY_RESPONSE).
+// A cache class's response parser, which we hook (e.g.
+// FUN_CREATURE_QUERY_RESPONSE / FUN_GAMEOBJECT_QUERY_RESPONSE).
 using CacheResponse_t = void(__thiscall *)(void *cache, void *packetReader, int flag);
 
-// Engine callback shape (__stdcall, ret 8) — see Item::Data. We only
-// pass it to make `_GetRecord` send the query (the trigger is
-// `callback != NULL`); the actual completion is observed via the
-// response hook + tick sweep, so the callback itself does nothing.
+// Engine callback shape (__stdcall, ret 8) — see Item::Data. We only pass
+// it to make `_GetRecord` send the query (the trigger is callback != 0);
+// completion is observed via the response hook + tick sweep.
 void __stdcall NoOpCallback(void * /*userData*/, int /*success*/) {}
 
-const uint8_t *CacheFetch(void *cache, uint32_t id, void *callback) {
-    auto fn = reinterpret_cast<GetCacheRecord_t>(Offsets::FUN_CACHE_GET_RECORD);
+const uint8_t *CacheFetch(uintptr_t getRecord, void *cache, uint32_t id, void *callback) {
+    auto fn = reinterpret_cast<GetCacheRecord_t>(getRecord);
     const uint64_t zeroGuid = 0;
     void *userData =
         callback ? reinterpret_cast<void *>(static_cast<uintptr_t>(id)) : nullptr;
@@ -58,11 +57,12 @@ struct Pending {
 
 constexpr int kMaxCaches = 8;
 constexpr int kMaxPending = 256;
-constexpr int kMaxWaitTicks = 1200; // ~ a few minutes of WorldTicks → give up, fire failure
+constexpr int kMaxWaitTicks = 1200; // give up and fire failure after this many WorldTicks
 
 struct Registered {
     void *cache;
     const char *eventName;
+    uintptr_t getRecord; // this cache class's _GetRecord
     Pending pending[kMaxPending];
     int pendingCount;
 };
@@ -97,10 +97,14 @@ void RemovePendingAt(Registered *r, int idx) {
         r->pending[idx] = r->pending[r->pendingCount];
 }
 
+bool IsLoaded(const Registered *r, uint32_t id) {
+    return CacheFetch(r->getRecord, r->cache, id, nullptr) != nullptr;
+}
+
 // Fire + remove any pending id whose entry is now loaded.
 void Sweep(Registered *r) {
     for (int i = 0; i < r->pendingCount;) {
-        if (CacheFetch(r->cache, r->pending[i].id, nullptr) != nullptr) {
+        if (IsLoaded(r, r->pending[i].id)) {
             const uint32_t id = r->pending[i].id;
             RemovePendingAt(r, i);
             Fire(r, id, true);
@@ -110,38 +114,47 @@ void Sweep(Registered *r) {
     }
 }
 
-// Response-handler hook. The engine fills entries from
-// `SMSG_*_QUERY_RESPONSE` and walks each entry's callback list inside the
-// original; afterward we sweep the pending set for the cache that just
-// got a response and fire the completion event for anything now-loaded.
-// `__thiscall` mimicked as `__fastcall(ecx, edx_unused, …)` per the
-// codebase convention.
-CacheResponse_t g_origResponse = nullptr;
-
-void __fastcall Response_h(void *cache, void * /*edx*/, void *packetReader, int flag) {
-    using Trampoline_t = void(__fastcall *)(void *cache, void *edx, void *packetReader, int flag);
-    reinterpret_cast<Trampoline_t>(g_origResponse)(cache, nullptr, packetReader, flag);
-
-    // Only act on caches we track; other caches route through this same
-    // parser and are simply ignored.
+// Shared post-response dispatch: a parser for `cache` just ran, so sweep
+// that cache's pending set (no-op for caches we don't track).
+void DispatchSweep(void *cache) {
     Registered *r = Find(cache);
     if (r != nullptr)
         Sweep(r);
 }
 
-const Game::HookAutoRegister _hookResponse{
-    Offsets::FUN_CACHE_QUERY_RESPONSE, reinterpret_cast<void *>(&Response_h),
-    reinterpret_cast<void **>(&g_origResponse)};
+// One response-handler hook per cache class. Each calls its own original
+// trampoline (the parser fills the entry + walks the engine's own
+// callback list), then sweeps via the shared dispatch. `__thiscall`
+// mimicked as `__fastcall(ecx, edx_unused, …)`.
+using Trampoline_t = void(__fastcall *)(void *cache, void *edx, void *packetReader, int flag);
 
-// Timeout + safety net. The hook covers the happy path; this only fires
-// failure for ids that never resolve (lost query / server silent) after
-// `kMaxWaitTicks`, and re-checks loaded as a backstop in case a fill
-// arrived through a path the hook didn't observe.
+CacheResponse_t g_origCreatureParser = nullptr;
+void __fastcall CreatureParser_h(void *cache, void * /*edx*/, void *packetReader, int flag) {
+    reinterpret_cast<Trampoline_t>(g_origCreatureParser)(cache, nullptr, packetReader, flag);
+    DispatchSweep(cache);
+}
+
+CacheResponse_t g_origGameObjectParser = nullptr;
+void __fastcall GameObjectParser_h(void *cache, void * /*edx*/, void *packetReader, int flag) {
+    reinterpret_cast<Trampoline_t>(g_origGameObjectParser)(cache, nullptr, packetReader, flag);
+    DispatchSweep(cache);
+}
+
+const Game::HookAutoRegister _hookCreature{
+    Offsets::FUN_CREATURE_QUERY_RESPONSE, reinterpret_cast<void *>(&CreatureParser_h),
+    reinterpret_cast<void **>(&g_origCreatureParser)};
+const Game::HookAutoRegister _hookGameObject{
+    Offsets::FUN_GAMEOBJECT_QUERY_RESPONSE, reinterpret_cast<void *>(&GameObjectParser_h),
+    reinterpret_cast<void **>(&g_origGameObjectParser)};
+
+// Timeout + safety net. The hooks cover the happy path; this fires
+// failure for ids that never resolve after `kMaxWaitTicks`, and
+// re-checks loaded as a backstop for fills observed off the hook path.
 void OnWorldTick() {
     for (int c = 0; c < g_cacheCount; ++c) {
         Registered *r = &g_caches[c];
         for (int i = 0; i < r->pendingCount;) {
-            if (CacheFetch(r->cache, r->pending[i].id, nullptr) != nullptr) {
+            if (IsLoaded(r, r->pending[i].id)) {
                 const uint32_t id = r->pending[i].id;
                 RemovePendingAt(r, i);
                 Fire(r, id, true);
@@ -163,8 +176,8 @@ const Tick::WorldTick::AutoSubscribe _tickSub{&OnWorldTick};
 
 } // namespace
 
-void Register(void *cacheInstance, const char *eventName) {
-    if (cacheInstance == nullptr || eventName == nullptr)
+void Register(void *cacheInstance, const char *eventName, uintptr_t getRecordAddr) {
+    if (cacheInstance == nullptr || eventName == nullptr || getRecordAddr == 0)
         return;
     if (Find(cacheInstance) != nullptr) // idempotent (safe across /reload)
         return;
@@ -172,12 +185,14 @@ void Register(void *cacheInstance, const char *eventName) {
         return;
     g_caches[g_cacheCount].cache = cacheInstance;
     g_caches[g_cacheCount].eventName = eventName;
+    g_caches[g_cacheCount].getRecord = getRecordAddr;
     g_caches[g_cacheCount].pendingCount = 0;
     ++g_cacheCount;
 }
 
 bool IsCached(void *cacheInstance, uint32_t id) {
-    return CacheFetch(cacheInstance, id, nullptr) != nullptr;
+    const Registered *r = Find(cacheInstance);
+    return r != nullptr && IsLoaded(r, id);
 }
 
 bool RequestLoad(void *cacheInstance, uint32_t id) {
@@ -187,7 +202,7 @@ bool RequestLoad(void *cacheInstance, uint32_t id) {
 
     // Already cached — fire success synchronously (modern RequestLoad
     // contract: the completion event fires even on a cache hit).
-    if (CacheFetch(cacheInstance, id, nullptr) != nullptr) {
+    if (IsLoaded(r, id)) {
         Fire(r, id, true);
         return true;
     }
@@ -199,7 +214,7 @@ bool RequestLoad(void *cacheInstance, uint32_t id) {
 
     // Send the query (non-null callback is the trigger), then track until
     // the response hook / tick fires the event.
-    CacheFetch(cacheInstance, id, reinterpret_cast<void *>(&NoOpCallback));
+    CacheFetch(r->getRecord, cacheInstance, id, reinterpret_cast<void *>(&NoOpCallback));
     r->pending[r->pendingCount].id = id;
     r->pending[r->pendingCount].ticksWaiting = 0;
     ++r->pendingCount;
