@@ -61,6 +61,7 @@ build instructions.
 - [Creature](#creature)
   - [`C_CreatureInfo.GetCreatureID(guid)`](#c_creatureinfogetcreatureidguid)
   - [`C_CreatureInfo.GetCreatureInfoByID(creatureID)`](#c_creatureinfogetcreatureinfobyidcreatureid)
+  - [`C_CreatureInfo.RequestLoadCreatureByID(creatureID)`](#c_creatureinforequestloadcreaturebyidcreatureid)
 
 - [CVar](#cvar)
   - [`C_CVar.GetCVarBool(cvar)`](#c_cvargetcvarboolcvar)
@@ -1530,6 +1531,47 @@ off the cached data block. Field offsets verified against the binary
 (rank read by the engine's classification helper at `[block+0x20]`) and
 real `creaturecache.wdb` rows (Misthoof Stag→type 1, Nordrassil
 Nymph→type 7 rank 1, Greathorn Hunter→family 26).
+
+For a creature that isn't cached yet, call
+[`RequestLoadCreatureByID`](#c_creatureinforequestloadcreaturebyidcreatureid)
+first and read it once `CREATURE_DATA_LOAD_RESULT` fires.
+
+### `C_CreatureInfo.RequestLoadCreatureByID(creatureID)`
+
+Asynchronously fetches a creature that isn't in the cache yet — issues
+`SMSG_CREATURE_QUERY` and fires **`CREATURE_DATA_LOAD_RESULT(creatureID,
+success)`** when the response lands, at which point
+[`GetCreatureInfoByID`](#c_creatureinfogetcreatureinfobyidcreatureid)
+returns its data. The same shape as
+[`C_Item.RequestLoadItemData`](#c_itemrequestloaditemdatabyiditem--c_itemrequestloaditemdataitemlocation).
+
+```lua
+local f = CreateFrame("Frame")
+f:RegisterEvent("CREATURE_DATA_LOAD_RESULT")
+f:SetScript("OnEvent", function()
+    -- 1.12 passes event args as globals: arg1 = creatureID, arg2 = success
+    if arg2 then
+        local info = C_CreatureInfo.GetCreatureInfoByID(arg1)
+        -- info.name, info.type, info.rank, …
+    end
+end)
+
+C_CreatureInfo.RequestLoadCreatureByID(10184)   -- Onyxia → fires the event,
+                                                --  then GetCreatureInfoByID works
+```
+
+Returns `true` if the request was accepted (`false` only on bad input
+or a full pending set). If the creature is **already** cached, the
+event fires synchronously with `success = true`. On a query that never
+resolves it fires once with `success = false` after a timeout.
+
+Implementation: a shared `Cache::QueryLoad` dispatcher hooks the engine's
+generic cache response parser (`FUN_00556E20`) **once** and routes by
+cache instance — the same hook serves the gameobject cache too. The
+creature/gameobject caches use this generic parser; the item and quest
+caches have their own, so there's no hook collision. Verified in-game: `RequestLoadCreatureByID(10184)` on
+an uncached Onyxia fired the event and populated the cache (type 2
+Dragonkin, rank 3 world boss).
 
 ## CVar
 

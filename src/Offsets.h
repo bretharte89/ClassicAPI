@@ -1995,6 +1995,17 @@ enum Offsets {
     // and quest caches have their own type-specific wrappers). Verified
     // via FUN_00604600 (`FUN_00556aa0(creatureID, &guid, cb, 0, 0)`).
     FUN_CACHE_GET_RECORD = 0x00556AA0,
+    // Generic cache response parser — `__thiscall(cache, packetReader,
+    // flag)`. Creature/gameobject (and the other generic-parser caches)
+    // route their `SMSG_*_QUERY_RESPONSE` through this: it fills the
+    // entry's data block (`FUN_007c8120`), sets the loaded flag, and
+    // walks the entry's pending-callback list. The item and quest caches
+    // use their own specialized parsers (`FUN_ITEMSTATS_CACHE_RESPONSE`
+    // etc.), so hooking this is conflict-free. `Cache::QueryLoad` hooks
+    // it once and dispatches by cache instance to fire the per-cache
+    // `*_DATA_LOAD_RESULT` event. The creature-specific wrapper that
+    // calls it (the registered SMSG handler) is `FUN_005550E0`.
+    FUN_CACHE_QUERY_RESPONSE = 0x00556E20,
     // Creature-query record field offsets, within the data block returned
     // by FUN_CACHE_GET_RECORD. Anchored by rank@+0x20 (read by the
     // classification helper FUN_00605620 as `[block+0x20]`) and the
