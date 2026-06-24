@@ -60,6 +60,13 @@ Data::Filter ParseFilter(const char *filter) {
     return Data::Filter::Helpful;
 }
 
+// The `PLAYER` filter token restricts results to auras the local player
+// cast. No other modern token contains the substring "PLAYER", so a plain
+// substring test is safe.
+bool HasPlayerFilter(const char *filter) {
+    return filter != nullptr && strstr(filter, "PLAYER") != nullptr;
+}
+
 const char *ArgUnit(void *L, int idx) {
     if (!Game::Lua::IsString(L, idx))
         return nullptr;
@@ -82,9 +89,9 @@ const char *ArgOptString(void *L, int idx) {
 // or nil if no such aura. Used by `GetAuraDataByIndex` and the
 // filter-locked aliases.
 int PushAuraByIndex(void *L, const char *unitToken, int index,
-                    Data::Filter filter) {
+                    Data::Filter filter, bool playerOnly = false) {
     const uint8_t *unit = ResolveUnit(unitToken);
-    const int slot = Data::FindNthSlot(unit, index, filter);
+    const int slot = Data::FindNthSlot(unit, index, filter, playerOnly);
     if (slot < 0) {
         Game::Lua::PushNil(L);
         return 1;
@@ -101,7 +108,8 @@ int __fastcall Script_GetAuraDataByIndex(void *L) {
         Game::Lua::PushNil(L);
         return 1;
     }
-    return PushAuraByIndex(L, unit, index, ParseFilter(filterStr));
+    return PushAuraByIndex(L, unit, index, ParseFilter(filterStr),
+                           HasPlayerFilter(filterStr));
 }
 
 int __fastcall Script_GetBuffDataByIndex(void *L) {
@@ -139,7 +147,8 @@ int __fastcall Script_GetUnitAuraBySpellID(void *L) {
         f = ParseFilter(filterStr);
         fp = &f;
     }
-    const int slot = Data::FindSlotBySpellID(unit, static_cast<uint32_t>(spellID), fp);
+    const int slot = Data::FindSlotBySpellID(unit, static_cast<uint32_t>(spellID),
+                                             fp, HasPlayerFilter(filterStr));
     if (slot < 0) {
         Game::Lua::PushNil(L);
         return 1;
@@ -163,7 +172,8 @@ int __fastcall Script_GetAuraDataBySpellName(void *L) {
         f = ParseFilter(filterStr);
         fp = &f;
     }
-    const int slot = Data::FindSlotBySpellName(unit, spellName, fp);
+    const int slot = Data::FindSlotBySpellName(unit, spellName, fp,
+                                               HasPlayerFilter(filterStr));
     if (slot < 0) {
         Game::Lua::PushNil(L);
         return 1;
@@ -192,7 +202,7 @@ int __fastcall Script_GetPlayerAuraBySpellID(void *L) {
 // sequential keys starting from `nextKey`. Updates `nextKey` so a
 // follow-up call can append to the same outer table.
 void AppendRangeToArray(void *L, const uint8_t *unit, int outerIdx,
-                       Data::Filter filter, int &nextKey) {
+                       Data::Filter filter, int &nextKey, bool playerOnly) {
     const int start = (filter == Data::Filter::Harmful)
                           ? Offsets::UNIT_AURA_BUFF_COUNT
                           : 0;
@@ -201,6 +211,8 @@ void AppendRangeToArray(void *L, const uint8_t *unit, int outerIdx,
                         : Offsets::UNIT_AURA_BUFF_COUNT;
     for (int slot = start; slot < end; ++slot) {
         if (!Data::IsSlotPopulated(unit, slot))
+            continue;
+        if (playerOnly && !Data::IsPlayerCast(unit, slot))
             continue;
         Game::Lua::PushNumber(L, static_cast<double>(nextKey++));
         Data::Push(L, unit, slot);
@@ -218,14 +230,19 @@ int __fastcall Script_GetUnitAuras(void *L) {
     if (unit == nullptr)
         return 1;
 
+    // Range tokens are independent of PLAYER: an explicit HELPFUL/HARMFUL
+    // selects that range, neither selects both. So `"PLAYER"` alone returns
+    // both ranges restricted to player-cast auras (matching retail).
+    const bool playerOnly = HasPlayerFilter(filterStr);
+    const bool hasHelpful = filterStr != nullptr && strstr(filterStr, "HELPFUL") != nullptr;
+    const bool hasHarmful = filterStr != nullptr && strstr(filterStr, "HARMFUL") != nullptr;
+    const bool both = !hasHelpful && !hasHarmful;
+
     int nextKey = 1;
-    if (filterStr == nullptr) {
-        // No filter — return both ranges.
-        AppendRangeToArray(L, unit, 1, Data::Filter::Helpful, nextKey);
-        AppendRangeToArray(L, unit, 1, Data::Filter::Harmful, nextKey);
-    } else {
-        AppendRangeToArray(L, unit, 1, ParseFilter(filterStr), nextKey);
-    }
+    if (hasHelpful || both)
+        AppendRangeToArray(L, unit, 1, Data::Filter::Helpful, nextKey, playerOnly);
+    if (hasHarmful || both)
+        AppendRangeToArray(L, unit, 1, Data::Filter::Harmful, nextKey, playerOnly);
     return 1;
 }
 

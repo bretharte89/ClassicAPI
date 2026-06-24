@@ -47,22 +47,29 @@ bool IsSlotPopulated(const uint8_t *unit, int slot);
 // Finds the absolute slot of the `oneBasedIndex`-th populated aura
 // matching `filter`. Returns -1 if no such aura. Walks
 // 0..UNIT_AURA_BUFF_COUNT-1 for Helpful, UNIT_AURA_BUFF_COUNT..
-// UNIT_AURA_TOTAL-1 for Harmful.
-int FindNthSlot(const uint8_t *unit, int oneBasedIndex, Filter filter);
+// UNIT_AURA_TOTAL-1 for Harmful. When `playerOnly` is true, only auras
+// the local player cast (per `IsPlayerCast`) are counted/returned.
+int FindNthSlot(const uint8_t *unit, int oneBasedIndex, Filter filter,
+                bool playerOnly = false);
 
 // Finds the absolute slot of a populated aura with the given spell
 // ID, optionally restricted to one filter range. `filter` of
 // nullptr searches both ranges (helpful first, then harmful).
-// Returns -1 if not found.
+// `playerOnly` restricts to player-cast auras. Returns -1 if not found.
 int FindSlotBySpellID(const uint8_t *unit, uint32_t spellID,
-                      const Filter *filter);
+                      const Filter *filter, bool playerOnly = false);
 
 // Finds the absolute slot of a populated aura whose locale-resolved
 // spell name exactly matches `spellName`. Case-sensitive. Otherwise
 // same semantics as `FindSlotBySpellID`. Returns -1 if not found
 // or if `spellName` is null/empty.
 int FindSlotBySpellName(const uint8_t *unit, const char *spellName,
-                        const Filter *filter);
+                        const Filter *filter, bool playerOnly = false);
+
+// True iff the aura at `slot` was cast by the local player, per the
+// `Aura::Source` cache. False on a cache miss (caster unknown) — so a
+// PLAYER-filtered query excludes auras whose cast we didn't observe.
+bool IsPlayerCast(const uint8_t *unit, int slot);
 
 // Display stack count for the given slot (engine stores stacks-1,
 // we add 1). Returns 0 if the unit is null.

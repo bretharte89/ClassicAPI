@@ -9283,12 +9283,20 @@ selects.
 
 The optional `filter` string is a pipe-separated set of upper-case
 tokens, matching modern syntax (`"HELPFUL"`, `"HARMFUL"`,
-`"HELPFUL|PLAYER"`, etc.). Only `HELPFUL` (default) and `HARMFUL`
-are honored on vanilla; other tokens (`PLAYER` / `RAID` /
-`CANCELABLE` / `INCLUDE_NAME_PLATE_ONLY`) are accepted but no-op.
-(`PLAYER` is now technically derivable — `sourceGUID` vs. the player
-GUID — but filtering on it isn't wired in yet; `RAID` / nameplate
-flags still need systems vanilla doesn't have.)
+`"HELPFUL|PLAYER"`, etc.). Honored on vanilla:
+
+- **`HELPFUL`** (default) / **`HARMFUL`** — pick the buff or debuff range.
+  In `GetUnitAuras`, supplying neither returns both ranges.
+- **`PLAYER`** — restrict to auras the local player cast, via the
+  `Aura::Source` caster cache (`sourceGUID == ` player GUID). Combines with
+  the range tokens (`"HARMFUL|PLAYER"` = your debuffs only). Because the
+  caster is best-effort, an aura whose cast we didn't observe is treated as
+  not-player-cast and excluded — so `PLAYER` can under-report auras that
+  predate login.
+
+Other tokens (`RAID` / `CANCELABLE` / `INCLUDE_NAME_PLATE_ONLY`) are
+accepted but no-op — they need engine systems (raid-dispel relevance,
+nameplate visibility flags) vanilla doesn't have.
 
 ### Caster & timing (`Aura::Source`)
 

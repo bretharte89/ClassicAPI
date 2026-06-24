@@ -236,7 +236,19 @@ bool IsSlotPopulated(const uint8_t *unit, int slot) {
     return IsVisible(SpellRecord(spellID));
 }
 
-int FindNthSlot(const uint8_t *unit, int oneBasedIndex, Filter filter) {
+bool IsPlayerCast(const uint8_t *unit, int slot) {
+    const uint32_t spellID = ReadSpellID(unit, slot);
+    if (spellID == 0)
+        return false;
+    uint64_t casterGuid = 0;
+    uint32_t expMs = 0;
+    if (!Aura::Source::Get(UnitGuid(unit), spellID, &casterGuid, &expMs))
+        return false;
+    return casterGuid != 0 && casterGuid == Unit::Identity::PlayerGuid();
+}
+
+int FindNthSlot(const uint8_t *unit, int oneBasedIndex, Filter filter,
+                bool playerOnly) {
     if (unit == nullptr || oneBasedIndex < 1)
         return -1;
     const int start = (filter == Filter::Harmful)
@@ -249,6 +261,8 @@ int FindNthSlot(const uint8_t *unit, int oneBasedIndex, Filter filter) {
     for (int slot = start; slot < end; ++slot) {
         if (!IsSlotPopulated(unit, slot))
             continue;
+        if (playerOnly && !IsPlayerCast(unit, slot))
+            continue;
         if (++matches == oneBasedIndex)
             return slot;
     }
@@ -256,7 +270,7 @@ int FindNthSlot(const uint8_t *unit, int oneBasedIndex, Filter filter) {
 }
 
 int FindSlotBySpellID(const uint8_t *unit, uint32_t spellID,
-                      const Filter *filter) {
+                      const Filter *filter, bool playerOnly) {
     if (unit == nullptr || spellID == 0)
         return -1;
     const int start = (filter != nullptr && *filter == Filter::Harmful)
@@ -268,14 +282,17 @@ int FindSlotBySpellID(const uint8_t *unit, uint32_t spellID,
     for (int slot = start; slot < end; ++slot) {
         if (!IsSlotPopulated(unit, slot))
             continue;
-        if (ReadSpellID(unit, slot) == spellID)
-            return slot;
+        if (ReadSpellID(unit, slot) != spellID)
+            continue;
+        if (playerOnly && !IsPlayerCast(unit, slot))
+            continue;
+        return slot;
     }
     return -1;
 }
 
 int FindSlotBySpellName(const uint8_t *unit, const char *spellName,
-                        const Filter *filter) {
+                        const Filter *filter, bool playerOnly) {
     if (unit == nullptr || spellName == nullptr || *spellName == '\0')
         return -1;
     const int start = (filter != nullptr && *filter == Filter::Harmful)
@@ -288,8 +305,11 @@ int FindSlotBySpellName(const uint8_t *unit, const char *spellName,
         if (!IsSlotPopulated(unit, slot))
             continue;
         const char *name = LocalizedSpellName(SpellRecord(ReadSpellID(unit, slot)));
-        if (name != nullptr && std::strcmp(name, spellName) == 0)
-            return slot;
+        if (name == nullptr || std::strcmp(name, spellName) != 0)
+            continue;
+        if (playerOnly && !IsPlayerCast(unit, slot))
+            continue;
+        return slot;
     }
     return -1;
 }
