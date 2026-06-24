@@ -1982,6 +1982,34 @@ enum Offsets {
     FUN_DBCACHE_QUEST_GET_RECORD = 0x00562A40,
     VAR_QUEST_LOG_SELECTED_QUEST_ID = 0x00BB7480,
 
+    // Creature cache (creaturecache.wdb, SMSG_CREATURE_QUERY_RESPONSE).
+    // One instance of the generic client query-cache class; constructed
+    // by the cache factory (FUN_00554b40 -> FUN_00556060 with sig
+    // 'BOMW', "creaturecache.wdb", recordSize 0x60).
+    VAR_CREATURE_CACHE = 0x00C0E354,
+    // Generic cache `_GetRecord` — `__thiscall(cache, id, const u64 *guid,
+    // void *callback, void *userData, char dedup)`. Returns the data
+    // block (entry+0x18) when loaded; with `callback==0` it only peeks
+    // (no query), with a non-null callback it fires the network query on
+    // a miss. Used by the creature/gameobject caches directly (the item
+    // and quest caches have their own type-specific wrappers). Verified
+    // via FUN_00604600 (`FUN_00556aa0(creatureID, &guid, cb, 0, 0)`).
+    FUN_CACHE_GET_RECORD = 0x00556AA0,
+    // Creature-query record field offsets, within the data block returned
+    // by FUN_CACHE_GET_RECORD. Anchored by rank@+0x20 (read by the
+    // classification helper FUN_00605620 as `[block+0x20]`) and the
+    // wire/WDB field order (Name[4], SubName, typeFlags, type, family,
+    // rank, unk, petSpellDataId, displayId), cross-checked against real
+    // creaturecache.wdb rows (Misthoof Stag 61332 -> type 1; Nordrassil
+    // Nymph 61582 -> type 7, rank 1). Strings are char* (the fixed 0x60
+    // block holds pointers, not the WDB's inline strings).
+    OFF_CREATURE_NAME = 0x00,      // char *Name[4]; [0] is the primary name
+    OFF_CREATURE_SUBNAME = 0x10,   // char *SubName (title); "" if none
+    OFF_CREATURE_TYPE = 0x18,      // CreatureType (1=Beast, 7=Humanoid, ...)
+    OFF_CREATURE_FAMILY = 0x1C,    // CreatureFamily
+    OFF_CREATURE_RANK = 0x20,      // 0=normal,1=elite,2=rareelite,3=worldboss,4=rare
+    OFF_CREATURE_DISPLAYID = 0x2C, // creature model display ID
+
     // Action bar slot table — `uint[120]` (max slot index `< 0x78`).
     // Each entry is a packed action descriptor; top 4 bits are the type
     // tag, low 28 bits are the payload. Tags:

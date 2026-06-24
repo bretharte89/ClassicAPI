@@ -58,6 +58,9 @@ build instructions.
   - [`coroutine.wrap(fn)`](#coroutinewrapfn)
   - [Async pattern (RunAsync + C_Timer.After)](#async-pattern-runasync--c_timerafter)
 
+- [Creature](#creature)
+  - [`C_CreatureInfo.GetCreatureInfoByID(creatureID)`](#c_creatureinfogetcreatureinfobyidcreatureid)
+
 - [CVar](#cvar)
   - [`C_CVar.GetCVarBool(cvar)`](#c_cvargetcvarboolcvar)
 
@@ -1460,6 +1463,41 @@ the next `step` after that many seconds. `yield(0)` is the
 fires on the next OnUpdate tick). `RunNextFrame(cb)` in
 [`AddOns/!!!ClassicAPI/Util/FunctionUtil.lua`](../AddOns/!!!ClassicAPI/Util/FunctionUtil.lua)
 wraps the same primitive for the non-coroutine case.
+
+## Creature
+
+### `C_CreatureInfo.GetCreatureInfoByID(creatureID)`
+
+Reads the client-side **creature cache** (`creaturecache.wdb`, fed by
+`SMSG_CREATURE_QUERY_RESPONSE`) for an NPC/creature by ID and returns a
+table — or `nil` if it isn't cached:
+
+```lua
+local info = C_CreatureInfo.GetCreatureInfoByID(61332)
+-- {
+--   creatureID = 61332,
+--   name       = "Misthoof Stag",
+--   subName    = "",     -- title/subtitle ("" if none)
+--   type       = 1,      -- CreatureType: 1=Beast, 7=Humanoid, …
+--   family     = 0,      -- CreatureFamily
+--   rank       = 0,      -- 0=normal, 1=elite, 2=rareelite, 3=worldboss, 4=rare
+--   displayID  = 10957,  -- model display ID
+-- }
+```
+
+This is a synchronous **peek** — it returns data only for creatures
+already cached (seen this session, or loaded from `creaturecache.wdb`
+at login), and `nil` otherwise. Unlike `UnitCreatureType`/
+`UnitClassification`, which only work on a *live unit token*, this
+answers for any creatureID you have cached — even one not currently in
+the world.
+
+Reads through the engine's generic cache `_GetRecord` (with no callback,
+so it's a pure lookup — no network query) and pulls the fields straight
+off the cached data block. Field offsets verified against the binary
+(rank read by the engine's classification helper at `[block+0x20]`) and
+real `creaturecache.wdb` rows (Misthoof Stag→type 1, Nordrassil
+Nymph→type 7 rank 1, Greathorn Hunter→family 26).
 
 ## CVar
 
