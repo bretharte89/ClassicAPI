@@ -59,6 +59,7 @@ build instructions.
   - [Async pattern (RunAsync + C_Timer.After)](#async-pattern-runasync--c_timerafter)
 
 - [Creature](#creature)
+  - [`C_CreatureInfo.GetCreatureID(guid)`](#c_creatureinfogetcreatureidguid)
   - [`C_CreatureInfo.GetCreatureInfoByID(creatureID)`](#c_creatureinfogetcreatureinfobyidcreatureid)
 
 - [CVar](#cvar)
@@ -260,7 +261,6 @@ build instructions.
   - [`UnitNameFromGUID(guid)`](#unitnamefromguidguid)
   - [`C_PlayerCache.GetPlayerInfoByName(name)`](#c_playercachegetplayerinfobynamename)
   - [`C_PlayerInfo.GUIDIsPlayer(guid)` / `GUIDIsCreature` / `GUIDIsPet` / `GUIDIsGameObject`](#c_playerinfoguidisplayerguid--guidiscreature--guidispet--guidisgameobject)
-  - [`C_CreatureInfo.GetCreatureID(guid)`](#c_creatureinfogetcreatureidguid)
   - [`C_PlayerCache.RememberPlayer(guid, name, classToken)`](#c_playercacherememberplayerguid-name-classtoken)
   - [`C_PlayerCache.SetEnabled(enabled)`](#c_playercachesetenabledenabled)
   - [`C_PlayerCache.IsEnabled()`](#c_playercacheisenabled)
@@ -1465,6 +1465,38 @@ fires on the next OnUpdate tick). `RunNextFrame(cb)` in
 wraps the same primitive for the non-coroutine case.
 
 ## Creature
+
+### `C_CreatureInfo.GetCreatureID(guid)`
+
+Extracts the creature template / NPC ID from a unit GUID. Vanilla
+1.12 packs the entry ID directly into bits 24-47 of the 64-bit
+GUID for the types that carry one; this function does the shift
+and mask so addons don't have to.
+
+```lua
+C_CreatureInfo.GetCreatureID(UnitGUID("target"))   -- 1842 for Hogger
+C_CreatureInfo.GetCreatureID(UnitGUID("pet"))      -- pet's creature template ID
+C_CreatureInfo.GetCreatureID(UnitGUID("player"))   -- nil (no entry on players)
+```
+
+Accepts creature GUIDs (`0xF130xxxx…`) and pet GUIDs
+(`0xF140xxxx…`). Returns `nil` for:
+- non-string input or malformed GUIDs
+- player GUIDs — the low 32 bits hold a player ID, not a template
+- game-object / dynamic-object / corpse / item GUIDs — modern's
+  `C_CreatureInfo` doesn't surface entry IDs for these even though
+  the bits are in the same range; addons that need them can shift
+  the raw GUID themselves (`(guid >> 24) & 0xFFFFFF`)
+- entry IDs of 0 — the engine never assigns 0; treated as "no info"
+
+The standard 16-digit (`"0xHHHHHHHHLLLLLLLL"`) and 8-digit
+(`"0xLLLLLLLL"`) GUID-string forms are both accepted, the same forms
+the `C_PlayerInfo.GUIDIs*` functions take.
+
+The creatureID this returns is exactly what
+[`C_CreatureInfo.GetCreatureInfoByID`](#c_creatureinfogetcreatureinfobyidcreatureid)
+takes — `GetCreatureInfoByID(GetCreatureID(UnitGUID("target")))` gives
+the target's cached name/type/family/rank.
 
 ### `C_CreatureInfo.GetCreatureInfoByID(creatureID)`
 
@@ -6317,33 +6349,6 @@ Accepts either the 16-digit `"0xHHHHHHHHLLLLLLLL"` form or the
 8-digit `"0xLLLLLLLL"` shortcut (high dword implicitly zero).
 Malformed input returns `false` rather than raising — matching
 modern's tolerance for stale GUIDs from addon-side caches.
-
-### `C_CreatureInfo.GetCreatureID(guid)`
-
-Extracts the creature template / NPC ID from a unit GUID. Vanilla
-1.12 packs the entry ID directly into bits 24-47 of the 64-bit
-GUID for the types that carry one; this function does the shift
-and mask so addons don't have to.
-
-```lua
-C_CreatureInfo.GetCreatureID(UnitGUID("target"))   -- 1842 for Hogger
-C_CreatureInfo.GetCreatureID(UnitGUID("pet"))      -- pet's creature template ID
-C_CreatureInfo.GetCreatureID(UnitGUID("player"))   -- nil (no entry on players)
-```
-
-Accepts creature GUIDs (`0xF130xxxx…`) and pet GUIDs
-(`0xF140xxxx…`). Returns `nil` for:
-- non-string input or malformed GUIDs
-- player GUIDs — the low 32 bits hold a player ID, not a template
-- game-object / dynamic-object / corpse / item GUIDs — modern's
-  `C_CreatureInfo` doesn't surface entry IDs for these even though
-  the bits are in the same range; addons that need them can shift
-  the raw GUID themselves (`(guid >> 24) & 0xFFFFFF`)
-- entry IDs of 0 — the engine never assigns 0; treated as "no info"
-
-The standard 16-digit (`"0xHHHHHHHHLLLLLLLL"`) and 8-digit
-(`"0xLLLLLLLL"`) GUID-string forms are both accepted, same as
-`C_PlayerInfo.GUIDIs*` above.
 
 ### `C_PlayerCache.SetEnabled(enabled)`
 
