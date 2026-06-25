@@ -18,6 +18,7 @@
 #include "Data.h"
 #include "Game.h"
 #include "Offsets.h"
+#include "net/PacketReader.h"
 #include "spell/Lookup.h"
 #include "tick/WorldTick.h"
 #include "unit/Identity.h"
@@ -28,39 +29,7 @@ namespace Aura::Source {
 
 namespace {
 
-// Minimal view of the engine's CDataStore packet reader. Only the fields
-// the read path touches; layout matches nampower's `CDataStore`. Incoming
-// SMSG packets are a single contiguous buffer (`m_base == 0`,
-// `m_alloc == size`), so the simple `m_buffer - m_base + m_read` read with
-// an `m_size` bound is sufficient — same critical guard as the engine's
-// `CDataStore::Get`.
-//
-// CDataStore is POLYMORPHIC in the engine (virtual Internal*/Reset/etc.),
-// so a vtable pointer occupies offset 0 and the data members start at
-// +0x04. Omitting `vtable` here would shift every field by 4 and make
-// `m_buffer` read the vptr — yielding a garbage read address (the cause of
-// an early ACCESS_VIOLATION in the SpellGo hook).
-struct CDataStore {
-    void *vtable;       // +0x00
-    uint8_t *m_buffer;  // +0x04
-    uint32_t m_base;    // +0x08
-    uint32_t m_alloc;   // +0x0C
-    uint32_t m_size;    // +0x10
-    uint32_t m_read;    // +0x14
-};
-
-template <typename T>
-T ReadField(CDataStore *p) {
-    T val{};
-    const uint32_t end = p->m_read + sizeof(T);
-    if (end > p->m_size) {
-        p->m_read = p->m_size + 1; // poison: further reads short-circuit
-        return val;
-    }
-    val = *reinterpret_cast<const T *>(p->m_buffer - p->m_base + p->m_read);
-    p->m_read += sizeof(T);
-    return val;
-}
+using Net::CDataStore;
 
 // A cast applies an aura iff any of its three effects names an aura. The
 // EffectApplyAuraName[3] int32 array sits at `+0x16C` (already used by the
@@ -181,10 +150,10 @@ void __fastcall SpellGo_h(uint64_t *itemGUID, uint64_t *casterGUID,
 
     if (packet != nullptr) {
         const uint32_t savedRead = packet->m_read;
-        ReadField<int16_t>(packet); // castFlags (unused)
-        const uint8_t numHit = ReadField<uint8_t>(packet);
+        Net::Read<int16_t>(packet); // castFlags (unused)
+        const uint8_t numHit = Net::Read<uint8_t>(packet);
         for (int i = 0; i < numHit; ++i) {
-            const uint64_t guid = ReadField<uint64_t>(packet);
+            const uint64_t guid = Net::Read<uint64_t>(packet);
             if (numTargets < kMaxTargets)
                 targets[numTargets++] = guid;
         }

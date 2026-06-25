@@ -695,6 +695,17 @@ enum Offsets {
     // same Octo/Turtle 1.12.1 client). Per-cast frequency, not per-frame.
     FUN_SPELL_GO = 0x006E7A70,
 
+    // SMSG packet handler that processes `SMSG_SPELL_START` (opcode
+    // `0x131`) among others — `int __fastcall(uint32_t unk, uint32_t
+    // opCode, uint32_t unk2, CDataStore *packet)`. For `0x131` the body is
+    // `itemGuid(packed), casterGuid(packed), spellId(u32), castFlags(u16),
+    // castTime(u32), targetMask, …`. This is the only place the client sees
+    // *another* unit's cast with a server-authoritative cast time, so
+    // `Spell::Cast` co-hooks it (gated on `opCode == 0x131`) to back
+    // remote-unit `UnitCastingInfo` / `UnitChannelInfo`. Mirrored from
+    // nampower's SpellStartHandlerHook.
+    FUN_SPELL_START_HANDLER = 0x006E7640,
+
     // `CGUnit_C::OnAuraAdded` — `__thiscall void(CGUnit *unit, uint32_t
     // slot, uint32_t spellId)` (i.e. `__fastcall(unit /*ecx*/, edx_unused,
     // slot, spellId)`). Fires for EVERY aura that lands on a tracked unit,

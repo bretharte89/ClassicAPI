@@ -7951,15 +7951,19 @@ C_Spell.UnitCastingInfo("player")
 `startTimeMs`/`endTimeMs` share `GetTime()`'s epoch (`GetTime()*1000`),
 so progress is `(GetTime()*1000 - startTimeMs) / (endTimeMs - startTimeMs)`.
 
-> **Local player only.** Vanilla 1.12 stores no cast times anywhere
-> readable (the cast bar is Lua-driven off `SPELLCAST_START`), and it
-> tracks regular casts for nobody but you — other units' casts exist
-> only as transient animation visuals. So `C_Spell.UnitCastingInfo(otherUnit)`
-> returns `nil`. We self-track the player's cast on a per-frame tick
-> (`VAR_CURRENT_CAST_SPELL`), stamping `startTimeMs = now` and
-> `endTimeMs = now + base cast time`. Instant casts return `nil` (no
-> cast bar). See [`C_Spell.UnitChannelInfo`](#c_spellunitchannelinfounit--c_spellchannelinfo)
-> for channels, which *are* visible on other units.
+> **Works for any unit.** Vanilla 1.12 stores no cast times on the
+> CGUnit (the cast bar is Lua-driven off `SPELLCAST_START`), so we
+> source them two ways: the **local player** is self-tracked on a
+> per-frame tick (`VAR_CURRENT_CAST_SPELL`, stamping `startTimeMs = now`,
+> `endTimeMs = now + effective cast time`); **other units** come from a
+> co-hook on `SMSG_SPELL_START` (`Spell::Cast`), the one packet carrying
+> another unit's cast with a server-authoritative cast time, cached per
+> caster GUID. So `C_Spell.UnitCastingInfo("target")` now backs
+> enemy/target/focus/nameplate cast bars. Instant casts return `nil` (no
+> cast bar). Best-effort for remote units: only casts that began while the
+> unit was in range are seen, and — since 1.12 has no per-unit interrupt
+> packet to hook — an *interrupted* remote cast lingers until its computed
+> `endTimeMs` rather than clearing instantly.
 >
 > `isTradeskill` is real — the spell's `SPELL_ATTR_TRADESPELL` flag, so
 > profession recipe casts (smelting, cooking/enchanting recipes, …)
@@ -7991,13 +7995,15 @@ C_Spell.ChannelInfo()
 --  907894314, 907902314, false, false, 10187
 ```
 
-Unlike casts, the channeled spellID **is** broadcast for every unit
-(`UNIT_FIELD_CHANNEL_SPELL`), so `C_Spell.UnitChannelInfo("target")`
-works on other units — returning `name`/`displayName`/`textureID`/`spellID`
-with **`nil` start/end times** (we only track the local player's channel
-start). For the player, the full timing is present
-(`endTimeMs - startTimeMs` = channel duration). Same placeholder fields
-as `C_Spell.UnitCastingInfo`.
+The channeled spellID **is** broadcast for every unit
+(`UNIT_FIELD_CHANNEL_SPELL`), so `C_Spell.UnitChannelInfo("target")` works
+on other units. Timing now comes from the same `SMSG_SPELL_START` co-hook
+as casts: when we observed the channel begin, the remote unit returns full
+**start/end times** (validated against the live `UNIT_FIELD_CHANNEL_SPELL`
+so a stale cache entry never applies to a different/ended channel);
+otherwise it falls back to `name`/`displayName`/`textureID`/`spellID` with
+**`nil` times**. The player path is unchanged (full timing). Same
+placeholder fields as `C_Spell.UnitCastingInfo`.
 
 ## SpellBook
 
