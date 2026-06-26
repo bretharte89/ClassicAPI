@@ -7960,10 +7960,18 @@ so progress is `(GetTime()*1000 - startTimeMs) / (endTimeMs - startTimeMs)`.
 > another unit's cast with a server-authoritative cast time, cached per
 > caster GUID. So `C_Spell.UnitCastingInfo("target")` now backs
 > enemy/target/focus/nameplate cast bars. Instant casts return `nil` (no
-> cast bar). Best-effort for remote units: only casts that began while the
-> unit was in range are seen, and — since 1.12 has no per-unit interrupt
-> packet to hook — an *interrupted* remote cast lingers until its computed
-> `endTimeMs` rather than clearing instantly.
+> cast bar). Best-effort for remote units, in three ways: only casts that
+> began while the unit was in range are seen; since 1.12 has no per-unit
+> interrupt packet to hook, an *interrupted* remote cast lingers until its
+> computed `endTimeMs` rather than clearing instantly; and the remote
+> `startTimeMs`/`endTimeMs` are shifted later by roughly your latency.
+> (1.12's `SMSG_SPELL_START` carries only a single `castTime`, so we stamp
+> `start = now, end = now + castTime` on receipt. 3.3.5+ avoids the skew
+> because its packet carries *both* total and remaining cast time and
+> back-dates `start = now − elapsed`; the 1.12 packet has no field to
+> recover `elapsed` from.) The **local player is unaffected** by all of
+> this — its cast is detected client-side at the moment of cast, no packet
+> involved.
 >
 > `isTradeskill` is real — the spell's `SPELL_ATTR_TRADESPELL` flag, so
 > profession recipe casts (smelting, cooking/enchanting recipes, …)

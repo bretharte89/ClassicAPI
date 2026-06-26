@@ -706,6 +706,14 @@ enum Offsets {
     // nampower's SpellStartHandlerHook.
     FUN_SPELL_START_HANDLER = 0x006E7640,
 
+    // `SMSG_SPELL_DELAYED` handler — `int __stdcall(uint32_t *opCode,
+    // CDataStore *packet)`. Body: `guid(u64), delayMs(u32)`. The server
+    // only sends this to the affected caster, so in practice it's always
+    // the local player's cast pushback (taking damage mid-cast). `Spell::
+    // Cast` co-hooks it to extend the tracked cast's end time so the bar
+    // reflects pushback. Mirrored from nampower's SpellDelayedHook.
+    FUN_SPELL_DELAYED = 0x006E74F0,
+
     // `CGUnit_C::OnAuraAdded` — `__thiscall void(CGUnit *unit, uint32_t
     // slot, uint32_t spellId)` (i.e. `__fastcall(unit /*ecx*/, edx_unused,
     // slot, spellId)`). Fires for EVERY aura that lands on a tracked unit,
@@ -2365,6 +2373,18 @@ enum Offsets {
     // `FUN_006E3D10`. Non-zero means "the cast bar is showing this
     // spell"; cleared to 0 when the cast finishes or is cancelled.
     VAR_CURRENT_CAST_SPELL = 0x00CECA88,
+    // The cast-start state writer — `__fastcall(int spellID, int
+    // targetState)`. Sets `VAR_CURRENT_CAST_SPELL` (pushing any current
+    // spell into `VAR_QUEUED_CAST_SPELL`; `spellID == 0` restores the queued
+    // one). `Spell::Cast` co-hooks it for lag-free, client-side detection of
+    // NORMAL player casts (stamps from the spellID arg before the original).
+    // It does NOT fire for a chained same-spell recast: the caller
+    // `Spell_C_CastSpell` (`0x006E4B60`) short-circuits at `spellID ==
+    // VAR_CURRENT_CAST_SPELL` *before* reaching here, so those never run the
+    // client cast path — they're caught by the `SMSG_SPELL_START` backstop
+    // instead. nampower hooks the higher Spell_C_CastSpell, not this inner
+    // writer, so contention is low.
+    FUN_CAST_START_SET = 0x006E4AD0,
     // Previous / queued cast — holds the spellID that was active
     // before the latest one superseded it (mid-GCD queueing in
     // vanilla). When the current cast ends, `FUN_006E4AD0(0, ...)`

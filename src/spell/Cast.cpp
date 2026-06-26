@@ -17,15 +17,26 @@
 // Vanilla 1.12 stores NO cast start/end times anywhere readable (unlike
 // 3.3.5+, which keeps them per-unit on the CGUnit). The cast bar is
 // Lua-driven off `SPELLCAST_START(duration)` + `GetTime()`. So we
-// self-track the LOCAL PLAYER's cast/channel on `WorldTick`:
-//   - cast: `VAR_CURRENT_CAST_SPELL` (the player cast-bar spellID
-//     global). On a 0->nonzero transition we stamp startMs = now and
-//     endMs = now + base cast time (SpellCastTimes.dbc). Instant casts
-//     (cast time 0) and channels are filtered out here — a channel has
-//     no cast time and surfaces through the channel field instead.
+// self-track the LOCAL PLAYER's cast/channel with a HYBRID of two sources:
+//   - Normal casts (client path): co-hook the engine's cast-start writer
+//     `FUN_CAST_START_SET` and stamp from its spellID argument the instant
+//     the cast begins (startMs = now, endMs = now + effective cast time) —
+//     zero latency. `g_castFromServer = false`; cleared on `WorldTick` when
+//     `VAR_CURRENT_CAST_SPELL` returns to 0 (normal end / cancel / interrupt).
+//   - Chained same-spell recasts (server path): the engine SHORT-CIRCUITS
+//     `Spell_C_CastSpell` at `spellID == VAR_CURRENT_CAST_SPELL` — it never
+//     runs the client cast path, never sets the global, never fires
+//     SPELLCAST_START. So a chained recast is invisible client-side; the
+//     ONLY witness is the server's `SMSG_SPELL_START` (= nampower's
+//     SPELL_START_SELF). We stamp `g_cast` from that packet (server cast
+//     time), dedup'd against a just-made client stamp so a normal cast's
+//     confirming packet doesn't restart its bar. `g_castFromServer = true`;
+//     since the global was never set for these, the WorldTick VAR==0 clear
+//     must skip them — they expire on their computed endMs (and pfUI clears
+//     on nampower's SPELL_FAILED_SELF for interrupts).
 //   - channel: the player's broadcast `UNIT_FIELD_CHANNEL_SPELL`
-//     (descriptor +0x228). endMs = now + base channel duration
-//     (SpellDuration.dbc).
+//     (descriptor +0x228), polled on `WorldTick`. endMs = now + effective
+//     channel duration.
 // `now` is the engine ms clock (`FUN_OS_TICKCOUNT_MS`), the same source
 // Lua's `GetTime()` scales by 0.001 — so startMs/endMs are directly
 // comparable to `GetTime()*1000` in addon progress math.
@@ -81,12 +92,17 @@ struct TrackedSpell {
     int spellID; // 0 = not casting / channeling
     int startMs;
     int endMs;
+    int delayMs; // accumulated pushback (SMSG_SPELL_DELAYED), 0 = none
 };
 
-TrackedSpell g_cast{0, 0, 0};
-TrackedSpell g_channel{0, 0, 0};
-int g_lastCast = 0;
-int g_lastChannel = 0;
+TrackedSpell g_cast{0, 0, 0, 0};
+TrackedSpell g_channel{0, 0, 0, 0};
+
+// True when g_cast was stamped from SMSG_SPELL_START (a chained same-spell
+// recast the client cast path bailed on) rather than the client-side
+// FUN_CAST_START_SET hook. Such casts never set VAR_CURRENT_CAST_SPELL, so
+// the WorldTick VAR==0 clear must not touch them.
+bool g_castFromServer = false;
 
 int NowMs() { return static_cast<int>(reinterpret_cast<TickMs_t>(Offsets::FUN_OS_TICKCOUNT_MS)()); }
 
@@ -114,18 +130,6 @@ int ChannelDurationMs(int spellID) {
         return 0;
     const int ms = reinterpret_cast<GetDuration_t>(Offsets::FUN_GET_SPELL_DURATION)(rec, 0, 0);
     return ms > 0 ? ms : 0; // negative = "infinite"; channels are finite
-}
-
-// The local player's currently-channeled spellID (broadcast +0x228), or 0.
-int PlayerChannelSpell() {
-    void *p = Resolve("player");
-    if (p == nullptr)
-        return 0;
-    auto *desc = *reinterpret_cast<const uint8_t *const *>(
-        static_cast<const uint8_t *>(p) + Offsets::OFF_UNIT_DESCRIPTOR);
-    if (desc == nullptr)
-        return 0;
-    return *reinterpret_cast<const int *>(desc + Offsets::OFF_UNIT_FIELD_CHANNEL_SPELL);
 }
 
 const char *SpellName(const uint8_t *rec) {
@@ -156,6 +160,12 @@ const char *SpellIconPath(const uint8_t *rec) {
 int PushCastInfo(void *L, const TrackedSpell &c) {
     if (c.spellID == 0)
         return 0;
+    // Self-expire: once the cast window has elapsed, report nothing even if
+    // the slot wasn't explicitly cleared. Keeps a stale cast (e.g. one whose
+    // clear we missed) from lingering on an addon's cast bar, and lets a
+    // fresh stamp for the next cast take over cleanly.
+    if (NowMs() >= c.endMs)
+        return 0;
     const uint8_t *rec = Spell::Lookup::RecordForID(c.spellID);
     if (rec == nullptr)
         return 0;
@@ -170,7 +180,7 @@ int PushCastInfo(void *L, const TrackedSpell &c) {
     Game::Lua::PushBool(L, false);                           // 8 notInterruptible
     Game::Lua::PushNumber(L, static_cast<double>(c.spellID)); // 9 castingSpellID
     Game::Lua::PushNil(L);                                   // 10 castBarID
-    Game::Lua::PushNumber(L, 0);                             // 11 delayTimeMs
+    Game::Lua::PushNumber(L, static_cast<double>(c.delayMs)); // 11 delayTimeMs
     return 11;
 }
 
@@ -178,6 +188,12 @@ int PushCastInfo(void *L, const TrackedSpell &c) {
 // (we only track the local player's channel start), pushing nil times.
 int PushChannelInfo(void *L, int spellID, int startMs, int endMs, bool haveTimes) {
     if (spellID == 0)
+        return 0;
+    // Self-expire a timed channel once its window elapses (mirrors
+    // PushCastInfo) — this is how the player's channel clears, since we no
+    // longer poll the +0x228 field. Remote callers gate on endMs before
+    // passing haveTimes, so this is a no-op for them.
+    if (haveTimes && endMs != 0 && NowMs() >= endMs)
         return 0;
     const uint8_t *rec = Spell::Lookup::RecordForID(spellID);
     if (rec == nullptr)
@@ -199,16 +215,37 @@ int PushChannelInfo(void *L, int spellID, int startMs, int endMs, bool haveTimes
     return 8;
 }
 
-// True if the unit at stack index 1 resolves to the local player.
-bool ArgIsPlayer(void *L) {
-    if (!Game::Lua::IsString(L, 1))
-        return false;
-    const char *token = Game::Lua::ToString(L, 1);
-    if (token == nullptr)
-        return false;
-    void *u = Resolve(token);
-    return u != nullptr && u == Resolve("player");
+// ---- Player cast detection (FUN_CAST_START_SET co-hook) ------------------
+
+// The engine's cast-start writer — the client path for a NORMAL cast. We
+// stamp from its spellID argument the instant the cast begins (zero
+// latency), *before* the original so any SPELLCAST_START it triggers sees
+// fresh times. This does NOT fire for a chained same-spell recast — the
+// caller (Spell_C_CastSpell) bails at `spellID == VAR_CURRENT_CAST_SPELL`
+// before ever reaching this writer; those are caught by the SMSG_SPELL_START
+// path instead. The `spellID == 0` (queued-restore / clear) path is left to
+// the OnWorldTick VAR==0 poll so a restore doesn't prematurely wipe a bar.
+using CastStartSet_t = void(__fastcall *)(int spellID, int targetState);
+CastStartSet_t g_origCastStartSet = nullptr;
+
+void __fastcall CastStartSet_h(int spellID, int targetState) {
+    if (spellID != 0) {
+        const int dur = CastTimeMs(spellID);
+        if (dur > 0) {
+            const int now = NowMs();
+            g_cast = TrackedSpell{spellID, now, now + dur, 0};
+            g_castFromServer = false; // client-tracked; VAR==0 clears it
+            g_channel.spellID = 0;    // a cast supersedes any channel
+        }
+        // dur == 0: instant (no bar) or channel (handled via +0x228 poll);
+        // leave g_cast — don't clobber an unrelated active cast.
+    }
+    g_origCastStartSet(spellID, targetState);
 }
+
+const Game::HookAutoRegister _castStartHook{
+    Offsets::FUN_CAST_START_SET, reinterpret_cast<void *>(&CastStartSet_h),
+    reinterpret_cast<void **>(&g_origCastStartSet)};
 
 // ---- Remote-unit cast tracking (SMSG_SPELL_START) ------------------------
 
@@ -278,17 +315,58 @@ const RemoteCast *FindRemoteCast(uint64_t caster) {
     return nullptr;
 }
 
-void RecordRemoteStart(uint64_t caster, int spellID, uint32_t castTime) {
+// How recently the client-side FUN_CAST_START_SET hook must have stamped the
+// same spell for an SMSG_SPELL_START to count as that cast's confirming
+// packet (skip — don't restart the bar) rather than a new chained recast
+// (stamp). Must exceed worst-case latency but stay under a GCD / min cast
+// time so genuine chained casts aren't wrongly deduped.
+constexpr int kCastStartDedupMs = 500;
+
+void HandleSpellStart(uint64_t caster, int spellID, uint32_t castTime) {
     if (caster == 0 || spellID == 0)
-        return;
-    // The local player uses the self-tracked g_cast / g_channel path.
-    if (caster == Unit::Identity::PlayerGuid())
         return;
     const uint8_t *rec = Spell::Lookup::RecordForID(spellID);
     if (rec == nullptr)
         return;
     const int now = NowMs();
     const bool channel = IsChannelSpell(rec);
+
+    if (caster == Unit::Identity::PlayerGuid()) {
+        if (channel) {
+            // Player channel start. The broadcast +0x228 field that signals
+            // "channeling" is server-pushed and lands ~1 tick (~1s) after the
+            // channel actually begins, so a +0x228 poll shows the bar far too
+            // late — the addon already polled nil at SPELLCAST_CHANNEL_START
+            // and cleared. This packet IS the channel start: stamp g_channel
+            // now with the engine-computed duration. We run before the
+            // original handler that fires SPELLCAST_CHANNEL_START, so the data
+            // is fresh when addons poll. Cleared by self-expiry (PushChannel-
+            // Info) at endMs.
+            const int dur = ChannelDurationMs(spellID);
+            if (dur > 0) {
+                g_channel = TrackedSpell{spellID, now, now + dur, 0};
+                g_cast.spellID = 0; // a channel supersedes any cast
+            }
+            return;
+        }
+        if (castTime == 0)
+            return; // instant — no cast bar
+        // Backstop for chained same-spell recasts: the engine short-circuits
+        // Spell_C_CastSpell at `spellID == VAR_CURRENT_CAST_SPELL`, so the
+        // client path (FUN_CAST_START_SET hook) never fires for them — this
+        // server packet is the only signal. Dedup against a fresh client stamp
+        // (same spell, started within ~latency) so a normal cast's confirming
+        // packet doesn't restart its bar; otherwise it's a chained recast the
+        // client bailed on — take it, and flag it so the VAR==0 poll (which
+        // never saw it) won't clear it.
+        if (g_cast.spellID == spellID && now < g_cast.endMs &&
+            now - g_cast.startMs < kCastStartDedupMs)
+            return;
+        g_cast = TrackedSpell{spellID, now, now + static_cast<int>(castTime), 0};
+        g_castFromServer = true;
+        g_channel.spellID = 0; // a cast supersedes any channel
+        return;
+    }
     const int endMs = channel ? now + RemoteChannelDurationMs(rec)
                               : now + static_cast<int>(castTime);
     StoreRemoteCast(caster, spellID, now, endMs, channel);
@@ -312,7 +390,7 @@ int __fastcall SpellStartHandler_h(uint32_t unk, uint32_t opCode,
         Net::Read<uint16_t>(packet); // castFlags (unused)
         const uint32_t castTime = Net::Read<uint32_t>(packet);
         packet->m_read = saved; // restore before the engine re-parses
-        RecordRemoteStart(caster, spellID, castTime);
+        HandleSpellStart(caster, spellID, castTime);
     }
     return g_origSpellStart(unk, opCode, unk2, packet);
 }
@@ -322,32 +400,55 @@ const Game::HookAutoRegister _spellStartHook{
     reinterpret_cast<void *>(&SpellStartHandler_h),
     reinterpret_cast<void **>(&g_origSpellStart)};
 
+// Co-hook on the SMSG_SPELL_DELAYED handler — cast pushback. The server
+// only sends it to the affected caster, so it's effectively always the
+// local player; extend the tracked cast's end time (and report the
+// accumulated delay as delayTimeMs) so an addon's bar stretches on damage.
+using SpellDelayed_t = int(__stdcall *)(uint32_t *opCode,
+                                        Net::CDataStore *packet);
+SpellDelayed_t g_origSpellDelayed = nullptr;
+
+int __stdcall SpellDelayed_h(uint32_t *opCode, Net::CDataStore *packet) {
+    if (packet != nullptr) {
+        const uint32_t saved = packet->m_read;
+        const uint64_t guid = Net::Read<uint64_t>(packet);
+        const uint32_t delay = Net::Read<uint32_t>(packet);
+        packet->m_read = saved;
+        if (delay != 0 && g_cast.spellID != 0 &&
+            guid == Unit::Identity::PlayerGuid()) {
+            g_cast.endMs += static_cast<int>(delay);
+            g_cast.delayMs += static_cast<int>(delay);
+        }
+    }
+    return g_origSpellDelayed(opCode, packet);
+}
+
+const Game::HookAutoRegister _spellDelayedHook{
+    Offsets::FUN_SPELL_DELAYED, reinterpret_cast<void *>(&SpellDelayed_h),
+    reinterpret_cast<void **>(&g_origSpellDelayed)};
+
 } // namespace
 
-// Per-frame: detect the player's cast/channel start, stamp times.
+// Per-frame upkeep for the player. The regular cast is stamped by the
+// FUN_CAST_START_SET hook; here we clear it when the engine's cast global
+// drops to 0, and poll the broadcast +0x228 field for the channel (which
+// has no comparable client-side start hook).
 void OnWorldTick() {
-    const int now = NowMs();
+    // Clear a CLIENT-tracked cast when the cast global returns to 0 — covering
+    // normal end, cancel, and interrupt. No grace window is needed: the
+    // FUN_CAST_START_SET hook stamps g_cast in the same call that writes the
+    // global non-zero, so it's never transiently 0 right after a stamp.
+    // Server-stamped chained casts (g_castFromServer) never set the global,
+    // so they're exempt — they expire on their computed endMs (self-expiry in
+    // PushCastInfo).
+    if (g_cast.spellID != 0 && !g_castFromServer &&
+        *reinterpret_cast<const int *>(Offsets::VAR_CURRENT_CAST_SPELL) == 0)
+        g_cast.spellID = 0;
 
-    const int cast = *reinterpret_cast<const int *>(Offsets::VAR_CURRENT_CAST_SPELL);
-    if (cast != g_lastCast) {
-        const int dur = (cast != 0) ? CastTimeMs(cast) : 0;
-        if (cast != 0 && dur > 0) {
-            g_cast = {cast, now, now + dur};
-        } else {
-            g_cast.spellID = 0; // 0, instant, or channel — no cast bar
-        }
-        g_lastCast = cast;
-    }
-
-    const int chan = PlayerChannelSpell();
-    if (chan != g_lastChannel) {
-        if (chan != 0) {
-            g_channel = {chan, now, now + ChannelDurationMs(chan)};
-        } else {
-            g_channel.spellID = 0;
-        }
-        g_lastChannel = chan;
-    }
+    // Channels are stamped from SMSG_SPELL_START (HandleSpellStart) and expire
+    // on their computed endMs (self-expiry in PushChannelInfo). We don't poll
+    // the broadcast +0x228 field for the player — it lags the channel start by
+    // ~1 tick, so the bar would show ~1s late.
 }
 
 static const Tick::WorldTick::AutoSubscribe _tickSub{&OnWorldTick};
