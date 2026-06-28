@@ -42,4 +42,24 @@ namespace Aura::Source {
 bool Get(uint64_t unitGuid, uint32_t spellId, uint64_t *outCaster,
          uint32_t *outExpirationMs, uint32_t *outDurationMs);
 
+// One cached aura, as returned by `Enumerate`.
+struct CachedAura {
+    uint32_t spellId;
+    uint64_t casterGuid;   // 0 = caster unknown (application hook, no SpellGo)
+    uint32_t expirationMs; // 0 = infinite / unknown
+    uint32_t durationMs;   // applied duration (incl. caster mods); 0 = none
+};
+
+// Fills `out` with up to `maxOut` cached, non-expired auras on `unitGuid`
+// whose helpful/harmful classification matches `harmful`. Returns the count
+// written. The classification is recorded from the aura's descriptor slot at
+// application time (`OnAuraAdded`/`OnAuraStacksChanged`); entries we only ever
+// saw via `SMSG_SPELL_GO` have no slot and so an unknown classification —
+// those are excluded (we can't tell which range they belong to).
+//
+// This is the fallback source for `Aura::Data` when the unit descriptor has
+// dropped an aura's slot (rogue stealth, party range fluctuation) even though
+// the aura is still active server-side: the cache survives descriptor clears.
+int Enumerate(uint64_t unitGuid, bool harmful, CachedAura *out, int maxOut);
+
 } // namespace Aura::Source

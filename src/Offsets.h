@@ -733,6 +733,18 @@ enum Offsets {
     // re-stamp expiration so stacking-DoT refreshes are picked up.
     FUN_ON_AURA_STACKS_CHANGED = 0x00612450,
 
+    // `CGUnit_C::OnAuraRemoved` — same ABI as `OnAuraAdded`
+    // (`__fastcall(unit /*ecx*/, edx_unused, slot, spellId)`; the disassembly
+    // of the diff dispatcher `FUN_00604d00` at the call site `0x00604dc4`
+    // shows `ECX = unit`, stack `[slot, spellId]`). The sibling of
+    // `OnAuraAdded`: `FUN_00604d00` fires this when a descriptor aura slot
+    // goes from occupied to empty — a genuine removal (fell off, dispelled,
+    // or replaced by a higher rank, which fires Removed(old)+Added(new)).
+    // `Aura::Source` co-hooks it to EVICT the cached entry so the
+    // `GetAuraDataByIndex` fallback can't resurrect a superseded/dispelled
+    // aura that's still inside its computed duration window.
+    FUN_ON_AURA_REMOVED = 0x00612320,
+
     // CGPlayer-side sub-struct, allocated for any player-controlled
     // unit (local self, target, party, raid, inspect targets — all of
     // them). Holds player-specific data that's *not* in the broadcast

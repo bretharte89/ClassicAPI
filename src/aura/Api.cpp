@@ -92,11 +92,16 @@ int PushAuraByIndex(void *L, const char *unitToken, int index,
                     Data::Filter filter, bool playerOnly = false) {
     const uint8_t *unit = ResolveUnit(unitToken);
     const int slot = Data::FindNthSlot(unit, index, filter, playerOnly);
-    if (slot < 0) {
-        Game::Lua::PushNil(L);
+    if (slot >= 0) {
+        Data::Push(L, unit, slot);
         return 1;
     }
-    Data::Push(L, unit, slot);
+    // Descriptor exhausted — an aura the engine dropped from the slot array
+    // (rogue stealth, party range fluctuation) may still be live in the
+    // Aura::Source cache. Surface it after the descriptor entries.
+    if (Data::PushNthCacheFallback(L, unit, index, filter, playerOnly))
+        return 1;
+    Game::Lua::PushNil(L);
     return 1;
 }
 
@@ -218,6 +223,8 @@ void AppendRangeToArray(void *L, const uint8_t *unit, int outerIdx,
         Data::Push(L, unit, slot);
         Game::Lua::SetTable(L, outerIdx);
     }
+    // Append auras the descriptor dropped but Aura::Source still has live.
+    Data::AppendCacheFallbacks(L, unit, filter, playerOnly, outerIdx, nextKey);
 }
 
 int __fastcall Script_GetUnitAuras(void *L) {

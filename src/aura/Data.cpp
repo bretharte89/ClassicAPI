@@ -350,10 +350,13 @@ const char *DispelName(uint32_t dispelTypeID) {
     return (name == nullptr || *name == '\0') ? nullptr : name;
 }
 
-void Push(void *L, const uint8_t *unit, int slot) {
-    const uint32_t spellID = ReadSpellID(unit, slot);
+// Writes the full modern AuraData table on top of the Lua stack from
+// already-resolved values. Shared by the descriptor path (`Push`) and the
+// cache-fallback path (`PushFromCache`). Net stack effect: +1 (the table).
+static void BuildTable(void *L, uint32_t spellID, int applications,
+                       bool isHelpful, double duration, double expirationTime,
+                       uint64_t casterGuid) {
     const uint8_t *spellRecord = SpellRecord(spellID);
-    const bool isHelpful = slot < Offsets::UNIT_AURA_BUFF_COUNT;
 
     uint32_t dispelTypeID = 0;
     if (spellRecord != nullptr) {
@@ -370,87 +373,32 @@ void Push(void *L, const uint8_t *unit, int slot) {
     Game::Lua::SetFieldString(L, "name", name);
     Game::Lua::SetFieldString(L, "icon", icon);
     Game::Lua::SetFieldNumber(L, "applications",
-        static_cast<double>(ReadStacks(unit, slot)));
+                              static_cast<double>(applications));
     Game::Lua::SetFieldNumber(L, "spellId", static_cast<double>(spellID));
     Game::Lua::SetFieldString(L, "dispelName", dispel);
     Game::Lua::SetFieldBool(L, "isHelpful", isHelpful);
     Game::Lua::SetFieldBool(L, "isHarmful", !isHelpful);
-
-    // Timing fields. Vanilla doesn't broadcast cast time / duration
-    // for ANY unit's auras except the local player's — for everyone
-    // else (target, party, raid, mouseover) `expirationTime` stays 0
-    // and addons have to track expiry themselves via aura-add events.
-    // For the player we read the engine's `VAR_PLAYER_BUFF_TABLE`
-    // (same data `GetPlayerBuffTimeLeft` returns), which gives us a
-    // real expiration timestamp.
-    //
-    // `duration` comes from Spell.dbc → SpellDuration.dbc with
-    // level scaling. That's the *base* value; talent / glyph
-    // duration-extension modifiers (Improved PW:F, etc.) are
-    // already baked into the expiration timestamp on the
-    // caster's side, so `expirationTime - GetTime()` reflects the
-    // true remaining time even when `duration` doesn't include
-    // the talent boost. We populate `duration` for any unit (the
-    // base value is identical regardless of who's affected); only
-    // `expirationTime` is player-gated.
-    double duration = 0.0;
-    double expirationTime = 0.0;
-    const uint8_t *player = LocalPlayer();
-    if (spellID != 0) {
-        const int unitLevel = (unit != nullptr) ? PlayerLevel(unit) : 0;
-        duration = SpellBaseDurationSeconds(spellID, unitLevel);
-    }
-    if (unit != nullptr && unit == player) {
-        const uint8_t *entry = FindPlayerBuffEntry(spellID);
-        if (entry != nullptr)
-            expirationTime = PlayerBuffExpirationSeconds(entry);
-    }
-
-    // Caster + non-player expiration from the SMSG_SPELL_GO cache
-    // (`Aura::Source`), captured at cast time. The vanilla descriptor has
-    // neither. `sourceUnit` applies to any unit; `expirationTime` only
-    // fills in here when the player-buff table above didn't — that table is
-    // authoritative for the player's own auras, the cache covers everyone
-    // else. Both are best-effort: a miss (aura predates login, or the cast
-    // wasn't observed) leaves the modern-truthful defaults untouched.
-    const char *sourceUnit = nullptr;
-    const char *sourceGUID = nullptr;
-    char tokenBuf[32];
-    char guidBuf[Guid::STRING_SIZE];
-    if (spellID != 0) {
-        uint64_t casterGuid = 0;
-        uint32_t expMs = 0;
-        uint32_t durMs = 0;
-        if (Aura::Source::Get(UnitGuid(unit), spellID, &casterGuid, &expMs,
-                              &durMs)) {
-            if (expirationTime == 0.0 && expMs != 0)
-                expirationTime = static_cast<double>(expMs) * 0.001;
-            // Prefer the applied (caster-modified) duration so `duration`
-            // stays consistent with `expirationTime` — otherwise a talented
-            // DoT (e.g. Improved Shadow Word: Pain) shows remaining time
-            // exceeding the base `duration`.
-            if (durMs != 0)
-                duration = static_cast<double>(durMs) * 0.001;
-            if (casterGuid != 0) {
-                // `sourceUnit` is a token (nil when the caster maps to no
-                // current token); `sourceGUID` is the raw "0x..." GUID and
-                // is set whenever we have a caster — a ClassicAPI extension
-                // (not in retail AuraData) that survives the caster leaving
-                // token range and doubles as a unit token under SuperWoW.
-                sourceUnit = Unit::Identity::TokenFromGUID(
-                    casterGuid, tokenBuf, sizeof tokenBuf);
-                sourceGUID = Guid::FormatAsString(casterGuid, guidBuf,
-                                                  sizeof guidBuf);
-            }
-        }
-    }
-
     Game::Lua::SetFieldNumber(L, "duration", duration);
     Game::Lua::SetFieldNumber(L, "expirationTime", expirationTime);
-    if (sourceUnit != nullptr)
-        Game::Lua::SetFieldString(L, "sourceUnit", sourceUnit);
-    if (sourceGUID != nullptr)
-        Game::Lua::SetFieldString(L, "sourceGUID", sourceGUID);
+
+    if (casterGuid != 0) {
+        // `sourceUnit` is a token (nil when the caster maps to no current
+        // token); `sourceGUID` is the raw "0x..." GUID and is set whenever we
+        // have a caster — a ClassicAPI extension (not in retail AuraData) that
+        // survives the caster leaving token range and doubles as a unit token
+        // under SuperWoW.
+        char tokenBuf[32];
+        char guidBuf[Guid::STRING_SIZE];
+        const char *sourceUnit = Unit::Identity::TokenFromGUID(
+            casterGuid, tokenBuf, sizeof tokenBuf);
+        const char *sourceGUID =
+            Guid::FormatAsString(casterGuid, guidBuf, sizeof guidBuf);
+        if (sourceUnit != nullptr)
+            Game::Lua::SetFieldString(L, "sourceUnit", sourceUnit);
+        if (sourceGUID != nullptr)
+            Game::Lua::SetFieldString(L, "sourceGUID", sourceGUID);
+    }
+
     Game::Lua::SetFieldNumber(L, "charges", 0);
     Game::Lua::SetFieldNumber(L, "maxCharges", 0);
     Game::Lua::SetFieldNumber(L, "timeMod", 1);
@@ -466,11 +414,167 @@ void Push(void *L, const uint8_t *unit, int slot) {
     Game::Lua::SetFieldBool(L, "shouldConsolidate", false);
     Game::Lua::SetFieldBool(L, "isRaid", false);
 
-    // `sourceUnit` / `sourceGUID` are set above when the `Aura::Source`
-    // cache has a caster for this aura; left unset (→ nil) on a miss.
-    // `auraInstanceID` and `points` are deliberately omitted — modern
-    // returns nil for those when they don't apply, and Lua reading a
-    // missing key yields nil, so the table doesn't need an explicit entry.
+    // `auraInstanceID` and `points` are deliberately omitted — modern returns
+    // nil for those when they don't apply, and Lua reading a missing key
+    // yields nil, so the table doesn't need an explicit entry.
+}
+
+void Push(void *L, const uint8_t *unit, int slot) {
+    const uint32_t spellID = ReadSpellID(unit, slot);
+    const bool isHelpful = slot < Offsets::UNIT_AURA_BUFF_COUNT;
+
+    // Timing fields. Vanilla doesn't broadcast cast time / duration for ANY
+    // unit's auras except the local player's — for everyone else (target,
+    // party, raid, mouseover) `expirationTime` stays 0 unless the
+    // `Aura::Source` cache observed the cast. For the player we read the
+    // engine's `VAR_PLAYER_BUFF_TABLE` (same data `GetPlayerBuffTimeLeft`
+    // returns), which gives a real expiration timestamp.
+    //
+    // `duration` comes from Spell.dbc → SpellDuration.dbc with level scaling
+    // (the *base* value); talent / glyph duration-extension modifiers are
+    // already baked into the expiration timestamp on the caster's side, so
+    // `expirationTime - GetTime()` reflects true remaining time even when the
+    // base `duration` doesn't include the talent boost.
+    double duration = 0.0;
+    double expirationTime = 0.0;
+    uint64_t casterGuid = 0;
+    const uint8_t *player = LocalPlayer();
+    if (spellID != 0) {
+        const int unitLevel = (unit != nullptr) ? PlayerLevel(unit) : 0;
+        duration = SpellBaseDurationSeconds(spellID, unitLevel);
+    }
+    if (unit != nullptr && unit == player) {
+        const uint8_t *entry = FindPlayerBuffEntry(spellID);
+        if (entry != nullptr)
+            expirationTime = PlayerBuffExpirationSeconds(entry);
+    }
+    // Caster + non-player expiration from the SMSG_SPELL_GO cache, captured at
+    // cast time (the descriptor has neither). The player-buff table above is
+    // authoritative for the player's own expiration; the cache fills it for
+    // everyone else. Prefer the applied (caster-modified) duration so it stays
+    // consistent with `expirationTime` — otherwise a talented DoT (Improved
+    // Shadow Word: Pain) would show remaining time exceeding the base.
+    if (spellID != 0) {
+        uint64_t c = 0;
+        uint32_t expMs = 0;
+        uint32_t durMs = 0;
+        if (Aura::Source::Get(UnitGuid(unit), spellID, &c, &expMs, &durMs)) {
+            if (expirationTime == 0.0 && expMs != 0)
+                expirationTime = static_cast<double>(expMs) * 0.001;
+            if (durMs != 0)
+                duration = static_cast<double>(durMs) * 0.001;
+            casterGuid = c;
+        }
+    }
+
+    BuildTable(L, spellID, ReadStacks(unit, slot), isHelpful, duration,
+               expirationTime, casterGuid);
+}
+
+namespace {
+
+// Builds an AuraData table from an `Aura::Source` cache entry — the fallback
+// when the descriptor has dropped the aura's slot. Stack count isn't broadcast
+// in SMSG_SPELL_GO, so `applications` defaults to 1. `duration` uses the
+// applied (caster-modified) ms when known, else the Spell.dbc base.
+void PushFromCache(void *L, const uint8_t *unit,
+                   const Aura::Source::CachedAura &c, bool isHelpful) {
+    double duration = 0.0;
+    if (c.durationMs != 0) {
+        duration = static_cast<double>(c.durationMs) * 0.001;
+    } else {
+        const int unitLevel = (unit != nullptr) ? PlayerLevel(unit) : 0;
+        duration = SpellBaseDurationSeconds(c.spellId, unitLevel);
+    }
+    const double expirationTime =
+        (c.expirationMs != 0) ? static_cast<double>(c.expirationMs) * 0.001 : 0.0;
+    BuildTable(L, c.spellId, 1, isHelpful, duration, expirationTime,
+               c.casterGuid);
+}
+
+// Counts populated descriptor slots matching `filter` (and `playerOnly`).
+int CountSlots(const uint8_t *unit, Filter filter, bool playerOnly) {
+    if (unit == nullptr)
+        return 0;
+    const int start = (filter == Filter::Harmful)
+                          ? Offsets::UNIT_AURA_BUFF_COUNT
+                          : 0;
+    const int end = (filter == Filter::Harmful) ? Offsets::UNIT_AURA_TOTAL
+                                                 : Offsets::UNIT_AURA_BUFF_COUNT;
+    int n = 0;
+    for (int slot = start; slot < end; ++slot) {
+        if (!IsSlotPopulated(unit, slot))
+            continue;
+        if (playerOnly && !IsPlayerCast(unit, slot))
+            continue;
+        ++n;
+    }
+    return n;
+}
+
+constexpr int kFallbackMax = Offsets::UNIT_AURA_TOTAL;
+
+// Whether cache entry `c` should be surfaced as a fallback for `unit` under
+// `filter`/`playerOnly`: it must not already be in a populated descriptor slot
+// (no double-listing the same live aura) and, when player-filtered, must have
+// been cast by us. Superseded / dispelled auras are kept out of the cache by
+// `Aura::Source`'s removal eviction, not filtered here.
+bool FallbackEligible(const uint8_t *unit, const Aura::Source::CachedAura &c,
+                      Filter filter, bool playerOnly) {
+    if (FindSlotBySpellID(unit, c.spellId, &filter, false) >= 0)
+        return false; // still in the descriptor — returned via the slot path
+    if (playerOnly && c.casterGuid != Unit::Identity::PlayerGuid())
+        return false;
+    return true;
+}
+
+} // namespace
+
+bool PushNthCacheFallback(void *L, const uint8_t *unit, int oneBasedIndex,
+                          Filter filter, bool playerOnly) {
+    if (unit == nullptr)
+        return false;
+    // The descriptor held `descCount` matches; the caller already found fewer
+    // than `oneBasedIndex` there, so the cache supplies index
+    // `oneBasedIndex - descCount` (1-based) of the entries it didn't.
+    const int target = oneBasedIndex - CountSlots(unit, filter, playerOnly);
+    if (target < 1)
+        return false;
+    const uint64_t guid = UnitGuid(unit);
+    if (guid == 0)
+        return false;
+    Aura::Source::CachedAura buf[kFallbackMax];
+    const int n = Aura::Source::Enumerate(
+        guid, filter == Filter::Harmful, buf, kFallbackMax);
+    int seen = 0;
+    for (int i = 0; i < n; ++i) {
+        if (!FallbackEligible(unit, buf[i], filter, playerOnly))
+            continue;
+        if (++seen == target) {
+            PushFromCache(L, unit, buf[i], filter == Filter::Helpful);
+            return true;
+        }
+    }
+    return false;
+}
+
+void AppendCacheFallbacks(void *L, const uint8_t *unit, Filter filter,
+                          bool playerOnly, int outerIdx, int &nextKey) {
+    if (unit == nullptr)
+        return;
+    const uint64_t guid = UnitGuid(unit);
+    if (guid == 0)
+        return;
+    Aura::Source::CachedAura buf[kFallbackMax];
+    const int n = Aura::Source::Enumerate(
+        guid, filter == Filter::Harmful, buf, kFallbackMax);
+    for (int i = 0; i < n; ++i) {
+        if (!FallbackEligible(unit, buf[i], filter, playerOnly))
+            continue;
+        Game::Lua::PushNumber(L, static_cast<double>(nextKey++));
+        PushFromCache(L, unit, buf[i], filter == Filter::Helpful);
+        Game::Lua::SetTable(L, outerIdx);
+    }
 }
 
 } // namespace Aura::Data

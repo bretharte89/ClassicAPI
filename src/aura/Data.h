@@ -112,4 +112,24 @@ const char *DispelName(uint32_t dispelTypeID);
 // Net stack effect: +1 (the table).
 void Push(void *L, const uint8_t *unit, int slot);
 
+// Fallback for the index path when the descriptor has dropped an aura's slot
+// (rogue stealth, party range fluctuation) but it's still active server-side.
+// `oneBasedIndex` is the same index the caller passed to `FindNthSlot`; this
+// resolves it against the `Aura::Source` cache *after* the descriptor matches
+// (so cache entries append after descriptor ones, preserving existing index
+// order). On a hit it pushes the AuraData table and returns true; on a miss it
+// pushes nothing and returns false (caller pushes nil). Only entries whose
+// helpful/harmful classification matches `filter` and that aren't already in a
+// populated descriptor slot are considered.
+bool PushNthCacheFallback(void *L, const uint8_t *unit, int oneBasedIndex,
+                          Filter filter, bool playerOnly = false);
+
+// Appends every eligible `Aura::Source` cache fallback for `unit` matching
+// `filter` into the array table at `outerIdx`, continuing from `nextKey`
+// (updated in place). The bulk-enumeration analog of `PushNthCacheFallback`,
+// for `GetUnitAuras`. Skips entries already present in a populated descriptor
+// slot so it never double-lists.
+void AppendCacheFallbacks(void *L, const uint8_t *unit, Filter filter,
+                          bool playerOnly, int outerIdx, int &nextKey);
+
 } // namespace Aura::Data

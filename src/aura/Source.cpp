@@ -69,12 +69,19 @@ uint32_t SpellDurationMs(const uint8_t *spellRecord, bool casterIsPlayer) {
 
 // ---- Cache ---------------------------------------------------------------
 
+// Helpful/harmful classification, recorded from the aura's descriptor slot
+// when it's applied (the only place the buff/debuff split is known). SpellGo
+// gives no slot, so casts we only saw there stay Unknown until/unless an
+// application hook fires for the same aura.
+enum Kind : int8_t { KIND_UNKNOWN = -1, KIND_HELPFUL = 0, KIND_HARMFUL = 1 };
+
 struct Entry {
     uint64_t targetGuid;
     uint64_t casterGuid;
     uint32_t spellId;
     uint32_t expirationMs; // 0 = infinite / unknown duration
     uint32_t durationMs;   // applied duration (incl. caster mods); 0 = none
+    int8_t kind;           // Kind; descriptor-slot-derived, KIND_UNKNOWN if only seen via SpellGo
     bool used;
 };
 
@@ -88,13 +95,19 @@ int g_writeCursor = 0;
 // would replace talented timing with the unmodified base), so it skips
 // entries that already carry a caster.
 void Store(uint64_t targetGuid, uint32_t spellId, uint64_t casterGuid,
-           uint32_t expirationMs, uint32_t durationMs, bool fromCast) {
+           uint32_t expirationMs, uint32_t durationMs, bool fromCast,
+           int8_t kind) {
     if (targetGuid == 0 || spellId == 0)
         return;
 
     // Update an existing entry for this exact aura instance.
     for (auto &e : g_cache) {
         if (e.used && e.targetGuid == targetGuid && e.spellId == spellId) {
+            // Learn the classification whenever a slot-derived kind arrives —
+            // independent of caster/timing ownership, and never downgrade a
+            // known kind back to unknown.
+            if (kind != KIND_UNKNOWN)
+                e.kind = kind;
             if (!fromCast && e.casterGuid != 0)
                 return; // SpellGo owns this entry; keep its caster + timing
             if (casterGuid != 0)
@@ -108,13 +121,32 @@ void Store(uint64_t targetGuid, uint32_t spellId, uint64_t casterGuid,
     const uint32_t now = NowMs();
     for (auto &e : g_cache) {
         if (!e.used || (e.expirationMs != 0 && now >= e.expirationMs)) {
-            e = {targetGuid, casterGuid, spellId, expirationMs, durationMs, true};
+            e = {targetGuid, casterGuid, spellId, expirationMs, durationMs,
+                 kind, true};
             return;
         }
     }
     Entry &slot = g_cache[g_writeCursor];
     g_writeCursor = (g_writeCursor + 1) % kCacheSize;
-    slot = {targetGuid, casterGuid, spellId, expirationMs, durationMs, true};
+    slot = {targetGuid, casterGuid, spellId, expirationMs, durationMs, kind,
+            true};
+}
+
+// Evict the entry for an aura the engine reports gone. Keyed by (target,
+// spell) like the rest of the cache. Without this, the GetAuraDataByIndex
+// fallback would keep surfacing a dropped aura until its computed expiry —
+// e.g. a Rank 1 buff replaced by Rank 2 (engine drops Rank 1 from the
+// descriptor) would show as a phantom second aura, or a dispelled buff would
+// linger.
+void Evict(uint64_t targetGuid, uint32_t spellId) {
+    if (targetGuid == 0 || spellId == 0)
+        return;
+    for (auto &e : g_cache) {
+        if (e.used && e.targetGuid == targetGuid && e.spellId == spellId) {
+            e.used = false;
+            return;
+        }
+    }
 }
 
 // Drop entries whose timed aura has elapsed so the table doesn't fill with
@@ -176,11 +208,13 @@ void __fastcall SpellGo_h(uint64_t *itemGUID, uint64_t *casterGUID,
 
     if (numTargets == 0) {
         // No explicit hit list (self-cast with caster-implicit target).
-        Store(caster, spellId, caster, expirationMs, durationMs, true);
+        Store(caster, spellId, caster, expirationMs, durationMs, true,
+              KIND_UNKNOWN);
         return;
     }
     for (int i = 0; i < numTargets; ++i)
-        Store(targets[i], spellId, caster, expirationMs, durationMs, true);
+        Store(targets[i], spellId, caster, expirationMs, durationMs, true,
+              KIND_UNKNOWN);
 }
 
 const Game::HookAutoRegister _hook{Offsets::FUN_SPELL_GO,
@@ -194,7 +228,7 @@ const Game::HookAutoRegister _hook{Offsets::FUN_SPELL_GO,
 // paths, so it stamps timing only with `fromCast=false` — Store skips any
 // entry SpellGo already owns, so a directly-cast aura keeps its talented
 // timing. Base (unmodified) duration is the best estimate without a caster.
-void StampApplication(void *unit, uint32_t spellId) {
+void StampApplication(void *unit, uint32_t spellId, int8_t kind) {
     if (spellId == 0)
         return;
     const uint8_t *rec = Spell::Lookup::RecordForID(static_cast<int>(spellId));
@@ -206,7 +240,13 @@ void StampApplication(void *unit, uint32_t spellId) {
     const uint32_t durationMs = SpellDurationMs(rec, /*casterIsPlayer*/ false);
     const uint32_t expirationMs = durationMs > 0 ? NowMs() + durationMs : 0;
     Store(unitGuid, spellId, /*casterGuid*/ 0, expirationMs, durationMs,
-          /*fromCast*/ false);
+          /*fromCast*/ false, kind);
+}
+
+// Classify by the absolute aura slot: 0..BUFF_COUNT-1 = buff (helpful),
+// BUFF_COUNT..TOTAL-1 = debuff (harmful).
+int8_t KindForSlot(int slot) {
+    return slot >= Offsets::UNIT_AURA_BUFF_COUNT ? KIND_HARMFUL : KIND_HELPFUL;
 }
 
 // OnAuraAdded — a new aura occupies a slot (gives the spellId directly).
@@ -217,7 +257,7 @@ OnAuraAdded_t g_origOnAuraAdded = nullptr;
 void __fastcall OnAuraAdded_h(void *unit, void *edx, uint32_t slot,
                               uint32_t spellId) {
     g_origOnAuraAdded(unit, edx, slot, spellId);
-    StampApplication(unit, spellId);
+    StampApplication(unit, spellId, KindForSlot(static_cast<int>(slot)));
 }
 
 const Game::HookAutoRegister _hookAuraAdded{
@@ -234,14 +274,36 @@ OnAuraStacksChanged_t g_origOnAuraStacksChanged = nullptr;
 void __fastcall OnAuraStacksChanged_h(void *unit, void *edx, int slot,
                                       uint8_t stackCount) {
     g_origOnAuraStacksChanged(unit, edx, slot, stackCount);
-    StampApplication(unit, Aura::Data::ReadSpellID(
-                               static_cast<const uint8_t *>(unit), slot));
+    StampApplication(
+        unit,
+        Aura::Data::ReadSpellID(static_cast<const uint8_t *>(unit), slot),
+        KindForSlot(slot));
 }
 
 const Game::HookAutoRegister _hookAuraStacks{
     Offsets::FUN_ON_AURA_STACKS_CHANGED,
     reinterpret_cast<void *>(&OnAuraStacksChanged_h),
     reinterpret_cast<void **>(&g_origOnAuraStacksChanged)};
+
+// OnAuraRemoved — a descriptor aura slot went empty: the aura fell off, was
+// dispelled, or was replaced by a higher rank (the diff dispatcher fires
+// Removed(old) + Added(new)). Evict the cache entry so the fallback stops
+// surfacing it. Same ABI as OnAuraAdded (unit in ecx, slot + spellId on the
+// stack); `slot` is unused here — we evict by spellId.
+using OnAuraRemoved_t = void(__fastcall *)(void *unit, void *edx, uint32_t slot,
+                                           uint32_t spellId);
+OnAuraRemoved_t g_origOnAuraRemoved = nullptr;
+
+void __fastcall OnAuraRemoved_h(void *unit, void *edx, uint32_t slot,
+                                uint32_t spellId) {
+    g_origOnAuraRemoved(unit, edx, slot, spellId);
+    (void)slot;
+    Evict(Unit::Identity::GuidForObject(unit), spellId);
+}
+
+const Game::HookAutoRegister _hookAuraRemoved{
+    Offsets::FUN_ON_AURA_REMOVED, reinterpret_cast<void *>(&OnAuraRemoved_h),
+    reinterpret_cast<void **>(&g_origOnAuraRemoved)};
 
 } // namespace
 
@@ -258,6 +320,24 @@ bool Get(uint64_t unitGuid, uint32_t spellId, uint64_t *outCaster,
         }
     }
     return false;
+}
+
+int Enumerate(uint64_t unitGuid, bool harmful, CachedAura *out, int maxOut) {
+    if (unitGuid == 0 || out == nullptr || maxOut <= 0)
+        return 0;
+    const int8_t want = harmful ? KIND_HARMFUL : KIND_HELPFUL;
+    const uint32_t now = NowMs();
+    int n = 0;
+    for (const auto &e : g_cache) {
+        if (n >= maxOut)
+            break;
+        if (!e.used || e.targetGuid != unitGuid || e.kind != want)
+            continue;
+        if (e.expirationMs != 0 && now >= e.expirationMs)
+            continue; // expired (infinite-duration entries pass)
+        out[n++] = {e.spellId, e.casterGuid, e.expirationMs, e.durationMs};
+    }
+    return n;
 }
 
 } // namespace Aura::Source
