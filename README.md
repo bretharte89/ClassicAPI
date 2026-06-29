@@ -270,4 +270,4 @@ at configure time; the value exposed to Lua will be `X*10000 + Y*100 + Z`.
 
 ## License
 
-LGPL v3 or later. See the headers in `src/` for the full notice.
+GPL v3 or later. See the headers in `src/` for the full notice.
