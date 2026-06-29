@@ -253,6 +253,32 @@ enum Offsets {
     FUN_FIND_CVAR = 0x0063DEC0,
     OFF_CVAR_VALUE_STR = 0x20,
 
+    // Internal CVar registrar — what `Script_RegisterCVar` calls after a
+    // `FindCVar` miss (the call at `0x00488B8A`). `__fastcall`; ECX=name,
+    // EDX is a second string slot the script path leaves 0, then six
+    // stack args: flags, defaultValue, changeCallback, categoryId,
+    // hiddenBool, userData. Dedups by name (re-registering OR-merges
+    // flags + updates the callback), so it's idempotent across `/reload`.
+    // The new-cvar branch forces flags bit 0 on (`puVar3[7] = flags | 1`),
+    // which is what makes script-registered cvars persist to Config.wtf.
+    // See `CVar::Factory` for the wrapper.
+    FUN_REGISTER_CVAR = 0x0063DB90,
+    // Internal "apply value" — `__fastcall(cvar /*ecx*/, value, a3, a4,
+    // a5, a6)`, called by `Script_SetCVar` at `0x00488CA8`. Fires the
+    // change callback at `[cvar+0xBC]` as
+    // `char __fastcall(cvar /*ecx*/, prevValue /*edx*/, newValue /*stack*/,
+    // userData /*stack*/)` — return 0 to REJECT the change, nonzero to
+    // accept (verified at `0x0063DF7D`).
+    FUN_SET_CVAR_VALUE = 0x0063DF50,
+    // CVar struct fields (beyond the value string at +0x20 above).
+    OFF_CVAR_FLAGS = 0x1C,
+    OFF_CVAR_CALLBACK = 0xBC,
+    OFF_CVAR_USERDATA = 0xC0,
+    // The categoryId the script path passes as the registrar's 6th stack
+    // arg (the `PUSH 9` in `Script_RegisterCVar`). Cosmetic console
+    // grouping; we reuse it so our cvars behave like script-registered ones.
+    CVAR_SCRIPT_CATEGORY = 9,
+
     // Engine-side Lua C functions backing the in-game CVar globals.
     // Standard `int __fastcall(void *L)` ABI. We don't register them
     // ourselves in-game — the engine already does at boot — but we
