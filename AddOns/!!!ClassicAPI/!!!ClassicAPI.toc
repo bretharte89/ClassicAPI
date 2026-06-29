@@ -27,6 +27,7 @@ Util\EventUtil.lua
 Util\ItemUtil.lua
 Util\AddOnCompat.lua
 Util\FunctionUtil.lua
+Util\CacheUtil.lua
 Util\Pools.lua
 Util\FrameWatcher.lua
 Util\TimedCallback.lua
