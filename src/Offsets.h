@@ -4205,6 +4205,29 @@ enum Offsets {
     VAR_GLUE_LOGIN_READY1 = 0x00B41DFC,
     VAR_GLUE_LOGIN_READY2 = 0x00B41E04,
     VAR_GLUE_LOGIN_INPROGRESS = 0x00B41DA0,
+    // The same `VAR_GLUE_LOGIN_INPROGRESS` global doubles as a glue
+    // state-code: `FUN_GLUE_ENTER_WORLD` sets it to `8` ("entering world")
+    // on a successful commit, which `Unit::Identity`'s enter-world co-hook
+    // gates on (the rename / char-locked bail paths return before it).
+    GLUE_STATE_ENTERING_WORLD = 8,
+
+    // `FUN_0046B500` — the enter-world worker behind `Script_EnterWorld` (the
+    // glue "Enter World" button: `Script_EnterWorld` is just `call this; ret`).
+    // Computes the selected character's struct into VAR_GLUE_SELECTED_CHAR and,
+    // on success, sets VAR_GLUE_LOGIN_INPROGRESS = 8. `Unit::Identity` co-hooks
+    // it to capture the selected character's GUID *before* the engine creates
+    // the in-world player object — so `UnitGUID("player")` / `PlayerGuid()`
+    // answer from addon-load time instead of returning nil/0 until the
+    // SMSG_UPDATE_OBJECT that populates the player object (≈PLAYER_LOGIN).
+    FUN_GLUE_ENTER_WORLD = 0x0046B500,
+
+    // Selected-character struct pointer (glue): char-array base +
+    // selectedIndex*0x120, written by FUN_GLUE_ENTER_WORLD. The character's
+    // 64-bit login GUID is at offset 0x00 (name at +0x08, race +0x100, class
+    // +0x101, level +0x108 — verified against `Script_GetCharacterInfo` at
+    // `0x004732A0`). Entries are filled from SMSG_CHAR_ENUM.
+    VAR_GLUE_SELECTED_CHAR = 0x00B41DF4,
+    OFF_GLUE_CHAR_GUID = 0x00,
 
     // Cursor state — single global type-tag at VAR_CURSOR_TYPE
     // dispatches reads through one of several payload slots depending

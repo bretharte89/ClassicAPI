@@ -26,6 +26,41 @@ namespace Unit::Identity {
 
 using TokenToGUID_t = uint64_t(__fastcall *)(const char *token);
 
+// The selected character's GUID, captured at the glue "Enter World" click
+// (the FUN_GLUE_ENTER_WORLD co-hook below) — i.e. before the engine has
+// created the in-world player object whose +0xC0 holds the live GUID.
+// `PlayerGuid()` serves this as a fallback during the early-login window so
+// `UnitGUID("player")` answers from addon-load time instead of returning nil
+// until SMSG_UPDATE_OBJECT lands (≈PLAYER_LOGIN). 0 = not captured yet.
+// Overwritten on every enter, so a character switch can't serve a stale GUID;
+// only ever read when the live engine value is still 0, and identical to it
+// once that's populated.
+static uint64_t g_charSelectGuid = 0;
+
+// `FUN_GLUE_ENTER_WORLD` is `void(void)` (no args). Co-hook it to snapshot the
+// selected character's GUID once the entry is committed.
+using EnterWorld_t = void(__cdecl *)();
+static EnterWorld_t g_origEnterWorld = nullptr;
+
+static void __cdecl EnterWorld_h() {
+    g_origEnterWorld();
+    // Only on a genuine commit — the rename / char-locked bail paths return
+    // before the worker sets the state code to "entering world".
+    if (*reinterpret_cast<const int *>(
+            static_cast<uintptr_t>(Offsets::VAR_GLUE_LOGIN_INPROGRESS)) !=
+        Offsets::GLUE_STATE_ENTERING_WORLD)
+        return;
+    const uintptr_t charStruct = *reinterpret_cast<const uintptr_t *>(
+        static_cast<uintptr_t>(Offsets::VAR_GLUE_SELECTED_CHAR));
+    if (charStruct != 0)
+        g_charSelectGuid = *reinterpret_cast<const uint64_t *>(
+            charStruct + Offsets::OFF_GLUE_CHAR_GUID);
+}
+
+static const Game::HookAutoRegister _enterWorldHook{
+    Offsets::FUN_GLUE_ENTER_WORLD, reinterpret_cast<void *>(&EnterWorld_h),
+    reinterpret_cast<void **>(&g_origEnterWorld)};
+
 // FUN_TOKEN_TO_GUID's `"player"` path resolves the GUID by looking the
 // local player up in the engine's object manager: it calls FUN_00468550
 // to read `[VAR_LOCAL_PLAYER_PTR + 0xC0]`, then `FUN_00468460(type=0x10,
@@ -38,21 +73,27 @@ using TokenToGUID_t = uint64_t(__fastcall *)(const char *token);
 // either. Suffixed tokens (`"playertarget"` and the like) still go
 // through the engine so the chained `.target` walk works.
 //
-// This does NOT help at addon file-load time on first login. The
-// engine populates `+0xC0` from SMSG_UPDATE_OBJECT processing in the
-// main loop, which happens AFTER `FrameScript_Initialize` (and the
-// addon load pass it triggers) finishes. The engine itself gates its
-// own post-init player setup at the tail of FrameScript_Initialize on
-// `FUN_00468550() != 0` for the same reason — the GUID isn't ready
-// yet. Addons that need the player GUID at boot must wait for
-// `PLAYER_LOGIN`. See the trace notes in commit history.
+// The engine populates `+0xC0` from SMSG_UPDATE_OBJECT processing in the
+// main loop, which happens AFTER `FrameScript_Initialize` (and the addon
+// load pass it triggers) finishes — so the engine value is 0 at addon
+// file-load on first login. We bridge that window with `g_charSelectGuid`,
+// captured at the glue "Enter World" click (see the co-hook above): the
+// selected character's GUID is known well before the player object exists,
+// and it's the same value `+0xC0` will hold once it's live. So
+// `UnitGUID("player")` / `PlayerGuid()` answer correctly from addon-load
+// time. (The player *object* still doesn't exist until `+0xC0` populates —
+// this only makes the GUID *value* available early, for keying SavedVariables,
+// comparisons, our aura/cast caster checks, etc.)
 uint64_t PlayerGuid() {
     auto *player = *reinterpret_cast<uint8_t *const *>(
         static_cast<uintptr_t>(Offsets::VAR_LOCAL_PLAYER_PTR));
-    if (player == nullptr)
-        return 0;
-    return *reinterpret_cast<const uint64_t *>(
-        player + Offsets::OFF_LOCAL_PLAYER_GUID);
+    if (player != nullptr) {
+        const uint64_t guid = *reinterpret_cast<const uint64_t *>(
+            player + Offsets::OFF_LOCAL_PLAYER_GUID);
+        if (guid != 0)
+            return guid; // live engine value — authoritative
+    }
+    return g_charSelectGuid; // early-login fallback (0 until char-select)
 }
 
 uint64_t GuidForObject(const void *unitObject) {
