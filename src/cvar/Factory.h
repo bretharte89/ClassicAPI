@@ -22,8 +22,8 @@
 // an addon to register a cvar with a change-callback or to react to value
 // changes. This wraps the engine's internal registrar (`FUN_REGISTER_CVAR`)
 // and value-setter (`FUN_SET_CVAR_VALUE`) so other modules can publish
-// persisted, validated settings — e.g. the TTS module's ttsVoice / ttsSpeed
-// / ttsVolume.
+// persisted, validated settings (clamped via the change callback and saved
+// to Config.wtf).
 //
 // CVars registered here persist to `WTF\Config.wtf` (the engine forces the
 // archive flag bit on at registration) and are visible to the in-game Lua
