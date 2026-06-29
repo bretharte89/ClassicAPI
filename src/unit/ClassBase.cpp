@@ -11,6 +11,7 @@
 #include "Game.h"
 #include "Offsets.h"
 #include "dbc/Lookup.h"
+#include "unit/Identity.h"
 
 #include <cstdint>
 
@@ -71,21 +72,31 @@ int __fastcall Script_UnitClassBase(void *L) {
         return 2;
     }
 
-    auto resolve = reinterpret_cast<ResolveUnitToken_t>(Offsets::FUN_RESOLVE_UNIT_TOKEN);
-    auto *unit = static_cast<const uint8_t *>(resolve(token));
-    if (unit == nullptr) {
-        Game::Lua::PushNil(L);
-        Game::Lua::PushNil(L);
-        return 2;
+    // Mirror Script_UnitClass: the literal "player" token reads the
+    // login-time class byte global (populated at character-enter, before
+    // the in-world descriptor exists), so this resolves at addon-load
+    // instead of returning nil until the player object spawns. All other
+    // tokens go through the unit descriptor.
+    uint8_t classByte;
+    if (Unit::Identity::IsPlayerToken(token)) {
+        classByte = *reinterpret_cast<const uint8_t *>(Offsets::VAR_PLAYER_CLASS_BYTE);
+    } else {
+        auto resolve = reinterpret_cast<ResolveUnitToken_t>(Offsets::FUN_RESOLVE_UNIT_TOKEN);
+        auto *unit = static_cast<const uint8_t *>(resolve(token));
+        if (unit == nullptr) {
+            Game::Lua::PushNil(L);
+            Game::Lua::PushNil(L);
+            return 2;
+        }
+        auto *desc = *reinterpret_cast<const uint8_t *const *>(
+            unit + Offsets::OFF_UNIT_DESCRIPTOR);
+        if (desc == nullptr) {
+            Game::Lua::PushNil(L);
+            Game::Lua::PushNil(L);
+            return 2;
+        }
+        classByte = *(desc + Offsets::OFF_UNIT_DESCRIPTOR_CLASS_BYTE);
     }
-    auto *desc = *reinterpret_cast<const uint8_t *const *>(
-        unit + Offsets::OFF_UNIT_DESCRIPTOR);
-    if (desc == nullptr) {
-        Game::Lua::PushNil(L);
-        Game::Lua::PushNil(L);
-        return 2;
-    }
-    const uint8_t classByte = *(desc + Offsets::OFF_UNIT_DESCRIPTOR_CLASS_BYTE);
     if (classByte == 0) {
         Game::Lua::PushNil(L);
         Game::Lua::PushNil(L);

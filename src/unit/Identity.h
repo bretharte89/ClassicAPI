@@ -36,6 +36,13 @@ uint64_t PlayerGuid();
 // caster cache keys on it from both the lookup and the OnAuraAdded hook).
 uint64_t GuidForObject(const void *unitObject);
 
+// Case-insensitive match against the literal `"player"` token, mirroring
+// the engine's `SStrCmpI(token, "player")` fast-path tests (e.g.
+// `Script_UnitClass`/`Script_UnitRace`, which special-case `"player"` to
+// read login-time globals available before the in-world descriptor spawns).
+// Returns false for a null pointer.
+bool IsPlayerToken(const char *token);
+
 // Resolves a unit token (`"player"`, `"target"`, `"party3"`, …) to its
 // 64-bit GUID, or 0 if the token currently maps to nothing. `"player"` is
 // read from the canonical local-player pointer so it works regardless of

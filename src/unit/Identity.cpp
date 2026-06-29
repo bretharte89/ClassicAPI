@@ -107,8 +107,20 @@ uint64_t GuidForObject(const void *unitObject) {
     return *reinterpret_cast<const uint64_t *>(block);
 }
 
+bool IsPlayerToken(const char *token) {
+    if (token == nullptr)
+        return false;
+    // Mirror Script_UnitClass/Script_UnitRace byte-for-byte: they compare the
+    // token via Storm's SStrCmpI(token, "player", 0x7FFFFFFF) (the call at
+    // 0x005183B0), not the CRT _stricmp. Same case-insensitive result for the
+    // ASCII literal, but routed through the engine's own comparator.
+    using SStrCmpI_t = int(__stdcall *)(const char *a, const char *b, int n);
+    auto sstrcmpi = reinterpret_cast<SStrCmpI_t>(Offsets::FUN_SSTR_CMP_I);
+    return sstrcmpi(token, "player", 0x7FFFFFFF) == 0;
+}
+
 uint64_t GuidForToken(const char *token) {
-    if (token != nullptr && _stricmp(token, "player") == 0)
+    if (IsPlayerToken(token))
         return PlayerGuid();
     auto fn = reinterpret_cast<TokenToGUID_t>(Offsets::FUN_TOKEN_TO_GUID);
     return fn(token);

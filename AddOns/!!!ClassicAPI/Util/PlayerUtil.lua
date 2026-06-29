@@ -1,5 +1,4 @@
-local className = UnitClass('player')
-local classFile, classID = UnitClassBase('player')
+local className, classFile, classID = UnitClass('player'), UnitClassBase('player')
 
 PlayerUtil = PlayerUtil or {}
 

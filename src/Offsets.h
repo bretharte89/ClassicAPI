@@ -1651,6 +1651,19 @@ enum Offsets {
     OFF_UNIT_DESCRIPTOR_CLASS_BYTE = 0x79,
     OFF_UNIT_DESCRIPTOR_SEX_BYTE = 0x7A,
 
+    // The local player's UNIT_FIELD_BYTES_0 race/class/sex bytes, mirrored
+    // into a login-time global that is populated at character-enter —
+    // BEFORE the in-world CGUnit/descriptor exists. Script_UnitClass
+    // (0x00518350) and Script_UnitRace special-case the literal "player"
+    // token to read these (Script_UnitClass calls FUN_005abde0 →
+    // `return DAT_00c27e81`), which is why UnitClass("player") resolves at
+    // addon-load while a descriptor read returns nil until the player
+    // object spawns. Getters: race FUN_005abdd0, class FUN_005abde0,
+    // sex FUN_005abdf0.
+    VAR_PLAYER_RACE_BYTE = 0x00C27E80,
+    VAR_PLAYER_CLASS_BYTE = 0x00C27E81,
+    VAR_PLAYER_SEX_BYTE = 0x00C27E82,
+
     // SkillLineAbility.dbc — maps each (class, race) pair to its
     // learnable spell list with skill-rank gating. Indexed by record
     // ID; reads via the standard `records[id]` pattern. Used by
