@@ -59,6 +59,7 @@ Full per-function reference: **[docs/API.md](docs/API.md)**.
 | [UIColor](docs/API.md#uicolor) | `C_UIColor.GetColors` |
 | [Unit](docs/API.md#unit) | `GetUnitSpeed`, `UnitClassBase`, `UnitGUID`, `UnitInRange`, `UnitIsAFK`, `UnitIsDND`, `UnitIsFeignDeath`, `UnitIsInMyGuild`, `UnitIsPossessed`, `UnitPower`, `UnitPowerMax`, `UnitPowerType`, `UnitRaceBase`, `UnitStandState`, `UnitSubName`, `UnitTokenFromGUID` |
 | [UnitAuras](docs/API.md#unitauras) | `C_UnitAuras.GetAuraDataByIndex`, `C_UnitAuras.GetAuraDataBySpellName`, `C_UnitAuras.GetAuraDispelTypeColor`, `C_UnitAuras.GetBuffDataByIndex`, `C_UnitAuras.GetDebuffDataByIndex`, `C_UnitAuras.GetPlayerAuraBySpellID`, `C_UnitAuras.GetUnitAuraBySpellID`, `C_UnitAuras.GetUnitAuras` |
+| [VoiceChat](docs/API.md#voicechat) | `C_VoiceChat.GetTtsVoices`, `C_VoiceChat.GetRemoteTtsVoices`, `C_VoiceChat.SpeakText`, `C_VoiceChat.StopSpeakingText`, `C_TTSSettings.GetSpeechRate`, `C_TTSSettings.GetSpeechVolume`, `C_TTSSettings.GetSpeechVoiceID`, `C_TTSSettings.GetVoiceOptionName`, `C_TTSSettings.SetSpeechRate`, `C_TTSSettings.SetSpeechVolume`, `C_TTSSettings.SetVoiceOption`, `C_TTSSettings.SetVoiceOptionByName`, `C_TTSSettings.SetDefaultSettings`, `C_TTSSettings.RefreshVoices` |
 
 ### GlueXML calls
 
@@ -132,6 +133,10 @@ when launching with `-console`), not as Lua functions. See the
 | `QUEST_DATA_LOAD_RESULT` | `questID, success` |
 | `QUEST_TURNED_IN` | `questID, xpReward, moneyReward` |
 | `UPDATE_SHAPESHIFT_FORM` | *(none)* |
+| `VOICE_CHAT_TTS_PLAYBACK_STARTED` | `numConsumers, utteranceID, durationMS, destination` |
+| `VOICE_CHAT_TTS_PLAYBACK_FINISHED` | `numConsumers, utteranceID, destination` |
+| `VOICE_CHAT_TTS_PLAYBACK_FAILED` | `status, utteranceID, destination` |
+| `VOICE_CHAT_TTS_VOICES_UPDATE` | *(none)* |
 
 ### Globals
 
