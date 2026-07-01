@@ -154,6 +154,7 @@ build instructions.
   - [`LE_ITEM_QUALITY_*`](#le_item_quality_)
   - [`LE_UNIT_STAT_*`](#le_unit_stat_)
   - [`Enum.AddOnSecurityStatus`](#enumaddonsecuritystatus)
+  - [`Enum.InventoryType`](#enuminventorytype)
   - [`Enum.PowerType`](#enumpowertype)
 
 - [Gossip](#gossip)
@@ -3614,6 +3615,39 @@ Blizzard's `Enum.AddOnSecurityStatus`:
 if C_AddOns.GetAddOnSecurity(name) == Enum.AddOnSecurityStatus.Secure then
     -- it's a Blizzard_* addon
 end
+```
+
+### `Enum.InventoryType`
+
+The equip-type enum — the numeric `inventoryType` reported by
+[`C_Item.GetItemInfoInstant`](#c_itemgetiteminfoinstantitem) /
+[`C_Item.GetItemInventoryType`](#c_itemgetiteminventorytypeitemlocation--c_itemgetiteminventorytypebyiditem),
+and the argument the `C_Item.GetItemInventorySlot*` functions take.
+
+| Value | Field | Value | Field |
+|------:|-------|------:|-------|
+| 0 | `IndexNonEquipType` | 15 | `IndexRangedType` |
+| 1 | `IndexHeadType` | 16 | `IndexCloakType` |
+| 2 | `IndexNeckType` | 17 | `Index2HweaponType` |
+| 3 | `IndexShoulderType` | 18 | `IndexBagType` |
+| 4 | `IndexBodyType` | 19 | `IndexTabardType` |
+| 5 | `IndexChestType` | 20 | `IndexRobeType` |
+| 6 | `IndexWaistType` | 21 | `IndexWeaponmainhandType` |
+| 7 | `IndexLegsType` | 22 | `IndexWeaponoffhandType` |
+| 8 | `IndexFeetType` | 23 | `IndexHoldableType` |
+| 9 | `IndexWristType` | 24 | `IndexAmmoType` |
+| 10 | `IndexHandType` | 25 | `IndexThrownType` |
+| 11 | `IndexFingerType` | 26 | `IndexRangedrightType` |
+| 12 | `IndexTrinketType` | 27 | `IndexQuiverType` |
+| 13 | `IndexWeaponType` | 28 | `IndexRelicType` |
+| 14 | `IndexShieldType` | | |
+
+Values `29..34` (`IndexProfessionToolType`, `IndexProfessionGearType`,
+`IndexEquipablespell{Offensive,Utility,Defensive,Weapon}Type`) are
+post-vanilla and included for parity — vanilla items never report them.
+
+```lua
+if C_Item.GetItemInventoryType(loc) == Enum.InventoryType.IndexHeadType then ...
 ```
 
 ### `Enum.PowerType`

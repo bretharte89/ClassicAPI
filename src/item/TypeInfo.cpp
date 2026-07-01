@@ -142,6 +142,48 @@ int __fastcall Script_GetItemInventorySlotInfo(void *L) {
     return 1;
 }
 
+// `Enum.InventoryType` — the modern equip-type enum. Values 0..28 are the
+// ones vanilla items actually report; 29..34 (profession / equippable-spell
+// types) are post-vanilla but included so backport code that references those
+// keys resolves (the comparisons just never match on 1.12 data).
+constexpr Game::Lua::EnumIntegerEntry kInventoryTypeEntries[] = {
+    {"IndexNonEquipType", 0},
+    {"IndexHeadType", 1},
+    {"IndexNeckType", 2},
+    {"IndexShoulderType", 3},
+    {"IndexBodyType", 4},
+    {"IndexChestType", 5},
+    {"IndexWaistType", 6},
+    {"IndexLegsType", 7},
+    {"IndexFeetType", 8},
+    {"IndexWristType", 9},
+    {"IndexHandType", 10},
+    {"IndexFingerType", 11},
+    {"IndexTrinketType", 12},
+    {"IndexWeaponType", 13},
+    {"IndexShieldType", 14},
+    {"IndexRangedType", 15},
+    {"IndexCloakType", 16},
+    {"Index2HweaponType", 17},
+    {"IndexBagType", 18},
+    {"IndexTabardType", 19},
+    {"IndexRobeType", 20},
+    {"IndexWeaponmainhandType", 21},
+    {"IndexWeaponoffhandType", 22},
+    {"IndexHoldableType", 23},
+    {"IndexAmmoType", 24},
+    {"IndexThrownType", 25},
+    {"IndexRangedrightType", 26},
+    {"IndexQuiverType", 27},
+    {"IndexRelicType", 28},
+    {"IndexProfessionToolType", 29},
+    {"IndexProfessionGearType", 30},
+    {"IndexEquipablespellOffensiveType", 31},
+    {"IndexEquipablespellUtilityType", 32},
+    {"IndexEquipablespellDefensiveType", 33},
+    {"IndexEquipablespellWeaponType", 34},
+};
+
 void RegisterLuaFunctions() {
     Game::Lua::RegisterTableFunction("C_Item", "GetItemSubClassInfo",
                                      &Script_GetItemSubClassInfo);
@@ -149,6 +191,9 @@ void RegisterLuaFunctions() {
                                      &Script_GetItemInventorySlotKey);
     Game::Lua::RegisterTableFunction("C_Item", "GetItemInventorySlotInfo",
                                      &Script_GetItemInventorySlotInfo);
+    Game::Lua::RegisterIntegerEnum(
+        "Enum", "InventoryType", kInventoryTypeEntries,
+        sizeof(kInventoryTypeEntries) / sizeof(kInventoryTypeEntries[0]));
 }
 
 const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
