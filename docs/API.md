@@ -190,6 +190,8 @@ build instructions.
   - [`C_Item.GetItemGUID(itemLocation)`](#c_itemgetitemguiditemlocation)
   - [`C_Item.GetItemID(itemLocation)`](#c_itemgetitemiditemlocation)
   - [`C_Item.GetItemInfoInstant(item)`](#c_itemgetiteminfoinstantitem)
+  - [`C_Item.GetItemInventorySlotInfo(inventorySlot)`](#c_itemgetiteminventoryslotinfoinventoryslot)
+  - [`C_Item.GetItemInventorySlotKey(inventorySlot)`](#c_itemgetiteminventoryslotkeyinventoryslot)
   - [`C_Item.GetItemInventoryType(itemLocation)` / `C_Item.GetItemInventoryTypeByID(item)`](#c_itemgetiteminventorytypeitemlocation--c_itemgetiteminventorytypebyiditem)
   - [`C_Item.GetItemLink(itemLocation)`](#c_itemgetitemlinkitemlocation)
   - [`C_Item.GetItemLocation(itemGUID)`](#c_itemgetitemlocationitemguid)
@@ -200,6 +202,7 @@ build instructions.
   - [`C_Item.GetItemSetID(itemLocation)` / `C_Item.GetItemSetIDByID(item)`](#c_itemgetitemsetiditemlocation--c_itemgetitemsetidbyiditem)
   - [`C_Item.GetItemSetInfo(setID)`](#c_itemgetitemsetinfosetid)
   - [`C_Item.GetItemSpell(item)`](#c_itemgetitemspellitem)
+  - [`C_Item.GetItemSubClassInfo(classID, subClassID)`](#c_itemgetitemsubclassinfoclassid-subclassid)
   - [`C_Item.GetItemUniqueness(itemLocation)` / `C_Item.GetItemUniquenessByID(item)`](#c_itemgetitemuniquenessitemlocation--c_itemgetitemuniquenessbyiditem)
   - [`C_Item.GetStackCount(itemLocation)`](#c_itemgetstackcountitemlocation)
   - [`C_Item.IsBound(itemLocation)`](#c_itemisbounditemlocation)
@@ -4370,6 +4373,25 @@ Silk Cloth lives at `(7, 0)` in this client, not the modern `(7, 5)`.
 > explicitly, or just call `GetItemInfo` (which warms via the
 > `Script_GetItemInfo` hook).
 
+### `C_Item.GetItemInventorySlotInfo(inventorySlot)`
+
+Returns the localized display name for an `Enum.InventoryType` value — e.g.
+`C_Item.GetItemInventorySlotInfo(1)` → `"Head"`. Returns `nil` for the
+non-equip slot (`0`) or out-of-range values.
+
+The engine's INVTYPE table stores the equipLoc *key* (`"INVTYPE_HEAD"`); the
+display name is the FrameXML global string of that key (`INVTYPE_HEAD =
+"Head"`), so the result is correctly localized on non-English clients.
+
+### `C_Item.GetItemInventorySlotKey(inventorySlot)`
+
+Returns the equipLoc key string for an `Enum.InventoryType` value — e.g.
+`C_Item.GetItemInventorySlotKey(1)` → `"INVTYPE_HEAD"`. This is the same
+`INVTYPE_*` token [`C_Item.GetItemInfoInstant`](#c_itemgetiteminfoinstantitem)
+returns as its `itemEquipLoc`. Returns `nil` for the non-equip slot (`0`) or
+out-of-range values. Pair it with `GetItemInventorySlotInfo` to turn the key
+into a localized label.
+
 ### `C_Item.GetItemInventoryType(itemLocation)` / `C_Item.GetItemInventoryTypeByID(item)`
 
 Returns the numeric `Enum.InventoryType` straight off the cache
@@ -4622,6 +4644,27 @@ return `nil` and silently kick off an `SMSG_ITEM_QUERY_SINGLE`
 request. A second call after `GET_ITEM_INFO_RECEIVED` lands the
 data. Same warmup pattern as `C_Item.GetItemFamily` and the rest of
 our cache-backed accessors.
+
+### `C_Item.GetItemSubClassInfo(classID, subClassID)`
+
+Returns `subClassName, subClassUsesInvType` for an item class/subclass pair.
+
+```lua
+C_Item.GetItemSubClassInfo(2, 7)   -- "One-Handed Swords", false
+C_Item.GetItemSubClassInfo(4, 1)   -- "Cloth", true
+```
+
+- `subClassName` (string) — the localized `ItemSubClass.dbc` name (verbose
+  form, e.g. `"One-Handed Swords"`; falls back to the short form for
+  subclasses that only populate it, e.g. `"Consumable"`).
+- `subClassUsesInvType` (boolean) — true for subclasses whose items are
+  labeled by inventory slot rather than by subclass name. On vanilla data
+  that's exactly the armor material types (Miscellaneous, Cloth, Leather,
+  Mail, Plate); false for weapons, shields, librams, idols, totems, and
+  non-equipment. Read from the `ItemSubClass.dbc` flags bit `0x200`
+  (verified against the 1.15 client).
+
+Returns `nil` if the `(classID, subClassID)` pair has no row.
 
 ### `C_Item.GetItemUniqueness(itemLocation)` / `C_Item.GetItemUniquenessByID(item)`
 

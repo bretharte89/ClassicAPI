@@ -1453,6 +1453,17 @@ enum Offsets {
     OFF_ITEMSUBCLASS_RECORD_STRIDE = 0x74,
     OFF_ITEMSUBCLASS_NAME = 0x28,
     OFF_ITEMSUBCLASS_DISPLAY_NAME = 0x4C,
+    // record +0x00 = classID, +0x04 = subClassID (the compound key the
+    // linear scan matches on). Flags field at +0x10; bit 0x200 marks the
+    // subclasses whose items display by inventory slot rather than by
+    // subclass name — set on exactly the armor material types (Misc / Cloth
+    // / Leather / Mail / Plate), clear on weapons, shields, librams, etc.
+    // This is `C_Item.GetItemSubClassInfo`'s `subClassUsesInvType` return.
+    // Derived by dumping ItemSubClass.dbc (see docs/DBCs.md dump oracle).
+    OFF_ITEMSUBCLASS_CLASS_ID = 0x00,
+    OFF_ITEMSUBCLASS_SUBCLASS_ID = 0x04,
+    OFF_ITEMSUBCLASS_FLAGS = 0x10,
+    ITEMSUBCLASS_FLAG_USES_INVTYPE = 0x200,
 
     // ItemDisplayInfo.dbc — standard layout. Icon path char* at record +0x14
     // (per the helper at 0x005D88B0 that Script_GetItemInfo uses).
