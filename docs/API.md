@@ -4710,44 +4710,68 @@ item actually carries are present.
 
 ```lua
 C_Item.GetItemStats("item:2244")            -- Krol Blade
--- { ITEM_MOD_STRENGTH_SHORT = 7, ITEM_MOD_STAMINA_SHORT = 5 }
+-- { ITEM_MOD_STRENGTH_SHORT = 7, ITEM_MOD_STAMINA_SHORT = 5,
+--   ITEM_MOD_DAMAGE_PER_SECOND_SHORT = 40.89,
+--   ITEM_MOD_CRIT_MELEE_RATING = 1, ITEM_MOD_CRIT_RANGED_RATING = 1 }
 
 C_Item.GetItemStats("item:12022:0:769")     -- "of the Owl" random suffix
 -- { ITEM_MOD_INTELLECT_SHORT = 6, ITEM_MOD_SPIRIT_SHORT = 6 }
 ```
 
-**Reported stat set.** Vanilla's stored item stats: the base attributes
-plus armor and the six resistance schools.
+**Sources.** The table is assembled from three places, so it reflects
+what the item actually grants — not just its stored stat slots:
 
-| Key | Stat |
-|-----|------|
-| `ITEM_MOD_STRENGTH_SHORT` / `_AGILITY_` / `_STAMINA_` / `_INTELLECT_` / `_SPIRIT_SHORT` | Base attributes |
-| `ITEM_MOD_MANA_SHORT` / `ITEM_MOD_HEALTH_SHORT` | Mana / health on equip |
-| `RESISTANCE0_NAME` | Armor |
-| `RESISTANCE1_NAME` … `RESISTANCE6_NAME` | Holy / Fire / Nature / Frost / Shadow / Arcane resistance |
+1. **Base record** — the stored attributes, armor, resistances, and (for
+   weapons) DPS.
+2. **On-equip spells** (`SpellTrigger == ON_EQUIP`) — vanilla stores the
+   "special" bonuses (crit, attack power, spell power, hit, mp5, defense,
+   …) as an equip spell whose aura effect carries the value, not as a
+   stat slot. Their auras are decoded into the keys below.
+3. **Random suffix** — the link's third `item:id:enchant:SUFFIX:unique`
+   field (`ItemRandomProperties.dbc` → `SpellItemEnchantment.dbc`): stat
+   suffixes ("of the Owl") are themselves equip spells, armor suffixes
+   ("of Toughness") are direct resistance enchants. A bare itemID or a
+   suffix-less link contributes nothing here.
 
-The rating stats later expansions added (crit / haste / mastery / …)
-don't exist in 1.12 data, so those keys never appear.
+**Keys.**
+
+| Key | Stat | Source |
+|-----|------|--------|
+| `ITEM_MOD_STRENGTH_SHORT` / `_AGILITY_` / `_STAMINA_` / `_INTELLECT_` / `_SPIRIT_SHORT` | Base attributes | record / `MOD_STAT` |
+| `ITEM_MOD_MANA_SHORT` / `ITEM_MOD_HEALTH_SHORT` | Mana / health on equip | record |
+| `RESISTANCE0_NAME` | Armor | record / `MOD_RESISTANCE` bit 0 |
+| `RESISTANCE1_NAME` … `RESISTANCE6_NAME` | Holy / Fire / Nature / Frost / Shadow / Arcane resistance | record / `MOD_RESISTANCE` / type-4 enchant |
+| `ITEM_MOD_DAMAGE_PER_SECOND_SHORT` | Weapon DPS (float) | avg damage ÷ swing time |
+| `ITEM_MOD_ATTACK_POWER_SHORT` | Attack power | `MOD_ATTACK_POWER` (99) |
+| `ITEM_MOD_RANGED_ATTACK_POWER_SHORT` | Ranged attack power (ranged-only items) | `MOD_RANGED_ATTACK_POWER` (124) |
+| `ITEM_MOD_CRIT_MELEE_RATING` + `ITEM_MOD_CRIT_RANGED_RATING` | Crit % | weapon-crit aura (52) |
+| `ITEM_MOD_HIT_MELEE_RATING` + `ITEM_MOD_HIT_RANGED_RATING` | Hit % | hit aura (54) |
+| `ITEM_MOD_HIT_SPELL_RATING` | Spell hit % | spell-hit aura (55) |
+| `ITEM_MOD_SPELL_DAMAGE_DONE_SHORT` | Spell damage | `MOD_DAMAGE_DONE` (13) |
+| `ITEM_MOD_SPELL_HEALING_DONE_SHORT` | Healing | `MOD_HEALING_DONE` (135) |
+| `ITEM_MOD_MANA_REGENERATION` | mp5 (mana) | `MOD_POWER_REGEN` (85) |
+| `ITEM_MOD_DEFENSE_SKILL_RATING` | Defense skill | `MOD_SKILL` (30, misc 95) |
+
+> **Values are vanilla-native, not ratings.** Vanilla has no rating
+> system, so the percent-based stats (crit / hit / defense) report the raw
+> **percentage** under the modern `*_RATING` key — e.g. Krol Blade's
+> "+1% crit" is `ITEM_MOD_CRIT_MELEE_RATING = 1`, where TBC/Era would
+> show the level-scaled rating (`13`). A native percent is the only
+> value that's honest and level-independent. Flat stats (attack power,
+> spell damage, healing, mp5) are the item's actual magnitudes.
+>
+> Rating stats that didn't exist in 1.12 at all (haste, mastery,
+> versatility, expertise, resilience) never appear. A generic "+N attack
+> power" item carries both a melee and a ranged AP aura in vanilla; the
+> generic `ITEM_MOD_ATTACK_POWER_SHORT` key subsumes it, so
+> `ITEM_MOD_RANGED_ATTACK_POWER_SHORT` shows only for ranged-only items
+> (scopes, ranged weapons). Rarer auras with no clean single key —
+> percent attack power, per-weapon-line skill, damage-taken, on-hit /
+> on-use procs — are skipped.
 
 **Input.** Accepts a full chat hyperlink, an `item:N…` link string, or a
 bare itemID (a superset of retail, which is link-only). Returns `nil` if
 the item isn't cached yet — warm it via `GetItemInfo` and retry.
-
-**Random suffixes** ("of the Bear", "of Arcane Resistance", …) are
-resolved from the link's third `item:id:enchant:SUFFIX:unique` field and
-folded into the same stat keys. In 1.12 the stat suffixes apply their
-bonus as an equip spell (`ItemRandomProperties.dbc` →
-`SpellItemEnchantment.dbc` type 3 → a spell whose `SPELL_AURA_MOD_STAT` /
-`MOD_RESISTANCE` effect carries the value); armor suffixes use a direct
-resistance enchant. Both are decoded. A bare itemID or a link with no
-suffix field yields base stats only.
-
-> Suffix bonuses granted through *other* spell auras — attack power,
-> spell power, healing, mp5, weapon skill — are intentionally **not**
-> reported. Those aren't part of vanilla's item-stat set, and the base
-> item stores them the same way (via equip spells we likewise don't
-> count), so the scope stays consistent between a plain item and its
-> suffixed variant.
 
 ### `C_Item.GetItemSubClassInfo(classID, subClassID)`
 
