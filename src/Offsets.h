@@ -2638,6 +2638,22 @@ enum Offsets {
     OFF_SPELLITEMENCHANT_ARG = 0x28,           // int EffectArg[3]
     OFF_SPELLITEMENCHANT_NAME = 0x34,          // char *name[8], locale-indexed
 
+    // ItemRandomProperties.dbc — the table a random-suffix ID (the third
+    // field of an `item:id:enchant:suffix:unique` link) indexes to get
+    // the SpellItemEnchantment IDs that apply the "of the Bear"-style
+    // bonus. Standard 5-DWORD DBC instance at 0x00C0DBCC; records-ptr at
+    // +0x08, count at +0x0C (see docs/DBCs.md). Verified by parsing the
+    // on-disk ItemRandomProperties.dbc: 16-field / 0x40 records, field 0
+    // = ID, field 1 = internal name string, and the enchant IDs occupy
+    // fields 2..6 (offset +0x08, five contiguous u32 slots — only the
+    // first few are used; the rest are 0). Field 7 duplicates the name
+    // string offset, so it is NOT an enchant slot — do not read past
+    // slot 5.
+    VAR_ITEMRANDOMPROP_RECORDS = 0x00C0DBD4,   // ItemRandomPropertiesRecord *records[suffixID]
+    VAR_ITEMRANDOMPROP_COUNT = 0x00C0DBD8,     // max suffix ID
+    OFF_ITEMRANDOMPROP_ENCHANT = 0x08,         // u32 Enchantment[5]
+    ITEMRANDOMPROP_ENCHANT_SLOT_COUNT = 5,
+
     // Spell.dbc School field — 0-based integer at record +0x04.
     // Verified empirically against Fireball (133) → School=2 (Fire)
     // and Frostbolt (116) → School=4 (Frost) on Octo 1.12.1. Vanilla
@@ -4085,6 +4101,15 @@ enum Offsets {
     OFF_SPELL_RECORD_EFFECT_APPLY_AURA_NAME = 0x16C,  // int32[3]
     OFF_SPELL_RECORD_EFFECT_MISC_VALUE = 0x1A8,       // int32[3]
     SPELL_RECORD_EFFECT_COUNT = 3,
+
+    // EffectBasePoints[3] — the base magnitude of each effect, stored as
+    // (value - 1) for the fixed-die spells that back item stats (the
+    // engine adds a 1..dieSides roll; dieSides == 1 makes it value = base
+    // + 1). Verified empirically: the "Increased Intellect 01/02/03"
+    // random-property spells (7468/7469/7470) hold base 0/1/2 for the
+    // +1/+2/+3 tiers. Read by Item::Stats when resolving random-suffix
+    // stat auras. Parallel [3] array to APPLY_AURA_NAME / MISC_VALUE.
+    OFF_SPELL_RECORD_EFFECT_BASE_POINTS = 0x130,      // int32[3]
 
     // Per-effect EffectRadiusIndex[3] → SpellRadius.dbc. Verified by
     // FUN_006e6350, which reads spellRec[+0x160] (effect 0) and

@@ -203,6 +203,8 @@ build instructions.
   - [`C_Item.GetItemSetID(itemLocation)` / `C_Item.GetItemSetIDByID(item)`](#c_itemgetitemsetiditemlocation--c_itemgetitemsetidbyiditem)
   - [`C_Item.GetItemSetInfo(setID)`](#c_itemgetitemsetinfosetid)
   - [`C_Item.GetItemSpell(item)`](#c_itemgetitemspellitem)
+  - [`C_Item.GetItemStatDelta(itemLink1, itemLink2)`](#c_itemgetitemstatdeltaitemlink1-itemlink2)
+  - [`C_Item.GetItemStats(itemLink)`](#c_itemgetitemstatsitemlink)
   - [`C_Item.GetItemSubClassInfo(classID, subClassID)`](#c_itemgetitemsubclassinfoclassid-subclassid)
   - [`C_Item.GetItemUniqueness(itemLocation)` / `C_Item.GetItemUniquenessByID(item)`](#c_itemgetitemuniquenessitemlocation--c_itemgetitemuniquenessbyiditem)
   - [`C_Item.GetStackCount(itemLocation)`](#c_itemgetstackcountitemlocation)
@@ -4679,6 +4681,73 @@ return `nil` and silently kick off an `SMSG_ITEM_QUERY_SINGLE`
 request. A second call after `GET_ITEM_INFO_RECEIVED` lands the
 data. Same warmup pattern as `C_Item.GetItemFamily` and the rest of
 our cache-backed accessors.
+
+### `C_Item.GetItemStatDelta(itemLink1, itemLink2)`
+
+Returns a table of the per-stat **difference** between two items,
+computed as `item2 - item1` — a positive value means the second item has
+more of that stat. Only stats whose delta is non-zero appear.
+
+```lua
+-- Compare an equipped ring against one in your bags:
+local delta = C_Item.GetItemStatDelta(
+    C_Item.GetItemLink({equipmentSlotIndex = 11}),
+    C_Item.GetItemLink({bagID = 0, slotIndex = 3}))
+-- delta = { ITEM_MOD_INTELLECT_SHORT = 6, ITEM_MOD_SPIRIT_SHORT = 2 }
+-- (the bag ring has +6 Int / +2 Spirit relative to the equipped one)
+```
+
+Same key set, accepted input forms, random-suffix handling, and caching
+caveat as [`C_Item.GetItemStats`](#c_itemgetitemstatsitemlink) — see
+there for the details. Returns `nil` if **either** item is uncached.
+
+### `C_Item.GetItemStats(itemLink)`
+
+Returns a table of an item's stats, keyed by the FrameXML global-string
+names WoW's own `GetItemStats` uses (so `_G[key]` yields the display
+label — `_G["ITEM_MOD_STRENGTH_SHORT"]` → `"Strength"`). Only stats the
+item actually carries are present.
+
+```lua
+C_Item.GetItemStats("item:2244")            -- Krol Blade
+-- { ITEM_MOD_STRENGTH_SHORT = 7, ITEM_MOD_STAMINA_SHORT = 5 }
+
+C_Item.GetItemStats("item:12022:0:769")     -- "of the Owl" random suffix
+-- { ITEM_MOD_INTELLECT_SHORT = 6, ITEM_MOD_SPIRIT_SHORT = 6 }
+```
+
+**Reported stat set.** Vanilla's stored item stats: the base attributes
+plus armor and the six resistance schools.
+
+| Key | Stat |
+|-----|------|
+| `ITEM_MOD_STRENGTH_SHORT` / `_AGILITY_` / `_STAMINA_` / `_INTELLECT_` / `_SPIRIT_SHORT` | Base attributes |
+| `ITEM_MOD_MANA_SHORT` / `ITEM_MOD_HEALTH_SHORT` | Mana / health on equip |
+| `RESISTANCE0_NAME` | Armor |
+| `RESISTANCE1_NAME` … `RESISTANCE6_NAME` | Holy / Fire / Nature / Frost / Shadow / Arcane resistance |
+
+The rating stats later expansions added (crit / haste / mastery / …)
+don't exist in 1.12 data, so those keys never appear.
+
+**Input.** Accepts a full chat hyperlink, an `item:N…` link string, or a
+bare itemID (a superset of retail, which is link-only). Returns `nil` if
+the item isn't cached yet — warm it via `GetItemInfo` and retry.
+
+**Random suffixes** ("of the Bear", "of Arcane Resistance", …) are
+resolved from the link's third `item:id:enchant:SUFFIX:unique` field and
+folded into the same stat keys. In 1.12 the stat suffixes apply their
+bonus as an equip spell (`ItemRandomProperties.dbc` →
+`SpellItemEnchantment.dbc` type 3 → a spell whose `SPELL_AURA_MOD_STAT` /
+`MOD_RESISTANCE` effect carries the value); armor suffixes use a direct
+resistance enchant. Both are decoded. A bare itemID or a link with no
+suffix field yields base stats only.
+
+> Suffix bonuses granted through *other* spell auras — attack power,
+> spell power, healing, mp5, weapon skill — are intentionally **not**
+> reported. Those aren't part of vanilla's item-stat set, and the base
+> item stores them the same way (via equip spells we likewise don't
+> count), so the scope stays consistent between a plain item and its
+> suffixed variant.
 
 ### `C_Item.GetItemSubClassInfo(classID, subClassID)`
 
