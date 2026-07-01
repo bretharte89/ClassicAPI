@@ -20,6 +20,23 @@
 
 namespace Item::GUID {
 
+namespace {
+
+// Reads a CGItem's per-instance 64-bit GUID (instance block at +0x08 →
+// GUID qword at +0x00). Returns 0 if the item or block is null.
+uint64_t ReadItemGuid(const uint8_t *cgItem) {
+    if (cgItem == nullptr)
+        return 0;
+    auto *instance = *reinterpret_cast<const uint8_t *const *>(
+        cgItem + Offsets::OFF_ITEM_INSTANCE_BLOCK);
+    if (instance == nullptr)
+        return 0;
+    return *reinterpret_cast<const uint64_t *>(
+        instance + Offsets::OFF_INSTANCE_BLOCK_GUID);
+}
+
+} // namespace
+
 // `C_Item.GetItemGUID(itemLocation)` — returns the per-instance 64-bit
 // GUID of the item at the location formatted as `"0xHHHHHHHHLLLLLLLL"`
 // (16 hex digits, hi dword first). Same format `UnitGUID` returns —
@@ -41,12 +58,7 @@ static int __fastcall Script_C_Item_GetItemGUID(void *L) {
     const uint8_t *item = Item::Location::Resolve(L, 1);
     if (item == nullptr)
         return 0;
-    auto *instance = *reinterpret_cast<const uint8_t *const *>(
-        item + Offsets::OFF_ITEM_INSTANCE_BLOCK);
-    if (instance == nullptr)
-        return 0;
-    const uint64_t guid = *reinterpret_cast<const uint64_t *>(
-        instance + Offsets::OFF_INSTANCE_BLOCK_GUID);
+    const uint64_t guid = ReadItemGuid(item);
     if (guid == 0)
         return 0;
 
@@ -55,8 +67,58 @@ static int __fastcall Script_C_Item_GetItemGUID(void *L) {
     return 1;
 }
 
+// `C_Item.IsItemGUIDInInventory(itemGUID)` — returns whether an item with
+// the given `"0x…"` GUID is currently carried by the player: the 19
+// equipment slots plus the bags (backpack + the four equipped bags,
+// containers 0..4). Equipped items count — verified against retail, where
+// `IsItemGUIDInInventory(GetItemGUID({equipmentSlotIndex=1}))` is `true`.
+// The bank is NOT included (separate storage; `GetItemCount(..., true)`
+// covers it). Accepts the same GUID string `C_Item.GetItemGUID` /
+// `UnitGUID` return. Returns `false` for a malformed / zero GUID.
+static int __fastcall Script_C_Item_IsItemGUIDInInventory(void *L) {
+    if (!Game::Lua::IsString(L, 1)) {
+        Game::Lua::Error(L, "Usage: C_Item.IsItemGUIDInInventory(\"itemGUID\")");
+        return 0;
+    }
+    // Parse into a plain qword BEFORE any ResolveBag call — ResolveBag
+    // clobbers the Lua stack (and thus the argument string) as it packs
+    // bag/slot into stack[1]/[2]. (ResolveEquipmentSlot uses the inventory
+    // manager directly and doesn't touch the stack.)
+    uint64_t target = 0;
+    if (!Guid::Parse(Game::Lua::ToString(L, 1), &target) || target == 0) {
+        Game::Lua::SetTop(L, 0);
+        Game::Lua::PushBool(L, false);
+        return 1;
+    }
+
+    bool found = false;
+    // Equipped slots 1..19.
+    for (int slot = 1; slot <= 19 && !found; ++slot) {
+        const uint8_t *item = Item::Location::ResolveEquipmentSlot(slot);
+        if (item != nullptr && ReadItemGuid(item) == target)
+            found = true;
+    }
+    // Bags 0..4 (backpack + equipped bags).
+    for (int bag = 0; bag <= 4 && !found; ++bag) {
+        const int slots = Item::Location::GetBagSlotCount(bag);
+        for (int slot = 1; slot <= slots; ++slot) {
+            const uint8_t *item = Item::Location::ResolveBag(L, bag, slot);
+            if (item != nullptr && ReadItemGuid(item) == target) {
+                found = true;
+                break;
+            }
+        }
+    }
+
+    Game::Lua::SetTop(L, 0);
+    Game::Lua::PushBool(L, found);
+    return 1;
+}
+
 static void RegisterLuaFunctions() {
     Game::Lua::RegisterTableFunction("C_Item", "GetItemGUID", &Script_C_Item_GetItemGUID);
+    Game::Lua::RegisterTableFunction("C_Item", "IsItemGUIDInInventory",
+                                     &Script_C_Item_IsItemGUIDInInventory);
 }
 
 static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};

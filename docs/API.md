@@ -210,6 +210,7 @@ build instructions.
   - [`C_Item.IsEquippableItem(item)`](#c_itemisequippableitemitem)
   - [`C_Item.IsEquippedItem(item)`](#c_itemisequippeditemitem)
   - [`C_Item.IsItemDataCachedByID(item)` / `C_Item.IsItemDataCached(itemLocation)`](#c_itemisitemdatacachedbyiditem--c_itemisitemdatacacheditemlocation)
+  - [`C_Item.IsItemGUIDInInventory(itemGUID)`](#c_itemisitemguidininventoryitemguid)
   - [`C_Item.IsItemOpenable(itemLocation)`](#c_itemisitemopenableitemlocation)
   - [`C_Item.IsLocked(itemLocation)`](#c_itemislockeditemlocation)
   - [`C_Item.LockItem(itemLocation)`](#c_itemlockitemitemlocation)
@@ -4843,6 +4844,24 @@ if not C_Item.IsItemDataCachedByID(itemID) then
     -- (poll IsItemDataCachedByID on a timer until true)
 end
 ```
+
+### `C_Item.IsItemGUIDInInventory(itemGUID)`
+
+Returns whether the item with the given `"0x…"` GUID is currently carried
+by the player — the 19 equipment slots plus the bags (backpack + the four
+equipped bags). Equipped items count (verified against retail); the bank
+does not.
+
+```lua
+local g = C_Item.GetItemGUID({bagID = 0, slotIndex = 1})
+C_Item.IsItemGUIDInInventory(g)   -- true
+C_Item.IsItemGUIDInInventory(
+    C_Item.GetItemGUID({equipmentSlotIndex = 1}))   -- true (equipped counts)
+```
+
+Accepts the GUID string [`C_Item.GetItemGUID`](#c_itemgetitemguiditemlocation)
+/ `UnitGUID` return; returns `false` for a malformed or zero GUID. To also
+cover the bank, use `C_Item.GetItemCount(itemID, true) > 0` instead.
 
 ### `C_Item.IsItemOpenable(itemLocation)`
 
