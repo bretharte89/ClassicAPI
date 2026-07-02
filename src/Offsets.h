@@ -103,6 +103,54 @@ enum Offsets {
     FUN_TOOLTIP_REALLOC_PTR_ARRAY = 0x00536C80,   // __thiscall(desc, newCount) — pointer arrays
     FUN_TOOLTIP_REALLOC_INT_ARRAY = 0x004368C0,   // __thiscall(desc, newCount) — wrap-flag array
 
+    // GameTooltip:SetHyperlinkCompareItem (Tooltip::Compare) — builds the
+    // equipped item's tooltip natively (no Lua roundtrip) and appends
+    // colored stat deltas. FUN_GAMETOOLTIP_BUILD_ITEM is the engine's own
+    // item-tooltip builder that SetInventoryItem/SetHyperlink call:
+    //   __thiscall(self, itemID, guid*, guid*, a4, a5, a6, headerFlag, a8, a9)
+    // Proven arg shape from FUN_005353b0/FUN_00535700 (all flags 0 → a clean
+    // item tooltip). The builder's own headerFlag (param_7) path merges the
+    // "Currently Equipped" text into the name line and force-wraps it, so we
+    // build clean (flag 0) and prepend the grey header ourselves by shifting
+    // the line FontStrings — see FUN_FONTSTRING_SET_* / OFF_FONTSTRING_*.
+    // FUN_GAMETOOLTIP_ADD_LINE is the raw add-line body (see LinePool notes);
+    // its color args are pointers to a 4-byte packed color {b,g,r,a} — the
+    // Lua AddLine handler (FUN_00531630) builds it as 0xFF<rr><gg><bb>, i.e.
+    // uint32 `0xFF000000 | r<<16 | g<<8 | b` in little-endian memory.
+    FUN_GAMETOOLTIP_BUILD_ITEM = 0x0052B650,
+    FUN_GAMETOOLTIP_ADD_LINE = 0x00530270,        // __thiscall(self, left, right, lColorBGRA*, rColorBGRA*, wrap)
+    OFF_GAMETOOLTIP_NUM_LINES = 0x31C,            // int — live line count (AddLine index; +0x320 is the cap)
+    // The builder stashes the displayed item's identity on the tooltip
+    // object (FUN_0052B650 param_7==0 path): itemID at this[0xe6] and the
+    // 8-byte GUID at this[0xe0]. Lets SetHyperlinkCompareItem recover the
+    // compared item from a passed comparisonTooltip when no link is given.
+    OFF_GAMETOOLTIP_ITEM_ID = 0x398,              // uint32 — displayed item's ID
+    OFF_GAMETOOLTIP_ITEM_GUID = 0x380,            // uint64 — displayed item's GUID (0 if link-only)
+
+    // Line-shift primitives for prepending the grey "Currently Equipped"
+    // header. The per-line CSimpleFontString objects live in the parallel
+    // arrays at OFF_GAMETOOLTIP_TEXTLEFT/RIGHT_DESC (+8 = data). Each stores
+    // its text buffer pointer at +0xF0 and its 4-byte {b,g,r,a} color behind
+    // the pointer at +0xB8 (both verified from the setters below). We read a
+    // line's text/color and re-apply them one slot down, then set line 0.
+    FUN_FONTSTRING_SET_TEXT = 0x00771D80,         // __thiscall(fs, text, flag=0)
+    FUN_FONTSTRING_SET_COLOR = 0x0077F750,        // __thiscall(fs, colorBGRA*)
+    OFF_FONTSTRING_TEXT = 0xF0,                   // char* — current text buffer
+    OFF_FONTSTRING_COLOR_PTR = 0xB8,              // ptr → 4-byte {b,g,r,a} color storage
+    // A line's FontString is only positioned once shown: set the desired
+    // flag at +0xC4 then call SHOW (FUN_0077fcb0) / HIDE (FUN_0077fc60) —
+    // the exact pair AddLine (FUN_00530270) and the clear use. Moving text
+    // into a previously-empty (hidden) cell without this leaves it
+    // unpositioned, so the line-shift must replicate it.
+    FUN_FONTSTRING_SHOW = 0x0077FCB0,             // __fastcall(fs) — realizes +0xC4
+    FUN_FONTSTRING_HIDE = 0x0077FC60,             // __fastcall(fs)
+    OFF_FONTSTRING_SHOWN_FLAG = 0xC4,             // int — desired-shown flag
+    // The per-tooltip clear only HIDES line FontStrings (sets +0xC8 = 0)
+    // and clears the left text; right-column text buffers are left intact.
+    // So a shift must decide a cell's content by its actually-shown flag
+    // (+0xC8), not by whether +0xF0 still holds (stale) text.
+    OFF_FONTSTRING_VISIBLE = 0xC8,                // int — actually-shown flag
+
     // FontString creation primitives used by Tooltip::LinePool to build the
     // extra lines entirely in C++ (no addon Lua). Calling conventions and
     // offsets mirrored from Script_CreateFontString (0x00773C30),
@@ -1092,6 +1140,13 @@ enum Offsets {
     // descriptor bytes for a worn-and-bound item.
     OFF_DESCRIPTOR_FLAGS = 0x3C,
     ITEM_FLAG_SOULBOUND = 0x01,
+    // Within the descriptor, the item's random-property index
+    // (ITEM_FIELD_RANDOM_PROPERTIES_ID) is at +0x98 — this is the live
+    // instance's suffix, indexing ItemRandomProperties.dbc the same way
+    // StatAccum::ApplyRandomSuffix expects. Derived from the item-tooltip
+    // builder's `[descriptor + 0x26*4]` read (FUN_0052B650 @ ~0x52b7xx),
+    // which feeds it straight into `ItemRandomProperties[idx]`.
+    OFF_DESCRIPTOR_RANDOM_PROPERTY = 0x98,
     // Bit 2 — instance is "unlocked", i.e. the lock referenced by
     // `ItemStats.LockID` has been opened (rogue Pick Lock, key item,
     // etc.). For unlockable items, the engine gates the

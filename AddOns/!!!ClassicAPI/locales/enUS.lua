@@ -6,6 +6,7 @@ FOCUSTARGET = "Focus Target";
 GENERIC_FRACTION_STRING = "%d/%d";
 GOLD_AMOUNT_SYMBOL = "g";
 HOURS_MINUTES_SECONDS = "%.2d:%.2d:%.2d";
+ITEM_DELTA_DESCRIPTION = "If you replace this item, the following stat changes will occur:";
 ITEMS_EQUIPPED = "%d |4item:items; equipped";
 ITEMS_IN_INVENTORY = "%d |4item:items; in inventory";
 ITEMS_NOT_IN_INVENTORY = "%d |4item:items; missing";

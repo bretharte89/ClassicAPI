@@ -242,4 +242,25 @@ constexpr Entry kColors[] = {
 
 constexpr int kColorCount = sizeof(kColors) / sizeof(kColors[0]);
 
+// Looks up a color by `baseTag` and returns it as a packed 32-bit value.
+// The DBC `argb` column decodes as `0xAARRGGBB` (see the byte-split note
+// above) — which is also exactly the little-endian {b,g,r,a} byte order
+// the engine's tooltip line-color setter (FUN_0077f750) reads, so the
+// returned value can be handed straight to a colored AddLine. Returns
+// `fallback` (default opaque white) when the tag isn't present. constexpr
+// so callers can bind named color constants at compile time.
+constexpr uint32_t ByTag(const char *tag, uint32_t fallback = 0xFFFFFFFFu) {
+    for (const auto &e : kColors) {
+        const char *a = e.baseTag;
+        const char *b = tag;
+        while (*a != '\0' && *a == *b) {
+            ++a;
+            ++b;
+        }
+        if (*a == '\0' && *b == '\0')
+            return static_cast<uint32_t>(e.argb);
+    }
+    return fallback;
+}
+
 } // namespace UI::ColorData
