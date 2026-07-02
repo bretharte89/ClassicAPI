@@ -22,9 +22,11 @@
 //      (Str/Agi/Sta/Int/Spi, mana/health-on-equip), armor, six resists,
 //      and (for weapons) DPS derived from the damage/delay fields.
 //   2. The item's on-equip spells (`m_spellTrigger == 1`) — vanilla
-//      stores "special" bonuses (crit, attack power, spell power, hit,
-//      mp5, defense, …) as an equip spell whose aura effect carries the
-//      value, not as a stat slot. We decode those auras.
+//      (and Turtle's custom gear) store "special" bonuses (crit, hit,
+//      attack power, spell power/healing, mp5, defense, dodge, parry,
+//      block, spell crit, flat health/mana, …) as an equip spell whose
+//      aura effect carries the value, not as a stat slot. We decode those
+//      auras (the aura → key map is in AddSpellStatAuras).
 //   3. The link's random suffix (`item:id:enchant:SUFFIX:unique`) —
 //      ItemRandomProperties.dbc → SpellItemEnchantment.dbc, whose stat
 //      suffixes are themselves equip spells (enchant type 3) and whose
@@ -146,10 +148,15 @@ constexpr const char *kKeys[] = {
     "ITEM_MOD_HIT_MELEE_RATING",
     "ITEM_MOD_HIT_RANGED_RATING",
     "ITEM_MOD_HIT_SPELL_RATING",
+    "ITEM_MOD_CRIT_SPELL_RATING",
     "ITEM_MOD_SPELL_DAMAGE_DONE_SHORT",
     "ITEM_MOD_SPELL_HEALING_DONE_SHORT",
     "ITEM_MOD_MANA_REGENERATION",
     "ITEM_MOD_DEFENSE_SKILL_RATING",
+    "ITEM_MOD_DODGE_RATING",
+    "ITEM_MOD_PARRY_RATING",
+    "ITEM_MOD_BLOCK_RATING",
+    "ITEM_MOD_BLOCK_VALUE",
 };
 constexpr int kAccumCount = static_cast<int>(sizeof(kKeys) / sizeof(kKeys[0]));
 
@@ -220,6 +227,8 @@ void AddSpellStatAuras(Accum *acc, int spellID, long sign) {
         sp + Offsets::OFF_SPELL_RECORD_EFFECT_MISC_VALUE);
     auto base = reinterpret_cast<const int32_t *>(
         sp + Offsets::OFF_SPELL_RECORD_EFFECT_BASE_POINTS);
+    auto dice = reinterpret_cast<const int32_t *>(
+        sp + Offsets::OFF_SPELL_RECORD_EFFECT_BASE_DICE);
 
     // Vanilla "+N Attack Power" spells carry a melee (99) AND a ranged
     // (124) aura with the same value; the generic melee key subsumes the
@@ -230,10 +239,19 @@ void AddSpellStatAuras(Accum *acc, int spellID, long sign) {
             hasMeleeAP = true;
 
     for (int i = 0; i < Offsets::SPELL_RECORD_EFFECT_COUNT; ++i) {
-        const long v = static_cast<long>(base[i]) + 1;
+        // mangos CalculateSimpleValue = BasePoints + BaseDice (== +1 for
+        // the fixed-die item-stat auras, but read exactly).
+        const long v = static_cast<long>(base[i]) + static_cast<long>(dice[i]);
         switch (aura[i]) {
         case 29: // SPELL_AURA_MOD_STAT — misc = UnitStat index
             AddByKey(acc, StatKeyForUnitStat(misc[i]), sign * v);
+            break;
+        case 34: // SPELL_AURA_MOD_INCREASE_HEALTH — flat +health
+            AddByKey(acc, "ITEM_MOD_HEALTH_SHORT", sign * v);
+            break;
+        case 35: // SPELL_AURA_MOD_INCREASE_ENERGY — misc = power type
+            if (misc[i] == 0) // mana
+                AddByKey(acc, "ITEM_MOD_MANA_SHORT", sign * v);
             break;
         case 22: // SPELL_AURA_MOD_RESISTANCE — misc = school bitmask
             for (int school = 0; school <= 6; ++school)
@@ -257,6 +275,19 @@ void AddSpellStatAuras(Accum *acc, int spellID, long sign) {
             break;
         case 55: // spell hit %
             AddByKey(acc, "ITEM_MOD_HIT_SPELL_RATING", sign * v);
+            break;
+        case 57: // SPELL_AURA_MOD_SPELL_CRIT_CHANCE
+        case 71: // ..._SCHOOL (misc = school mask) — same stat
+            AddByKey(acc, "ITEM_MOD_CRIT_SPELL_RATING", sign * v);
+            break;
+        case 47: // SPELL_AURA_MOD_PARRY_PERCENT
+            AddByKey(acc, "ITEM_MOD_PARRY_RATING", sign * v);
+            break;
+        case 49: // SPELL_AURA_MOD_DODGE_PERCENT
+            AddByKey(acc, "ITEM_MOD_DODGE_RATING", sign * v);
+            break;
+        case 51: // SPELL_AURA_MOD_BLOCK_PERCENT (block chance)
+            AddByKey(acc, "ITEM_MOD_BLOCK_RATING", sign * v);
             break;
         case 13: // SPELL_AURA_MOD_DAMAGE_DONE — misc = school mask
             if (misc[i] & 0x7E) // any magic school (bits 1..6)
@@ -359,6 +390,9 @@ void Accumulate(Accum *acc, const uint8_t *record, long sign) {
     AddByKey(acc, "RESISTANCE4_NAME", sign * U32(record, Offsets::OFF_ITEMSTATS_RES_FROST));
     AddByKey(acc, "RESISTANCE5_NAME", sign * U32(record, Offsets::OFF_ITEMSTATS_RES_SHADOW));
     AddByKey(acc, "RESISTANCE6_NAME", sign * U32(record, Offsets::OFF_ITEMSTATS_RES_ARCANE));
+
+    // Shield block value is a stored field, not a stat slot or aura.
+    AddByKey(acc, "ITEM_MOD_BLOCK_VALUE", sign * U32(record, Offsets::OFF_ITEMSTATS_BLOCK));
 
     AddEquipSpellStats(acc, record, sign);
 }

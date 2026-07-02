@@ -4111,6 +4111,13 @@ enum Offsets {
     // stat auras. Parallel [3] array to APPLY_AURA_NAME / MISC_VALUE.
     OFF_SPELL_RECORD_EFFECT_BASE_POINTS = 0x130,      // int32[3]
 
+    // EffectBaseDice[3] — added to EffectBasePoints for the effect's fixed
+    // magnitude (mangos `CalculateSimpleValue = BasePoints + BaseDice`).
+    // For every item-stat aura BaseDice == 1, so value = BasePoints + 1;
+    // reading it directly matches the engine exactly. Verified at field 67
+    // (Effect@61, DieSides@64, BaseDice@67, BasePoints@76) against 7468.
+    OFF_SPELL_RECORD_EFFECT_BASE_DICE = 0x10C,        // int32[3]
+
     // Per-effect EffectRadiusIndex[3] → SpellRadius.dbc. Verified by
     // FUN_006e6350, which reads spellRec[+0x160] (effect 0) and
     // spellRec[+0x164] (effect 1) as radius indices. 0 = effect has no

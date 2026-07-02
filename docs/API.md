@@ -4738,7 +4738,7 @@ what the item actually grants — not just its stored stat slots:
 | Key | Stat | Source |
 |-----|------|--------|
 | `ITEM_MOD_STRENGTH_SHORT` / `_AGILITY_` / `_STAMINA_` / `_INTELLECT_` / `_SPIRIT_SHORT` | Base attributes | record / `MOD_STAT` |
-| `ITEM_MOD_MANA_SHORT` / `ITEM_MOD_HEALTH_SHORT` | Mana / health on equip | record |
+| `ITEM_MOD_MANA_SHORT` / `ITEM_MOD_HEALTH_SHORT` | Mana / health on equip | record / `MOD_INCREASE_ENERGY` (35) / `MOD_INCREASE_HEALTH` (34) |
 | `RESISTANCE0_NAME` | Armor | record / `MOD_RESISTANCE` bit 0 |
 | `RESISTANCE1_NAME` … `RESISTANCE6_NAME` | Holy / Fire / Nature / Frost / Shadow / Arcane resistance | record / `MOD_RESISTANCE` / type-4 enchant |
 | `ITEM_MOD_DAMAGE_PER_SECOND_SHORT` | Weapon DPS (float) | avg damage ÷ swing time |
@@ -4747,10 +4747,15 @@ what the item actually grants — not just its stored stat slots:
 | `ITEM_MOD_CRIT_MELEE_RATING` + `ITEM_MOD_CRIT_RANGED_RATING` | Crit % | weapon-crit aura (52) |
 | `ITEM_MOD_HIT_MELEE_RATING` + `ITEM_MOD_HIT_RANGED_RATING` | Hit % | hit aura (54) |
 | `ITEM_MOD_HIT_SPELL_RATING` | Spell hit % | spell-hit aura (55) |
+| `ITEM_MOD_CRIT_SPELL_RATING` | Spell crit % | spell-crit aura (57 / 71) |
 | `ITEM_MOD_SPELL_DAMAGE_DONE_SHORT` | Spell damage | `MOD_DAMAGE_DONE` (13) |
 | `ITEM_MOD_SPELL_HEALING_DONE_SHORT` | Healing | `MOD_HEALING_DONE` (135) |
 | `ITEM_MOD_MANA_REGENERATION` | mp5 (mana) | `MOD_POWER_REGEN` (85) |
 | `ITEM_MOD_DEFENSE_SKILL_RATING` | Defense skill | `MOD_SKILL` (30, misc 95) |
+| `ITEM_MOD_DODGE_RATING` | Dodge % | `MOD_DODGE_PERCENT` (49) |
+| `ITEM_MOD_PARRY_RATING` | Parry % | `MOD_PARRY_PERCENT` (47) |
+| `ITEM_MOD_BLOCK_RATING` | Block chance % | `MOD_BLOCK_PERCENT` (51) |
+| `ITEM_MOD_BLOCK_VALUE` | Shield block value | record (`m_block`) |
 
 > **Values are vanilla-native, not ratings.** Vanilla has no rating
 > system, so the percent-based stats (crit / hit / defense) report the raw
