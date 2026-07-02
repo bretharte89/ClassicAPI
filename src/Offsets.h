@@ -87,6 +87,53 @@ enum Offsets {
     FUN_REGISTER_FRAME_METHODS = 0x00701D80,
     VAR_GAMETOOLTIP_METHOD_REGISTRY = 0x00C0CF20,
 
+    // CGameTooltip line pool (see TODO #97). The engine caps AddLine
+    // (FUN_00530270) at `numLinesAllocated`, which the XML-OnLoad scan
+    // (FUN_00529650, vtable slot 9) sets to the count of contiguous
+    // `<name>TextLeftN`/`TextRightN` FontStrings the template declares
+    // (30). Tooltip::LinePool grows it: it appends its own C++-created
+    // FontStrings to the three parallel arrays and bumps this count. Each
+    // array is a {count@+0x0, cap@+0x4, data@+0x8} descriptor; the
+    // reallocators realloc `data` to newCount*4 and copy `cap` old elements.
+    VAR_GAMETOOLTIP_VTABLE = 0x00808F60,          // type guard for a resolved tooltip object
+    OFF_GAMETOOLTIP_NUM_LINES_ALLOC = 0x320,      // int — pool size AddLine gates on
+    OFF_GAMETOOLTIP_TEXTLEFT_DESC = 0x324,        // {count,cap,data}; data (+0x8) = CSimpleFontString*[]
+    OFF_GAMETOOLTIP_TEXTRIGHT_DESC = 0x330,       // symmetric right column
+    OFF_GAMETOOLTIP_WRAPFLAG_DESC = 0x33C,        // per-line wrap int[]
+    FUN_TOOLTIP_REALLOC_PTR_ARRAY = 0x00536C80,   // __thiscall(desc, newCount) — pointer arrays
+    FUN_TOOLTIP_REALLOC_INT_ARRAY = 0x004368C0,   // __thiscall(desc, newCount) — wrap-flag array
+
+    // FontString creation primitives used by Tooltip::LinePool to build the
+    // extra lines entirely in C++ (no addon Lua). Calling conventions and
+    // offsets mirrored from Script_CreateFontString (0x00773C30),
+    // Script_SetFontObject (0x0079D1A0 → 0x00770C60), and Script_SetPoint
+    // (0x007A2540 → 0x00767C70) — see TODO #97's investigation update.
+    FUN_GAMETOOLTIP_SETUP_LINES = 0x00529650,     // vtable slot 9 — the pool scan we co-hook
+    VAR_SIMPLEFONTSTRING_POOL = 0x00CF4D10,       // CSimpleFontString free-list pool (allocator `this`)
+    VAR_SIMPLEFONTSTRING_CLASS_TAG = 0x00846544,  // ".?AVCSimpleFontString@@" (alloc debug tag)
+    FUN_REGION_POOL_ALLOC = 0x00760450,           // __thiscall(pool, zeroInit=0, tag, line=-2) -> raw mem
+    FUN_SIMPLEFONTSTRING_CTOR = 0x00770D30,       // __thiscall(mem, parent, layer, sublayer) -> fs
+    FUN_REGION_SET_NAME = 0x0076C650,             // __thiscall(region, name) — registers _G[name]
+    FUN_FONTSTRING_SET_FONT = 0x00770C60,         // __thiscall(fs + OFF_FONTSTRING_FONT_HOLDER, fontObject)
+    FUN_REGION_SET_POINT = 0x00767C70,            // __thiscall(region+OFF_REGION_ANCHOR, point, relAnchor, relPoint, x, y, flag=1)
+    OFF_FONTSTRING_FONT_HOLDER = 0xCC,            // font-reference sub-object (SetFont `this`)
+    OFF_FONTSTRING_FONT_OBJECT = 0xD0,            // font object pointer (holder + 4)
+    OFF_REGION_ANCHOR = 0x24,                     // LayoutFrame anchor sub-object (SetPoint `this` / relativeTo base)
+    DRAWLAYER_ARTWORK = 2,
+    FRAMEPOINT_TOPLEFT = 0,
+    FRAMEPOINT_LEFT = 3,
+    FRAMEPOINT_RIGHT = 5,
+    FRAMEPOINT_BOTTOMLEFT = 6,
+
+    // FUN_REGION_SET_POINT stores offsets in *internal* coordinates, not
+    // pixels. Script_SetPoint converts: `internal = pixel * [0x00832A44] /
+    // ([0x00832A4C] * 1024)` (FUN_0041ae60's factor × input ÷
+    // (FUN_0041ad70's return × DAT_007ffd68)). Both globals are runtime
+    // UI-scale floats; passing raw pixels makes offsets ~1000× too large.
+    VAR_UI_COORD_SCALE_MUL = 0x00832A44,   // float numerator
+    VAR_UI_COORD_SCALE_DIV = 0x00832A4C,   // float denominator base
+    UI_COORD_SCALE_UNIT = 1024,            // DAT_007ffd68
+
     // "Currently displayed thing" state fields on a GameTooltip frame
     // instance. Each Set* path writes one of these (and zero or two
     // others), and the per-tooltip Clear at FUN_00530050 zeroes all of

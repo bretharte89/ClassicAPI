@@ -165,6 +165,14 @@ native targeting bindings instead of orphaned at the bottom.
 
 See [Focus / Bindings](docs/API.md#bindings-focustarget--targetfocus) for the implementation note.
 
+### Behaviors
+
+Transparent engine tweaks — no API to call, they just fix a vanilla limitation:
+
+| Tweak | Effect |
+|-------|--------|
+| Tooltip line cap | Lifts `GameTooltip`'s hard 30-line limit to 60 for every `GameTooltipTemplate` frame (`GameTooltip`, `ShoppingTooltip1/2`, `ItemRefTooltip`, AtlasLoot, …). Stat-heavy tooltips and comparison blocks (e.g. pfUI's eqcompare) no longer have their extra lines silently dropped. Done in pure C++ by growing the engine's FontString pool at tooltip-creation time. |
+
 ## Installation
 
 Download the prebuilt `ClassicAPI.dll` from the

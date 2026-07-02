@@ -3302,7 +3302,21 @@ offset is identified — 3.3.5's `Script_*` equivalents are a good
 starting point for what the parameter shape and bounds-clamp
 behavior should be.
 
-## 97. Lift GameTooltip's 30-line cap — hard
+## ~~97. Lift GameTooltip's 30-line cap~~ — DONE
+
+Shipped as [src/tooltip/LinePool.cpp](src/tooltip/LinePool.cpp): pure C++,
+no addon Lua. Co-hooks the XML-OnLoad region scan (FUN_00529650, vtable
+slot 9) via `Game::HookAutoRegister`; after the engine sets up the
+template's 30 lines it creates `TextLeft/Right 31..60` in C++ (alloc →
+ctor → name → font-copied-from-prev → anchor, offsets scaled pixel →
+internal like Script_SetPoint) and appends them to the tooltip's three
+line arrays, bumping `numLinesAllocated`. Runs once per GameTooltip-family
+frame at creation + per `/reload`, so it auto-covers GameTooltip,
+ShoppingTooltip1/2, ItemRefTooltip, AtlasLootTooltip, WorldMapTooltip, …
+Verified in-game: AtlasLoot tooltip rendered a 31st line correctly. Cap is
+`kMaxLines = 60`. The design notes below record the RE trail; Approach A
+(hook AddLine) / Approach B (addon Lua) were both explored and dropped in
+favor of the scan-hook.
 
 Vanilla 1.12's `GameTooltip:AddLine` silently drops any line past the
 pool of `TextLeftN`/`TextRightN` FontStrings the XML template
@@ -3472,3 +3486,87 @@ with 0 and grow entirely on demand — that would be even cleaner, but
 requires patching every consumer of the initial pool (there aren't
 many, but they need audit). Filed for future if the incremental grow
 turns out to be fragile.
+
+### Investigation update (resolved unknowns)
+
+Traced the pool machinery end-to-end. The open questions above are now
+answered, and they point away from both the AddLine hook (Approach A)
+and the "trigger the engine's scan" idea — a **hybrid** is cleaner than
+either.
+
+**The scan is virtual slot 9, run only at XML-template instantiation.**
+`FUN_00529650` is slot 9 (`vtable+0x24`) of the CGameTooltip vtable
+(base `0x00808f60`; the null at `0x00808f5c` is the boundary, and slot 2
+`0x005368d0` is the `tooltip:method()` dispatcher — confirms the class).
+The two vtable-base xrefs are the constructors `FUN_00529240` /
+`FUN_00529480`. The scan's prologue calls
+`FUN_0076a2f0(node) → FUN_0076a060(node)`, which reads the XML
+`"inherits"` attribute and child `"Frames"` — i.e. the scan is the
+frame's **XML OnLoad / region-setup** virtual. It runs once when
+`GameTooltip` is built from `GameTooltipTemplate` (and again per
+`/reload`), **not** on `SetOwner`/show. So we can't cheaply re-trigger
+it — the `node` arg is a live XML-parse handle we don't have, and
+calling it with a bogus node runs the inherits/Frames path on garbage.
+
+**The scan finds lines by `_G[name]`, so Lua-created FontStrings count.**
+`numLinesAllocated` (`+0x320`) is literally "how many contiguous
+`%sTextLeftN` **and** `%sTextRightN` exist by name": pass 0 counts (stop
+at the first missing index), pass 1 reallocs the three arrays to that
+count and fills the pointers. The name lookup `FUN_0076c760` does
+`lua_pushstring(name); gettable(_G); if type==TABLE: FrameScript_GetObject`
+— a plain `_G[name]` resolve, so a FontString made with
+`GameTooltip:CreateFontString("GameTooltipTextLeft31", …)` **is**
+visible to it. (Names must be contiguous and exist in *both* columns.)
+
+**The array reallocators are simple and callable from C.**
+`FUN_00536c80` (pointer arrays) and `FUN_004368c0` (wrap-flag array) are
+the same routine with different SMem tags:
+`__thiscall(descriptor, newCount)` where the descriptor is
+`{ count@+0x0, cap@+0x4, data@+0x8 }` — reallocs `data` to `newCount*4`
+and copies the old contents. In the tooltip the three descriptors are:
+
+| Descriptor `this` | count / cap / data | array |
+|-------------------|--------------------|-------|
+| `tooltip + 0x324` | `+0x324 / +0x328 / +0x32c` | `textLeft[]`  (`CSimpleFontString*`) |
+| `tooltip + 0x330` | `+0x330 / +0x334 / +0x338` | `textRight[]` |
+| `tooltip + 0x33c` | `+0x33c / +0x340 / +0x344` | `wrapFlag[]`  (int, 4-byte) |
+
+`numLinesAllocated` (`+0x320`) is a separate field the scan sets equal
+to the count; AddLine (`FUN_00530270`) gates on
+`numLines(+0x31c) != numLinesAllocated(+0x320)`.
+
+**Recommended approach — Lua creates FontStrings, C grows the arrays
+(no hook, no XML re-run).** Replicate the scan's pass 1 directly:
+
+1. **Lua (`!!!ClassicAPI`), at load / `PLAYER_LOGIN`:** for each frame on
+   `GameTooltipTemplate` (`GameTooltip`, `ShoppingTooltip1/2`,
+   `ItemRefTooltip`, …), create `<name>TextLeft31..N` and
+   `<name>TextRight31..N` via `frame:CreateFontString(nm, "ARTWORK",
+   "GameTooltipText")`, each anchored `TOPLEFT`/`TOPRIGHT` to the prior
+   line's `BOTTOMLEFT`/`BOTTOMRIGHT` (mirror the template's chain).
+   This avoids re-deriving the 1.12 FontString ctor / setName / anchor
+   helpers that Approach A needed — Lua already wraps them.
+2. **C entrypoint** `GrowTooltipPool(tooltipObj, newCount)` (expose as a
+   Lua global, called once per frame right after step 1):
+   - `FUN_00536c80(tooltip+0x324, newCount)`; set `+0x328 = newCount`.
+   - `FUN_00536c80(tooltip+0x330, newCount)`; set `+0x334 = newCount`.
+   - `FUN_004368c0(tooltip+0x33c, newCount)`; set `+0x340 = newCount`.
+   - for `i` in `[oldAlloc, newCount)`: resolve `<name>TextLeftN`/
+     `RightN` via the `_G[name]` dance (same as `FUN_0076c760`), and if
+     either is missing stop at `i`; else write the two pointers into the
+     new `textLeft`/`textRight` data slots and zero `wrapFlag[i]`.
+   - set `numLinesAllocated (+0x320) = i`.
+   Resolve `tooltipObj` from the Lua frame the same way our other
+   tooltip methods do (`FrameScript_GetObject`).
+
+Runs once per frame per session (re-runs on `/reload`, which recreates
+the frames → scan resets to 30 → our addon re-creates + re-grows). No
+per-line hook (dodges the MinHook-collision risk on a moderately hot
+function), no XML-node fabrication.
+
+Remaining risk to validate in-game: whether AddLine's downstream layout
+/ `Show` sizing walks `numLines` FontStrings by their anchors (expected)
+vs. any hidden fixed-30 assumption elsewhere; and that the Lua-created
+lines inherit height/spacing identical to the template's 1..30 so the
+tooltip grows seamlessly. Both are observable on the first >30-line
+hover.
