@@ -3301,3 +3301,174 @@ the matching read. Both should be straightforward once the field
 offset is identified — 3.3.5's `Script_*` equivalents are a good
 starting point for what the parameter shape and bounds-clamp
 behavior should be.
+
+## 97. Lift GameTooltip's 30-line cap — hard
+
+Vanilla 1.12's `GameTooltip:AddLine` silently drops any line past the
+pool of `TextLeftN`/`TextRightN` FontStrings the XML template
+pre-declares (30). Modern (3.3.5+) engines grow the pool on demand.
+Addons that append comparison summaries, item-info footers, or aura
+details to a full item tooltip get their tail chopped. Practical
+example — pfUI's eqcompare block (base-stat deltas inline + extended
+stats appended at the bottom) hits the cap on stat-heavy items where
+the vendor tooltip already has ~22 lines and the compare block adds
+another 10; extended-stat rows past line 30 disappear silently.
+
+Also affects `ShoppingTooltip1`/`ShoppingTooltip2` (same
+`GameTooltipTemplate`).
+
+### Root cause (verified in Ghidra on the 1.12 Octo binary)
+
+`AddLine` internal impl at `FUN_00530270` — the shared body called
+from both `Script_GameTooltipAddLine` (`FUN_00531630`, method ptr
+stored in the GameTooltip method table alongside the `"AddLine"`
+string at `0x00854560`) and `Script_GameTooltipAddDoubleLine`:
+
+```c
+void FUN_00530270(int this, char *leftText, char *rightText,
+                  colorLeft, colorRight, wrapFlag) {
+    if ((*(int *)(this + 0x31c) != *(int *)(this + 0x320)) && anyHasText) {
+        // set leftText on textLeft[numLines_used],
+        // set rightText on textRight[numLines_used],
+        // wrapFlag[numLines_used] = wrapFlag,
+        // ++numLines_used
+    }
+    // else: silently drop the line
+}
+```
+
+`0x320 == 800` decimal, matches decompile. Pool exhausted ⇒ nothing
+happens.
+
+### CGameTooltip struct offsets (1.12)
+
+Derived from `FUN_00530270` and the pool-init at `FUN_00529650`:
+
+| Offset | Field                                              |
+|--------|----------------------------------------------------|
+| `+0x31c` | `numLines` — current write index (0-based)       |
+| `+0x320` | `numLinesAllocated` — pool size (30 default)     |
+| `+0x328..+0x32c` | `textLeft[]` — array of `CSimpleFontString *`, count `+0x320` |
+| `+0x334..+0x338` | `textRight[]` — same, symmetric right column |
+| `+0x340..+0x344` | `wrapFlag[]` — per-line wrap bool           |
+
+Actual layout of the array slots: `+0x328` is the first ptr in an
+external heap block whose base is `param_1[0xcb]` = `+0x32c`. The
+init function reallocates all three arrays whenever `numLinesAllocated`
+would change — see `FUN_00536c80` (the reallocator) and `FUN_004368c0`
+(a matching alloc for the wrap-flag array of a different element size).
+
+### The pool-init function
+
+`FUN_00529650` — walks `%sTextLeftN` / `%sTextRightN` FontString names
+from the FrameXML-declared pool, counts them, reallocates the three
+arrays, stores the pointers. Called via vtable slot at `0x00808f84`
+(only xref) — likely `SetOwner` or an equivalent virtual reset method
+runs it. It's the natural growth path — if we can force it to see a
+larger pool of Lua-visible FontStrings and trigger it, the arrays
+resize themselves.
+
+### The 3.3.5 reference (already REd)
+
+3.3.5's `GameTooltip::AddLine` at `0x0061fec0` has the grow-on-demand
+branch we want to backport. Shape:
+
+```c
+if (currentLine == numLinesAllocated - 1) {
+    format(buf, 256, "%sTextLeft%d", tooltipName, currentLine + 1);
+    auto *fs = SimpleFontString::create(this, /*layer*/2, /*subLayer*/1);
+    fs->setName(buf);
+    fs->setFontObject(prevLeft->fontObject);
+    fs->anchor(TOPLEFT, prevLeft, BOTTOMLEFT, 0.0, calculatedYOffset);
+    // ... mirror for TextRight ...
+    // ... append fs to textLeft[]/textRight[] at [numLinesAllocated],
+    //     then ++numLinesAllocated.
+}
+// fall through to the existing "set text on line[currentLine]" path
+```
+
+3.3.5 helpers (offsets 3.3.5-specific — 1.12 equivalents need to be
+re-derived):
+- `FUN_00485240` — SimpleFontString constructor `(parent, layer, sublayer)`
+- `FUN_0048b6c0` — set-name helper (registers under global `_G[name]`)
+- `FUN_0048a260` — anchor helper `(this, anchorPoint, relativeTo, relativePoint, xoff, yoff)`
+
+Struct offsets in 3.3.5 were `+0x2a4` (numLines) / `+0x2a8` (numAlloc) /
+`+0x2b4` (textLeft) / `+0x2c0` (textRight) / `+0x2cc` (wrapFlag). All
+shifted vs. 1.12 (see above), unsurprising given TBC/WotLK bloat.
+
+### Implementation plan
+
+**Approach A — pre-hook AddLine with a grow-if-needed prelude
+(preferred)**:
+
+1. Locate the 1.12 equivalents of the three 3.3.5 helpers. Trace them
+   from existing `CSimpleFontString`-creating sites in the engine —
+   the CreateFontString API dispatch is a good starting point (it's
+   Lua-visible and calls the same constructor).
+2. Locate the array reallocators used by `FUN_00529650`
+   (`FUN_00536c80` for the two pointer arrays, `FUN_004368c0` for the
+   wrap-flag byte array).
+3. MinHook `FUN_00530270`. Pre-hook body:
+   - If `numLines != numLinesAllocated`, call original — done.
+   - Otherwise: realloc the three arrays to `numLinesAllocated + 1`,
+     create two new `CSimpleFontString` (left + right), name them
+     `"%sTextLeft%d"` / `"%sTextRight%d"` with `tooltip->GetName()` and
+     the new index, anchor each below the prior-slot FontString on the
+     same side, use the prior FontString's `fontObject` (`+0xd8` in the
+     3.3.5 layout — confirm on 1.12) as the default, write the pointers
+     into `textLeft[numLinesAllocated]` / `textRight[numLinesAllocated]`,
+     zero-init `wrapFlag[numLinesAllocated]`, and bump
+     `numLinesAllocated`.
+   - Then tail-call the original — it now succeeds normally.
+
+**Approach B — pre-declare a wider pool via Lua** (fallback if the
+constructor helpers turn out to be too tangled):
+
+1. In `!!!ClassicAPI` addon, at load time, call
+   `GameTooltip:CreateFontString("GameTooltipTextLeft" .. i, "ARTWORK",
+   "GameTooltipText")` for `i = 31..60`, plus `TextRightN`, plus set
+   anchors matching the pattern in the template.
+2. Force the engine's pool-init to re-scan. If we can't reach the
+   vtable trigger cleanly, expose a small C entrypoint that walks the
+   pool the same way `FUN_00529650` does — takes `tooltip` as arg,
+   reallocates arrays, refills.
+
+Approach B is less code but ties the cap to a fixed number (60 lines
+is enough for pfUI's use case but arbitrary). Approach A grows on
+demand like retail and has no ceiling.
+
+### Testing
+
+- Hover a random-suffix weapon with several equip-spell bonuses (Krol
+  Blade, Ironfoe, any ZG/AQ trinket) — tooltip should render >30 lines
+  without truncation.
+- Hover an item that produces a 40+ line tooltip when pfUI's eqcompare
+  block is enabled (Priest Judgement Set chest against another
+  Judgement chest: item tooltip ~22 lines + compare block ~10 lines).
+- Verify no crash / no visual glitches on:
+  - ShoppingTooltip1/2 (same class, same `GameTooltipTemplate`)
+  - Rapid re-hovers (create/destroy pressure on the added FontStrings)
+  - Item tooltips that stay under 30 lines (pre-existing behavior unchanged)
+
+### Risks
+
+- If the array reallocation logic in `FUN_00536c80` doesn't null-out
+  the tail on grow, `textLeft[N]`/`textRight[N]` might contain
+  garbage for a frame — anchor before write, or memset to zero.
+- FontString lifetime: 3.3.5 leaks the extras for the tooltip
+  lifetime (they stay hidden when unused). GameTooltip is a
+  singleton, so leak is bounded. Fine.
+- Interaction with `pfUI`'s existing tooltip skinning (frame borders,
+  status bar reposition, etc.): the layer we're modifying is beneath
+  the skinning; shouldn't touch anything visible unless anchor math
+  is wrong.
+
+### Related
+
+If we ever consider dropping the whole "GameTooltipTemplate declares
+30 FontStrings in XML" scheme and instead having the engine start
+with 0 and grow entirely on demand — that would be even cleaner, but
+requires patching every consumer of the initial pool (there aren't
+many, but they need audit). Filed for future if the incremental grow
+turns out to be fragile.
