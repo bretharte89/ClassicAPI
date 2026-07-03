@@ -14,21 +14,14 @@ function GameTooltip_ShowCompareItem(self, shift)
 		return;
 	end
 
-	local shoppingTooltip1, shoppingTooltip2, shoppingTooltip3 = unpack(self.shoppingTooltips or { ShoppingTooltip1, ShoppingTooltip2 });
+	local shoppingTooltip1, shoppingTooltip2 = unpack(self.shoppingTooltips or { ShoppingTooltip1, ShoppingTooltip2 });
 
-	-- Horizontal gap between the main tooltip and the compare tooltips.
-	-- The backdrop's edge texture is drawn straddling the frame rect, so it
-	-- extends ~edgeSize/2 past each frame's edge; two frames anchored edge
-	-- to edge therefore overlap by ~edgeSize. Derive the offset from the
-	-- live backdrop (skins resize the border) — one full edgeSize clears
-	-- both borders — plus a small visible margin. No magic number.
 	local SEPARATION = 6;
 	local backdrop = shoppingTooltip1.GetBackdrop and shoppingTooltip1:GetBackdrop();
 	local GAP = SEPARATION + ((type(backdrop) == "table" and backdrop.edgeSize) or 0);
 
 	local item1 = nil;
 	local item2 = nil;
-	local item3 = nil;
 	local side = "left";
 	if ( shoppingTooltip1:SetHyperlinkCompareItem(link, 1, shift, self) ) then
 		item1 = true;
@@ -36,9 +29,6 @@ function GameTooltip_ShowCompareItem(self, shift)
 	if ( shoppingTooltip2:SetHyperlinkCompareItem(link, 2, shift, self) ) then
 		item2 = true;
 	end
-	-- if ( shoppingTooltip3:SetHyperlinkCompareItem(link, 3, shift, self) ) then
-	-- 	item3 = true;
-	-- end
 
 	-- find correct side
 	local rightDist = 0;
@@ -68,9 +58,6 @@ function GameTooltip_ShowCompareItem(self, shift)
 		if ( item2  ) then
 			totalWidth = totalWidth + shoppingTooltip2:GetWidth();
 		end
-		-- if ( item3  ) then
-		-- 	totalWidth = totalWidth + shoppingTooltip3:GetWidth();
-		-- end
 
 		if ( (side == "left") and (totalWidth > leftPos) ) then
 			self:SetAnchorType(self:GetAnchorType(), (totalWidth - leftPos), 0);
@@ -79,38 +66,13 @@ function GameTooltip_ShowCompareItem(self, shift)
 		end
 	end
 
-	-- anchor the compare tooltips
-	-- if ( item3 ) then
-	-- 	shoppingTooltip3:SetOwner(self, "ANCHOR_NONE");
-	-- 	shoppingTooltip3:ClearAllPoints();
-	-- 	if ( side and side == "left" ) then
-	-- 		shoppingTooltip3:SetPoint("TOPRIGHT", self, "TOPLEFT", 0, -10);
-	-- 	else
-	-- 		shoppingTooltip3:SetPoint("TOPLEFT", self, "TOPRIGHT", 0, -10);
-	-- 	end
-	-- 	shoppingTooltip3:SetHyperlinkCompareItem(link, 3, shift, self);
-	-- 	shoppingTooltip3:Show();
-	-- end
-
 	if ( item1 ) then
-		if( item3 ) then
-			shoppingTooltip1:SetOwner(shoppingTooltip3, "ANCHOR_NONE");
-		else
-			shoppingTooltip1:SetOwner(self, "ANCHOR_NONE");
-		end
+		shoppingTooltip1:SetOwner(self, "ANCHOR_NONE");
 		shoppingTooltip1:ClearAllPoints();
 		if ( side and side == "left" ) then
-			if( item3 ) then
-				shoppingTooltip1:SetPoint("TOPRIGHT", shoppingTooltip3, "TOPLEFT", 0, 0);
-			else
-				shoppingTooltip1:SetPoint("TOPRIGHT", self, "TOPLEFT", -GAP, -10);
-			end
+			shoppingTooltip1:SetPoint("TOPRIGHT", self, "TOPLEFT", -GAP, -10);
 		else
-			if( item3 ) then
-				shoppingTooltip1:SetPoint("TOPLEFT", shoppingTooltip3, "TOPRIGHT", 0, 0);
-			else
-				shoppingTooltip1:SetPoint("TOPLEFT", self, "TOPRIGHT", GAP, -10);
-			end
+			shoppingTooltip1:SetPoint("TOPLEFT", self, "TOPRIGHT", GAP, -10);
 		end
 		shoppingTooltip1:SetHyperlinkCompareItem(link, 1, shift, self);
 		shoppingTooltip1:Show();
