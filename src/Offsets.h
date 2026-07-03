@@ -221,8 +221,17 @@ enum Offsets {
     //                       (gameobject GUID) at 0x0052AA52 / 0x0052AA59.
     //                       Only call site is the in-world hover handler
     //                       FUN_00492890; no Lua `SetGameObject` method.
-    //   - Clear             (0x00530050) zeroes all of them.
-    OFF_TOOLTIP_ITEM_GUID_LO = 0x380, // 0 for SetItemByID (no CGItem)
+    //   - Clear (FUN_GAMETOOLTIP_CLEAR) zeroes unit(+0x368)/GO(+0x370)/
+    //     itemID(+0x398)/spell(+0x39c) — but NOT the item GUID +0x380/+0x384.
+    //     That omission means the item GUID goes stale across a switch to a
+    //     tooltip that shows no item (SetUnitAura, SetEquipmentSet, …), so
+    //     GameTooltip:GetItem would resolve the *previous* item. We co-hook
+    //     the clear (Tooltip::ClearItemGuid) to zero +0x380/+0x384 too, so
+    //     every fresh tooltip resets it and only the item builder re-sets it.
+    //     All 14 Set*/builder paths route through this clear, so the co-hook
+    //     covers them uniformly. __fastcall(self).
+    FUN_GAMETOOLTIP_CLEAR = 0x00530050,
+    OFF_TOOLTIP_ITEM_GUID_LO = 0x380, // 0 for SetItemByID (no CGItem); stale-safe via the clear co-hook
     OFF_TOOLTIP_ITEM_GUID_HI = 0x384,
     OFF_TOOLTIP_ITEM_ID = 0x398,
     OFF_TOOLTIP_SPELL_ID = 0x39C,
