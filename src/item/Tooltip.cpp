@@ -18,6 +18,7 @@
 #include "item/Link.h"
 #include "item/Location.h"
 #include "item/QualityColor.h"
+#include "item/TooltipItem.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -170,14 +171,15 @@ static void *ResolveItemByGuid(uint32_t guidLo, uint32_t guidHi) {
 // expects addons to parse the itemID out of the link. Returning it
 // directly saves callers a gsub round.
 //
-// BuildItemTooltip stores two fields per Set* call:
-//   - tooltip+0x398 → itemID         (always populated for any item path)
-//   - tooltip+0x380/+0x384 → item GUID (populated only when there's a
-//                                       real CGItem — SetBagItem,
-//                                       SetInventoryItem, SetLootItem,
-//                                       SetMerchantItem, etc. Zero for
-//                                       SetItemByID / SetHyperlink
-//                                       which have no instance.)
+// BuildItemTooltip stores the displayed item on the tooltip per Set*
+// call — but only ONE of two fields depending on the path:
+//   - tooltip+0x398 → itemID  (link paths with no instance: SetItemByID,
+//                              SetHyperlink)
+//   - tooltip+0x380/+0x384 → item GUID  (CGItem paths: SetBagItem,
+//                              SetInventoryItem, SetLootItem,
+//                              SetMerchantItem, …) — these leave the itemID
+//                              field 0, so when +0x398 is 0 we recover the
+//                              itemID from the GUID's live CGItem.
 // Both are zeroed by the per-tooltip Clear at FUN_00530050.
 //
 // Two paths for the link:
@@ -203,14 +205,15 @@ static int __fastcall Script_GameTooltipGetItem(void *L) {
         return 0;
     auto *base = static_cast<const uint8_t *>(tooltipObj);
 
-    const int itemID = *reinterpret_cast<const int *>(base + Offsets::OFF_TOOLTIP_ITEM_ID);
+    // Resolve the currently-displayed item (link-path itemID, or the
+    // CGItem-path GUID when no unit/GO/spell is shown) — see
+    // Item::TooltipItem::CurrentID for the stale-GUID guarding.
+    uint64_t itemGuid = 0;
+    const int itemID = Item::TooltipItem::CurrentID(base, &itemGuid);
     if (itemID <= 0)
         return 0;
-
-    const uint32_t guidLo = *reinterpret_cast<const uint32_t *>(
-        base + Offsets::OFF_TOOLTIP_ITEM_GUID_LO);
-    const uint32_t guidHi = *reinterpret_cast<const uint32_t *>(
-        base + Offsets::OFF_TOOLTIP_ITEM_GUID_HI);
+    const uint32_t guidLo = static_cast<uint32_t>(itemGuid);
+    const uint32_t guidHi = static_cast<uint32_t>(itemGuid >> 32);
 
     if (guidLo != 0 || guidHi != 0) {
         if (void *cgItem = ResolveItemByGuid(guidLo, guidHi)) {
@@ -243,9 +246,13 @@ static int __fastcall Script_GameTooltipGetItem(void *L) {
         // than nothing when we have an itemID.
     }
 
-    // No-GUID path (SetItemByID, SetHyperlink for an item:N link with
-    // no per-instance data): build the basic colored link from cached
-    // itemID + quality + name.
+    // No-GUID path (SetItemByID, SetHyperlink, SetAuctionItem — items with
+    // no CGItem instance): build the colored link from cached itemID +
+    // quality + name. Auction/compare items have no GUID but do carry a
+    // random-property (suffix) id in the compare descriptor at
+    // OFF_TOOLTIP_COMPARE_SUFFIX — include it (in the link's suffix field)
+    // when the compare-descriptor flag is set, so the link round-trips the
+    // suffix for stat comparison. Matches 3.3.5's auction GetItem.
     const uint8_t *record = PeekItemRecord(static_cast<uint32_t>(itemID));
     if (record == nullptr) {
         Item::Data::WarmCache(static_cast<uint32_t>(itemID));
@@ -258,11 +265,15 @@ static int __fastcall Script_GameTooltipGetItem(void *L) {
     const uint32_t quality = *reinterpret_cast<const uint32_t *>(
         record + Offsets::OFF_ITEMSTATS_QUALITY);
 
+    int suffix = 0;
+    if (*reinterpret_cast<const int *>(base + Offsets::OFF_TOOLTIP_COMPARE_FLAG) != 0)
+        suffix = *reinterpret_cast<const int *>(base + Offsets::OFF_TOOLTIP_COMPARE_SUFFIX);
+
     char link[256];
     std::snprintf(link, sizeof(link),
-                  "%s|Hitem:%d:0:0:0:0:0:0:0|h[%s]|h|r",
+                  "%s|Hitem:%d:0:%d:0:0:0:0:0|h[%s]|h|r",
                   Item::QualityColor::Prefix(static_cast<int>(quality)),
-                  itemID, name);
+                  itemID, suffix, name);
 
     Game::Lua::PushString(L, name);
     Game::Lua::PushString(L, link);
@@ -285,9 +296,7 @@ static int __fastcall Script_GameTooltipHasItem(void *L) {
         Game::Lua::PushBool(L, 0);
         return 1;
     }
-    const int itemID = *reinterpret_cast<const int *>(
-        static_cast<const uint8_t *>(tooltipObj) + Offsets::OFF_TOOLTIP_ITEM_ID);
-    Game::Lua::PushBoolean(L, itemID > 0);
+    Game::Lua::PushBoolean(L, Item::TooltipItem::CurrentID(tooltipObj, nullptr) > 0);
     return 1;
 }
 

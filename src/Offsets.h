@@ -120,12 +120,10 @@ enum Offsets {
     FUN_GAMETOOLTIP_BUILD_ITEM = 0x0052B650,
     FUN_GAMETOOLTIP_ADD_LINE = 0x00530270,        // __thiscall(self, left, right, lColorBGRA*, rColorBGRA*, wrap)
     OFF_GAMETOOLTIP_NUM_LINES = 0x31C,            // int — live line count (AddLine index; +0x320 is the cap)
-    // The builder stashes the displayed item's identity on the tooltip
-    // object (FUN_0052B650 param_7==0 path): itemID at this[0xe6] and the
-    // 8-byte GUID at this[0xe0]. Lets SetHyperlinkCompareItem recover the
-    // compared item from a passed comparisonTooltip when no link is given.
-    OFF_GAMETOOLTIP_ITEM_ID = 0x398,              // uint32 — displayed item's ID
-    OFF_GAMETOOLTIP_ITEM_GUID = 0x380,            // uint64 — displayed item's GUID (0 if link-only)
+    // The displayed item's identity is read via the existing
+    // OFF_TOOLTIP_ITEM_ID (+0x398) / OFF_TOOLTIP_ITEM_GUID_LO (+0x380) —
+    // link paths set the itemID, CGItem paths (SetInventoryItem/…) set only
+    // the GUID (see Tooltip::Compare::TooltipItemID and item/Tooltip.cpp).
 
     // Line-shift primitives for prepending the grey "Currently Equipped"
     // header. The per-line CSimpleFontString objects live in the parallel
@@ -206,6 +204,18 @@ enum Offsets {
     OFF_TOOLTIP_ITEM_GUID_HI = 0x384,
     OFF_TOOLTIP_ITEM_ID = 0x398,
     OFF_TOOLTIP_SPELL_ID = 0x39C,
+    // Auction/compare descriptor. Script_GameTooltip_SetAuctionItem
+    // (0x00535810) has no CGItem instance, so it stashes the listing's
+    // random-property (suffix) id at tooltip+0x424 and marks the
+    // compare-descriptor valid by writing the builder's compare flag to
+    // this[0x110] (tooltip+0x440) = 1 (SetAuctionItem passes param_6=1;
+    // every other Set* path passes 0, and the builder writes it on each
+    // param_7==0 build — so +0x440 is a reliable per-build gate, not
+    // stale). This is 1.12's analog of 3.3.5's `tooltip[0x130]`-gated
+    // `piVar5[0x2d]` random-property read in GameTooltip:GetItem. GetItem
+    // reads +0x424 (only when +0x440 is set) to put the suffix in the link.
+    OFF_TOOLTIP_COMPARE_FLAG = 0x440,
+    OFF_TOOLTIP_COMPARE_SUFFIX = 0x424,
     // Unit GUID written by the inner unit-tooltip builder
     // (FUN_00529FE0) when `tooltip:SetUnit(token)` resolves the token
     // to a non-zero GUID. Cleared by the same `FUN_00530050` clear

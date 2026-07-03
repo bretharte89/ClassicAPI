@@ -49,12 +49,11 @@
 // doesn't show). The 60-line pool from Tooltip::LinePool keeps the
 // appended deltas under the AddLine cap.
 //
-// `shiftButton`: the stat-change breakdown shows ONLY for a truthy shift
-// value (`true` or the vanilla `1`), mimicking "holding shift". `false`,
-// `0`, `nil`, or omitted show just the grey header + the equipped item's
-// tooltip. Both the boolean and the vanilla 1/nil convention are accepted
-// — mirroring FrameXML's GameTooltip_ShowCompareItem, which forwards the
-// modified-click state.
+// `shiftButton`: gates the stat-change breakdown. Deltas show by default
+// (`true`, `1`, `nil`, or omitted) and are hidden only for an explicit
+// `false` or `0` — just the grey header + the equipped item's tooltip.
+// Both the boolean and the vanilla 1/nil convention are accepted —
+// mirroring FrameXML's GameTooltip_ShowCompareItem.
 
 #include "Game.h"
 #include "Offsets.h"
@@ -62,6 +61,7 @@
 #include "item/ID.h"
 #include "item/Location.h"
 #include "item/StatAccum.h"
+#include "item/TooltipItem.h"
 #include "ui/ColorData.h"
 
 #include <cstdint>
@@ -412,11 +412,8 @@ int __fastcall Script_SetHyperlinkCompareItem(void *L) {
     int hoveredSuffix = Item::StatAccum::ParseRandomSuffixFromLink(L, 2);
     if (hoveredID <= 0 && Game::Lua::Type(L, 5) == Game::Lua::TYPE_TABLE) {
         if (void *cmp = Game::Lua::ResolveObject(L, 5)) {
-            auto *c = static_cast<const uint8_t *>(cmp);
-            hoveredID = static_cast<int>(*reinterpret_cast<const uint32_t *>(
-                c + Offsets::OFF_GAMETOOLTIP_ITEM_ID));
-            const uint64_t g = *reinterpret_cast<const uint64_t *>(
-                c + Offsets::OFF_GAMETOOLTIP_ITEM_GUID);
+            uint64_t g = 0;
+            hoveredID = Item::TooltipItem::CurrentID(cmp, &g);
             if (g != 0) {
                 const uint8_t *cg = Item::Location::ResolveByGUID(g);
                 if (cg != nullptr)
@@ -445,13 +442,12 @@ int __fastcall Script_SetHyperlinkCompareItem(void *L) {
         return bail(nSlots);
     const int slotID = slots[offset - 1];
 
-    // shiftButton: gates the stat-change breakdown. The deltas show ONLY
-    // for a truthy shift value — `true` or the vanilla `1`, mimicking
-    // "holding shift". `false`, `0`, `nil`, and omitted show just the grey
-    // header + the equipped item's tooltip. Accepting both the boolean and
-    // the vanilla 1/nil convention matches how callers (and FrameXML's
+    // shiftButton: gates the stat-change breakdown. Deltas show by default
+    // — for `true`, `1`, `nil`, or omitted — and are hidden ONLY for an
+    // explicit `false` or `0`. Accepting both the boolean and the vanilla
+    // 1/nil convention matches how callers (and FrameXML's
     // GameTooltip_ShowCompareItem) forward the modified-click state.
-    bool showDeltas = false;
+    bool showDeltas = true;
     const int shiftType = Game::Lua::Type(L, 4);
     if (shiftType == Game::Lua::TYPE_BOOLEAN)
         showDeltas = Game::Lua::ToBoolean(L, 4) != 0;
@@ -503,8 +499,37 @@ int __fastcall Script_SetHyperlinkCompareItem(void *L) {
     return bail(nSlots);
 }
 
+// `GameTooltip:IsEquippedItem()` → bool. True when the item the tooltip is
+// currently displaying is equipped in a character-pane slot. The displayed
+// item is resolved by Item::TooltipItem::CurrentID (which guards the stale
+// item-GUID so unit / spell / gameobject tooltips read 0 and never
+// false-positive). Backports the 3.3.5 GameTooltip method (registry
+// index 63); the equipment walk mirrors C_Item.IsEquippedItem's itemID
+// path.
+int __fastcall Script_IsEquippedItem(void *L) {
+    if (Game::Lua::Type(L, 1) != Game::Lua::TYPE_TABLE) {
+        Game::Lua::Error(L, "Usage: GameTooltip:IsEquippedItem()");
+        return 0;
+    }
+    void *self = Game::Lua::ResolveObject(L, 1);
+    const int itemID = self != nullptr ? Item::TooltipItem::CurrentID(self, nullptr) : 0;
+
+    bool equipped = false;
+    for (int slot = Offsets::EQUIPMENT_SLOT_FIRST;
+         itemID > 0 && slot <= Offsets::EQUIPMENT_SLOT_LAST; ++slot) {
+        const uint8_t *it = Item::Location::ResolveEquipmentSlot(slot);
+        if (it != nullptr && Item::ID::FromCGItem(it) == itemID) {
+            equipped = true;
+            break;
+        }
+    }
+    Game::Lua::PushBool(L, equipped);
+    return 1;
+}
+
 const Game::Lua::FrameMethodEntry g_methods[] = {
     {"SetHyperlinkCompareItem", &Script_SetHyperlinkCompareItem},
+    {"IsEquippedItem", &Script_IsEquippedItem},
 };
 
 void RegisterLuaFunctions() {

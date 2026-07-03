@@ -2,11 +2,14 @@ function GameTooltip_Hide()
 	GameTooltip:Hide()
 end
 
+GameTooltip.shoppingTooltips = GameTooltip.shoppingTooltips or { ShoppingTooltip1, ShoppingTooltip2 }
+
 function GameTooltip_ShowCompareItem(self, shift)
 	if ( not self ) then
 		self = GameTooltip;
 	end
 	local item, link = self:GetItem();
+	link = link or self.compareLink
 	if ( not link ) then
 		return;
 	end

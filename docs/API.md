@@ -140,6 +140,7 @@ build instructions.
   - [`GameTooltip:SetTalentByID(talentID)`](#gametooltipsettalentbyidtalentid)
   - [`GameTooltip:SetInventoryItemByID(itemID)`](#gametooltipsetinventoryitembyiditemid)
   - [`GameTooltip:SetHyperlinkCompareItem("itemLink" [, offset, shiftButton, comparisonTooltip])`](#gametooltipsethyperlinkcompareitemitemlink--offset-shiftbutton-comparisontooltip)
+  - [`GameTooltip:IsEquippedItem()`](#gametooltipisequippeditem)
   - [`GameTooltip:SetItemByGUID(itemGUID)`](#gametooltipsetitembyguiditemguid)
   - [`GameTooltip:SetEquipmentSet(name)`](#gametooltipsetequipmentsetname)
   - [`GameTooltip:GetItem()`](#gametooltipgetitem)
@@ -3439,7 +3440,7 @@ frame works).
 |-----|---------|
 | `itemLink` | The item being compared (chat link, `item:` string, or bare itemID). Optional if `comparisonTooltip` is given. |
 | `offset` | 1-based slot selector for two-slot items — rings, trinkets, and one-hand weapons expose `offset` 1 and 2 (Finger1/2, Trinket1/2, MainHand/OffHand). Default 1. |
-| `shiftButton` | Gates the stat-change breakdown: `true`/`1` shows the deltas; `false`/`0`/`nil`/omitted shows only the header + equipped item. Both the boolean and vanilla `1`/`nil` conventions are accepted. |
+| `shiftButton` | Gates the stat-change breakdown. Deltas show by default (`true`/`1`/`nil`/omitted) and are hidden only for an explicit `false`/`0` (header + equipped item only). Both the boolean and vanilla `1`/`nil` conventions are accepted. |
 | `comparisonTooltip` | Optional. When `itemLink` is omitted, the compared item is taken from whatever this tooltip is displaying (matches the retail tooltip-to-tooltip call). |
 
 **Returns** the number of comparison slots for the item (1, or 2 for
@@ -3466,6 +3467,26 @@ if slots == 2 then  -- ring/trinket/1H: also compare the other slot
     ShoppingTooltip2:SetHyperlinkCompareItem(link, 2, true)
     ShoppingTooltip2:Show()
 end
+```
+
+### `GameTooltip:IsEquippedItem()`
+
+Returns `true` when the item the tooltip is **currently displaying** is
+equipped in one of the player's character-pane slots (1..19). Backports
+the 3.3.5 `GameTooltip:IsEquippedItem` method.
+
+Works regardless of how the tooltip was populated — link paths
+(`SetItemByID`, `SetHyperlink`) and CGItem paths (`SetInventoryItem`,
+`SetBagItem`, `SetItemByGUID`, …) both resolve to the displayed item.
+Returns `false` for a tooltip that isn't showing an item (e.g. a spell
+tooltip) with no false positives.
+
+```lua
+GameTooltip:SetInventoryItem("player", INVSLOT_HAND)
+if GameTooltip:IsEquippedItem() then ... end  -- true
+
+GameTooltip:SetBagItem(0, 1)
+if GameTooltip:IsEquippedItem() then ... end  -- false unless that item is also worn
 ```
 
 ### `GameTooltip:SetEquipmentSet(name)`
