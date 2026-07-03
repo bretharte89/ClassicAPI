@@ -118,6 +118,20 @@ enum Offsets {
     // Lua AddLine handler (FUN_00531630) builds it as 0xFF<rr><gg><bb>, i.e.
     // uint32 `0xFF000000 | r<<16 | g<<8 | b` in little-endian memory.
     FUN_GAMETOOLTIP_BUILD_ITEM = 0x0052B650,
+    // OnTooltipSetItem support. FUN_GAMETOOLTIP_SCRIPT_RESOLVER is the
+    // CGGameTooltip vtable method (vtable 0x00808F60) that maps a script name
+    // to its handler slot; __thiscall(self, const char *name) -> int* slot,
+    // 0 if the name isn't a tooltip script. It first delegates to the base
+    // frame resolver, then checks OnTooltipSetDefaultAnchor(+0x444) /
+    // OnTooltipCleared(+0x44c) / OnTooltipAddMoney(+0x454) — each an 8-byte
+    // {handler, context} slot. Vanilla has no OnTooltipSetItem, and the object
+    // (alloc size 0x460) has no free 8-byte slot, so we co-hook this to hand
+    // out a C-side per-tooltip cell for that name. FUN_FRAME_RUN_SCRIPT is the
+    // no-arg script runner __thiscall(self, int *slot) the clear uses to fire
+    // OnTooltipCleared — we call it from the item builder co-hook to fire
+    // OnTooltipSetItem with the tooltip as self.
+    FUN_GAMETOOLTIP_SCRIPT_RESOLVER = 0x005295D0,
+    FUN_FRAME_RUN_SCRIPT = 0x00702690,
     FUN_GAMETOOLTIP_ADD_LINE = 0x00530270,        // __thiscall(self, left, right, lColorBGRA*, rColorBGRA*, wrap)
     OFF_GAMETOOLTIP_NUM_LINES = 0x31C,            // int — live line count (AddLine index; +0x320 is the cap)
     // The displayed item's identity is read via the existing

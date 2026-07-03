@@ -62,6 +62,7 @@
 #include "item/Location.h"
 #include "item/StatAccum.h"
 #include "item/TooltipItem.h"
+#include "tooltip/SetItemEvent.h"
 #include "ui/ColorData.h"
 
 #include <cstdint>
@@ -475,9 +476,14 @@ int __fastcall Script_SetHyperlinkCompareItem(void *L) {
     // item-tooltip builder (the call SetInventoryItem/SetHyperlink use),
     // proven arg shape from FUN_005353b0/FUN_00535700 — all flags 0. This
     // clears + fills the item cleanly (no wrap). The grey "Currently
-    // Equipped" header is prepended afterwards.
-    reinterpret_cast<BuildItemTooltip_t>(Offsets::FUN_GAMETOOLTIP_BUILD_ITEM)(
-        self, static_cast<uint32_t>(equippedID), &equippedGUID, &equippedGUID, 0, 0, 0, 0, 0, 0);
+    // Equipped" header is prepended afterwards. Suppress OnTooltipSetItem for
+    // this internal build so a handler doesn't run mid-way through the
+    // line-shift below (it fires for the *hovered* item's real Set* instead).
+    {
+        Tooltip::SetItemEvent::Suppressor noEvent;
+        reinterpret_cast<BuildItemTooltip_t>(Offsets::FUN_GAMETOOLTIP_BUILD_ITEM)(
+            self, static_cast<uint32_t>(equippedID), &equippedGUID, &equippedGUID, 0, 0, 0, 0, 0, 0);
+    }
     PrependCurrentlyEquipped(self, L);
 
     // Delta = hovered − equipped, then render (unless suppressed).

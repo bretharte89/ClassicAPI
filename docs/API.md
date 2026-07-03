@@ -141,6 +141,7 @@ build instructions.
   - [`GameTooltip:SetInventoryItemByID(itemID)`](#gametooltipsetinventoryitembyiditemid)
   - [`GameTooltip:SetHyperlinkCompareItem("itemLink" [, offset, shiftButton, comparisonTooltip])`](#gametooltipsethyperlinkcompareitemitemlink--offset-shiftbutton-comparisontooltip)
   - [`GameTooltip:IsEquippedItem()`](#gametooltipisequippeditem)
+  - [`OnTooltipSetItem` script](#ontooltipsetitem-script)
   - [`GameTooltip:SetItemByGUID(itemGUID)`](#gametooltipsetitembyguiditemguid)
   - [`GameTooltip:SetEquipmentSet(name)`](#gametooltipsetequipmentsetname)
   - [`GameTooltip:GetItem()`](#gametooltipgetitem)
@@ -3488,6 +3489,31 @@ if GameTooltip:IsEquippedItem() then ... end  -- true
 GameTooltip:SetBagItem(0, 1)
 if GameTooltip:IsEquippedItem() then ... end  -- false unless that item is also worn
 ```
+
+### `OnTooltipSetItem` script
+
+A real frame script — settable with the standard `SetScript` / `GetScript` /
+`HookScript` — that fires whenever a tooltip's **item** is set, with the
+tooltip as `self`. Backports the modern tooltip script so addons annotate
+item tooltips by hooking one script instead of wrapping every `Set*` method.
+
+Fires for every item-setting path (`SetBagItem`, `SetInventoryItem`,
+`SetHyperlink` for an `item:` link, `SetMerchantItem`, `SetAuctionItem`,
+`SetItemByID`, …). Available on all GameTooltip-type frames (`GameTooltip`,
+`ItemRefTooltip`, `ShoppingTooltip1/2`, `AtlasLootTooltip`, …).
+
+```lua
+GameTooltip:HookScript("OnTooltipSetItem", function(self)
+    local name, link = self:GetItem()
+    if link then
+        self:AddLine("ID: " .. select(3, GetItemInfoInstant(link)), 0.6, 0.6, 0.6)
+    end
+end)
+```
+
+Read the item inside the handler via `self:GetItem()`. Vanilla only shipped
+`OnTooltipAddMoney` / `OnTooltipCleared` / `OnTooltipSetDefaultAnchor`;
+`OnTooltipSetSpell` / `OnTooltipSetUnit` are not yet provided.
 
 ### `GameTooltip:SetEquipmentSet(name)`
 
