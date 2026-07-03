@@ -3493,27 +3493,47 @@ if GameTooltip:IsEquippedItem() then ... end  -- false unless that item is also 
 ### `OnTooltipSetItem` script
 
 A real frame script — settable with the standard `SetScript` / `GetScript` /
-`HookScript` — that fires whenever a tooltip's **item** is set, with the
-tooltip as `self`. Backports the modern tooltip script so addons annotate
-item tooltips by hooking one script instead of wrapping every `Set*` method.
+`HookScript` — that fires whenever a tooltip's **item** is set. Backports the
+modern tooltip script so addons annotate item tooltips by hooking one script
+instead of wrapping every `Set*` method.
 
 Fires for every item-setting path (`SetBagItem`, `SetInventoryItem`,
 `SetHyperlink` for an `item:` link, `SetMerchantItem`, `SetAuctionItem`,
 `SetItemByID`, …). Available on all GameTooltip-type frames (`GameTooltip`,
 `ItemRefTooltip`, `ShoppingTooltip1/2`, `AtlasLootTooltip`, …).
 
+The handler receives the tooltip as the **global `this`**, the 1.12
+frame-script convention — *not* a `self` argument (like every built-in vanilla
+script: `OnShow`, `OnEvent`, `OnTooltipCleared`, …). Modern-style
+`function(self) self:… end` handlers will see `self == nil`; use `this`.
+
 ```lua
-GameTooltip:HookScript("OnTooltipSetItem", function(self)
-    local name, link = self:GetItem()
-    if link then
-        self:AddLine("ID: " .. select(3, GetItemInfoInstant(link)), 0.6, 0.6, 0.6)
+GameTooltip:HookScript("OnTooltipSetItem", function()
+    local name, link, id = this:GetItem()   -- the tooltip is the global `this`
+    if id then
+        this:AddLine("ID: " .. id, 0.6, 0.6, 0.6)
     end
 end)
 ```
 
-Read the item inside the handler via `self:GetItem()`. Vanilla only shipped
-`OnTooltipAddMoney` / `OnTooltipCleared` / `OnTooltipSetDefaultAnchor`;
-`OnTooltipSetSpell` / `OnTooltipSetUnit` are not yet provided.
+Vanilla only shipped `OnTooltipAddMoney` / `OnTooltipCleared` /
+`OnTooltipSetDefaultAnchor`; `OnTooltipSetSpell` / `OnTooltipSetUnit` are not
+yet provided.
+
+**Caveat — the event fires from inside the item-tooltip build.** Lightweight
+handler work is fine: reading `this:GetItem()`, `this:AddLine(...)`, printing,
+etc. But avoid *re-entrant* tooltip rebuilds from the handler — e.g.
+`GameTooltip_ShowCompareItem()`, or a `Set*` call on another tooltip. Because
+the handler runs mid-build, re-entering the tooltip / FrameScript machinery can
+collide with other DLLs that hook the same Lua paths (nampower, SuperWoW,
+weirdutils, …) and crash the client. If you need heavy work like that, defer it
+to the next frame:
+
+```lua
+GameTooltip:HookScript("OnTooltipSetItem", function()
+    C_Timer.After(0, function() GameTooltip_ShowCompareItem() end)
+end)
+```
 
 ### `GameTooltip:SetEquipmentSet(name)`
 

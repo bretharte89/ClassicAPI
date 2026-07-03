@@ -126,12 +126,20 @@ enum Offsets {
     // OnTooltipCleared(+0x44c) / OnTooltipAddMoney(+0x454) — each an 8-byte
     // {handler, context} slot. Vanilla has no OnTooltipSetItem, and the object
     // (alloc size 0x460) has no free 8-byte slot, so we co-hook this to hand
-    // out a C-side per-tooltip cell for that name. FUN_FRAME_RUN_SCRIPT is the
-    // no-arg script runner __thiscall(self, int *slot) the clear uses to fire
-    // OnTooltipCleared — we call it from the item builder co-hook to fire
-    // OnTooltipSetItem with the tooltip as self.
+    // out a C-side per-tooltip cell for that name. FUN_FRAME_INVOKE_SCRIPT is
+    // the engine's real script invoker __fastcall(handler /*ecx = slot[0]*/,
+    // frame /*edx*/): it binds the global `this` = frame and runs the handler
+    // under its own protected lua_pcall (0 args). We call it directly from the
+    // item-builder co-hook to fire OnTooltipSetItem.
+    //   NOTE: the clear fires OnTooltipCleared via the wrapper FUN_00702690
+    //   (self, &slot), which additionally stamps the global exec-context
+    //   (DAT_00ceeac0) from slot[1]. That context mutation is only valid from
+    //   the engine's top-level frame-script dispatch — firing it from deep in a
+    //   nested Lua->C->Lua stack (e.g. an addon's SetAuctionItem wrapper)
+    //   corrupts the outer script's context and faults. So we skip the wrapper
+    //   and call the inner invoker, which is self-contained.
     FUN_GAMETOOLTIP_SCRIPT_RESOLVER = 0x005295D0,
-    FUN_FRAME_RUN_SCRIPT = 0x00702690,
+    FUN_FRAME_INVOKE_SCRIPT = 0x00704D50,
     FUN_GAMETOOLTIP_ADD_LINE = 0x00530270,        // __thiscall(self, left, right, lColorBGRA*, rColorBGRA*, wrap)
     OFF_GAMETOOLTIP_NUM_LINES = 0x31C,            // int — live line count (AddLine index; +0x320 is the cap)
     // The displayed item's identity is read via the existing

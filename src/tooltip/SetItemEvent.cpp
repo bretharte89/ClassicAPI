@@ -114,7 +114,11 @@ using Build_t = void(__fastcall *)(void *self, void *edx, uint32_t itemID, const
                                    int a8, int a9);
 Build_t g_buildOriginal = nullptr;
 
-using RunScript_t = void(__thiscall *)(void *self, uint32_t *slot);
+// The engine's real script invoker: binds the global `this` = frame and runs
+// the handler under its own protected lua_pcall. We call it directly rather
+// than the FUN_00702690 wrapper, whose exec-context mutation is unsafe from the
+// deep nested Lua->C->Lua stack our co-hook fires within — see Offsets.h.
+using InvokeScript_t = void(__fastcall *)(uint32_t handler, void *frame);
 
 void __fastcall Build_h(void *self, void *edx, uint32_t itemID, const void *guid,
                         const void *guid2, int a4, int a5, int a6, int headerFlag, int a8,
@@ -125,9 +129,22 @@ void __fastcall Build_h(void *self, void *edx, uint32_t itemID, const void *guid
     uint32_t *slot = CellFor(self, /*create*/ false);
     if (slot == nullptr || slot[0] == 0)
         return;
+
+    // We fire from inside the item builder, which is itself mid-execution of
+    // the engine's Script_Set* (and, in the wild, nested under addon Set*
+    // wrappers + several other DLLs' hooks). The invoker pushes onto the Lua
+    // stack and does NOT restore the top to where the outer, still-running C
+    // code left it — harmless from the engine's top-level dispatch, but from
+    // here it shifts the stack and the outer code (and other DLLs' hooks) then
+    // index garbage → deref → crash. Snapshot and restore the stack top around
+    // the fire so the outer code sees exactly the stack it left.
+    void *L = Game::Lua::State();
+    const int savedTop = (L != nullptr) ? Game::Lua::GetTop(L) : 0;
     ++g_firing;
-    reinterpret_cast<RunScript_t>(Offsets::FUN_FRAME_RUN_SCRIPT)(self, slot);
+    reinterpret_cast<InvokeScript_t>(Offsets::FUN_FRAME_INVOKE_SCRIPT)(slot[0], self);
     --g_firing;
+    if (L != nullptr)
+        Game::Lua::SetTop(L, savedTop);
 }
 
 static const Game::HookAutoRegister _resolverHook{
