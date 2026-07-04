@@ -131,6 +131,7 @@ when launching with `-console`), not as Lua functions. See the
 | `PLAYER_STOPPED_TURNING` | *(none)* |
 | `QUEST_ACCEPTED` | `questLogIndex, questID` |
 | `QUEST_DATA_LOAD_RESULT` | `questID, success` |
+| `QUEST_REMOVED` | `questID` |
 | `QUEST_TURNED_IN` | `questID, xpReward, moneyReward` |
 | `UPDATE_SHAPESHIFT_FORM` | *(none)* |
 | `VOICE_CHAT_TTS_PLAYBACK_STARTED` | `numConsumers, utteranceID, durationMS, destination` |

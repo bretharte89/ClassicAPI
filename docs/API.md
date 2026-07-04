@@ -102,6 +102,7 @@ build instructions.
   - [`NAME_PLATE_CREATED` / `NAME_PLATE_UNIT_ADDED` / `NAME_PLATE_UNIT_REMOVED` events](#name_plate_created--name_plate_unit_added--name_plate_unit_removed-events)
   - [`PLAYER_FOCUS_CHANGED` event](#player_focus_changed-event)
   - [`QUEST_ACCEPTED` event](#quest_accepted-event)
+  - [`QUEST_REMOVED` event](#quest_removed-event)
   - [`QUEST_TURNED_IN` event](#quest_turned_in-event)
   - [`UNIT_FACTION` event (fire-coverage fix)](#unit_faction-event-fire-coverage-fix)
   - [`UPDATE_SHAPESHIFT_FORM` event](#update_shapeshift_form-event)
@@ -2386,6 +2387,41 @@ treated as a resync and skipped. Human input speed can't accept two
 quests within the same engine tick, so single-add is always a real
 user accept. A brand-new character's very first quest accept
 (`0 → 1` entries) fires correctly.
+
+### `QUEST_REMOVED` event
+
+Fires once per quest leaving the local quest log, with the questID as
+the single payload arg. Covers **both turn-ins and abandons** — the
+two are distinguishable by whether a `QUEST_TURNED_IN` accompanies
+the removal. Polyfills modern WoW's event of the same name (added in
+8.0.1; the Classic-era signature is the bare questID, which is what
+we match).
+
+```lua
+local f = CreateFrame("Frame")
+f:RegisterEvent("QUEST_REMOVED")
+f:SetScript("OnEvent", function()
+    if event == "QUEST_REMOVED" then
+        local questID = arg1
+        -- ...
+    end
+end)
+```
+
+Synthesized from the same `FUN_QUEST_LOG_REBUILD` pre-/post-snapshot
+diff as `QUEST_ACCEPTED` — the removal side of the delta. For
+turn-ins, `QUEST_REMOVED` fires **after** `QUEST_TURNED_IN`, matching
+retail ordering: the SMSG_QUESTGIVER_QUEST_COMPLETE packet doesn't
+touch the log itself; the removal arrives in the follow-up quest-log
+update packets, whose rebuild triggers the diff. The observed turn-in
+sequence is `QUEST_TURNED_IN` → `UNIT_QUEST_LOG_CHANGED` →
+`QUEST_LOG_UPDATE` (fired inside the rebuild) → `QUEST_REMOVED`.
+
+**Does not fire on login / character-switch resyncs.** Same
+suppression rule as `QUEST_ACCEPTED` (a user action removes at most
+one quest per rebuild), plus one extra gate: a rebuild that removes
+one quest while adding several is a cross-character resync shape, not
+gameplay, and stays silent.
 
 ### `QUEST_TURNED_IN` event
 

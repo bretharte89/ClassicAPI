@@ -11,18 +11,29 @@
 // You should have received a copy of the GNU General Public License along with
 // ClassicAPI. If not, see <https://www.gnu.org/licenses/>.
 
-// `QUEST_ACCEPTED(questLogIndex, questID)` event — fires once per
-// new quest entering the local quest log. Polyfills modern WoW's
-// event of the same name (added in 3.1.0). Matches the Cata/WotLK
-// signature: `(questLogIndex, questID)`, 1-based log index.
+// Quest log delta events — polyfills two modern WoW events from one
+// pre-/post-rebuild diff:
+//
+// `QUEST_ACCEPTED(questLogIndex, questID)` — fires once per new quest
+// entering the local quest log. Matches the Cata/WotLK signature,
+// 1-based log index (event added in 3.1.0).
+//
+// `QUEST_REMOVED(questID)` — fires once per quest leaving the local
+// quest log, for both turn-ins and abandons (event added in 8.0.1;
+// Classic-era signature is the bare questID). For turn-ins this fires
+// *after* `QUEST_TURNED_IN`, matching retail ordering: the 0x191
+// complete packet doesn't touch the log; the removal arrives in the
+// follow-up quest-log update packets, whose rebuild we diff here.
+// Observed turn-in sequence: QUEST_TURNED_IN → UNIT_QUEST_LOG_CHANGED
+// → QUEST_LOG_UPDATE (fired inside the rebuild) → QUEST_REMOVED.
 //
 // Hook target: `FUN_QUEST_LOG_REBUILD` (`0x004DE510`) — the single
 // chokepoint the engine uses to refresh the Lua-visible quest log
 // from the player's authoritative slot data at `[CGPlayer + 0xE68 +
 // 0x28]`. Every state change that adds, removes, or updates a quest
 // flows through here. By snapshotting the log before and after the
-// original runs, we can compute the delta and fire QUEST_ACCEPTED
-// only for genuine additions.
+// original runs, we can compute the delta and fire only for genuine
+// additions / removals.
 //
 // Login suppression: the same function handles the initial bulk-sync
 // at character entry, which appears as a single rebuild call adding
@@ -30,7 +41,10 @@
 // added in a single rebuild (which can only happen on login / reload
 // resync — human input speed can't accept multiple quests in the
 // same engine tick). A brand-new character's first accept is
-// `0 → 1` and fires correctly.
+// `0 → 1` and fires correctly. Removals apply the same rule (a user
+// action removes at most one quest per rebuild) and are additionally
+// suppressed when the rebuild also added multiple quests — a
+// mixed-delta rebuild is a cross-character resync, not gameplay.
 
 #include "Game.h"
 #include "Offsets.h"
@@ -39,13 +53,15 @@
 #include <cstdint>
 #include <unordered_set>
 
-namespace Quest::Accepted {
+namespace Quest::LogEvents {
 
 namespace {
 
-constexpr const char *kEventName = "QUEST_ACCEPTED";
+constexpr const char *kAcceptedEventName = "QUEST_ACCEPTED";
+constexpr const char *kRemovedEventName = "QUEST_REMOVED";
 
-const Event::Custom::AutoReserve _reserve{kEventName};
+const Event::Custom::AutoReserve _reserveAccepted{kAcceptedEventName};
+const Event::Custom::AutoReserve _reserveRemoved{kRemovedEventName};
 
 // Walk the live quest log and collect questIDs of real (non-header)
 // entries. Headers are 16-byte rows with a non-NULL pointer at +0x8;
@@ -80,7 +96,7 @@ QuestLogRebuild_t QuestLogRebuild_o = nullptr;
 void __fastcall QuestLogRebuild_h(int param_1) {
     // `param_1 == 0` is the engine's "no-op rebuild" signal — just
     // refires QUEST_LOG_UPDATE without touching the entry array.
-    // No diff possible, no accept happening, pass through.
+    // No diff possible, no accept/remove happening, pass through.
     if (param_1 == 0) {
         QuestLogRebuild_o(param_1);
         return;
@@ -93,13 +109,16 @@ void __fastcall QuestLogRebuild_h(int param_1) {
 
     // Walk the post-state in index order so the fired event's
     // `questLogIndex` matches the 1-based slot the engine just
-    // assigned. Skip questIDs already in `pre`.
+    // assigned. Collect the full post-set on the way for the
+    // removal diff.
     const int count = *reinterpret_cast<const int *>(
         static_cast<uintptr_t>(Offsets::VAR_QUEST_LOG_ENTRY_COUNT));
-    if (count <= 0)
-        return;
     const auto *entries = reinterpret_cast<const uint8_t *>(
         static_cast<uintptr_t>(Offsets::VAR_QUEST_LOG_ENTRIES));
+
+    std::unordered_set<int> post;
+    if (count > 0)
+        post.reserve(static_cast<size_t>(count));
 
     int newCount = 0;
     int firstNewIdx = 0;
@@ -114,6 +133,7 @@ void __fastcall QuestLogRebuild_h(int param_1) {
             entry + Offsets::OFF_QUEST_LOG_ENTRY_QUEST_ID);
         if (questID <= 0)
             continue;
+        post.insert(questID);
         if (pre.count(questID) != 0)
             continue;
         ++newCount;
@@ -123,13 +143,34 @@ void __fastcall QuestLogRebuild_h(int param_1) {
         }
     }
 
+    int removedCount = 0;
+    int firstRemovedID = 0;
+    for (const int questID : pre) {
+        if (post.count(questID) != 0)
+            continue;
+        ++removedCount;
+        if (removedCount == 1)
+            firstRemovedID = questID;
+    }
+
     // Single addition → user-driven accept. Multiple → bulk resync
     // (login or post-reload). Modern WoW's QUEST_ACCEPTED doesn't
     // fire on initial sync either; we match that.
     if (newCount == 1) {
-        const int slot = Event::Custom::Lookup(kEventName);
+        const int slot = Event::Custom::Lookup(kAcceptedEventName);
         if (slot >= 0)
             Event::Custom::Fire(slot, "%d%d", firstNewIdx, firstNewID);
+    }
+
+    // Single removal → user-driven turn-in or abandon. The extra
+    // `newCount <= 1` gate rejects the one resync shape the removal
+    // count alone can't: switching to a character whose log shares
+    // all but one of the previous character's quests (1 removal, N
+    // additions in the same rebuild).
+    if (removedCount == 1 && newCount <= 1) {
+        const int slot = Event::Custom::Lookup(kRemovedEventName);
+        if (slot >= 0)
+            Event::Custom::Fire(slot, "%d", firstRemovedID);
     }
 }
 
@@ -138,4 +179,4 @@ static const Game::HookAutoRegister _hookreg{
     reinterpret_cast<void *>(&QuestLogRebuild_h),
     reinterpret_cast<void **>(&QuestLogRebuild_o)};
 
-} // namespace Quest::Accepted
+} // namespace Quest::LogEvents

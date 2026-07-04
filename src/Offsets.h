@@ -2440,10 +2440,10 @@ enum Offsets {
     // walks the player's slot data, repopulates `VAR_QUEST_LOG_ENTRIES`
     // / `VAR_QUEST_LOG_ENTRY_COUNT`, then fires QUEST_LOG_UPDATE.
     //
-    // Hooked by `Quest::Accepted` to snapshot the log pre-/post-rebuild
-    // and fire `QUEST_ACCEPTED(logIndex, questID)` for the diff. Single
-    // quiet target in the `0x004DExxx` quest region — no known DLL
-    // collisions.
+    // Hooked by `Quest::LogEvents` to snapshot the log pre-/post-rebuild
+    // and fire `QUEST_ACCEPTED(logIndex, questID)` / `QUEST_REMOVED(questID)`
+    // for the diff. Single quiet target in the `0x004DExxx` quest region —
+    // no known DLL collisions.
     FUN_QUEST_LOG_REBUILD = 0x004DE510,
 
     // Player and pet spellbooks — flat int32 arrays indexed by 0-based slot.
