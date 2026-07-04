@@ -122,6 +122,7 @@ when launching with `-console`), not as Lua functions. See the
 | `NAME_PLATE_CREATED` | `nameplateFrame` |
 | `NAME_PLATE_UNIT_ADDED` | `unitToken` ("nameplateN") |
 | `NAME_PLATE_UNIT_REMOVED` | `unitToken` ("nameplateN") |
+| `PLAYER_EQUIPMENT_CHANGED` | `equipmentSlot, hasCurrent` |
 | `PLAYER_FOCUS_CHANGED` | *(none)* |
 | `PLAYER_STARTED_LOOKING` | *(none)* |
 | `PLAYER_STOPPED_LOOKING` | *(none)* |

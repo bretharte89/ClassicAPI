@@ -2725,7 +2725,26 @@ matching modern's 3-tuple. `CastSpellNoToggle("<name>")` macros are
 also recognized because `Spell::CastNoToggle` already hooks the same
 parser to register that pattern.
 
-## 88. `PLAYER_EQUIPMENT_CHANGED(equipmentSlot, hasCurrent)` event
+## ~~88. `PLAYER_EQUIPMENT_CHANGED(equipmentSlot, hasCurrent)` event~~ — DONE
+
+**Resolution (2026-07-04, src/player/Equipment.cpp):** the 2026-05-22
+investigation kept trying to hook a FIRER of UNIT_INVENTORY_CHANGED.
+The winning move was the opposite: the engine has a generic
+descriptor-field observer system (the "__AUCMirrorHandler__" nodes —
+registrar `FUN_00467E70`, dispatcher `FUN_00465570` with per-node
+mirror + memcmp change detection). `FUN_004F8CC0` registers observers
+for the bag/backpack/bank/keyring GUID ranges but never for equipment
+`0x4A8..0x538` — so we co-hook it and REGISTER OUR OWN observer per
+equipment field, mirroring the engine's registration exactly (bank 4,
+size 8, player GUID). Callback ABI verified from the dispatcher call
+site at `0x004655DC` + `FUN_004F8DB0`'s `RET 0x10`:
+`__fastcall(fieldOffset /*ecx*/, size /*edx*/, guidLo, guidHi,
+oldValue*, userArg)`. hasCurrent read from the invMgr GUID array (the
+same "current truth" the engine's bag callback reads). No polling, no
+hot hook, engine-managed lifetime (setup re-runs each enter-world).
+Offsets documented at `FUN_DESC_OBSERVER_REGISTER` in Offsets.h.
+
+Original notes below kept for the investigation trail.
 
 WotLK-era event that fires every time a paperdoll slot changes
 (equip, unequip, swap). Heavily used by gear-tracking,

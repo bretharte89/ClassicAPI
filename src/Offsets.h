@@ -542,7 +542,55 @@ enum Offsets {
     // addon's CHAT_MSG_* OnEvent.
     FUN_CHAT_DISPATCH = 0x0049A870,
     // Per-player inventory manager lives at this offset on the player object.
+    // +0x00 = u32 slot count (OFF_INVMGR_SLOT_COUNT), +0x04 = u64* GUID
+    // array (see OFF_INVMGR_GUID_ARRAY below for the slot-range map).
     OFF_PLAYER_INVENTORY_MANAGER = 0x1D38,
+    OFF_INVMGR_SLOT_COUNT = 0x00,
+
+    // --- Descriptor-field observer system --------------------------------
+    // The engine's generic "watch a descriptor field range for changes"
+    // mechanism (nodes tagged "__AUCMirrorHandler__", 0x30 bytes). The
+    // registrar attaches a node to the object's per-field observer anchors;
+    // each node keeps a private MIRROR of the watched bytes, seeded from
+    // the live value at registration. During SMSG_UPDATE_OBJECT processing
+    // the dispatcher FUN_00465570 memcmps live vs mirror and invokes the
+    // callback only on a real change (the mirror is then re-synced by
+    // FUN_004667A0). Firing engine events from the callback is sanctioned —
+    // the engine's own bag observer does exactly that.
+    //
+    // Registrar — __fastcall(int bank /*ecx*/, uint32_t fieldOffset /*edx*/,
+    //   uint32_t guidLo, uint32_t guidHi, int size, const void *callback,
+    //   void *userArg1, void *userArg2). `bank` 4 = player fields;
+    //   `fieldOffset` is the descriptor byte offset (e.g. 0x560 backpack
+    //   slot 0). The engine's inventory setup FUN_004F8CC0 registers bags/
+    //   backpack/bank/keyring GUID ranges this way — but NOT equipment.
+    FUN_DESC_OBSERVER_REGISTER = 0x00467E70,
+
+    // Observer callback ABI (verified from the dispatcher's call site at
+    // 0x004655DC + the engine callback FUN_004F8DB0's RET 0x10):
+    //   int __fastcall cb(uint32_t fieldOffset /*ecx, as registered*/,
+    //                     uint32_t size /*edx*/,
+    //                     uint32_t guidLo, uint32_t guidHi,
+    //                     const uint32_t *oldValue /*the node's mirror*/,
+    //                     void *userArg1)   → return 1, callee cleans 0x10.
+    // The live (new) value is NOT passed — read it from the object (the
+    // engine's bag callback reads the invMgr GUID array).
+
+    // The engine's inventory observer setup — registers the bag-slot
+    // GUID-field observers above, once per enter-world (sole caller is the
+    // enter-world initializer FUN_004908C0, latched by DAT_00B4B424).
+    // Player::Equipment co-hooks it to register the equipment-slot
+    // observers the engine never installs; the co-hook inherits the exact
+    // engine timing + lifetime (nodes die with the player object).
+    FUN_INV_OBSERVER_SETUP = 0x004F8CC0,
+
+    // PLAYER_FIELD_INV_SLOT_HEAD — first of the 19 equipment-slot u64 GUID
+    // fields in the player descriptor (0x4A8..0x538, stride 8; 0x540 is
+    // the first equipped-bag slot). 0-based slot = (offset - 0x4A8) >> 3;
+    // Lua inventory slot (GetInventoryItemLink etc.) = that + 1.
+    OFF_DESC_PLAYER_EQUIP_FIRST = 0x4A8,
+    DESC_PLAYER_EQUIP_SLOTS = 19,
+    DESC_OBSERVER_BANK_PLAYER = 4,
     // ItemMgr::GetItemBySlot — __thiscall(this, slot) → CGItem* (NULL if empty).
     // Slot is the engine's linearized slot index, not bagID/slot tuple.
     FUN_ITEMMGR_GET_ITEM_BY_SLOT = 0x006228A0,

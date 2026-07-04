@@ -90,6 +90,7 @@ build instructions.
 - [Events](#events)
   - [`C_EventUtils.IsEventValid(eventName)`](#c_eventutilsiseventvalideventname)
   - [`BAG_UPDATE_DELAYED` event](#bag_update_delayed-event)
+  - [`PLAYER_EQUIPMENT_CHANGED` event](#player_equipment_changed-event)
   - [`HEARTHSTONE_BOUND` event](#hearthstone_bound-event)
   - [Player input-state events (`PLAYER_STARTED_MOVING` / `LOOKING` / `TURNING` + `STOPPED_*`)](#player-input-state-events)
   - [`GLOBAL_MOUSE_DOWN` / `GLOBAL_MOUSE_UP` events](#global_mouse_down--global_mouse_up-events)
@@ -2002,6 +2003,43 @@ event handlers.
 > `__thiscall` with an awkward register-arg shape. Keyring updates
 > currently won't trigger `BAG_UPDATE_DELAYED`. Player bag (0..4)
 > and bank (5..10) updates work normally — the 95% case.
+
+### `PLAYER_EQUIPMENT_CHANGED` event
+
+Backport of the WotLK-era event that fires once per paperdoll slot
+change — equip, unequip, or swap:
+
+```
+PLAYER_EQUIPMENT_CHANGED: equipmentSlot, hasCurrent
+```
+
+- **`equipmentSlot`** (number) — the 1-based inventory slot that
+  changed (`1` = head … `19` = tabard; same numbering as
+  `GetInventoryItemLink("player", slot)`).
+- **`hasCurrent`** — `1` when the slot now holds an item, `nil` when
+  it's now empty (write `if hasCurrent then` as in modern code —
+  vanilla's event dispatcher can't push real booleans).
+
+Vanilla only fires `UNIT_INVENTORY_CHANGED("player")`, which doesn't
+say *which* slot changed; this event lets gear trackers, stat sheets,
+and tooltip decorators refresh exactly one slot instead of rescanning
+all 19.
+
+```lua
+local f = CreateFrame("Frame")
+f:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
+f:SetScript("OnEvent", function()
+    print("slot", arg1, arg2 and "equipped" or "now empty")
+end)
+```
+
+Fully event-driven — no polling. The DLL registers change observers
+for the 19 equipment GUID fields of the player descriptor through the
+engine's own field-observer system (the same mechanism the engine
+uses to watch bag slots), so the event fires exactly when the
+server's update packet writes a new item GUID into a slot, once per
+changed slot. Swapping two items (e.g. weapon ⇄ bag) fires once per
+affected equipment slot.
 
 ### `HEARTHSTONE_BOUND` event
 
