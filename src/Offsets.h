@@ -4359,6 +4359,80 @@ enum Offsets {
     FUN_GOSSIP_SELECT_ACTIVE_QUEST = 0x004E2600,
     FUN_SCRIPT_CLOSE_GOSSIP = 0x004E2B20,
 
+    // Current gossip NPC GUID (u64). Set by the SMSG_GOSSIP_MESSAGE
+    // handler, cleared by the gossip-close worker at 0x004E1FA0 (which
+    // then fires GOSSIP_CLOSED, event 0x12B). Non-zero = a gossip
+    // session is live — the gate that keeps `C_GossipInfo` from serving
+    // the previous NPC's stale arrays/text after close.
+    VAR_GOSSIP_NPC_GUID = 0x00BC3F58,
+
+    // --- Quest-greeting state (SMSG_QUESTGIVER_QUEST_LIST) -------------
+    // Vanilla's SECOND questgiver path: NPCs without a gossip menu send
+    // SMSG_QUESTGIVER_QUEST_LIST, whose handler (FUN_005dbb10) fills a
+    // storage entirely separate from the gossip arrays and fires
+    // QUEST_GREETING (event 300 = 0x12C) — the QuestFrameGreetingPanel
+    // ("Current Quests" / "Available Quests"). Vanilla Lua reads it via
+    // GetGreetingText / Get{Available,Active}Title / etc.; C_GossipInfo
+    // merges it in so modern-addon ports work on greeting NPCs too.
+    //
+    // Shared quest-session state, written by the panel-begin helper
+    // FUN_00500bd0(panelType, textID, guidLo, guidHi, ...):
+    //   VAR_QUESTGIVER_GUID  — u64, the current questgiver. Cleared by
+    //     the session-close worker FUN_00501130 (fires QUEST_FINISHED,
+    //     event 0x130). Non-zero = quest session live.
+    //   VAR_QUEST_PANEL_TYPE — i32 panel: 0 greeting, 1 detail,
+    //     2 progress, 3 reward. begin(0) also zeroes both greeting
+    //     arrays + counts + the text buffers.
+    VAR_QUESTGIVER_GUID = 0x00BE0810,
+    VAR_QUEST_PANEL_TYPE = 0x00BE0818,
+
+    // GUID the greeting arrays were filled for — written ONLY by the
+    // SMSG_QUESTGIVER_QUEST_LIST handler. The greeting arrays are valid
+    // iff this equals VAR_QUESTGIVER_GUID (and that is non-zero);
+    // otherwise they're leftovers from an older NPC (e.g. the current
+    // quest session came from a gossip-menu quest click, which begins
+    // at panel 1 without ever clearing the greeting arrays).
+    VAR_GREETING_NPC_GUID = 0x00C4D740,
+
+    // Greeting text (0x200 inline, $N/$C-expanded) — what vanilla's
+    // Script_GetGreetingText pushes.
+    VAR_QUEST_GREETING_TEXT = 0x00BDE068,
+
+    // The two greeting quest arrays: 32 entries, stride 0x4C =
+    // { u32 questID @ +0, i32 level @ +4, char title[0x40] @ +8,
+    //   u32 extra @ +0x48 (available: status==0 flag; active: always
+    //   0 — the appender FUN_00500e90 never stores the status, see
+    //   the scratch arrays below for isComplete) }.
+    // Appenders: FUN_00500e40 (available), FUN_00500e90 (active).
+    // Readers: Script_Get{Available,Active}{Title,Level} @ 0x00501AC0/
+    // 0x00501B30/0x00501BA0/0x00501C20.
+    VAR_GREETING_AVAILABLE_ENTRIES = 0x00BDFE60,
+    VAR_GREETING_ACTIVE_ENTRIES = 0x00BDE690,
+    GREETING_QUESTS_STRIDE = 0x4C,
+    GREETING_QUESTS_MAX = 32,
+    OFF_GREETING_QUEST_ID = 0x000,
+    OFF_GREETING_QUEST_LEVEL = 0x004,
+    OFF_GREETING_QUEST_TITLE = 0x008,
+    VAR_GREETING_AVAILABLE_COUNT = 0x00BE0834,
+    VAR_GREETING_ACTIVE_COUNT = 0x00BE0838,
+
+    // Scratch arrays the SMSG_QUESTGIVER_QUEST_LIST handler fills in
+    // packet order (32 × u32 each, zeroed per packet): questIDs and the
+    // per-quest dialog status. Status 3|4 = active (same sentinel as
+    // the gossip quest rows), 4 = complete/turn-in-ready. The canonical
+    // greeting arrays drop the status, so `isComplete` for an active
+    // greeting quest is recovered by questID lookup here.
+    VAR_GREETING_SCRATCH_IDS = 0x00C4D2B0,
+    VAR_GREETING_SCRATCH_STATUS = 0x00C4D340,
+
+    // Engine greeting-quest selectors — the workers vanilla's
+    // Script_Select{Available,Active}Quest call: `__fastcall(int
+    // idx0Based)`, index straight into the corresponding greeting
+    // array. They validate VAR_QUESTGIVER_GUID internally and send
+    // CMSG_QUESTGIVER_{QUERY_QUEST,COMPLETE_QUEST}.
+    FUN_GREETING_SELECT_AVAILABLE_QUEST = 0x005012A0,
+    FUN_GREETING_SELECT_ACTIVE_QUEST = 0x00501320,
+
     // CDataStore primitive readers — `__thiscall void(this, void *out)`.
     // Read at the current cursor (`+0x14`) and advance it by the value
     // size. We call these directly from `Unit::MirrorTimer` to peek
