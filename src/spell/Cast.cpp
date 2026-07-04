@@ -35,9 +35,12 @@
 //     must skip them — they expire on their computed endMs, or earlier via
 //     the SMSG_SPELL_FAILED_OTHER co-hook when the server tells us the cast
 //     aborted.
-//   - channel: the player's broadcast `UNIT_FIELD_CHANNEL_SPELL`
-//     (descriptor +0x228), polled on `WorldTick`. endMs = now + effective
-//     channel duration.
+//   - channel: stamped from `SMSG_SPELL_START` at packet receipt (instant
+//     channels; engine-computed duration) and from `MSG_CHANNEL_START`
+//     (server duration — and the ONLY start signal for cast-then-channel
+//     spells like Mind Control, whose SpellStart covers just the cast
+//     phase). The broadcast +0x228 field is NOT polled for the player —
+//     it lags the channel start by ~1 tick.
 // `now` is the engine ms clock (`FUN_OS_TICKCOUNT_MS`), the same source
 // Lua's `GetTime()` scales by 0.001 — so startMs/endMs are directly
 // comparable to `GetTime()*1000` in addon progress math.
@@ -335,7 +338,7 @@ void HandleSpellStart(uint64_t caster, int spellID, uint32_t castTime) {
     const bool channel = IsChannelSpell(rec);
 
     if (caster == Unit::Identity::PlayerGuid()) {
-        if (channel) {
+        if (channel && castTime == 0) {
             // Player channel start. The broadcast +0x228 field that signals
             // "channeling" is server-pushed and lands ~1 tick (~1s) after the
             // channel actually begins, so a +0x228 poll shows the bar far too
@@ -344,7 +347,8 @@ void HandleSpellStart(uint64_t caster, int spellID, uint32_t castTime) {
             // now with the engine-computed duration. We run before the
             // original handler that fires SPELLCAST_CHANNEL_START, so the data
             // is fresh when addons poll. Cleared by self-expiry (PushChannel-
-            // Info) at endMs.
+            // Info) at endMs. (MSG_CHANNEL_START re-stamps moments later with
+            // the server's duration — see ChannelStart_h.)
             const int dur = ChannelDurationMs(spellID);
             if (dur > 0) {
                 g_channel = TrackedSpell{spellID, now, now + dur, 0};
@@ -352,6 +356,12 @@ void HandleSpellStart(uint64_t caster, int spellID, uint32_t castTime) {
             }
             return;
         }
+        // channel && castTime > 0 → a CAST-THEN-CHANNEL spell (Mind Control:
+        // 3 s cast, then a 60 s channel). This packet is the cast phase —
+        // the channel begins only when the cast completes, signaled by
+        // MSG_CHANNEL_START (ChannelStart_h). Fall through to regular cast
+        // handling so the bar shows the 3 s cast, not a premature 60 s
+        // channel (pfUI #9).
         if (castTime == 0)
             return; // instant — no cast bar
         // Backstop for chained same-spell recasts: the engine short-circuits
@@ -370,9 +380,14 @@ void HandleSpellStart(uint64_t caster, int spellID, uint32_t castTime) {
         g_channel.spellID = 0; // a cast supersedes any channel
         return;
     }
-    const int endMs = channel ? now + RemoteChannelDurationMs(rec)
-                              : now + static_cast<int>(castTime);
-    StoreRemoteCast(caster, spellID, now, endMs, channel);
+    // A channeled spell with a cast time (Mind Control) is in its CAST phase
+    // here — store it as a regular cast so observers see the 3 s bar. The
+    // remote channel phase has no packet (MSG_CHANNEL_START is caster-only);
+    // it surfaces through the unit's broadcast +0x228 field as usual.
+    const bool instantChannel = channel && castTime == 0;
+    const int endMs = instantChannel ? now + RemoteChannelDurationMs(rec)
+                                     : now + static_cast<int>(castTime);
+    StoreRemoteCast(caster, spellID, now, endMs, instantChannel);
 }
 
 // Co-hook on the SMSG_SPELL_START handler. Gated on opCode 0x131 so every
@@ -429,6 +444,43 @@ int __stdcall SpellDelayed_h(uint32_t *opCode, Net::CDataStore *packet) {
 const Game::HookAutoRegister _spellDelayedHook{
     Offsets::FUN_SPELL_DELAYED, reinterpret_cast<void *>(&SpellDelayed_h),
     reinterpret_cast<void **>(&g_origSpellDelayed)};
+
+// Co-hook on the MSG_CHANNEL_START handler — the server tells the caster a
+// channel has begun, with the server-authoritative (modifier-applied)
+// duration. Sent only to the caster, so it's always the local player. This
+// is what makes CAST-THEN-CHANNEL spells (Mind Control: 3 s cast, then a
+// 60 s channel) show both phases: their SMSG_SPELL_START carries the cast
+// (castTime > 0, handled as a regular cast in HandleSpellStart) and only
+// this packet marks the channel actually starting. For instant channels it
+// re-stamps what the SpellStart path just wrote (same moment, server
+// duration) — harmless. We stamp before the original runs so the data is
+// fresh when the engine fires SPELLCAST_CHANNEL_START. Packet layout
+// mirrored from nampower's SpellChannelStartHandlerHook:
+// spellId(u32), durationMs(u32).
+using ChannelStart_t = int(__stdcall *)(uint32_t *opCode,
+                                        Net::CDataStore *packet);
+ChannelStart_t g_origChannelStart = nullptr;
+
+int __stdcall ChannelStart_h(uint32_t *opCode, Net::CDataStore *packet) {
+    if (packet != nullptr) {
+        const uint32_t saved = packet->m_read;
+        const int spellID = static_cast<int>(Net::Read<uint32_t>(packet));
+        const uint32_t duration = Net::Read<uint32_t>(packet);
+        packet->m_read = saved;
+        if (spellID != 0 && duration > 0) {
+            const int now = NowMs();
+            g_channel =
+                TrackedSpell{spellID, now, now + static_cast<int>(duration), 0};
+            g_cast.spellID = 0; // the channel supersedes the completed cast
+        }
+    }
+    return g_origChannelStart(opCode, packet);
+}
+
+const Game::HookAutoRegister _channelStartHook{
+    Offsets::FUN_SPELL_CHANNEL_START,
+    reinterpret_cast<void *>(&ChannelStart_h),
+    reinterpret_cast<void **>(&g_origChannelStart)};
 
 // Co-hook on the SMSG_SPELL_FAILED_OTHER handler — the server broadcasts it
 // to observers whenever a started cast aborts (interrupt, death, movement,

@@ -876,6 +876,17 @@ enum Offsets {
     // reflects pushback. Mirrored from nampower's SpellDelayedHook.
     FUN_SPELL_DELAYED = 0x006E74F0,
 
+    // `MSG_CHANNEL_START` handler — `int __stdcall(uint32_t *opCode,
+    // CDataStore *packet)`. Body: `spellId(u32), durationMs(u32)`. Sent
+    // only to the caster when their channel begins, with the server-
+    // authoritative duration. `Spell::Cast` co-hooks it to stamp the
+    // player's channel — required for cast-then-channel spells (Mind
+    // Control: 3 s cast then 60 s channel), whose SMSG_SPELL_START only
+    // covers the cast phase. Address + layout mirrored from nampower's
+    // SpellChannelStartHandlerHook (they hook it too — accepted co-hook
+    // collision, per-channel-start frequency).
+    FUN_SPELL_CHANNEL_START = 0x006E7550,
+
     // `SMSG_SPELL_FAILED_OTHER` handler — `int __stdcall(uint32_t *opCode,
     // CDataStore *packet)`, same shape as FUN_SPELL_DELAYED. Body:
     // `casterGuid(u64, plain), spellId(u32)`. Broadcast to observers when a
