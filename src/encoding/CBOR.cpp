@@ -30,6 +30,16 @@ constexpr int kMaxDepth = 64;
 
 // ---------------- encode ----------------
 
+// tinycbor's grow-and-retry contract: on buffer overflow the encoder
+// switches to counting mode (end = NULL, accumulates bytes_needed) and
+// encoding must CONTINUE so the final tally is complete — a nested
+// container's tally only reaches the parent via close_container. So
+// CborErrorOutOfMemory is not a failure here; the caller reads
+// cbor_encoder_get_extra_bytes_needed() afterwards, resizes, retries.
+bool EncOk(CborError err) {
+    return err == CborNoError || err == CborErrorOutOfMemory;
+}
+
 bool EncodeValue(void *L, int idx, CborEncoder *enc, int depth);
 
 bool IsLuaArray(void *L, int idx, int &outLen) {
@@ -73,8 +83,8 @@ bool EncodeTable(void *L, int idx, CborEncoder *enc, int depth) {
     int arrayLen = 0;
     if (IsLuaArray(L, idx, arrayLen)) {
         CborEncoder arr;
-        if (cbor_encoder_create_array(enc, &arr,
-                                      static_cast<size_t>(arrayLen)) != CborNoError)
+        if (!EncOk(cbor_encoder_create_array(enc, &arr,
+                                             static_cast<size_t>(arrayLen))))
             return false;
         for (int i = 1; i <= arrayLen; ++i) {
             Game::Lua::PushNumber(L, static_cast<double>(i));
@@ -85,12 +95,12 @@ bool EncodeTable(void *L, int idx, CborEncoder *enc, int depth) {
             }
             Game::Lua::SetTop(L, -2);
         }
-        return cbor_encoder_close_container(enc, &arr) == CborNoError;
+        return EncOk(cbor_encoder_close_container(enc, &arr));
     }
 
     const int pairs = CountTablePairs(L, idx);
     CborEncoder map;
-    if (cbor_encoder_create_map(enc, &map, static_cast<size_t>(pairs)) != CborNoError)
+    if (!EncOk(cbor_encoder_create_map(enc, &map, static_cast<size_t>(pairs))))
         return false;
     Game::Lua::PushNil(L);
     while (Game::Lua::Next(L, idx) != 0) {
@@ -101,16 +111,16 @@ bool EncodeTable(void *L, int idx, CborEncoder *enc, int depth) {
         }
         Game::Lua::SetTop(L, -2);
     }
-    return cbor_encoder_close_container(enc, &map) == CborNoError;
+    return EncOk(cbor_encoder_close_container(enc, &map));
 }
 
 bool EncodeValue(void *L, int idx, CborEncoder *enc, int depth) {
     switch (Game::Lua::Type(L, idx)) {
         case Game::Lua::TYPE_NIL:
-            return cbor_encode_null(enc) == CborNoError;
+            return EncOk(cbor_encode_null(enc));
         case Game::Lua::TYPE_BOOLEAN:
-            return cbor_encode_boolean(enc,
-                Game::Lua::ToBoolean(L, idx) != 0) == CborNoError;
+            return EncOk(cbor_encode_boolean(enc,
+                Game::Lua::ToBoolean(L, idx) != 0));
         case Game::Lua::TYPE_NUMBER: {
             const double n = Game::Lua::ToNumber(L, idx);
             // Whole numbers in [-2^53, 2^53] go out as integers so
@@ -118,17 +128,17 @@ bool EncodeValue(void *L, int idx, CborEncoder *enc, int depth) {
             if (std::isfinite(n) && n == std::floor(n) &&
                 n >= -9007199254740992.0 && n <= 9007199254740992.0) {
                 if (n >= 0.0)
-                    return cbor_encode_uint(enc,
-                        static_cast<uint64_t>(n)) == CborNoError;
-                return cbor_encode_negative_int(enc,
-                    static_cast<uint64_t>(-n)) == CborNoError;
+                    return EncOk(cbor_encode_uint(enc,
+                        static_cast<uint64_t>(n)));
+                return EncOk(cbor_encode_negative_int(enc,
+                    static_cast<uint64_t>(-n)));
             }
-            return cbor_encode_double(enc, n) == CborNoError;
+            return EncOk(cbor_encode_double(enc, n));
         }
         case Game::Lua::TYPE_STRING: {
             const char *s = Game::Lua::ToString(L, idx);
             const unsigned int n = Game::Lua::StrLen(L, idx);
-            return cbor_encode_text_string(enc, s, n) == CborNoError;
+            return EncOk(cbor_encode_text_string(enc, s, n));
         }
         case Game::Lua::TYPE_TABLE:
             return EncodeTable(L, idx, enc, depth);
@@ -143,22 +153,15 @@ int __fastcall Script_SerializeCBOR(void *L) {
         return 0;
     }
 
-    // tinycbor encodes into a fixed-size buffer; if it overflows, it
-    // tracks the extra bytes needed so we can resize and retry.
+    // tinycbor encodes into a fixed-size buffer; on overflow it keeps
+    // encoding in counting mode (EncOk treats OutOfMemory as success) so
+    // the extra-bytes tally is complete, then we resize and retry once.
     std::vector<uint8_t> buf(256);
     for (;;) {
         CborEncoder enc;
         cbor_encoder_init(&enc, buf.data(), buf.size(), 0);
-        if (!EncodeValue(L, 1, &enc, 0)) {
-            // If it was a buffer-size issue we'll catch it via the
-            // extra-bytes-needed check below; otherwise this is a
-            // genuine "value not representable" failure.
-            const size_t extra = cbor_encoder_get_extra_bytes_needed(&enc);
-            if (extra == 0)
-                return 0;
-            buf.resize(buf.size() + extra);
-            continue;
-        }
+        if (!EncodeValue(L, 1, &enc, 0))
+            return 0; // genuine "value not representable" failure
         const size_t extra = cbor_encoder_get_extra_bytes_needed(&enc);
         if (extra > 0) {
             buf.resize(buf.size() + extra);
