@@ -402,6 +402,14 @@ build instructions.
   - [`C_UnitAuras.GetUnitAuras(unit [, filter])`](#c_unitaurasgetunitaurasunit--filter)
   - [`C_UnitAuras.GetAuraDispelTypeColor(dispelName)`](#c_unitaurasgetauradispeltypecolordispelname)
 
+- [VoiceChat](#voicechat)
+  - [`C_VoiceChat.GetTtsVoices()` / `C_VoiceChat.GetRemoteTtsVoices()`](#c_voicechatgetttsvoices--c_voicechatgetremotettsvoices)
+  - [`C_VoiceChat.SpeakText(voiceID, text [, destination, rate, volume])`](#c_voicechatspeaktextvoiceid-text--destination-rate-volume)
+  - [`C_VoiceChat.StopSpeakingText()`](#c_voicechatstopspeakingtext)
+  - [`C_TTSSettings` — getters & setters](#c_ttssettings--getters--setters)
+  - [TTS events](#tts-events)
+  - [TTS CVars](#tts-cvars)
+
 ## Account
 
 ### `SaveAccount(name, password)` / `DeleteAccount(name)` / `GetSavedAccounts()` / `LoginWithSavedAccount(name)` — GlueXML only
@@ -9763,3 +9771,130 @@ builds. So the returned value carries the mixin methods
 `.r/.g/.b/.a` fields. Falls back to a plain `{r,g,b,a}` table if
 `CreateColor` isn't loaded yet (shouldn't happen — `!!!ClassicAPI`
 loads first thanks to the triple-`!` prefix).
+
+## VoiceChat
+
+Backport of modern WoW's text-to-speech surface — the `C_VoiceChat` and
+`C_TTSSettings` namespaces — backed by **Windows SAPI** (the OS speech
+engine). All playback is **local** (rendered on your own machine);
+vanilla 1.12 has no voice-chat transport, so there is nothing "remote" to
+transmit synthesized speech into.
+
+> **Coexistence with VanillaTTS:** the same surface also ships as the
+> standalone [VanillaTTS](https://github.com/brues-code/VanillaTTS) DLL,
+> which adds a software-synth backend for Wine. If `VanillaTTS.dll` is
+> loaded in the same client, this built-in module stands down automatically
+> (registers none of the functions, events, or cvars below) and VanillaTTS
+> provides them instead — the Lua-visible API is identical either way, so
+> addons don't need to care which one is active.
+
+SAPI is created lazily on first use. If SAPI is unavailable (e.g. running
+the client under Wine, or a stripped Windows), every call degrades
+gracefully: `GetTtsVoices` returns an empty table, `SpeakText` fires
+`VOICE_CHAT_TTS_PLAYBACK_FAILED` and does nothing, and the client stays
+stable — there is no crash. Install more voices under **Windows Settings →
+Time & Language → Speech**, then call `C_TTSSettings.RefreshVoices()`.
+
+### `C_VoiceChat.GetTtsVoices()` / `C_VoiceChat.GetRemoteTtsVoices()`
+
+Return a numerically-indexed array of voice tables — one per SAPI voice
+installed on the machine:
+
+```lua
+for _, v in ipairs(C_VoiceChat.GetTtsVoices()) do
+    print(v.voiceID, v.name)   -- e.g.  0  "Microsoft David Desktop - English (United States)"
+end
+```
+
+Each entry is `{ voiceID = <0-based index>, name = <display name> }`. The
+`voiceID` is the index you pass to `SpeakText` and store via
+`C_TTSSettings.SetVoiceOption`. `GetRemoteTtsVoices` is an alias returning
+the same local list (kept for API parity — vanilla has no voice chat).
+Calling either refreshes the cached voice list and fires
+`VOICE_CHAT_TTS_VOICES_UPDATE` if it changed.
+
+### `C_VoiceChat.SpeakText(voiceID, text [, destination, rate, volume])`
+
+Speaks `text` aloud using the SAPI voice at index `voiceID`.
+
+```lua
+C_VoiceChat.SpeakText(
+    C_TTSSettings.GetSpeechVoiceID(),         -- use the configured voice
+    UnitName("target") or "no target")
+```
+
+- **`voiceID`** (number, required) — index into `GetTtsVoices()`. Note this
+  is an **explicit argument** — `SpeakText` does *not* read the `ttsVoice`
+  cvar itself, matching Blizzard's contract. Pass
+  `C_TTSSettings.GetSpeechVoiceID()` to honor the configured default.
+- **`text`** (string, required) — UTF-8; spoken as-is.
+- **`destination`** (number, optional, default `1`) — `1` =
+  `LOCAL_PLAYBACK`, `4` = `QUEUED_LOCAL_PLAYBACK`. Accepted for parity;
+  both queue FIFO through SAPI (no app-side queue).
+- **`rate`** (number, optional, default `0`) — speech rate, clamped to
+  `[-10, 10]`.
+- **`volume`** (number, optional, default `100`) — clamped to `[0, 100]`.
+
+Speech is asynchronous. The call returns immediately and fires
+`VOICE_CHAT_TTS_PLAYBACK_STARTED` when SAPI begins the utterance and
+`VOICE_CHAT_TTS_PLAYBACK_FINISHED` when it completes (or
+`..._PLAYBACK_FAILED` if the voice/engine is unavailable). Raises a Lua
+error if `voiceID` isn't a number or `text` isn't a string.
+
+### `C_VoiceChat.StopSpeakingText()`
+
+Stops and purges everything currently playing or queued.
+
+### `C_TTSSettings` — getters & setters
+
+The settings store (separate from `SpeakText`, which takes its parameters
+explicitly). All three values are backed by CVars (see below), so they
+**persist across sessions** and are clamped to valid ranges on write.
+
+| Function | Returns / effect |
+|---|---|
+| `C_TTSSettings.GetSpeechRate()` | configured rate, `[-10, 10]` (default `0`) |
+| `C_TTSSettings.GetSpeechVolume()` | configured volume, `[0, 100]` (default `100`) |
+| `C_TTSSettings.GetSpeechVoiceID()` | configured voice index (default `0`) |
+| `C_TTSSettings.GetVoiceOptionName()` | display name of the configured voice, or `""` |
+| `C_TTSSettings.SetSpeechRate(rate)` | set rate (clamped) |
+| `C_TTSSettings.SetSpeechVolume(volume)` | set volume (clamped) |
+| `C_TTSSettings.SetVoiceOption(voiceID)` | set the voice by index (clamped to installed count) |
+| `C_TTSSettings.SetVoiceOptionByName(name)` | set the voice by display name (case-insensitive exact match) |
+| `C_TTSSettings.SetDefaultSettings()` | reset to voice `1` (if present, else `0`), rate `0`, volume `100` |
+| `C_TTSSettings.RefreshVoices()` | re-enumerate SAPI voices; fires `VOICE_CHAT_TTS_VOICES_UPDATE` if the list changed |
+
+```lua
+C_TTSSettings.SetVoiceOptionByName("Microsoft Zira Desktop - English (United States)")
+C_TTSSettings.SetSpeechVolume(150)              -- clamps to 100
+print(C_TTSSettings.GetVoiceOptionName())       -- "Microsoft Zira Desktop - ..."
+```
+
+### TTS events
+
+Registered like any engine event (`frame:RegisterEvent("VOICE_CHAT_TTS_PLAYBACK_STARTED")`).
+
+| Event | Args |
+|---|---|
+| `VOICE_CHAT_TTS_PLAYBACK_STARTED` | `numConsumers` (number), `utteranceID` (number), `durationMS` (number, always `0`), `destination` (number) |
+| `VOICE_CHAT_TTS_PLAYBACK_FINISHED` | `numConsumers` (number), `utteranceID` (number), `destination` (number) |
+| `VOICE_CHAT_TTS_PLAYBACK_FAILED` | `status` (string — e.g. `"EngineAllocationFailed"`, `"InternalError"`), `utteranceID` (number), `destination` (number) |
+| `VOICE_CHAT_TTS_VOICES_UPDATE` | *(none)* — the installed-voice list changed |
+| `VOICE_CHAT_TTS_SPEAK_TEXT_UPDATE` | reserved for parity; not currently fired |
+
+`utteranceID` correlates the START/FINISHED/FAILED events for a given
+`SpeakText` call. `PLAYBACK_FINISHED` fires only when playback actually
+completes, so it's the signal to start the next utterance in a queue.
+
+### TTS CVars
+
+The `C_TTSSettings` values are stored as engine CVars, persisted to
+`WTF\Config.wtf`. You can also read/write them with the standard
+`GetCVar`/`SetCVar` (or `/console set`); writes are clamped by the same
+validation:
+
+| CVar | Default | Range | Backing setting |
+|---|---|---|---|
+| `ttsVoice` | `0` | `[0, voiceCount-1]` | `GetSpeechVoiceID` / `SetVoiceOption` |
+| `ttsSpeed` | `0` | `[-10, 10]` | `GetSpeechRate` / `SetSpeechRate` |
+| `ttsVolume` | `100` | `[0, 100]` | `GetSpeechVolume` / `SetSpeechVolume` |

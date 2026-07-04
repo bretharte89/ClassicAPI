@@ -99,7 +99,10 @@ target_compile_definitions(
   ${PROJECT_NAME}
   PRIVATE CLASSICAPI_VERSION_VALUE=${CLASSICAPI_VERSION_VALUE})
 
-target_link_libraries(${PROJECT_NAME} PRIVATE minhook advapi32)
+# ole32: COM (CoInitializeEx / CoCreateInstance / CoTaskMemFree) for the
+# SAPI text-to-speech backend in src/voicechat/Tts.cpp. The SAPI GUIDs are
+# instantiated in that TU via <initguid.h>, so no sapi.lib is needed.
+target_link_libraries(${PROJECT_NAME} PRIVATE minhook advapi32 ole32)
 
 target_include_directories(
   ${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
