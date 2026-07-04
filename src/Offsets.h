@@ -876,6 +876,17 @@ enum Offsets {
     // reflects pushback. Mirrored from nampower's SpellDelayedHook.
     FUN_SPELL_DELAYED = 0x006E74F0,
 
+    // `SMSG_SPELL_FAILED_OTHER` handler — `int __stdcall(uint32_t *opCode,
+    // CDataStore *packet)`, same shape as FUN_SPELL_DELAYED. Body:
+    // `casterGuid(u64, plain), spellId(u32)`. Broadcast to observers when a
+    // started cast aborts (interrupt, death, movement, fizzle) — the ONLY
+    // per-unit interrupt signal 1.12 has at the packet layer. `Spell::Cast`
+    // co-hooks it to invalidate the matching remote-cast cache entry (and
+    // the player's own server-stamped chained recast) so an interrupted
+    // cast doesn't linger as a ghost bar until its computed end. Address +
+    // packet layout mirrored from nampower's SpellFailedOtherHandlerHook.
+    FUN_SPELL_FAILED_OTHER = 0x006E8E40,
+
     // `CGUnit_C::OnAuraAdded` — `__thiscall void(CGUnit *unit, uint32_t
     // slot, uint32_t spellId)` (i.e. `__fastcall(unit /*ecx*/, edx_unused,
     // slot, spellId)`). Fires for EVERY aura that lands on a tracked unit,

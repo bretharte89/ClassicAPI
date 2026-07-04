@@ -32,8 +32,9 @@
 //     time), dedup'd against a just-made client stamp so a normal cast's
 //     confirming packet doesn't restart its bar. `g_castFromServer = true`;
 //     since the global was never set for these, the WorldTick VAR==0 clear
-//     must skip them — they expire on their computed endMs (and pfUI clears
-//     on nampower's SPELL_FAILED_SELF for interrupts).
+//     must skip them — they expire on their computed endMs, or earlier via
+//     the SMSG_SPELL_FAILED_OTHER co-hook when the server tells us the cast
+//     aborted.
 //   - channel: the player's broadcast `UNIT_FIELD_CHANNEL_SPELL`
 //     (descriptor +0x228), polled on `WorldTick`. endMs = now + effective
 //     channel duration.
@@ -47,8 +48,10 @@
 // cache — see the SpellStart co-hook below. Scope:
 //   - Player casts/channels: full timing (self-tracked, exact engine math).
 //   - Other units' regular CASTS: full timing while within the cast window,
-//     from the SpellStart cache. No clean per-unit interrupt signal exists
-//     in 1.12, so an interrupted remote cast lingers until its computed end.
+//     from the SpellStart cache. Interrupts are handled by the
+//     SMSG_SPELL_FAILED_OTHER co-hook, which invalidates the cache entry
+//     the moment the server reports the cast aborted (interrupt, death,
+//     movement, fizzle) — no lingering ghost bar.
 //   - Other units' CHANNELS: the broadcast +0x228 field gates "channeling
 //     now"; the SpellStart cache adds real start/end times when we observed
 //     the channel begin (else spellID/name/texture with nil times).
@@ -427,6 +430,50 @@ const Game::HookAutoRegister _spellDelayedHook{
     Offsets::FUN_SPELL_DELAYED, reinterpret_cast<void *>(&SpellDelayed_h),
     reinterpret_cast<void **>(&g_origSpellDelayed)};
 
+// Co-hook on the SMSG_SPELL_FAILED_OTHER handler — the server broadcasts it
+// to observers whenever a started cast aborts (interrupt, death, movement,
+// fizzle). It's the only per-unit interrupt signal 1.12 has, so it's what
+// lets us drop a remote cast the moment it dies instead of letting the
+// ghost bar run to its computed end (the documented remote-unit limitation
+// above). Packet body is plain (not packed): casterGuid(u64), spellId(u32).
+using SpellFailedOther_t = int(__stdcall *)(uint32_t *opCode,
+                                            Net::CDataStore *packet);
+SpellFailedOther_t g_origSpellFailedOther = nullptr;
+
+int __stdcall SpellFailedOther_h(uint32_t *opCode, Net::CDataStore *packet) {
+    if (packet != nullptr) {
+        const uint32_t saved = packet->m_read;
+        const uint64_t guid = Net::Read<uint64_t>(packet);
+        const int spellID = static_cast<int>(Net::Read<uint32_t>(packet));
+        packet->m_read = saved;
+        if (guid != 0 && spellID != 0) {
+            // Remote units: invalidate the cached cast/channel so
+            // UnitCastingInfo/UnitChannelInfo stop reporting it this tick.
+            for (auto &e : g_remoteCasts) {
+                if (e.used && e.casterGuid == guid && e.spellID == spellID) {
+                    e.used = false;
+                    break;
+                }
+            }
+            // Local player: a server-stamped chained recast
+            // (g_castFromServer) never set VAR_CURRENT_CAST_SPELL, so the
+            // WorldTick VAR==0 poll can't clear it on interrupt — this
+            // packet is the only signal. Whether the caster receives their
+            // own broadcast is server-dependent; if it never fires, the
+            // endMs self-expiry backstop still applies.
+            if (guid == Unit::Identity::PlayerGuid() &&
+                g_cast.spellID == spellID)
+                g_cast.spellID = 0;
+        }
+    }
+    return g_origSpellFailedOther(opCode, packet);
+}
+
+const Game::HookAutoRegister _spellFailedOtherHook{
+    Offsets::FUN_SPELL_FAILED_OTHER,
+    reinterpret_cast<void *>(&SpellFailedOther_h),
+    reinterpret_cast<void **>(&g_origSpellFailedOther)};
+
 } // namespace
 
 // Per-frame upkeep for the player. The regular cast is stamped by the
@@ -458,8 +505,8 @@ static int __fastcall Script_CastingInfo(void *L) { return PushCastInfo(L, g_cas
 
 // `UnitCastingInfo(unit)` — local player from self-tracking; other units
 // from the SMSG_SPELL_START cache (regular casts still within their cast
-// window). An interrupted remote cast lingers until its computed end time
-// (no clean per-unit interrupt signal in 1.12) — acceptable best-effort.
+// window; interrupted casts are evicted by the SMSG_SPELL_FAILED_OTHER
+// co-hook).
 static int __fastcall Script_UnitCastingInfo(void *L) {
     if (!Game::Lua::IsString(L, 1)) {
         Game::Lua::Error(L, "Usage: C_Spell.UnitCastingInfo(\"unit\")");

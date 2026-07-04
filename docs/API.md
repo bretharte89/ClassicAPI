@@ -8276,10 +8276,12 @@ so progress is `(GetTime()*1000 - startTimeMs) / (endTimeMs - startTimeMs)`.
 > another unit's cast with a server-authoritative cast time, cached per
 > caster GUID. So `C_Spell.UnitCastingInfo("target")` now backs
 > enemy/target/focus/nameplate cast bars. Instant casts return `nil` (no
-> cast bar). Best-effort for remote units, in three ways: only casts that
-> began while the unit was in range are seen; since 1.12 has no per-unit
-> interrupt packet to hook, an *interrupted* remote cast lingers until its
-> computed `endTimeMs` rather than clearing instantly; and the remote
+> cast bar). Interrupted remote casts clear the same tick — a co-hook on
+> `SMSG_SPELL_FAILED_OTHER` (the packet the server broadcasts to observers
+> when a started cast aborts: interrupt, death, movement, fizzle) evicts
+> the cached cast immediately, so no ghost bar runs to completion.
+> Best-effort for remote units, in two ways: only casts that began while
+> the unit was in range are seen; and the remote
 > `startTimeMs`/`endTimeMs` are shifted later by roughly your latency.
 > (1.12's `SMSG_SPELL_START` carries only a single `castTime`, so we stamp
 > `start = now, end = now + castTime` on receipt. 3.3.5+ avoids the skew
