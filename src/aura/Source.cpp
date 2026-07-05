@@ -15,6 +15,7 @@
 
 #include "Source.h"
 
+#include "ComboDuration.h"
 #include "Data.h"
 #include "Game.h"
 #include "Offsets.h"
@@ -203,7 +204,15 @@ void __fastcall SpellGo_h(uint64_t *itemGUID, uint64_t *casterGUID,
         return;
 
     const bool casterIsPlayer = (caster == Unit::Identity::PlayerGuid());
-    const uint32_t durationMs = SpellDurationMs(rec, casterIsPlayer);
+    // Combo-point finishers (Rupture, Kidney Shot, …) have their real
+    // duration computed at cast time from the combo points spent — the
+    // base-duration helper can't know it. ComboDuration mirrors the
+    // server's computation from the CP snapshot its send hook captured;
+    // 0 means "not combo-scaled", fall through to the base path.
+    uint32_t durationMs =
+        casterIsPlayer ? ComboDuration::TryComboScaledMs(rec, spellId) : 0;
+    if (durationMs == 0)
+        durationMs = SpellDurationMs(rec, casterIsPlayer);
     const uint32_t expirationMs = durationMs > 0 ? NowMs() + durationMs : 0;
 
     if (numTargets == 0) {

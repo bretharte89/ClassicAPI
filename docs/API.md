@@ -403,6 +403,7 @@ build instructions.
   - [`C_UnitAuras.GetUnitAuraBySpellID(unit, spellID [, filter])`](#c_unitaurasgetunitaurabyspellidunit-spellid--filter)
   - [`C_UnitAuras.GetPlayerAuraBySpellID(spellID)`](#c_unitaurasgetplayeraurabyspellidspellid)
   - [`C_UnitAuras.GetAuraDataBySpellName(unit, spellName [, filter])`](#c_unitaurasgetauradatabyspellnameunit-spellname--filter)
+  - [`C_UnitAuras.RegisterComboDuration(spellID, baseSeconds, maxSeconds)`](#c_unitaurasregistercombodurationspellid-baseseconds-maxseconds)
   - [`C_UnitAuras.GetUnitAuras(unit [, filter])`](#c_unitaurasgetunitaurasunit--filter)
   - [`C_UnitAuras.GetAuraDispelTypeColor(dispelName)`](#c_unitaurasgetauradispeltypecolordispelname)
 
@@ -9866,6 +9867,38 @@ populate (locale-applied `Spell.dbc` name). If the player is on
 a non-English client, pass the localized name — addons that
 hard-code English names should use `GetUnitAuraBySpellID`
 instead for portability.
+
+### `C_UnitAuras.RegisterComboDuration(spellID, baseSeconds, maxSeconds)`
+
+ClassicAPI extension — **you normally never call this**. Overrides the
+combo-point duration data for one spellID, for servers whose values
+differ from (or are missing in) the client's `SpellDuration.dbc`.
+Returns `true` on success; re-registering a spellID replaces its entry.
+
+Background: combo-point finishers (Rupture, Kidney Shot, Slice and
+Dice, …) get their real duration computed **server-side** at cast time
+as `base + (max − base) × comboPoints / 5`, and 1.12 never transmits
+the result for debuffs the player puts on other units (verified with a
+whole-protocol packet capture). ClassicAPI therefore mirrors the
+computation automatically: it snapshots your combo points the instant
+the cast request leaves the client and applies the same formula from
+the spell's own `SpellDuration.dbc` row, so `duration`/
+`expirationTime` in every `AuraData` are combo-accurate out of the box
+— Rupture at 4 CP reads 14s, not the 6s base. Your duration talents
+apply on top, in the server's order. No registration involved.
+
+The override exists only for spells whose client DBC data is missing
+or wrong on a specific server. The known case — Turtle's reworked Rip
+(8s + 2s per combo point), whose SpellDuration row exists on the
+server only — is built into ClassicAPI and gated on the client-data
+bug itself: the fallback applies only while the spell's DurationIndex
+points at a SpellDuration row the client doesn't have (a condition
+unique to Rip on Turtle's client; on a stock client Rip's index
+resolves normally, and if Turtle ever ships the missing row, the DBC
+takes over automatically). No realm detection involved. This function
+is the escape hatch for *other* custom servers with the same class of
+gap — call it from your own config or addon; a registered override
+beats both the DBC and the built-in values.
 
 ### `C_UnitAuras.GetUnitAuras(unit [, filter])`
 

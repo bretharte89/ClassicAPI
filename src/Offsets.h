@@ -1046,6 +1046,50 @@ enum Offsets {
     // u16 at the cursor, restore, log.
     FUN_NET_MESSAGE_DISPATCH = 0x00537AA0,
 
+    // NetClient send — `__thiscall void(void *conn, CDataStore *packet)`.
+    // The outgoing counterpart of FUN_NET_MESSAGE_DISPATCH: every CMSG the
+    // client sends funnels through it (the argless wrapper `FUN_005AB630`,
+    // nampower's ClientServices_Send, resolves the connection singleton
+    // with the packet in ECX and calls this). The packet's leading u32 is
+    // the opcode; `m_size - m_read` is what goes on the wire.
+    // `Aura::ComboDuration` co-hooks it to snapshot combo points the
+    // moment CMSG_CAST_SPELL leaves — before the server consumes them —
+    // which also covers nampower-queued casts (they re-enter the engine's
+    // cast path and send normally, unlike a Spell_C_CastSpell co-hook,
+    // which nampower's trampoline re-entry would bypass).
+    FUN_NET_SEND = 0x005379A0,
+
+    // Outgoing opcode: CMSG_CAST_SPELL. Body: `spellId(u32),
+    // targetFlags(u16), <target per flags>`.
+    OP_CMSG_CAST_SPELL = 0x12E,
+
+    // Spell.dbc DurationIndex (column 30) — row into SpellDuration.dbc.
+    // Offset = 30*4, consistent with the verified neighbors
+    // (CastingTimeIndex col 18 = +0x48, PowerType col 31 = +0x7C).
+    OFF_SPELL_RECORD_DURATION_INDEX = 0x78,
+
+    // SpellDuration.dbc — records/count slots per docs/DBCs.md. Record:
+    // `{id@+0, baseMs@+4 (i32), perLevelMs@+8 (i32), maxMs@+0xC (i32)}`.
+    // Combo-point finishers are exactly the rows with base != max: the
+    // server computes `base + (max - base) * comboPoints / 5`
+    // ((v)mangos CalculateSpellDuration — verified against the DBC:
+    // Rupture 6000/16000 = 6+2*CP, Kidney Shot 1000/6000 = 1+1*CP,
+    // Slice and Dice 6000/21000 = 6+3*CP, Expose Armor 30000/30000 =
+    // fixed). NOTE: rows can dangle — Turtle's client DBC has no record
+    // for Rip's DurationIndex 87 (records[87] == NULL), which is why
+    // Rip reads duration 0 client-side there.
+    VAR_SPELL_DURATION_RECORDS = 0x00C0D828,
+    VAR_SPELL_DURATION_COUNT = 0x00C0D82C,
+
+    // Combo points, within the CGPlayer `+0xE68` sub-struct (see
+    // OFF_CGPLAYER_INFO). Verified from Script_GetComboPoints
+    // (0x0051A190): CP count byte at `[player+0xE68]+0x1029`, the combo
+    // TARGET's guid (u64) at `[player+0xE68]+0x838` (compared against
+    // the current-target global 0x00B4E2D8 before the Lua function
+    // reports a non-zero count).
+    OFF_CGPLAYER_COMBO_POINTS = 0x1029,
+    OFF_CGPLAYER_COMBO_TARGET = 0x838,
+
     // `CGUnit_C::OnAuraAdded` — `__thiscall void(CGUnit *unit, uint32_t
     // slot, uint32_t spellId)` (i.e. `__fastcall(unit /*ecx*/, edx_unused,
     // slot, spellId)`). Fires for EVERY aura that lands on a tracked unit,
@@ -3021,6 +3065,7 @@ enum Offsets {
     SPELLMOD_SLOT_STRIDE = 0x74,               // bytes per familyFlagBit row
     SPELLMOD_SLOT_COUNT = 64,                  // SpellFamilyFlags is 64-bit
     SPELLMOD_OP_RADIUS = 6,                    // op index for spell radius
+    SPELLMOD_OP_DURATION = 1,                  // op index for aura duration
 
     // SpellDispelType.dbc — maps dispel-type IDs (1..N) to localized
     // names like "Magic", "Curse", "Disease", "Poison". Used by
