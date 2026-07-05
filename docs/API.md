@@ -91,6 +91,7 @@ build instructions.
   - [`C_EventUtils.IsEventValid(eventName)`](#c_eventutilsiseventvalideventname)
   - [`BAG_UPDATE_DELAYED` event](#bag_update_delayed-event)
   - [`PLAYER_EQUIPMENT_CHANGED` event](#player_equipment_changed-event)
+  - [`UPDATE_INVENTORY_DURABILITY` event](#update_inventory_durability-event)
   - [`HEARTHSTONE_BOUND` event](#hearthstone_bound-event)
   - [Player input-state events (`PLAYER_STARTED_MOVING` / `LOOKING` / `TURNING` + `STOPPED_*`)](#player-input-state-events)
   - [`GLOBAL_MOUSE_DOWN` / `GLOBAL_MOUSE_UP` events](#global_mouse_down--global_mouse_up-events)
@@ -2041,6 +2042,31 @@ uses to watch bag slots), so the event fires exactly when the
 server's update packet writes a new item GUID into a slot, once per
 changed slot. Swapping two items (e.g. weapon ⇄ bag) fires once per
 affected equipment slot.
+
+### `UPDATE_INVENTORY_DURABILITY` event
+
+Backport of the modern event that fires — with no payload — when an
+equipped item's durability changes: combat damage, resurrection
+penalty, repairs. The standard consumer pattern works unchanged:
+rescan the 19 slots with `GetInventoryItemDurability` on each fire.
+
+```lua
+local f = CreateFrame("Frame")
+f:RegisterEvent("UPDATE_INVENTORY_DURABILITY")
+f:SetScript("OnEvent", RefreshMyDurabilityHUD)
+```
+
+Event-driven, no polling: piggybacks on the engine's own
+inventory-alerts recompute — the routine behind vanilla's
+`UPDATE_INVENTORY_ALERTS` (the red/yellow "broken armor man"), which
+the engine runs whenever an owned item's fields change, on equip
+changes, and at enter-world. On each recompute the DLL diffs a
+per-slot `{item, durability}` snapshot and fires once when anything
+actually changed — a death dinging all your armor produces one event,
+not nineteen. Also fires when the *set* of equipped items changes
+(swapping to a differently-damaged item updates durability UI, so
+consumers want the refresh anyway). Bag-carried items don't trigger
+it: vanilla renders durability UI for equipped gear only.
 
 ### `HEARTHSTONE_BOUND` event
 

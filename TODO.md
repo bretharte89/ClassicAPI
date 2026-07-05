@@ -2847,7 +2847,33 @@ Same diff feeds `EQUIPMENT_SETS_CHANGED` /
 module — currently those fire only on user-side mutations, not
 on inventory changes that affect a set's "equipped count".
 
-## 89. `UPDATE_INVENTORY_DURABILITY` event
+## ~~89. `UPDATE_INVENTORY_DURABILITY` event~~ — DONE
+
+**Resolution (2026-07-04, src/player/Equipment.cpp):** co-hook the
+engine's inventory-alerts recompute `FUN_004C7EE0` — the routine that
+walks equipment slots, reads each item's durability/broken state from
+the descriptor, and unconditionally fires vanilla's
+`UPDATE_INVENTORY_ALERTS` (event 501). The engine calls it whenever an
+owned item's fields change (the item post-update handler `FUN_005D9A90`
+routes every item values-update through it, alongside
+UNIT_INVENTORY_CHANGED and the bag-update chain) plus equip and
+enter-world paths — i.e., it IS the engine's own "durability may have
+changed" signal. Post-original we diff a per-slot {guid, durability}
+snapshot (seeded silently on the first recompute per enter-world) and
+fire once per recompute with a real change. No polling, no hot hook.
+
+**Dead end tried first:** bank-1 (ITEM field) descriptor observers per
+equipped item, via the TODO #88 observer system. They register without
+error but are NEVER invoked — item values-updates demonstrably arrive
+(probed the values pre-pass `FUN_00465330`) and player-bank observers
+fire in the same session; registration arithmetic fully verified (bank
+base `FUN_00465690(1)=0x18`, bank walk item 0→1→2, anchors match
+dispatch). Prime suspect: the registrar's internal wrapper lookup
+(`FUN_00464890`, the observer registry — NOT the object manager)
+silently no-ops for item objects. See the DEAD END note at
+`OFF_DESC_ITEM_DURABILITY` in Offsets.h.
+
+Original notes below kept for the investigation trail.
 
 Fires when any equipped item's durability changes — picks up
 combat damage, repairs, item destruction. Used by Repair-O-Matic

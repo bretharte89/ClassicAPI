@@ -32,9 +32,25 @@
 // tabard), matching modern. `hasCurrent` is 1 when the slot now holds an
 // item and nil when it's empty (the engine dispatcher has no `%b`; 1/nil
 // keeps the idiomatic `if hasCurrent then` working — see FireIdSuccess).
+//
+// Also `UPDATE_INVENTORY_DURABILITY` (no payload) — fires when any
+// equipped item's durability changes (combat damage, death, repairs) —
+// via a co-hook on the engine's inventory-alerts recompute
+// (FUN_INVENTORY_ALERTS_RECOMPUTE): the engine itself calls that whenever
+// an owned item's fields change (its item post-update handler FUN_005D9A90
+// routes every item values-update through it) and on equip/enter-world
+// paths, so it IS the engine's own "durability may have changed" signal.
+// Post-original we diff a per-slot {itemGuid, durability} snapshot and
+// fire only on a real change. NOT done with bank-1 (ITEM field) descriptor
+// observers: those register without error but are never invoked — the
+// registrar's internal wrapper lookup (FUN_00464890, the observer
+// registry, distinct from the object manager) silently no-ops for item
+// objects, verified empirically (item values-updates arrive and the
+// player-bank observers fire, item-bank ones never do).
 
 #include "Game.h"
 #include "Offsets.h"
+#include "equipmentset/Locations.h"
 #include "event/Custom.h"
 #include "unit/Identity.h"
 
@@ -46,17 +62,28 @@ namespace {
 
 constexpr const char *kEvtEquipmentChanged = "PLAYER_EQUIPMENT_CHANGED";
 const Event::Custom::AutoReserve _r{kEvtEquipmentChanged};
-
-using ResolveUnitToken_t = void *(__fastcall *)(const char *token);
+constexpr const char *kEvtDurability = "UPDATE_INVENTORY_DURABILITY";
+const Event::Custom::AutoReserve _r2{kEvtDurability};
 
 // Whether the slot currently holds an item — read from the player's
 // inventory-manager GUID array, the same source the engine's own bag
 // observer (FUN_004F8DB0) treats as the post-change truth when its field
-// observer fires.
-bool SlotHasItem(int slot0Based) {
+// observer fires. The player is resolved from the GUID the observer
+// callback receives, via the NON-THROWING object resolver — the same call
+// FUN_004F8DB0 makes. NOT via FUN_RESOLVE_UNIT_TOKEN("player"): that's the
+// assert-frame helper that raises a Lua error when the token doesn't
+// resolve, and this runs inside SMSG_UPDATE_OBJECT processing, where the
+// player object can be mid-create and momentarily unresolvable — a Lua
+// error thrown from there unwinds through raw engine code.
+bool SlotHasItem(uint32_t guidLo, uint32_t guidHi, int slot0Based) {
+    using ResolveByGUID_t = void *(__fastcall *)(uint32_t typeMask,
+                                                 const char *debugName,
+                                                 uint32_t guidLo, uint32_t guidHi,
+                                                 int line);
     auto resolve =
-        reinterpret_cast<ResolveUnitToken_t>(Offsets::FUN_RESOLVE_UNIT_TOKEN);
-    auto *player = static_cast<const uint8_t *>(resolve("player"));
+        reinterpret_cast<ResolveByGUID_t>(Offsets::FUN_OBJECT_RESOLVE_BY_GUID);
+    auto *player = static_cast<const uint8_t *>(resolve(
+        Offsets::OBJ_TYPE_PLAYER, "ClassicAPI", guidLo, guidHi, 0x172));
     if (player == nullptr)
         return false;
     const uint8_t *invMgr = player + Offsets::OFF_PLAYER_INVENTORY_MANAGER;
@@ -69,19 +96,22 @@ bool SlotHasItem(int slot0Based) {
     return guids != nullptr && guids[slot0Based] != 0;
 }
 
+// --- PLAYER_EQUIPMENT_CHANGED (player-descriptor observers) -------------
+
 // Descriptor-field observer callback — ABI per the Offsets.h note:
 // __fastcall(fieldOffset /*ecx*/, size /*edx*/, guidLo, guidHi, oldValue*,
 // userArg), return 1, callee cleans 0x10. Invoked by the dispatcher only
 // when the watched equipment GUID field actually changed.
 int __fastcall EquipSlotChanged_cb(uint32_t fieldOffset, uint32_t /*size*/,
-                                   uint32_t /*guidLo*/, uint32_t /*guidHi*/,
+                                   uint32_t guidLo, uint32_t guidHi,
                                    const uint32_t * /*oldValue*/,
                                    void * /*userArg*/) {
     const int slot0 =
         static_cast<int>(fieldOffset - Offsets::OFF_DESC_PLAYER_EQUIP_FIRST) >> 3;
     if (slot0 >= 0 && slot0 < Offsets::DESC_PLAYER_EQUIP_SLOTS) {
         Event::Custom::FireIdSuccess(Event::Custom::Lookup(kEvtEquipmentChanged),
-                                     slot0 + 1, SlotHasItem(slot0));
+                                     slot0 + 1,
+                                     SlotHasItem(guidLo, guidHi, slot0));
     }
     return 1;
 }
@@ -89,15 +119,27 @@ int __fastcall EquipSlotChanged_cb(uint32_t fieldOffset, uint32_t /*size*/,
 // Co-hook on the engine's inventory observer setup: after it registers the
 // bag-range observers, register ours for the equipment range it skips.
 // Same registrar, same shape — only the field offsets differ.
-using ObserverSetup_t = void(__fastcall *)();
-ObserverSetup_t g_origSetup = nullptr;
-
 using RegisterObserver_t = void(__fastcall *)(
     int bank, uint32_t fieldOffset, uint32_t guidLo, uint32_t guidHi, int size,
     const void *callback, void *userArg1, void *userArg2);
+using ObserverSetup_t = void(__fastcall *)();
+ObserverSetup_t g_origSetup = nullptr;
+
+// One-time (per process) seed latch for the durability diff below — the
+// very first recompute seeds the snapshot silently instead of firing for
+// the initial gear population. Deliberately NOT reset per enter-world:
+// death/release/graveyard teleports re-run the setup, and a per-setup
+// reset made the post-teleport recompute re-seed silently — swallowing
+// the death's own durability loss (verified in-game: repairs fired,
+// deaths didn't). Keeping the snapshot across loading screens means
+// changes that land around them diff normally; the cost is at most one
+// spurious fire on relog to a different character, which matches
+// modern's login-time fire anyway.
+bool g_durSnapValid = false;
 
 void __fastcall ObserverSetup_h() {
     g_origSetup();
+
     const uint64_t guid = Unit::Identity::PlayerGuid();
     if (guid == 0)
         return;
@@ -116,6 +158,60 @@ static const Game::HookAutoRegister _setupHook{
     Offsets::FUN_INV_OBSERVER_SETUP,
     reinterpret_cast<void *>(&ObserverSetup_h),
     reinterpret_cast<void **>(&g_origSetup)};
+
+// --- UPDATE_INVENTORY_DURABILITY (alerts-recompute co-hook) --------------
+
+struct SlotDurability {
+    uint64_t guid;       // equipped item, 0 = empty slot
+    uint32_t durability; // ITEM_FIELD_DURABILITY, 0 when empty/unresolved
+};
+SlotDurability g_durSnap[EquipmentSet::SLOT_COUNT];
+
+uint32_t ItemDurability(uint64_t guid) {
+    if (guid == 0)
+        return 0;
+    const uint8_t *item = EquipmentSet::Locations::ResolveItemByGUID(guid);
+    if (item == nullptr)
+        return 0;
+    const uint8_t *descriptor = *reinterpret_cast<const uint8_t *const *>(
+        item + Offsets::OFF_ITEM_DESCRIPTOR);
+    if (descriptor == nullptr)
+        return 0;
+    return *reinterpret_cast<const uint32_t *>(
+        descriptor + Offsets::OFF_DESCRIPTOR_DURABILITY);
+}
+
+using AlertsRecompute_t = void(__fastcall *)();
+AlertsRecompute_t g_origAlertsRecompute = nullptr;
+
+void __fastcall AlertsRecompute_h() {
+    g_origAlertsRecompute();
+
+    uint64_t paperdoll[EquipmentSet::SLOT_COUNT];
+    EquipmentSet::Locations::SnapshotPaperdoll(paperdoll);
+
+    bool changed = false;
+    for (int i = 0; i < EquipmentSet::SLOT_COUNT; ++i) {
+        const SlotDurability cur{paperdoll[i], ItemDurability(paperdoll[i])};
+        if (g_durSnap[i].guid != cur.guid ||
+            g_durSnap[i].durability != cur.durability) {
+            changed = true;
+            g_durSnap[i] = cur;
+        }
+    }
+
+    if (!g_durSnapValid) {
+        g_durSnapValid = true; // first recompute of the session seeds only
+        return;
+    }
+    if (changed)
+        Event::Custom::Fire(Event::Custom::Lookup(kEvtDurability), "");
+}
+
+static const Game::HookAutoRegister _alertsHook{
+    Offsets::FUN_INVENTORY_ALERTS_RECOMPUTE,
+    reinterpret_cast<void *>(&AlertsRecompute_h),
+    reinterpret_cast<void **>(&g_origAlertsRecompute)};
 
 } // namespace
 

@@ -560,11 +560,22 @@ enum Offsets {
     //
     // Registrar — __fastcall(int bank /*ecx*/, uint32_t fieldOffset /*edx*/,
     //   uint32_t guidLo, uint32_t guidHi, int size, const void *callback,
-    //   void *userArg1, void *userArg2). `bank` 4 = player fields;
-    //   `fieldOffset` is the descriptor byte offset (e.g. 0x560 backpack
-    //   slot 0). The engine's inventory setup FUN_004F8CC0 registers bags/
-    //   backpack/bank/keyring GUID ranges this way — but NOT equipment.
+    //   void *userArg1, void *userArg2). `guid` selects the watched OBJECT
+    //   (player, item, container, …); `bank` selects its field bank
+    //   (1 = ITEM, 2 = CONTAINER, 4 = PLAYER — the engine's per-bag
+    //   manager FUN_004F91A0 registers bank-2 observers on each equipped
+    //   bag's CGContainer); `fieldOffset` is BANK-relative (container
+    //   SLOT_1 = 8, not its descriptor-absolute 0x20). The engine's
+    //   inventory setup FUN_004F8CC0 registers the player's bag/backpack/
+    //   bank/keyring GUID ranges this way — but NOT equipment.
     FUN_DESC_OBSERVER_REGISTER = 0x00467E70,
+
+    // Unregister — __fastcall(int bank /*ecx*/, uint32_t fieldOffset
+    //   /*edx*/, uint32_t guidLo, uint32_t guidHi, const void *callback,
+    //   void *userArg1). Removes the node matching (callback, userArg1)
+    //   from that object+field's observer list; harmless no-op when
+    //   nothing matches. What FUN_004F91A0 calls for an unequipped bag.
+    FUN_DESC_OBSERVER_UNREGISTER = 0x00467FB0,
 
     // Observer callback ABI (verified from the dispatcher's call site at
     // 0x004655DC + the engine callback FUN_004F8DB0's RET 0x10):
@@ -591,6 +602,39 @@ enum Offsets {
     OFF_DESC_PLAYER_EQUIP_FIRST = 0x4A8,
     DESC_PLAYER_EQUIP_SLOTS = 19,
     DESC_OBSERVER_BANK_PLAYER = 4,
+
+    // ITEM_FIELD_DURABILITY, ITEM-bank-relative: descriptor-absolute
+    // +0xA0 (field index 0x28, which counts the 6 OBJECT fields) minus
+    // the 0x18-byte OBJECT prefix. u32.
+    //
+    // DEAD END — bank-1 (ITEM field) observers register without error but
+    // are NEVER invoked: item values-updates demonstrably arrive
+    // (verified by probing the values pre-pass FUN_00465330) and
+    // player-bank observers fire in the same session, yet item-bank
+    // callbacks stay silent. Registration arithmetic was fully verified
+    // (bank base FUN_00465690(1)=0x18, next-bank walk FUN_004656E0
+    // item: 0→1→2, anchors match dispatch), so the suspect is the
+    // registrar's internal wrapper lookup (FUN_00464890 — the observer
+    // registry, NOT the object manager) silently no-op'ing for item
+    // objects. UPDATE_INVENTORY_DURABILITY is instead backed by
+    // FUN_INVENTORY_ALERTS_RECOMPUTE below. Constants kept for the
+    // investigation trail.
+    DESC_OBSERVER_BANK_ITEM = 1,
+    OFF_DESC_ITEM_DURABILITY = 0x88,
+
+    // The engine's inventory-alerts recompute — walks the equipment
+    // slots, reads each item's ITEM_FIELD_DURABILITY / MAXDURABILITY /
+    // broken flag from the descriptor, fills the per-slot alert table at
+    // [DAT_00B71F60], and UNCONDITIONALLY fires UPDATE_INVENTORY_ALERTS
+    // (event 501) at the end. The engine calls it whenever an owned
+    // item's fields change (the item post-update handler FUN_005D9A90 —
+    // which also fires UNIT_INVENTORY_CHANGED and the bag-update chain —
+    // routes every item values-update through it) plus equip and
+    // enter-world paths. That makes it the engine's own "durability may
+    // have changed" signal: Player::Equipment co-hooks it and diffs a
+    // {guid, durability} snapshot per slot to back
+    // UPDATE_INVENTORY_DURABILITY. void __fastcall(), no args.
+    FUN_INVENTORY_ALERTS_RECOMPUTE = 0x004C7EE0,
     // ItemMgr::GetItemBySlot — __thiscall(this, slot) → CGItem* (NULL if empty).
     // Slot is the engine's linearized slot index, not bagID/slot tuple.
     FUN_ITEMMGR_GET_ITEM_BY_SLOT = 0x006228A0,
@@ -1153,6 +1197,7 @@ enum Offsets {
     OBJ_TYPE_ITEM = 2,
     OBJ_TYPE_CONTAINER = 4,
     OBJ_TYPE_UNIT = 8,
+    OBJ_TYPE_PLAYER = 0x10, // what the engine's bag observer FUN_004F8DB0 passes
     OBJ_TYPE_GAMEOBJECT = 0x20, // 1<<5; passed by FUN_0052AA20 (hover-tooltip populator).
 
     // `CGObject::GetName` — returns the display-name `const char *` for
