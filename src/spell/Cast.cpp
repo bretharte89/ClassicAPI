@@ -33,8 +33,8 @@
 //     confirming packet doesn't restart its bar. `g_castFromServer = true`;
 //     since the global was never set for these, the WorldTick VAR==0 clear
 //     must skip them — they expire on their computed endMs, or earlier via
-//     the SMSG_SPELL_FAILED_OTHER co-hook when the server tells us the cast
-//     aborted.
+//     the abort co-hooks (ClearCastingSpell / the failure packets) when the
+//     engine learns the cast died.
 //   - channel: stamped from `SMSG_SPELL_START` at packet receipt (instant
 //     channels; engine-computed duration) and from `MSG_CHANNEL_START`
 //     (server duration — and the ONLY start signal for cast-then-channel
@@ -45,19 +45,24 @@
 // Lua's `GetTime()` scales by 0.001 — so startMs/endMs are directly
 // comparable to `GetTime()*1000` in addon progress math.
 //
-// Other units have no engine-stored cast record, so we capture their casts
-// from the `SMSG_SPELL_START` packet (the only place the client sees
-// another unit's cast + a server-authoritative cast time) into a per-caster
-// cache — see the SpellStart co-hook below. Scope:
+// Other units have no engine-stored cast TIMES (the engine does keep the
+// current-cast spellID at [unit+0xC8C], but nothing temporal), so we
+// capture their casts from the `SMSG_SPELL_START` packet (the only place
+// the client sees another unit's cast + a server-authoritative cast time)
+// into a per-caster cache — see the SpellStart co-hook below. Scope:
 //   - Player casts/channels: full timing (self-tracked, exact engine math).
 //   - Other units' regular CASTS: full timing while within the cast window,
-//     from the SpellStart cache. Interrupts are handled by the
-//     SMSG_SPELL_FAILED_OTHER co-hook, which invalidates the cache entry
-//     the moment the server reports the cast aborted (interrupt, death,
-//     movement, fizzle) — no lingering ghost bar.
+//     from the SpellStart cache. Aborts (interrupt, death, movement,
+//     cancel) evict the entry the moment the engine stops the unit's cast
+//     — the CGUnit_C::ClearCastingSpell co-hook below, backstopped by
+//     co-hooks on both failure packets — so no lingering ghost bar.
 //   - Other units' CHANNELS: the broadcast +0x228 field gates "channeling
 //     now"; the SpellStart cache adds real start/end times when we observed
 //     the channel begin (else spellID/name/texture with nil times).
+//   - Other units' PUSHBACK is invisible: SMSG_SPELL_DELAYED goes only to
+//     the affected caster (empirically confirmed — during a melee-pushback
+//     test only the victim's client received it), so a remote bar can't
+//     stretch. Inherent 1.12 protocol gap, not recoverable client-side.
 //
 // Modern-signature fields vanilla can't fill are structurally-correct
 // placeholders: castID / castBarID = nil, notInterruptible = false,
@@ -482,12 +487,37 @@ const Game::HookAutoRegister _channelStartHook{
     reinterpret_cast<void *>(&ChannelStart_h),
     reinterpret_cast<void **>(&g_origChannelStart)};
 
+// Shared abort handling for the two sibling failure packets. Servers
+// derived from (v)mangos broadcast BOTH `SMSG_SPELL_FAILURE` and
+// `SMSG_SPELL_FAILED_OTHER` from Spell::SendInterrupted, but which one a
+// given core emits per abort path varies — so both handlers are co-hooked
+// and both feed this. Idempotent, so the both-arrive case is harmless.
+void HandleCastAborted(uint64_t guid, int spellID) {
+    if (guid == 0 || spellID == 0)
+        return;
+    // Remote units: invalidate the cached cast/channel so
+    // UnitCastingInfo/UnitChannelInfo stop reporting it this tick.
+    for (auto &e : g_remoteCasts) {
+        if (e.used && e.casterGuid == guid && e.spellID == spellID) {
+            e.used = false;
+            break;
+        }
+    }
+    // Local player: a server-stamped chained recast (g_castFromServer)
+    // never set VAR_CURRENT_CAST_SPELL, so the WorldTick VAR==0 poll can't
+    // clear it on interrupt — this packet is the only signal. Whether the
+    // caster receives their own broadcast is server-dependent; if it never
+    // fires, the endMs self-expiry backstop still applies.
+    if (guid == Unit::Identity::PlayerGuid() && g_cast.spellID == spellID)
+        g_cast.spellID = 0;
+}
+
 // Co-hook on the SMSG_SPELL_FAILED_OTHER handler — the server broadcasts it
 // to observers whenever a started cast aborts (interrupt, death, movement,
-// fizzle). It's the only per-unit interrupt signal 1.12 has, so it's what
-// lets us drop a remote cast the moment it dies instead of letting the
-// ghost bar run to its computed end (the documented remote-unit limitation
-// above). Packet body is plain (not packed): casterGuid(u64), spellId(u32).
+// fizzle). It's what lets us drop a remote cast the moment it dies instead
+// of letting the ghost bar run to its computed end (the documented
+// remote-unit limitation above). Packet body is plain (not packed):
+// casterGuid(u64), spellId(u32).
 using SpellFailedOther_t = int(__stdcall *)(uint32_t *opCode,
                                             Net::CDataStore *packet);
 SpellFailedOther_t g_origSpellFailedOther = nullptr;
@@ -498,25 +528,7 @@ int __stdcall SpellFailedOther_h(uint32_t *opCode, Net::CDataStore *packet) {
         const uint64_t guid = Net::Read<uint64_t>(packet);
         const int spellID = static_cast<int>(Net::Read<uint32_t>(packet));
         packet->m_read = saved;
-        if (guid != 0 && spellID != 0) {
-            // Remote units: invalidate the cached cast/channel so
-            // UnitCastingInfo/UnitChannelInfo stop reporting it this tick.
-            for (auto &e : g_remoteCasts) {
-                if (e.used && e.casterGuid == guid && e.spellID == spellID) {
-                    e.used = false;
-                    break;
-                }
-            }
-            // Local player: a server-stamped chained recast
-            // (g_castFromServer) never set VAR_CURRENT_CAST_SPELL, so the
-            // WorldTick VAR==0 poll can't clear it on interrupt — this
-            // packet is the only signal. Whether the caster receives their
-            // own broadcast is server-dependent; if it never fires, the
-            // endMs self-expiry backstop still applies.
-            if (guid == Unit::Identity::PlayerGuid() &&
-                g_cast.spellID == spellID)
-                g_cast.spellID = 0;
-        }
+        HandleCastAborted(guid, spellID);
     }
     return g_origSpellFailedOther(opCode, packet);
 }
@@ -525,6 +537,65 @@ const Game::HookAutoRegister _spellFailedOtherHook{
     Offsets::FUN_SPELL_FAILED_OTHER,
     reinterpret_cast<void *>(&SpellFailedOther_h),
     reinterpret_cast<void **>(&g_origSpellFailedOther)};
+
+// Co-hook on the SMSG_SPELL_FAILURE handler — FAILED_OTHER's sibling, with
+// a trailing result(u8) after the same casterGuid(u64), spellId(u32) head
+// (we don't read the result). This is the packet that actually stops the
+// caster's cast VISUAL in the engine's own handler, so it demonstrably
+// arrives for interrupts; hooking both siblings makes the eviction
+// independent of which one the server chose to send.
+using SpellFailure_t = int(__stdcall *)(uint32_t *opCode,
+                                        Net::CDataStore *packet);
+SpellFailure_t g_origSpellFailure = nullptr;
+
+int __stdcall SpellFailure_h(uint32_t *opCode, Net::CDataStore *packet) {
+    if (packet != nullptr) {
+        const uint32_t saved = packet->m_read;
+        const uint64_t guid = Net::Read<uint64_t>(packet);
+        const int spellID = static_cast<int>(Net::Read<uint32_t>(packet));
+        packet->m_read = saved;
+        HandleCastAborted(guid, spellID);
+    }
+    return g_origSpellFailure(opCode, packet);
+}
+
+const Game::HookAutoRegister _spellFailureHook{
+    Offsets::FUN_SPELL_FAILURE, reinterpret_cast<void *>(&SpellFailure_h),
+    reinterpret_cast<void **>(&g_origSpellFailure)};
+
+// Co-hook on CGUnit_C::ClearCastingSpell — the engine choke point every
+// "unit stopped casting" path funnels through (failure packets, SPELL_GO,
+// movement, death, animation events, local cancel — see Offsets.h). The
+// original is gated on `spellID == [unit+0xC8C]` (the unit's live
+// current-cast field), so a real stop only happens when the gate passes;
+// we mirror the gate and evict then. This is the PRIMARY interrupt signal
+// on Turtle: its core doesn't broadcast either failure packet — interrupt
+// propagation to observers happens via SuperWoW, whose code calls this
+// method directly (verified by return-address tracing: interrupted remote
+// casts clear with a caller inside a sibling DLL, natural completions
+// clear from the SPELL_GO handler). Verified in-game: Kick / Earth Shock /
+// Counterspell each evict the victim's cast, while non-interrupting damage
+// (pushback flinch) does NOT route through here — no false eviction.
+using ClearCastingSpell_t = void(__fastcall *)(void *unit, void *edx,
+                                               int spellID, char notify,
+                                               char cleanup);
+ClearCastingSpell_t g_origClearCastingSpell = nullptr;
+
+void __fastcall ClearCastingSpell_h(void *unit, void *edx, int spellID,
+                                    char notify, char cleanup) {
+    if (unit != nullptr && spellID != 0) {
+        const int current = *reinterpret_cast<const int *>(
+            static_cast<const uint8_t *>(unit) + Offsets::OFF_UNIT_CAST_SPELL);
+        if (current != 0 && current == spellID)
+            HandleCastAborted(Unit::Identity::GuidForObject(unit), spellID);
+    }
+    g_origClearCastingSpell(unit, edx, spellID, notify, cleanup);
+}
+
+const Game::HookAutoRegister _clearCastingHook{
+    Offsets::FUN_UNIT_CLEAR_CASTING_SPELL,
+    reinterpret_cast<void *>(&ClearCastingSpell_h),
+    reinterpret_cast<void **>(&g_origClearCastingSpell)};
 
 } // namespace
 
@@ -557,8 +628,8 @@ static int __fastcall Script_CastingInfo(void *L) { return PushCastInfo(L, g_cas
 
 // `UnitCastingInfo(unit)` — local player from self-tracking; other units
 // from the SMSG_SPELL_START cache (regular casts still within their cast
-// window; interrupted casts are evicted by the SMSG_SPELL_FAILED_OTHER
-// co-hook).
+// window; aborted casts are evicted by the ClearCastingSpell / failure-
+// packet co-hooks).
 static int __fastcall Script_UnitCastingInfo(void *L) {
     if (!Game::Lua::IsString(L, 1)) {
         Game::Lua::Error(L, "Usage: C_Spell.UnitCastingInfo(\"unit\")");

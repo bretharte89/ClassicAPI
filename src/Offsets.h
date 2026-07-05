@@ -962,10 +962,12 @@ enum Offsets {
 
     // `SMSG_SPELL_DELAYED` handler — `int __stdcall(uint32_t *opCode,
     // CDataStore *packet)`. Body: `guid(u64), delayMs(u32)`. The server
-    // only sends this to the affected caster, so in practice it's always
-    // the local player's cast pushback (taking damage mid-cast). `Spell::
-    // Cast` co-hooks it to extend the tracked cast's end time so the bar
-    // reflects pushback. Mirrored from nampower's SpellDelayedHook.
+    // only sends this to the affected caster — empirically confirmed on
+    // Turtle (melee-pushback test: only the victim's client received it) —
+    // so remote units' pushback is NOT recoverable client-side; only the
+    // local player's cast pushback is trackable. `Spell::Cast` co-hooks it
+    // to extend the tracked cast's end time so the bar reflects pushback.
+    // Mirrored from nampower's SpellDelayedHook.
     FUN_SPELL_DELAYED = 0x006E74F0,
 
     // `MSG_CHANNEL_START` handler — `int __stdcall(uint32_t *opCode,
@@ -981,14 +983,68 @@ enum Offsets {
 
     // `SMSG_SPELL_FAILED_OTHER` handler — `int __stdcall(uint32_t *opCode,
     // CDataStore *packet)`, same shape as FUN_SPELL_DELAYED. Body:
-    // `casterGuid(u64, plain), spellId(u32)`. Broadcast to observers when a
-    // started cast aborts (interrupt, death, movement, fizzle) — the ONLY
-    // per-unit interrupt signal 1.12 has at the packet layer. `Spell::Cast`
-    // co-hooks it to invalidate the matching remote-cast cache entry (and
-    // the player's own server-stamped chained recast) so an interrupted
-    // cast doesn't linger as a ghost bar until its computed end. Address +
-    // packet layout mirrored from nampower's SpellFailedOtherHandlerHook.
+    // `casterGuid(u64, plain), spellId(u32)`. In (v)mangos cores this is
+    // broadcast to observers when a started cast aborts (interrupt, death,
+    // movement, fizzle) — but Turtle's core does NOT send it (verified
+    // in-game: interrupts arrive with neither this nor SMSG_SPELL_FAILURE;
+    // observers learn of the abort via SuperWoW instead — see
+    // FUN_UNIT_CLEAR_CASTING_SPELL). `Spell::Cast` co-hooks it anyway as a
+    // backstop for servers that do send it, invalidating the matching
+    // remote-cast cache entry (and the player's own server-stamped chained
+    // recast). Address + packet layout mirrored from nampower's
+    // SpellFailedOtherHandlerHook.
     FUN_SPELL_FAILED_OTHER = 0x006E8E40,
+
+    // `SMSG_SPELL_FAILURE` handler — same `int __stdcall(uint32_t *opCode,
+    // CDataStore *packet)` shape. Body: `casterGuid(u64, plain),
+    // spellId(u32), result(u8)` — a superset of FAILED_OTHER's with a
+    // trailing result byte. Decompiled at 0x006E8D80: resolves the caster
+    // unit (FUN_00468460 typemask 8) and stops its cast visual via the SAME
+    // unit methods FAILED_OTHER's handler calls (FUN_0060d040 +
+    // FUN_00614150), plus extra channel/visual cleanup. Servers derived
+    // from (v)mangos broadcast BOTH packets from Spell::SendInterrupted,
+    // but which one a given core actually emits per abort path varies —
+    // `Spell::Cast` co-hooks this one alongside FAILED_OTHER so a remote
+    // interrupt evicts the cast cache regardless of which sibling arrives.
+    // nampower calls this SpellFailedHandler (offsets.hpp) but doesn't
+    // hook it.
+    FUN_SPELL_FAILURE = 0x006E8D80,
+
+    // `CGUnit_C::ClearCastingSpell` — `__thiscall void(CGUnit *unit,
+    // int spellID, char notify, char cleanup)` (nampower names the offset
+    // but never hooks it). THE engine choke point for "this unit stopped
+    // casting": gated on `spellID == [unit+0xC8C]` (the unit's live
+    // current-cast spellID, set by SMSG_SPELL_START processing), it zeros
+    // that field and clears the casting flag (bit 0x400 at [unit+0xD58]).
+    // Ten callers converge here: both failure-packet handlers, the
+    // SPELL_GO handler (natural completion), the movement handler
+    // (0x006018f0 — moving units aren't casting), the health-diff handler
+    // (0x006046f0, death), the unit animation-event dispatcher
+    // (0x0060e0a0), the local cancel path (0x006e7040, sends
+    // CMSG_CANCEL_CAST), and Spell_C_SpellFailed. Hooking THIS instead of
+    // individual packets makes remote-cast eviction independent of which
+    // packet the server actually sends — load-bearing on Turtle, whose
+    // core does NOT broadcast SMSG_SPELL_FAILURE / SMSG_SPELL_FAILED_OTHER
+    // on interrupt (verified: neither handler fires while the victim's
+    // cast visual demonstrably stops).
+    FUN_UNIT_CLEAR_CASTING_SPELL = 0x0060D040,
+
+    // CGUnit field: the unit's current-cast spellID (0 = not casting).
+    // The regular-cast analog of OFF_UNIT_FIELD_CHANNEL_SPELL — but a
+    // plain CGUnit member, NOT a descriptor UpdateField (client-derived
+    // from SMSG_SPELL_START, not server-broadcast state).
+    OFF_UNIT_CAST_SPELL = 0xC8C,
+
+    // NetClient message dispatch — `__thiscall void(void *conn, uint32_t
+    // arg, CDataStore *packet)`. Reads the u16 opcode off the packet
+    // cursor, then invokes `[conn + opcode*4 + 0x74]` (the handler table
+    // FUN_005ab650 / FUN_00537a60 register into; per-handler userParam
+    // parallel table at +0xD64). EVERY server message the client processes
+    // funnels through here (the raw-ingress sibling at 0x00537B10 only
+    // special-cases 0x1DD compressed-moves before queueing into this).
+    // Useful as a temporary whole-protocol sniff point: co-hook, peek the
+    // u16 at the cursor, restore, log.
+    FUN_NET_MESSAGE_DISPATCH = 0x00537AA0,
 
     // `CGUnit_C::OnAuraAdded` — `__thiscall void(CGUnit *unit, uint32_t
     // slot, uint32_t spellId)` (i.e. `__fastcall(unit /*ecx*/, edx_unused,

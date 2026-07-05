@@ -8397,20 +8397,28 @@ so progress is `(GetTime()*1000 - startTimeMs) / (endTimeMs - startTimeMs)`.
 > another unit's cast with a server-authoritative cast time, cached per
 > caster GUID. So `C_Spell.UnitCastingInfo("target")` now backs
 > enemy/target/focus/nameplate cast bars. Instant casts return `nil` (no
-> cast bar). Interrupted remote casts clear the same tick — a co-hook on
-> `SMSG_SPELL_FAILED_OTHER` (the packet the server broadcasts to observers
-> when a started cast aborts: interrupt, death, movement, fizzle) evicts
-> the cached cast immediately, so no ghost bar runs to completion.
-> Best-effort for remote units, in two ways: only casts that began while
-> the unit was in range are seen; and the remote
-> `startTimeMs`/`endTimeMs` are shifted later by roughly your latency.
-> (1.12's `SMSG_SPELL_START` carries only a single `castTime`, so we stamp
-> `start = now, end = now + castTime` on receipt. 3.3.5+ avoids the skew
-> because its packet carries *both* total and remaining cast time and
-> back-dates `start = now − elapsed`; the 1.12 packet has no field to
-> recover `elapsed` from.) The **local player is unaffected** by all of
-> this — its cast is detected client-side at the moment of cast, no packet
-> involved.
+> cast bar). Aborted remote casts (interrupt, death, movement, cancel)
+> clear the same tick — a co-hook on the engine's own
+> `CGUnit_C::ClearCastingSpell` (the choke point every "unit stopped
+> casting" path funnels through) evicts the cached cast the moment the
+> engine stops the unit's cast visual, backstopped by co-hooks on the
+> `SMSG_SPELL_FAILURE` / `SMSG_SPELL_FAILED_OTHER` packets for servers
+> that broadcast them (Turtle's core doesn't — its interrupt propagation
+> reaches observers through SuperWoW, which the choke-point hook catches
+> too). Verified: Kick / Earth Shock / Counterspell each clear the
+> victim's bar, while non-interrupting damage doesn't false-clear it.
+> Best-effort for remote units, in three ways: only casts that began while
+> the unit was in range are seen; the remote `startTimeMs`/`endTimeMs` are
+> shifted later by roughly your latency (1.12's `SMSG_SPELL_START` carries
+> only a single `castTime`, so we stamp `start = now, end = now + castTime`
+> on receipt — 3.3.5+ avoids the skew because its packet carries *both*
+> total and remaining cast time and back-dates `start = now − elapsed`;
+> the 1.12 packet has no field to recover `elapsed` from); and remote
+> **pushback is invisible** — the server sends `SMSG_SPELL_DELAYED` only
+> to the affected caster, so another unit's bar can't stretch when they
+> take damage. The **local player is unaffected** by all of this — its
+> cast is detected client-side at the moment of cast, no packet involved,
+> and its pushback is tracked.
 >
 > `isTradeskill` is real — the spell's `SPELL_ATTR_TRADESPELL` flag, so
 > profession recipe casts (smelting, cooking/enchanting recipes, …)
