@@ -1090,6 +1090,54 @@ enum Offsets {
     OFF_CGPLAYER_COMBO_POINTS = 0x1029,
     OFF_CGPLAYER_COMBO_TARGET = 0x838,
 
+    // ---- Frame-method registries beyond GameTooltip's ------------------
+    // Same per-type registry mechanism as VAR_GAMETOOLTIP_METHOD_REGISTRY
+    // (docs/BlizzardScriptAPI.md "Frame types & their methods" has the
+    // full 23-table catalogue). The dispatcher resolves methods through
+    // the type hierarchy, so a method added to the REGION base registry
+    // (the 19-entry core-layout table: GetWidth/SetPoint/…) is callable
+    // on every region type — frames, buttons, textures, fontstrings.
+    // `Frame::Modern` uses these to backport modern API (SetSize,
+    // SetShown, SetResizeBounds).
+    VAR_REGION_METHOD_REGISTRY = 0x00CF54B4,
+    VAR_FRAME_METHOD_REGISTRY = 0x00CF4D38,
+    VAR_TEXTURE_METHOD_REGISTRY = 0x00CF5434,
+    VAR_FONTSTRING_METHOD_REGISTRY = 0x00CF5400,
+
+    // Engine Script_* method implementations `Frame::Modern` delegates to
+    // (each `int __fastcall(void *L)`, reading self at stack index 1).
+    // Addresses from the docs/raw_methods.txt catalogue. Show/Hide are
+    // PER-BRANCH (Frame vs Texture vs FontString each register their own
+    // script function with its own object typecheck), so SetShown is
+    // registered per branch with the matching delegates.
+    FUN_SCRIPT_REGION_SETWIDTH = 0x007A1F20,
+    FUN_SCRIPT_REGION_SETHEIGHT = 0x007A2150,
+    FUN_SCRIPT_REGION_GETWIDTH = 0x007A1E00,
+    FUN_SCRIPT_REGION_GETHEIGHT = 0x007A2030,
+    FUN_SCRIPT_FRAME_SHOW = 0x00775750,
+    FUN_SCRIPT_FRAME_HIDE = 0x00775810,
+    FUN_SCRIPT_FRAME_SETMINRESIZE = 0x00776020,
+    FUN_SCRIPT_FRAME_SETMAXRESIZE = 0x007762A0,
+    FUN_SCRIPT_FRAME_GETSCRIPT = 0x00774780,
+    FUN_SCRIPT_FRAME_SETSCRIPT = 0x007748D0,
+    FUN_SCRIPT_TEXTURE_SHOW = 0x0079B770,
+    FUN_SCRIPT_TEXTURE_HIDE = 0x0079B830,
+    FUN_SCRIPT_FONTSTRING_SHOW = 0x0079CDB0,
+    FUN_SCRIPT_FONTSTRING_HIDE = 0x0079CE70,
+
+    // `Script_SetPoint` — the ONE SetPoint implementation, registered in
+    // the Region base table and inherited by every region type. Vanilla's
+    // parser accepts (point, region), (point, region, relPoint[, x, y]),
+    // (point, x, y), and even an explicit nil region — but NOT the bare
+    // one-arg form (`fs:SetPoint("RIGHT")`): a fully-omitted arg 3 is
+    // LUA_TNONE, which fails the string/table/number/nil check and raises
+    // the usage error. Modern clients accept it (anchor to parent at the
+    // same point, zero offsets). `Frame::Modern` co-hooks this and
+    // normalizes the one-arg call to (point, 0, 0) — the vanilla
+    // (point, x, y) form, which is parent-relative and thus exactly the
+    // modern semantic.
+    FUN_SCRIPT_REGION_SETPOINT = 0x007A2540,
+
     // `CGUnit_C::OnAuraAdded` — `__thiscall void(CGUnit *unit, uint32_t
     // slot, uint32_t spellId)` (i.e. `__fastcall(unit /*ecx*/, edx_unused,
     // slot, spellId)`). Fires for EVERY aura that lands on a tracked unit,

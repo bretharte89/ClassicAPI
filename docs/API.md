@@ -130,6 +130,13 @@ build instructions.
   - [Unit token (`focus` / `focustarget`)](#unit-token-focus--focustarget)
   - [Bindings (`FOCUSTARGET` / `TARGETFOCUS`)](#bindings-focustarget--targetfocus)
 
+- [Frame](#frame)
+  - [`region:SetPoint("point")` (one-argument form)](#regionsetpointpoint-one-argument-form)
+  - [`region:SetSize(width, height)` / `region:GetSize()`](#regionsetsizewidth-height--regiongetsize)
+  - [`frame:SetShown(shown)`](#framesetshownshown)
+  - [`frame:SetResizeBounds(minWidth, minHeight [, maxWidth, maxHeight])`](#framesetresizeboundsminwidth-minheight--maxwidth-maxheight)
+  - [`frame:HookScript(scriptType, handler)`](#framehookscriptscripttype-handler)
+
 - [FriendList](#friendlist)
   - [`C_FriendList.SendWhoQueryByName(name)`](#c_friendlistsendwhoquerybynamename)
   - [`C_FriendList.IsWhoQueryPending()`](#c_friendlistiswhoquerypending)
@@ -3039,6 +3046,68 @@ insertion order and addons load after FrameXML. To land inside the
 TARGETING block, the DLL splices the two `<Binding>` entries into the
 engine's `Interface\FrameXML\Bindings.xml` at file-read time via a
 hook on `FUN_FILE_READ` — see [`src/bindings/Inject.cpp`](../src/bindings/Inject.cpp).
+
+## Frame
+
+Modern Region/Frame method backports. ClassicAPI advertises
+`WOW_PROJECT_ID = WOW_PROJECT_CLASSIC`, which steers modern addon ports
+onto their Classic Era code paths — where they also assume Era's
+C-level frame behaviors. This section is that surface. Methods are
+registered on the engine's own per-frame-type method registries
+(`SetSize`/`GetSize` on the Region base, so they resolve on frames,
+buttons, textures and fontstrings alike), and each delegates to the
+engine's own implementations — UI-scale conversion, object resolution
+and type checking are all the engine's code.
+
+### `region:SetPoint("point")` (one-argument form)
+
+Vanilla's `SetPoint` parser accepts every modern call shape —
+`(point, region)`, `(point, region, relativePoint [, x, y])`,
+`(point, x, y)`, even an explicit `nil` region — **except** the bare
+one-argument form, which raises the usage error (a fully-omitted third
+argument fails its type validation). A co-hook on the engine's
+`Script_SetPoint` normalizes `region:SetPoint("RIGHT")` to
+`(point, 0, 0)` — vanilla's parent-relative form, which is exactly the
+modern semantic (anchor to the parent's same point, zero offsets).
+
+### `region:SetSize(width, height)` / `region:GetSize()`
+
+The modern combined setter/getter for `SetWidth`+`SetHeight` /
+`GetWidth`+`GetHeight`. Works on any region type — frames, buttons,
+textures (including engine-created ones like
+`button:GetNormalTexture()`), fontstrings.
+
+### `frame:SetShown(shown)`
+
+`Show()` if `shown` is truthy, `Hide()` otherwise. Registered for
+frames, textures and fontstrings (each branch has its own engine
+Show/Hide implementation).
+
+### `frame:SetResizeBounds(minWidth, minHeight [, maxWidth, maxHeight])`
+
+The modern rename of vanilla's `SetMinResize` / `SetMaxResize` pair.
+The max pair is applied only when both values are given.
+
+### `frame:HookScript(scriptType, handler)`
+
+Vanilla has no `HookScript` at all. This backport chains: the
+previously-set handler runs first, vanilla-style (no arguments — it
+reads the `this`/`event`/`argN` globals like every 1.12 handler), then
+`handler` is invoked **modern-style** with positional arguments:
+`(frame, event, arg1..arg9)` for `OnEvent` scripts and
+`(frame, arg1..arg9)` for everything else. That matches the compat
+convention modern addon ports expect, so handlers written as
+`function(self, ...) ... end` work unmodified. Vanilla-style handlers
+passed to `HookScript` also keep working — the globals are set as
+usual and extra arguments are simply ignored.
+
+```lua
+button:HookScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText("hello")
+    GameTooltip:Show()
+end)
+```
 
 ## FriendList
 
