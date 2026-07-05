@@ -134,6 +134,43 @@ void PushRequirements(void *L, const uint8_t *data) {
     }
 }
 
+// `C_QuestLog.GetNumQuestObjectives(questID)` — the quest's objective
+// count (the length `GetQuestDetails(questID).requirements` would have),
+// read straight from the cache block with zero Lua table/string
+// materialization. Exists so per-step validation loops (guide addons
+// bounds-checking objective indices at load time) stay O(1)-cheap even
+// with a warm quest cache — materializing full detail tables for hundreds
+// of quests inside a login-path loop can exhaust vanilla's fixed Lua
+// memory pool. Returns nil when the quest isn't cached (same contract as
+// GetQuestDetails).
+int __fastcall Script_GetNumQuestObjectives(void *L) {
+    if (!Game::Lua::IsNumber(L, 1)) {
+        Game::Lua::Error(L,
+            "Usage: C_QuestLog.GetNumQuestObjectives(questID)");
+        return 0;
+    }
+    const int questID = static_cast<int>(Game::Lua::ToNumber(L, 1));
+    if (questID <= 0)
+        return 0;
+    const uint8_t *data = Quest::Cache::Peek(static_cast<uint32_t>(questID));
+    if (data == nullptr)
+        return 0;
+
+    int count = 0;
+    auto *npcOrGo = reinterpret_cast<const int32_t *>(
+        data + Quest::Cache::OFF_REQUIRED_NPC_OR_GO);
+    auto *items = reinterpret_cast<const uint32_t *>(
+        data + Quest::Cache::OFF_REQUIRED_ITEM);
+    for (int i = 0; i < Quest::Cache::OBJECTIVE_COUNT; ++i) {
+        if (npcOrGo[i] != 0)
+            ++count;
+        if (items[i] != 0)
+            ++count;
+    }
+    Game::Lua::PushNumber(L, static_cast<double>(count));
+    return 1;
+}
+
 int __fastcall Script_GetQuestDetails(void *L) {
     if (!Game::Lua::IsNumber(L, 1)) {
         Game::Lua::Error(L, "Usage: C_QuestLog.GetQuestDetails(questID)");
@@ -245,6 +282,8 @@ int __fastcall Script_GetQuestDetails(void *L) {
 void RegisterLuaFunctions() {
     Game::Lua::RegisterTableFunction("C_QuestLog", "GetQuestDetails",
                                      &Script_GetQuestDetails);
+    Game::Lua::RegisterTableFunction("C_QuestLog", "GetNumQuestObjectives",
+                                     &Script_GetNumQuestObjectives);
 }
 
 } // namespace

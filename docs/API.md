@@ -291,6 +291,7 @@ build instructions.
   - [`C_QuestLog.IsUnitOnQuest(unit, questID)`](#c_questlogisunitonquestunit-questid)
   - [`C_QuestLog.GetTitleForQuestID(questID)`](#c_questloggettitleforquestidquestid)
   - [`C_QuestLog.GetQuestDetails(questID)`](#c_questloggetquestdetailsquestid)
+  - [`C_QuestLog.GetNumQuestObjectives(questID)`](#c_questloggetnumquestobjectivesquestid)
   - [`C_QuestLog.IsQuestDataCachedByID(questID)`](#c_questlogisquestdatacachedbyidquestid)
   - [`GetQuestLogLeaderBoardID(objectiveIndex [, questIndex])`](#getquestlogleaderboardidobjectiveindex--questindex)
 
@@ -7134,6 +7135,26 @@ Reagents for Reclaimers Inc.  level 40  (no tag)
 
 with `d.choiceItems = {{id=6793, count=1}, {id=6794, count=1}}`,
 `d.rewardMoney = 3500`, `d.rewardMoneyAtMaxLevel = 1920`, etc.
+
+### `C_QuestLog.GetNumQuestObjectives(questID)`
+
+The quest's objective count — exactly the length
+`GetQuestDetails(questID).requirements` would have — read straight from
+the quest cache with **no Lua tables or strings materialized**. Returns
+`nil` when the quest isn't cached (same contract as `GetQuestDetails`).
+
+```lua
+local n = C_QuestLog.GetNumQuestObjectives(1467)   -- 1
+```
+
+Use this instead of `GetQuestDetails` when only the count matters —
+e.g. bounds-checking authored objective indices across every step of a
+guide at load time. `GetQuestDetails` copies the quest's description /
+objectives / completion text into Lua strings and builds ~20 table
+fields per call; harmless one at a time, but a login-path loop over
+hundreds of cached quests can put real pressure on vanilla's
+fixed-size Lua memory pool. This accessor costs a few dozen byte reads
+regardless of cache temperature.
 
 ### `C_QuestLog.IsQuestDataCachedByID(questID)`
 
