@@ -13,11 +13,10 @@
 
 // Modern Region/Frame method backports.
 //
-// ClassicAPI advertises `WOW_PROJECT_ID = WOW_PROJECT_CLASSIC`, which
-// steers modern addon ports onto their Classic Era code paths — where the
-// emulated Lua API lives, but also where they assume Era's C-level frame
-// behaviors. This module supplies the missing ones (found via
-// AI_VoiceOver's Era path, but generic to every port):
+// Modern addon ports routinely call these methods unconditionally —
+// they're the C-level frame surface later clients take for granted.
+// This module supplies the ones vanilla lacks (surfaced via
+// AI_VoiceOver's modern code path, but generic to every port):
 //
 //   - `region:SetPoint("RIGHT")` — the one-arg form. Vanilla's parser
 //     accepts every other modern form but errors when arg 3 is fully

@@ -3049,11 +3049,11 @@ hook on `FUN_FILE_READ` — see [`src/bindings/Inject.cpp`](../src/bindings/Inje
 
 ## Frame
 
-Modern Region/Frame method backports. ClassicAPI advertises
-`WOW_PROJECT_ID = WOW_PROJECT_CLASSIC`, which steers modern addon ports
-onto their Classic Era code paths — where they also assume Era's
-C-level frame behaviors. This section is that surface. Methods are
-registered on the engine's own per-frame-type method registries
+Modern Region/Frame method backports. Modern addon ports routinely
+call these methods unconditionally — they're the C-level frame surface
+later clients take for granted. This section is that surface on 1.12.
+Methods are registered on the engine's own per-frame-type method
+registries
 (`SetSize`/`GetSize` on the Region base, so they resolve on frames,
 buttons, textures and fontstrings alike), and each delegates to the
 engine's own implementations — UI-scale conversion, object resolution
