@@ -221,7 +221,7 @@ const Game::Lua::FrameMethodEntry g_frameMethods[] = {
     {"SetShown", &Script_SetShown<Offsets::FUN_SCRIPT_FRAME_SHOW,
                                   Offsets::FUN_SCRIPT_FRAME_HIDE>},
     {"SetResizeBounds", &Script_SetResizeBounds},
-    {"HookScript", &Script_HookScript},
+    // {"HookScript", &Script_HookScript},
 };
 
 const Game::Lua::FrameMethodEntry g_textureMethods[] = {
