@@ -265,6 +265,7 @@ build instructions.
 
 - [Map](#map)
   - [`C_Map.GetBestMapForUnit(unitToken)`](#c_mapgetbestmapforunitunittoken)
+  - [`C_Map.GetMapOverlays([areaID])`](#c_mapgetmapoverlaysareaid)
 
 - [MerchantFrame](#merchantframe)
   - [`C_MerchantFrame.GetItemInfo(slot)`](#c_merchantframegetiteminfoslot)
@@ -6350,7 +6351,71 @@ UI map ID.** Stormwind City in this backport is `1519`, not retail's
 `84`. Addons that hardcode modern UI map IDs need a translation table
 (or, simpler: compare against IDs this same function produces).
 
-## MerchantFrame
+### `C_Map.GetMapOverlays([areaID])`
+
+ClassicAPI extension. Returns every `WorldMapOverlay.dbc` entry for a
+zone — **explored or not** — with the tile grid fully resolved. The
+engine's own `GetNumMapOverlays` / `GetMapOverlayInfo` only expose
+overlays the character has discovered (the exploration gate is a
+server-fed list), which is why map-reveal addons traditionally ship
+hand-measured overlay tables; this replaces those with a live DBC
+read that works for every zone on any client.
+
+With no argument, returns the overlays of the world map's currently
+**viewed** zone (the same continent/zone selection `GetMapInfo`
+resolves — so it drops straight into a `WorldMapFrame_Update` hook).
+With a numeric `areaID` (`AreaTable.dbc` id, the same identity
+`C_Map.GetBestMapForUnit` returns), returns that zone's overlays from
+anywhere.
+
+Each overlay table:
+
+| field | meaning |
+|---|---|
+| `textureName` | bare DBC name (`"GOLDSHIRE"`) |
+| `texturePath` | `Interface\WorldMap\<dir>\GOLDSHIRE` (engine format) |
+| `textureWidth` / `textureHeight` | the DBC placement rect |
+| `offsetX` / `offsetY` | placement on the zone canvas |
+| `mapPointX` / `mapPointY` | DBC map-point fields |
+| `tileCols` / `tileRows` / `upscaled` | the **resolved** tile grid |
+| `tiles` | ready-to-draw tile array (below) |
+
+Each `tiles` entry: `file` (texture path including the tile number,
+`SetTexture`-ready), `width` / `height` (draw size in map pixels),
+`texCoordX` / `texCoordY` (right/bottom texcoords), `offsetX` /
+`offsetY` (absolute canvas position). Drawing an overlay is a dumb
+loop:
+
+```lua
+for _, ov in ipairs(C_Map.GetMapOverlays()) do
+    for _, t in ipairs(ov.tiles) do
+        local tex = pool:Acquire()
+        tex:SetTexture(t.file)
+        tex:SetWidth(t.width)  tex:SetHeight(t.height)
+        tex:SetTexCoord(0, t.texCoordX, 0, t.texCoordY)
+        tex:SetPoint("TOPLEFT", WorldMapDetailFrame, "TOPLEFT", t.offsetX, -t.offsetY)
+        tex:Show()
+    end
+end
+```
+
+> **Why `tiles` exists (don't derive the grid yourself).** The
+> canonical layout is `ceil(w/256) × ceil(h/256)` tiles numbered
+> row-major, and on stock 1.12 data that's always right — but Octo's
+> shipped data breaks it in three distinct ways: DBC rects that round
+> away a narrow sliver column (Icepoint's Kaneq'nuun has a real 8px
+> third column; trusting `ceil` shears the whole overlay into
+> misplaced strips), unrelated foreign tiles appended to an overlay's
+> number sequence (drawing by file count scatters duplicate landmass),
+> and same-rect re-exports at higher resolution (Stonetalon's
+> Windshear Crag: 4 real tiles for a 1-tile rect, all of which must be
+> kept and scaled). ClassicAPI disambiguates per overlay from the
+> actual BLP header dimensions via the engine's own VFS (a sweep of
+> all 707 overlays found 108 with such art/DBC mismatches), caches the
+> result for the session, and hands back tiles that are simply
+> correct. `textureWidth`/`textureHeight` remain the raw DBC rect —
+> reliable for placement; it's only the tile count they imply that
+> lies.
 
 Backports the six `C_MerchantFrame.*` calls retail addons use when
 interacting with a vendor. All entry points read the engine's

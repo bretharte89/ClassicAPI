@@ -1125,6 +1125,55 @@ enum Offsets {
     FUN_SCRIPT_FONTSTRING_SHOW = 0x0079CDB0,
     FUN_SCRIPT_FONTSTRING_HIDE = 0x0079CE70,
 
+    // ---- World map overlay data (WorldMapOverlay.dbc + WorldMapArea.dbc)
+    // Backs `C_Map.GetMapOverlays`. Instance VAs per docs/DBCs.md;
+    // schemas verified against the extracted DBCs AND the engine's own
+    // reader `Script_GetMapOverlayInfo` (0x004A8A00), which reads the
+    // same fields for its 7 returns.
+    //
+    // WorldMapArea.dbc record (8 fields, 0x20 bytes):
+    //   {ID@+0, mapID@+4, areaID@+8 (AreaTable, 0 for continent rows),
+    //    name@+0xC (char*, the map directory name GetMapInfo returns),
+    //    locLeft/locRight/locTop/locBottom floats}
+    VAR_WORLDMAP_AREA_RECORDS = 0x00C0D5BC,
+    VAR_WORLDMAP_AREA_COUNT = 0x00C0D5C0,
+    OFF_WMA_AREA_ID = 0x08,
+    OFF_WMA_NAME = 0x0C,
+
+    // WorldMapOverlay.dbc record (17 fields, 0x44 bytes):
+    //   {ID@+0, worldMapAreaID@+4 (-> WorldMapArea row),
+    //    areaID[4]@+8..+0x14 (AreaTable ids the overlay reveals),
+    //    mapPointX@+0x18, mapPointY@+0x1C, textureName@+0x20 (char*,
+    //    bare name), textureWidth@+0x24, textureHeight@+0x28,
+    //    offsetX@+0x2C, offsetY@+0x30, hitRect@+0x34..+0x40}
+    // The engine's Lua surface only exposes EXPLORED overlays: the
+    // discovered-overlay ID list at 0x00B6E630 (count 0x00B6E6B4) gates
+    // Script_GetMapOverlayInfo. Reading the DBC directly bypasses the
+    // exploration gate — every overlay of a zone, explored or not.
+    VAR_WORLDMAP_OVERLAY_RECORDS = 0x00C0D594,
+    VAR_WORLDMAP_OVERLAY_COUNT = 0x00C0D598,
+    OFF_WMO_WORLDMAP_AREA = 0x04,
+    OFF_WMO_MAP_POINT_X = 0x18,
+    OFF_WMO_MAP_POINT_Y = 0x1C,
+    OFF_WMO_TEXTURE_NAME = 0x20,
+    OFF_WMO_TEXTURE_WIDTH = 0x24,
+    OFF_WMO_TEXTURE_HEIGHT = 0x28,
+    OFF_WMO_OFFSET_X = 0x2C,
+    OFF_WMO_OFFSET_Y = 0x30,
+
+    // Current world-map view selection — the globals the engine's
+    // current-map-name resolver (FUN_004a6cf0, behind GetMapInfo) reads:
+    // continent index, zone index (-1 = whole continent), the default
+    // WorldMapArea row used when no continent is selected, and the
+    // per-continent data blob (base ptr; stride 0x10024 per continent,
+    // continent's own WMA row at +0x04, per-zone WMA row array ptr at
+    // +0x10).
+    VAR_WORLDMAP_CONTINENT_INDEX = 0x0084506C,
+    VAR_WORLDMAP_ZONE_INDEX = 0x00845070,
+    VAR_WORLDMAP_DEFAULT_AREA_ROW = 0x00845074,
+    VAR_WORLDMAP_CONTINENT_DATA = 0x00B6E668,
+    WORLDMAP_CONTINENT_STRIDE = 0x10024,
+
     // `Script_SetPoint` — the ONE SetPoint implementation, registered in
     // the Region base table and inherited by every region type. Vanilla's
     // parser accepts (point, region), (point, region, relPoint[, x, y]),
