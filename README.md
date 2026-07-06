@@ -33,6 +33,7 @@ Full per-function reference: **[docs/API.md](docs/API.md)**.
 | [Expansion](docs/API.md#expansion) | `ClassicExpansionAtLeast`, `ClassicExpansionAtMost`, `GetClassicExpansionLevel` |
 | [Faction](docs/API.md#faction) | `C_Reputation.GetFactionDataByIndex`, `C_Reputation.GetFactionStandings`, `C_Reputation.GetLastStandingChange`, `C_Reputation.GetWatchedFactionData`, `C_Reputation.SetWatchedFactionByID`, `GetFactionIDByIndex`, `GetFactionInfoByID`, `GetFactionParentID` |
 | [Focus](docs/API.md#focus) | `ClearFocus`, `FocusUnit` |
+| [Frame](docs/API.md#frame) | `region:SetPoint("point")` (one-arg form), `region:SetSize`, `region:GetSize`, `frame:SetShown`, `frame:SetResizeBounds`, `frame:HookScript` |
 | [FriendList](docs/API.md#friendlist) | `C_FriendList.IsWhoQueryPending`, `C_FriendList.SendWhoQueryByName` |
 | [GameObject](docs/API.md#gameobject) | `C_GameObjectInfo.GetGameObjectInfoByID`, `C_GameObjectInfo.RequestLoadGameObjectByID` |
 | [Gossip](docs/API.md#gossip) | `C_GossipInfo.CloseGossip`, `C_GossipInfo.GetActiveQuests`, `C_GossipInfo.GetAvailableQuests`, `C_GossipInfo.GetNumActiveQuests`, `C_GossipInfo.GetNumAvailableQuests`, `C_GossipInfo.GetNumOptions`, `C_GossipInfo.GetOptions`, `C_GossipInfo.GetText`, `C_GossipInfo.SelectActiveQuest`, `C_GossipInfo.SelectAvailableQuest`, `C_GossipInfo.SelectOption`, `C_GossipInfo.SelectOptionByIndex` |
@@ -44,7 +45,7 @@ Full per-function reference: **[docs/API.md](docs/API.md)**.
 | [Loot](docs/API.md#loot) | `C_Loot.GetNearbyLootableUnits`, `C_Loot.GetLastScanResults`, `C_Loot.IsScanInProgress`, `C_Loot.LootUnit`, `C_Loot.LootUnitItem`, `C_Loot.ScanNearbyLoot` |
 | [Macros](docs/API.md#macros) | `GetLooseMacroIcons`, `GetLooseMacroItemIcons`, `GetMacroIcons`, `GetMacroItemIcons`, `GetMacroSpell` |
 | [Mail](docs/API.md#mail) | `GetInboxItemLink`, `GetSendMailItemLink` |
-| [Map](docs/API.md#map) | `C_Map.GetBestMapForUnit` |
+| [Map](docs/API.md#map) | `C_Map.GetBestMapForUnit`, `C_Map.GetMapOverlays` |
 | [MerchantFrame](docs/API.md#merchantframe) | `C_MerchantFrame.GetBuybackItemID`, `C_MerchantFrame.GetItemInfo`, `C_MerchantFrame.GetNumJunkItems`, `C_MerchantFrame.IsMerchantItemRefundable`, `C_MerchantFrame.IsSellAllJunkEnabled`, `C_MerchantFrame.SellAllJunkItems` |
 | [NamePlate](docs/API.md#nameplate) | `C_NamePlate.GetNamePlateForGUID`, `C_NamePlate.GetNamePlateForUnit`, `C_NamePlate.GetNamePlateGUIDs`, `C_NamePlate.GetNamePlates` |
 | [NameCache](docs/API.md#namecache) | `C_PlayerCache.GetPlayerInfoByName`, `C_PlayerCache.IsEnabled`, `C_PlayerCache.IsScanEnabled`, `C_PlayerCache.RememberPlayer`, `C_PlayerCache.SetEnabled`, `C_PlayerCache.SetScanEnabled`, `C_PlayerInfo.GUIDIsCreature`, `C_PlayerInfo.GUIDIsGameObject`, `C_PlayerInfo.GUIDIsPet`, `C_PlayerInfo.GUIDIsPlayer`, `GetPlayerInfoByGUID`, `UnitNameFromGUID` |
@@ -58,7 +59,7 @@ Full per-function reference: **[docs/API.md](docs/API.md)**.
 | [Time](docs/API.md#time) | `C_DateAndTime.AdjustTimeByDays`, `C_DateAndTime.AdjustTimeByMinutes`, `C_DateAndTime.CompareCalendarTime`, `C_DateAndTime.GetCalendarTimeFromEpoch`, `C_DateAndTime.GetCurrentCalendarTime`, `C_DateAndTime.GetSecondsUntilDailyReset`, `C_DateAndTime.GetServerTimeLocal`, `C_Timer.After`, `C_Timer.NewTicker`, `C_Timer.NewTimer`, `GetServerTime` |
 | [UIColor](docs/API.md#uicolor) | `C_UIColor.GetColors` |
 | [Unit](docs/API.md#unit) | `GetUnitSpeed`, `UnitClassBase`, `UnitGUID`, `UnitInRange`, `UnitIsAFK`, `UnitIsDND`, `UnitIsFeignDeath`, `UnitIsInMyGuild`, `UnitIsPossessed`, `UnitPower`, `UnitPowerMax`, `UnitPowerType`, `UnitRaceBase`, `UnitStandState`, `UnitSubName`, `UnitTokenFromGUID` |
-| [UnitAuras](docs/API.md#unitauras) | `C_UnitAuras.GetAuraDataByIndex`, `C_UnitAuras.GetAuraDataBySpellName`, `C_UnitAuras.GetAuraDispelTypeColor`, `C_UnitAuras.GetBuffDataByIndex`, `C_UnitAuras.GetDebuffDataByIndex`, `C_UnitAuras.GetPlayerAuraBySpellID`, `C_UnitAuras.GetUnitAuraBySpellID`, `C_UnitAuras.GetUnitAuras` |
+| [UnitAuras](docs/API.md#unitauras) | `C_UnitAuras.GetAuraDataByIndex`, `C_UnitAuras.GetAuraDataBySpellName`, `C_UnitAuras.GetAuraDispelTypeColor`, `C_UnitAuras.GetBuffDataByIndex`, `C_UnitAuras.GetDebuffDataByIndex`, `C_UnitAuras.GetPlayerAuraBySpellID`, `C_UnitAuras.GetUnitAuraBySpellID`, `C_UnitAuras.GetUnitAuras`, `C_UnitAuras.RegisterComboDuration` |
 | [VoiceChat](docs/API.md#voicechat) | `C_VoiceChat.GetTtsVoices`, `C_VoiceChat.GetRemoteTtsVoices`, `C_VoiceChat.SpeakText`, `C_VoiceChat.StopSpeakingText`, `C_TTSSettings.GetSpeechRate`, `C_TTSSettings.GetSpeechVolume`, `C_TTSSettings.GetSpeechVoiceID`, `C_TTSSettings.GetVoiceOptionName`, `C_TTSSettings.SetSpeechRate`, `C_TTSSettings.SetSpeechVolume`, `C_TTSSettings.SetVoiceOption`, `C_TTSSettings.SetVoiceOptionByName`, `C_TTSSettings.SetDefaultSettings`, `C_TTSSettings.RefreshVoices` |
 
 ### GlueXML calls
