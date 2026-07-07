@@ -4601,6 +4601,29 @@ enum Offsets {
     SPELL_AURA_MOD_SHAPESHIFT = 36,
     SPELL_AURA_MOUNTED = 78,
 
+    // Control-loss aura effect types (EffectApplyAuraName values), used by
+    // C_LossOfControl to classify a debuff. Values are authoritative from the
+    // Turtle server's indexed SPELL_AURA proc-handler table (SharedDefines).
+    SPELL_AURA_MOD_POSSESS = 2,
+    SPELL_AURA_MOD_CONFUSE = 5,
+    SPELL_AURA_MOD_CHARM = 6,
+    SPELL_AURA_MOD_FEAR = 7,
+    SPELL_AURA_MOD_STUN = 12,
+    SPELL_AURA_MOD_PACIFY = 25,
+    SPELL_AURA_MOD_ROOT = 26,
+    SPELL_AURA_MOD_SILENCE = 27,
+    SPELL_AURA_MOD_PACIFY_SILENCE = 60,
+    SPELL_AURA_MOD_DISARM = 67,
+
+    // SMSG_SPELL_COOLDOWN (0x134) handler, registered by the spell-opcode
+    // boot registrar FUN_006e7150 exactly like the failure/channel handlers
+    // Spell::Cast co-hooks — same `int __stdcall(uint32_t *opCode,
+    // CDataStore *packet)` shape. Body: GUID(u64) then (spellID, durationMs)
+    // u32 pairs. A player-GUID packet carrying >=2 spells that all share one
+    // duration is a school-interrupt lockout (Player::ProhibitSpellSchool is
+    // the only sender of that shape); see src/lossofcontrol/Info.cpp.
+    FUN_SPELL_COOLDOWN_HANDLER = 0x006E9460,
+
     // Gossip menu data. Populated by the SMSG_GOSSIP_MESSAGE packet
     // handler at 0x004E26E0 and reset by FUN_004E26A0 each time a new
     // gossip window opens. Two parallel storage arrays:

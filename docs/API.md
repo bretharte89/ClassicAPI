@@ -253,6 +253,11 @@ build instructions.
   - [`C_Loot.IsScanInProgress()`](#c_lootisscaninprogress)
   - [`C_Loot.GetLastScanResults()`](#c_lootgetlastscanresults)
 
+- [LossOfControl](#lossofcontrol)
+  - [`C_LossOfControl.GetActiveLossOfControlDataCount()`](#c_lossofcontrolgetactivelossofcontroldatacount)
+  - [`C_LossOfControl.GetActiveLossOfControlData(index)`](#c_lossofcontrolgetactivelossofcontroldataindex)
+  - [`LOSS_OF_CONTROL_ADDED` / `LOSS_OF_CONTROL_UPDATE` events](#loss_of_control_added--loss_of_control_update-events)
+
 - [Macros](#macros)
   - [Numeric spellIDs in `/cast` and `CastSpellByName`](#numeric-spellids-in-cast-and-castspellbyname)
   - [`CastSpellNoToggle` as a macro cast line](#castspellnotoggle-as-a-macro-cast-line)
@@ -6079,6 +6084,75 @@ tooltip display, extract the payload form via
 `string.match(link, "|H(item:[^|]+)|h")` — vanilla's `SetHyperlink`
 requires the literal `"item:"` prefix and rejects full `|cff...|Hitem...|h`
 input.
+
+## LossOfControl
+
+Backports `C_LossOfControl` — the active crowd-control / interrupt effects on
+the **local player**. Vanilla has no such aggregation layer (it's a Mists-era
+addition), so it's synthesized: CC types from the player's debuffs, and the
+school-interrupt lockout from the `SMSG_SPELL_COOLDOWN` the server sends on a
+Counterspell / Kick.
+
+### `C_LossOfControl.GetActiveLossOfControlDataCount()`
+
+Returns the number of active loss-of-control effects on the player (`0` when
+none).
+
+### `C_LossOfControl.GetActiveLossOfControlData(index)`
+
+Returns a `LossOfControlData` table for the `index`-th active effect (1-based,
+up to the count above), or `nil` if the index is out of range.
+
+```lua
+for i = 1, C_LossOfControl.GetActiveLossOfControlDataCount() do
+    local d = C_LossOfControl.GetActiveLossOfControlData(i)
+    print(d.locType, d.displayText, d.timeRemaining)
+end
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `locType` | string | `"STUN"`, `"FEAR"`, `"ROOT"`, `"CONFUSE"`, `"CHARM"`, `"POSSESS"`, `"SILENCE"`, `"PACIFY"`, `"PACIFYSILENCE"`, `"DISARM"`, or `"SCHOOL_INTERRUPT"`. |
+| `spellID` | number | The spell causing the effect. `0` for `SCHOOL_INTERRUPT` (the interrupting spell isn't in the lockout packet). |
+| `displayText` | string | Effect name — the spell name for CC, `"Interrupted"` for `SCHOOL_INTERRUPT`. |
+| `iconTexture` | string | The spell's icon path (vanilla has no FileDataIDs; the path is the functional equivalent). `""` for `SCHOOL_INTERRUPT`. |
+| `startTime` | number? | `GetTime()`-epoch seconds. Present for `SCHOOL_INTERRUPT` and for CC whose applying cast ClassicAPI observed; `nil` otherwise. |
+| `timeRemaining` | number? | Seconds remaining. |
+| `duration` | number? | Effect duration, in seconds. |
+| `lockoutSchool` | number | The locked spell-school mask for `SCHOOL_INTERRUPT` (feed to `C_Spell.GetSchoolString` for the name); `0` for CC effects. |
+| `priority` | number | Always `0` — no vanilla equivalent. |
+| `displayType` | number | Always `2` (show for the effect's full duration). |
+
+Fidelity vs. retail:
+
+- **`SCHOOL_INTERRUPT`** is derived from the server's own lockout packet
+  (`Player::ProhibitSpellSchool` sends a single `SMSG_SPELL_COOLDOWN` listing
+  every spell of the interrupted school at one uniform duration), so the school
+  and duration are authoritative. The interrupting spell itself isn't
+  transmitted, hence `spellID = 0` and `displayText = "Interrupted"`.
+- **CC timing** is best-effort — `startTime` / `timeRemaining` / `duration` are
+  filled when ClassicAPI observed the cast that applied the aura (the
+  `Aura::Source` cache) and are `nil` otherwise. The fields are nullable in the
+  modern contract.
+- **`auraInstanceID`** is omitted (`nil`) — a Dragonflight concept with no
+  vanilla equivalent.
+
+### `LOSS_OF_CONTROL_ADDED` / `LOSS_OF_CONTROL_UPDATE` events
+
+Fire as loss-of-control effects change, so a UI can react without polling.
+Register like any engine event
+(`frame:RegisterEvent("LOSS_OF_CONTROL_ADDED")`).
+
+| Event | Args | When |
+|---|---|---|
+| `LOSS_OF_CONTROL_ADDED` | `eventIndex` (number) | A new effect was applied — `eventIndex` is its 1-based index for `GetActiveLossOfControlData`. |
+| `LOSS_OF_CONTROL_UPDATE` | *(none)* | The active set changed — an effect was added, fell off, or expired. Re-scan with `GetActiveLossOfControlData`. |
+
+Detection is a per-frame diff of the active set (effect *expiry* has no engine
+packet to hook), so events land within a frame of the change and coalesce
+multiple simultaneous changes into a single `LOSS_OF_CONTROL_UPDATE`. A
+counterspelled cast, for instance, fires two `ADDED` (the school lockout and,
+with Improved Counterspell, the silence) then an `UPDATE` as each expires.
 
 ## Macros
 
