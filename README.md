@@ -121,6 +121,8 @@ when launching with `-console`), not as Lua functions. See the
 | `HEARTHSTONE_BOUND` | *(none)* |
 | `ITEM_DATA_LOAD_RESULT` | `itemID, success` |
 | `LOOT_SCAN_COMPLETED` | *(none)* |
+| `LOSS_OF_CONTROL_ADDED` | `eventIndex` |
+| `LOSS_OF_CONTROL_UPDATE` | *(none)* |
 | `MODIFIER_STATE_CHANGED` | `keyName, down` |
 | `NAME_PLATE_CREATED` | `nameplateFrame` |
 | `NAME_PLATE_UNIT_ADDED` | `unitToken` ("nameplateN") |

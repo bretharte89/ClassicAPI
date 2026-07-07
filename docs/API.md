@@ -100,6 +100,7 @@ build instructions.
   - [`EQUIPMENT_SWAP_FINISHED` event](#equipment_swap_finished-event)
   - [`FACTION_STANDING_CHANGED` event](#faction_standing_changed-event)
   - [`LOOT_SCAN_COMPLETED` event](#loot_scan_completed-event)
+  - [`LOSS_OF_CONTROL_ADDED` / `LOSS_OF_CONTROL_UPDATE` events](#loss_of_control_added--loss_of_control_update-events)
   - [`MODIFIER_STATE_CHANGED` event](#modifier_state_changed-event)
   - [`NAME_PLATE_CREATED` / `NAME_PLATE_UNIT_ADDED` / `NAME_PLATE_UNIT_REMOVED` events](#name_plate_created--name_plate_unit_added--name_plate_unit_removed-events)
   - [`PLAYER_FOCUS_CHANGED` event](#player_focus_changed-event)
@@ -256,7 +257,6 @@ build instructions.
 - [LossOfControl](#lossofcontrol)
   - [`C_LossOfControl.GetActiveLossOfControlDataCount()`](#c_lossofcontrolgetactivelossofcontroldatacount)
   - [`C_LossOfControl.GetActiveLossOfControlData(index)`](#c_lossofcontrolgetactivelossofcontroldataindex)
-  - [`LOSS_OF_CONTROL_ADDED` / `LOSS_OF_CONTROL_UPDATE` events](#loss_of_control_added--loss_of_control_update-events)
 
 - [Macros](#macros)
   - [Numeric spellIDs in `/cast` and `CastSpellByName`](#numeric-spellids-in-cast-and-castspellbyname)
@@ -2311,6 +2311,24 @@ outcome — even if every corpse timed out and the results table is
 empty. Doesn't fire spuriously for scans triggered by other addons
 (only one scan runs at a time; concurrent attempts return `false`
 from `ScanNearbyLoot`). See the Loot section for the full scan flow.
+
+### `LOSS_OF_CONTROL_ADDED` / `LOSS_OF_CONTROL_UPDATE` events
+
+Fire as loss-of-control effects change, so a UI can react without polling.
+Register like any engine event
+(`frame:RegisterEvent("LOSS_OF_CONTROL_ADDED")`).
+
+| Event | Args | When |
+|---|---|---|
+| `LOSS_OF_CONTROL_ADDED` | `eventIndex` (number) | A new effect was applied — `eventIndex` is its 1-based index for [`C_LossOfControl.GetActiveLossOfControlData`](#c_lossofcontrolgetactivelossofcontroldataindex). |
+| `LOSS_OF_CONTROL_UPDATE` | *(none)* | The active set changed — an effect was added, fell off, or expired. Re-scan with `GetActiveLossOfControlData`. |
+
+Detection is a per-frame diff of the active set (effect *expiry* has no engine
+packet to hook), so events land within a frame of the change and coalesce
+multiple simultaneous changes into a single `LOSS_OF_CONTROL_UPDATE`. A
+counterspelled cast, for instance, fires two `ADDED` (the school lockout and,
+with Improved Counterspell, the silence) then an `UPDATE` as each expires.
+See the [LossOfControl](#lossofcontrol) section for the effect data.
 
 ### `MODIFIER_STATE_CHANGED` event
 
@@ -6137,22 +6155,8 @@ Fidelity vs. retail:
 - **`auraInstanceID`** is omitted (`nil`) — a Dragonflight concept with no
   vanilla equivalent.
 
-### `LOSS_OF_CONTROL_ADDED` / `LOSS_OF_CONTROL_UPDATE` events
-
-Fire as loss-of-control effects change, so a UI can react without polling.
-Register like any engine event
-(`frame:RegisterEvent("LOSS_OF_CONTROL_ADDED")`).
-
-| Event | Args | When |
-|---|---|---|
-| `LOSS_OF_CONTROL_ADDED` | `eventIndex` (number) | A new effect was applied — `eventIndex` is its 1-based index for `GetActiveLossOfControlData`. |
-| `LOSS_OF_CONTROL_UPDATE` | *(none)* | The active set changed — an effect was added, fell off, or expired. Re-scan with `GetActiveLossOfControlData`. |
-
-Detection is a per-frame diff of the active set (effect *expiry* has no engine
-packet to hook), so events land within a frame of the change and coalesce
-multiple simultaneous changes into a single `LOSS_OF_CONTROL_UPDATE`. A
-counterspelled cast, for instance, fires two `ADDED` (the school lockout and,
-with Improved Counterspell, the silence) then an `UPDATE` as each expires.
+The `LOSS_OF_CONTROL_ADDED` / `LOSS_OF_CONTROL_UPDATE` events fire as these
+effects change — see [Events](#loss_of_control_added--loss_of_control_update-events).
 
 ## Macros
 
