@@ -419,6 +419,9 @@ build instructions.
   - [`C_VoiceChat.GetTtsVoices()` / `C_VoiceChat.GetRemoteTtsVoices()`](#c_voicechatgetttsvoices--c_voicechatgetremotettsvoices)
   - [`C_VoiceChat.SpeakText(voiceID, text [, destination, rate, volume])`](#c_voicechatspeaktextvoiceid-text--destination-rate-volume)
   - [`C_VoiceChat.StopSpeakingText()`](#c_voicechatstopspeakingtext)
+
+- [XMLUtil](#xmlutil)
+  - [`C_XMLUtil.GetTemplates()`](#c_xmlutilgettemplates)
   - [`C_TTSSettings` — getters & setters](#c_ttssettings--getters--setters)
   - [TTS events](#tts-events)
   - [TTS CVars](#tts-cvars)
@@ -10196,3 +10199,32 @@ validation:
 | `ttsVoice` | `0` | `[0, voiceCount-1]` | `GetSpeechVoiceID` / `SetVoiceOption` |
 | `ttsSpeed` | `0` | `[-10, 10]` | `GetSpeechRate` / `SetSpeechRate` |
 | `ttsVolume` | `100` | `[0, 100]` | `GetSpeechVolume` / `SetSpeechVolume` |
+
+## XMLUtil
+
+### `C_XMLUtil.GetTemplates()`
+
+Returns an array of every registered **virtual XML template** — the
+`virtual="true"` frames that `inherits=` targets — one entry per template:
+
+```lua
+for _, t in ipairs(C_XMLUtil.GetTemplates()) do
+    print(t.name, t.type)   -- e.g.  "UIPanelButtonTemplate"  "Button"
+end
+```
+
+Each entry is `{ name = <string>, type = <frameType> }`, where `type` is the
+XML element tag the template was declared with (`"Frame"`, `"Button"`,
+`"CheckButton"`, `"StatusBar"`, …).
+
+The list is read straight from the engine's virtual-template registry — the
+same store the XML loader fills for `inherits=` — so it covers every template
+currently loaded from **both** Blizzard FrameXML and addon `.xml` files, and is
+rebuilt on `/reload`. Font templates live in a separate registry and are not
+included (matching retail, where `GetTemplates` returns frame templates).
+Returns an empty table if no template has registered yet.
+
+> **Note (vanilla vs. retail):** retail's `XMLTemplateListInfo` carries only
+> the `name` and `type` fields, both provided here. There's no filtering —
+> every virtual template is returned, in hash-table order (not load or
+> alphabetical order).

@@ -4893,4 +4893,30 @@ enum Offsets {
     // matching what `FUN_00494B60` and the trade-attached paths pass
     // when re-resolving the cursor GUID to a `CGItem *`.
     FUN_OBJECT_FROM_GUID = 0x00468460,
+
+    // Virtual XML-template registry (a Storm hash table) — the store that
+    // backs `inherits=` and `C_XMLUtil.GetTemplates`. The XML parser
+    // (`FUN_006ede10`) registers every `virtual="true"` frame into it via
+    // `FUN_006ee500`; the inherits resolver reads it via `FUN_006ee6f0`.
+    // Both operate on these globals, so it's the authoritative template list.
+    // See src/xml/Templates.cpp.
+    //
+    // VAR_XML_TEMPLATE_TABLE holds a POINTER to the bucket array (0 / the
+    // array unallocated) and VAR_XML_TEMPLATE_MASK the bucket-count mask;
+    // mask == 0xFFFFFFFF means no template has ever registered (walk = empty).
+    VAR_XML_TEMPLATE_TABLE = 0x00CEEA1C,
+    VAR_XML_TEMPLATE_MASK = 0x00CEEA24,
+    // Bucket struct (0xC bytes): { linkOffset@+0x0, ?@+0x4, chainHead@+0x8 }.
+    // A node's next pointer is at `*(node + linkOffset + 4)`; the tail
+    // sentinel has its low bit set (chain ends on `(ptr & 1) != 0`).
+    XML_TEMPLATE_BUCKET_STRIDE = 0xC,
+    OFF_XML_TEMPLATE_BUCKET_LINKOFF = 0x0,
+    OFF_XML_TEMPLATE_BUCKET_HEAD = 0x8,
+    // Registry node payload: template name string @+0x14, parsed definition
+    // XML node @+0x18 (hash @+0x0, virtual flag @+0x1C — unused here).
+    OFF_XML_TEMPLATE_NODE_NAME = 0x14,
+    OFF_XML_TEMPLATE_NODE_DEF = 0x18,
+    // Parsed XML element node: its tag-name string ("Frame" / "Button" /
+    // "CheckButton" / …) lives at +0x8 — this is the frame "type".
+    OFF_XML_NODE_TAG = 0x8,
 };
