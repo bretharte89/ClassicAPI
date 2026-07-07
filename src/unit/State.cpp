@@ -21,6 +21,7 @@
 #include "Offsets.h"
 #include "aura/Data.h"
 #include "spell/Lookup.h"
+#include "unit/Identity.h"
 
 #include <cstdint>
 
@@ -28,24 +29,10 @@ namespace Unit::State {
 
 namespace {
 
-using ResolveUnitToken_t = void *(__fastcall *)(const char *token);
 using CancelAuraSend_t = void(__fastcall *)(int spellID);
 
-const uint8_t *Player() {
-    auto fn = reinterpret_cast<ResolveUnitToken_t>(Offsets::FUN_RESOLVE_UNIT_TOKEN);
-    return static_cast<const uint8_t *>(fn("player"));
-}
-
-const uint8_t *PlayerDescriptor() {
-    auto *player = Player();
-    if (player == nullptr)
-        return nullptr;
-    return *reinterpret_cast<const uint8_t *const *>(
-        player + Offsets::OFF_UNIT_DESCRIPTOR);
-}
-
 uint32_t PlayerMovementFlags() {
-    auto *player = Player();
+    auto *player = Unit::Identity::PlayerObject();
     if (player == nullptr)
         return 0;
     return *reinterpret_cast<const uint32_t *>(
@@ -63,7 +50,7 @@ uint32_t MountDisplayID(const uint8_t *desc) {
 // `UNIT_FIELD_MOUNTDISPLAYID` from the descriptor; non-zero means
 // the engine is rendering a mount under the player.
 int __fastcall Script_IsMounted(void *L) {
-    auto *desc = PlayerDescriptor();
+    auto *desc = Unit::Identity::PlayerDescriptor();
     Game::Lua::PushBool(L, MountDisplayID(desc) != 0);
     return 1;
 }
@@ -80,11 +67,11 @@ int __fastcall Script_IsMounted(void *L) {
 // No-op if the player isn't mounted (early-outs on the
 // `UNIT_FIELD_MOUNTDISPLAYID` check before walking auras).
 int __fastcall Script_Dismount(void *L) {
-    auto *desc = PlayerDescriptor();
+    auto *desc = Unit::Identity::PlayerDescriptor();
     if (MountDisplayID(desc) == 0)
         return 0;
 
-    auto *player = Player();
+    auto *player = Unit::Identity::PlayerObject();
     if (player == nullptr)
         return 0;
 
@@ -117,7 +104,7 @@ int __fastcall Script_Dismount(void *L) {
 // `OFF_PLAYER_FIELD_VIS_BYTES` in Offsets.h for the full bit map
 // and known limitations (untested for shapeshift forms).
 int __fastcall Script_IsStealthed(void *L) {
-    auto *desc = PlayerDescriptor();
+    auto *desc = Unit::Identity::PlayerDescriptor();
     bool stealthed = false;
     if (desc != nullptr) {
         const uint32_t visBytes = *reinterpret_cast<const uint32_t *>(
@@ -177,12 +164,12 @@ int __fastcall Script_IsSwimming(void *L) {
 // vanilla's summoning ritual has no UI surface, which is what
 // motivates this function.
 int __fastcall Script_IsAssistingRitual(void *L) {
-    auto *player = Player();
+    auto *player = Unit::Identity::PlayerObject();
     if (player == nullptr) {
         Game::Lua::PushBool(L, 0);
         return 1;
     }
-    auto *desc = PlayerDescriptor();
+    auto *desc = Unit::Identity::PlayerDescriptor();
     if (desc == nullptr) {
         Game::Lua::PushBoolean(L, 0);
         return 1;

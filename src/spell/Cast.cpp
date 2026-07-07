@@ -115,6 +115,22 @@ TrackedSpell g_channel{0, 0, 0, 0};
 // the WorldTick VAR==0 clear must not touch them.
 bool g_castFromServer = false;
 
+// Armed once the broadcast UNIT_FIELD_CHANNEL_SPELL (+0x228) has been seen to
+// reflect g_channel's spell — the enable for OnWorldTick's channel-stop poll.
+// StampChannel re-arms it (false) on every channel stamp so that field's
+// ~1-tick start lag can't false-clear a channel we just stamped.
+bool g_channelConfirmed = false;
+
+// Stamp the player's channel and re-arm the stop latch. A channel supersedes
+// any in-flight cast. Both channel-stamp sites (SMSG_SPELL_START's instant-
+// channel path and the MSG_CHANNEL_START handler) route through here so
+// neither can forget to reset the latch.
+void StampChannel(int spellID, int startMs, int endMs) {
+    g_channel = TrackedSpell{spellID, startMs, endMs, 0};
+    g_channelConfirmed = false;
+    g_cast.spellID = 0;
+}
+
 int NowMs() { return static_cast<int>(reinterpret_cast<TickMs_t>(Offsets::FUN_OS_TICKCOUNT_MS)()); }
 
 void *Resolve(const char *token) {
@@ -355,10 +371,8 @@ void HandleSpellStart(uint64_t caster, int spellID, uint32_t castTime) {
             // Info) at endMs. (MSG_CHANNEL_START re-stamps moments later with
             // the server's duration — see ChannelStart_h.)
             const int dur = ChannelDurationMs(spellID);
-            if (dur > 0) {
-                g_channel = TrackedSpell{spellID, now, now + dur, 0};
-                g_cast.spellID = 0; // a channel supersedes any cast
-            }
+            if (dur > 0)
+                StampChannel(spellID, now, now + dur);
             return;
         }
         // channel && castTime > 0 → a CAST-THEN-CHANNEL spell (Mind Control:
@@ -474,9 +488,7 @@ int __stdcall ChannelStart_h(uint32_t *opCode, Net::CDataStore *packet) {
         packet->m_read = saved;
         if (spellID != 0 && duration > 0) {
             const int now = NowMs();
-            g_channel =
-                TrackedSpell{spellID, now, now + static_cast<int>(duration), 0};
-            g_cast.spellID = 0; // the channel supersedes the completed cast
+            StampChannel(spellID, now, now + static_cast<int>(duration));
         }
     }
     return g_origChannelStart(opCode, packet);
@@ -615,10 +627,32 @@ void OnWorldTick() {
         *reinterpret_cast<const int *>(Offsets::VAR_CURRENT_CAST_SPELL) == 0)
         g_cast.spellID = 0;
 
-    // Channels are stamped from SMSG_SPELL_START (HandleSpellStart) and expire
-    // on their computed endMs (self-expiry in PushChannelInfo). We don't poll
-    // the broadcast +0x228 field for the player — it lags the channel start by
-    // ~1 tick, so the bar would show ~1s late.
+    // Detect a player CHANNEL that ended before its computed endMs — the
+    // summon-ritual case (UNIT_FIELD_CHANNEL_SPELL = 698, cleared when the
+    // summon fills), and equally an interrupted / cancelled / LoS-broken
+    // channel. Without this, g_channel only clears at endMs (self-expiry in
+    // PushChannelInfo) or when a later TIMED cast supersedes it — so an early
+    // end followed by an INSTANT cast (which supersedes nothing) leaves a
+    // ghost bar counting down to a duration that no longer reflects reality.
+    //
+    // We deliberately don't use +0x228 to START the bar — it's a broadcast
+    // UpdateField that lags the channel start by ~1 tick (HandleSpellStart
+    // stamps from the packet instead). For the STOP that lag is harmless, but a
+    // naive "clear when field == 0" would wipe a channel we just stamped during
+    // the lag window. Guard with a latch: only honor the 0 once the field has
+    // been seen to reflect our channel spell at least once. A channel too short
+    // to ever appear in the field just self-expires at endMs.
+    if (g_channel.spellID != 0) {
+        const uint8_t *desc = Unit::Identity::PlayerDescriptor();
+        if (desc != nullptr) {
+            const int chan = *reinterpret_cast<const int *>(
+                desc + Offsets::OFF_UNIT_FIELD_CHANNEL_SPELL);
+            if (chan == g_channel.spellID)
+                g_channelConfirmed = true;
+            else if (chan == 0 && g_channelConfirmed)
+                g_channel.spellID = 0;
+        }
+    }
 }
 
 static const Tick::WorldTick::AutoSubscribe _tickSub{&OnWorldTick};

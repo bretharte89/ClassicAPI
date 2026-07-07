@@ -28,6 +28,22 @@ namespace Unit::Identity {
 // re-dereferencing the globals inline.
 uint64_t PlayerGuid();
 
+// The local player's in-world object pointer, resolved straight from the
+// object manager by GUID (`FUN_OBJECT_RESOLVE_BY_GUID`) — the fastest path we
+// have (one hash lookup, no token-string work) and naturally non-throwing:
+// null before the player object exists (pre-world) or before char-select,
+// never a raise. Safe from any context — Lua callback, world tick, packet
+// hook. Deliberately NOT `VAR_LOCAL_PLAYER_PTR`: that global carries the
+// player GUID at +0xC0 but is NOT the CGPlayer whose descriptor and
+// CGPlayer-local fields are readable (see Offsets.h).
+const uint8_t *PlayerObject();
+
+// The local player's `m_objectFields` descriptor (`PlayerObject() +
+// OFF_UNIT_DESCRIPTOR`), or null. This is the broadcast UpdateField block
+// (health / power / flags / UNIT_FIELD_CHANNEL_SPELL / …). Prefer this over
+// re-deriving the player object + descriptor offset in each module.
+const uint8_t *PlayerDescriptor();
+
 // The 64-bit GUID of a resolved CGUnit/CGObject pointer, read through the
 // pointer at `+0x08` to an instance block whose first 8 bytes are the GUID
 // (verified in `Script_GetInventoryItemLink`; see `OFF_UNIT_GUID_PTR`).

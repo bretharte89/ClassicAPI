@@ -41,24 +41,12 @@ uint32_t NowMs() {
 // ---- Combo-point snapshot (NetClient send co-hook) ------------------------
 
 // The player's live combo points, read the same way Script_GetComboPoints
-// (0x0051A190) does: the CP byte on the CGPlayer +0xE68 sub-struct. The
-// player is resolved via the non-throwing object resolver (guid comes from
-// the login global; 0 pre-world -> resolver returns null -> 0 CP), so this
-// is safe from any context the send hook can fire in.
+// (0x0051A190) does: the CP byte on the CGPlayer +0xE68 sub-struct. The player
+// comes from the shared Unit::Identity::PlayerObject() (the object-manager GUID
+// resolve, our fastest player-object path — returns null pre-world rather than
+// throwing), so this stays safe from any context the send hook can fire in.
 uint8_t CurrentComboPoints() {
-    const uint64_t guid = Unit::Identity::PlayerGuid();
-    if (guid == 0)
-        return 0;
-    using ResolveByGUID_t = void *(__fastcall *)(uint32_t typeMask,
-                                                 const char *debugName,
-                                                 uint32_t guidLo, uint32_t guidHi,
-                                                 int line);
-    auto resolve =
-        reinterpret_cast<ResolveByGUID_t>(Offsets::FUN_OBJECT_RESOLVE_BY_GUID);
-    auto *player = static_cast<const uint8_t *>(
-        resolve(Offsets::OBJ_TYPE_PLAYER, "ClassicAPI",
-                static_cast<uint32_t>(guid), static_cast<uint32_t>(guid >> 32),
-                0x1029));
+    const uint8_t *player = Unit::Identity::PlayerObject();
     if (player == nullptr)
         return 0;
     const uint8_t *info = *reinterpret_cast<const uint8_t *const *>(

@@ -96,6 +96,37 @@ uint64_t PlayerGuid() {
     return g_charSelectGuid; // early-login fallback (0 until char-select)
 }
 
+const uint8_t *PlayerObject() {
+    // Resolve the player's CGObject straight from the object manager by GUID —
+    // one hash lookup, no token-string parsing, and non-throwing: the resolver
+    // returns null when the GUID isn't loaded (pre-world) instead of raising,
+    // so this is safe from any context (world tick, packet send hook, Lua
+    // callback). The GUID comes from PlayerGuid() — 0 before char-select, which
+    // short-circuits to null here. NOT VAR_LOCAL_PLAYER_PTR: its +0xC0 is only
+    // the GUID, not the canonical CGPlayer whose descriptor is readable.
+    const uint64_t guid = PlayerGuid();
+    if (guid == 0)
+        return nullptr;
+    using ResolveByGuid_t = void *(__fastcall *)(uint32_t typeMask,
+                                                 const char *debugName,
+                                                 uint32_t guidLo, uint32_t guidHi,
+                                                 int line);
+    auto resolve =
+        reinterpret_cast<ResolveByGuid_t>(Offsets::FUN_OBJECT_RESOLVE_BY_GUID);
+    return static_cast<const uint8_t *>(
+        resolve(Offsets::OBJ_TYPE_PLAYER, "ClassicAPI",
+                static_cast<uint32_t>(guid), static_cast<uint32_t>(guid >> 32),
+                /*line*/ 0));
+}
+
+const uint8_t *PlayerDescriptor() {
+    const uint8_t *player = PlayerObject();
+    if (player == nullptr)
+        return nullptr;
+    return *reinterpret_cast<const uint8_t *const *>(
+        player + Offsets::OFF_UNIT_DESCRIPTOR);
+}
+
 uint64_t GuidForObject(const void *unitObject) {
     if (unitObject == nullptr)
         return 0;
