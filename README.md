@@ -61,7 +61,7 @@ Full per-function reference: **[docs/API.md](docs/API.md)**.
 | [Unit](docs/API.md#unit) | `GetUnitSpeed`, `UnitClassBase`, `UnitGUID`, `UnitInRange`, `UnitIsAFK`, `UnitIsDND`, `UnitIsFeignDeath`, `UnitIsInMyGuild`, `UnitIsPossessed`, `UnitPower`, `UnitPowerMax`, `UnitPowerType`, `UnitRaceBase`, `UnitStandState`, `UnitSubName`, `UnitTokenFromGUID` |
 | [UnitAuras](docs/API.md#unitauras) | `C_UnitAuras.GetAuraDataByIndex`, `C_UnitAuras.GetAuraDataBySpellName`, `C_UnitAuras.GetAuraDispelTypeColor`, `C_UnitAuras.GetBuffDataByIndex`, `C_UnitAuras.GetDebuffDataByIndex`, `C_UnitAuras.GetPlayerAuraBySpellID`, `C_UnitAuras.GetUnitAuraBySpellID`, `C_UnitAuras.GetUnitAuras`, `C_UnitAuras.RegisterComboDuration` |
 | [VoiceChat](docs/API.md#voicechat) | `C_VoiceChat.GetTtsVoices`, `C_VoiceChat.GetRemoteTtsVoices`, `C_VoiceChat.SpeakText`, `C_VoiceChat.StopSpeakingText`, `C_TTSSettings.GetSpeechRate`, `C_TTSSettings.GetSpeechVolume`, `C_TTSSettings.GetSpeechVoiceID`, `C_TTSSettings.GetVoiceOptionName`, `C_TTSSettings.SetSpeechRate`, `C_TTSSettings.SetSpeechVolume`, `C_TTSSettings.SetVoiceOption`, `C_TTSSettings.SetVoiceOptionByName`, `C_TTSSettings.SetDefaultSettings`, `C_TTSSettings.RefreshVoices` |
-| [XMLUtil](docs/API.md#xmlutil) | `C_XMLUtil.GetTemplates` |
+| [XMLUtil](docs/API.md#xmlutil) | `C_XMLUtil.DoesTemplateExist`, `C_XMLUtil.GetTemplateInfo`, `C_XMLUtil.GetTemplates` |
 
 ### GlueXML calls
 

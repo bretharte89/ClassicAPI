@@ -4919,4 +4919,15 @@ enum Offsets {
     // Parsed XML element node: its tag-name string ("Frame" / "Button" /
     // "CheckButton" / …) lives at +0x8 — this is the frame "type".
     OFF_XML_NODE_TAG = 0x8,
+    // The definition node retains its full parsed DOM subtree — used by
+    // GetTemplateInfo to read `<Size>` / `inherits=`. First child @+0x4, next
+    // sibling @+0x1C. Attributes are read by name via the node method
+    // FUN_006f2cf0 (`__thiscall(node, name) -> value string`, null if absent).
+    OFF_XML_NODE_CHILD = 0x4,
+    OFF_XML_NODE_SIBLING = 0x1C,
+    FUN_XML_NODE_GET_ATTRIBUTE = 0x006F2CF0,
+    // By-name template lookup — the same one `inherits=` resolves through.
+    // `__fastcall(const char *name) -> definition node`, 0 if unregistered
+    // (case-insensitive, hashed). See FUN_006ee6f0 in Templates.cpp notes.
+    FUN_XML_TEMPLATE_LOOKUP = 0x006EE6F0,
 };

@@ -33,10 +33,87 @@
 #include "Offsets.h"
 
 #include <cstdint>
+#include <cstdlib>
 
 namespace Xml::Templates {
 
 namespace {
+
+// ---- Node-DOM helpers (shared by GetTemplateInfo / DoesTemplateExist) -----
+
+using TemplateLookup_t = const uint8_t *(__fastcall *)(const char *name);
+using GetAttr_t = const char *(__thiscall *)(const void *node, const char *name);
+using SStrCmpI_t = int(__stdcall *)(const char *a, const char *b, int n);
+
+// The engine's by-name template lookup (FUN_006ee6f0) — the same path
+// `inherits=` resolves through. Returns the parsed definition node, or null
+// if no template of that name is registered (case-insensitive, hashed).
+const uint8_t *LookupTemplate(const char *name) {
+    return reinterpret_cast<TemplateLookup_t>(
+        Offsets::FUN_XML_TEMPLATE_LOOKUP)(name);
+}
+
+// Value of `node`'s attribute `name`, or null if absent.
+const char *Attr(const uint8_t *node, const char *name) {
+    return reinterpret_cast<GetAttr_t>(Offsets::FUN_XML_NODE_GET_ATTRIBUTE)(
+        node, name);
+}
+
+const uint8_t *FirstChild(const uint8_t *node) {
+    return *reinterpret_cast<const uint8_t *const *>(
+        node + Offsets::OFF_XML_NODE_CHILD);
+}
+const uint8_t *NextSibling(const uint8_t *node) {
+    return *reinterpret_cast<const uint8_t *const *>(
+        node + Offsets::OFF_XML_NODE_SIBLING);
+}
+
+// Case-insensitive tag match, using the engine's own comparator (the same one
+// FUN_006f1eb0 uses to recognize "AbsDimension" etc.).
+bool TagEquals(const uint8_t *node, const char *tag) {
+    const char *t = *reinterpret_cast<const char *const *>(
+        node + Offsets::OFF_XML_NODE_TAG);
+    if (t == nullptr)
+        return false;
+    return reinterpret_cast<SStrCmpI_t>(Offsets::FUN_SSTR_CMP_I)(
+               t, tag, 0x7FFFFFFF) == 0;
+}
+
+const uint8_t *FindChild(const uint8_t *node, const char *tag) {
+    for (const uint8_t *c = FirstChild(node); c != nullptr; c = NextSibling(c))
+        if (TagEquals(c, tag))
+            return c;
+    return nullptr;
+}
+
+// The statically-declared width/height from a `<Size>` child (0 if none).
+// Handles the inline `<Size x= y=>` form and the `<Size><AbsDimension x= y=>`
+// (or RelDimension) child form. Returns the RAW values from the XML — retail's
+// GetTemplateInfo reports the declared value, so unlike the engine's own Size
+// parser (FUN_006f1eb0) we deliberately skip the UI-scale conversion.
+void ReadSize(const uint8_t *node, double *outW, double *outH) {
+    *outW = 0.0;
+    *outH = 0.0;
+    const uint8_t *size = FindChild(node, "Size");
+    if (size == nullptr)
+        return;
+    const char *sx = Attr(size, "x");
+    const char *sy = Attr(size, "y");
+    const uint8_t *dim = FirstChild(size);
+    if (dim != nullptr &&
+        (TagEquals(dim, "AbsDimension") || TagEquals(dim, "RelDimension"))) {
+        const char *dx = Attr(dim, "x");
+        const char *dy = Attr(dim, "y");
+        if (dx != nullptr && *dx != '\0')
+            sx = dx;
+        if (dy != nullptr && *dy != '\0')
+            sy = dy;
+    }
+    if (sx != nullptr && *sx != '\0')
+        *outW = std::strtod(sx, nullptr);
+    if (sy != nullptr && *sy != '\0')
+        *outH = std::strtod(sy, nullptr);
+}
 
 // `C_XMLUtil.GetTemplates()` -> XMLTemplateListInfo[] of { name, type }.
 int __fastcall Script_GetTemplates(void *L) {
@@ -86,11 +163,68 @@ int __fastcall Script_GetTemplates(void *L) {
     return 1;
 }
 
+// `C_XMLUtil.GetTemplateInfo(name)` -> XMLTemplateInfo table, or nil if the
+// template doesn't exist.
+int __fastcall Script_GetTemplateInfo(void *L) {
+    if (!Game::Lua::IsString(L, 1)) {
+        Game::Lua::Error(L, "Usage: C_XMLUtil.GetTemplateInfo(\"name\")");
+        return 0;
+    }
+    const char *name = Game::Lua::ToString(L, 1);
+    const uint8_t *node = (name != nullptr) ? LookupTemplate(name) : nullptr;
+    if (node == nullptr)
+        return 0; // nil — no such template
+
+    Game::Lua::NewTable(L); // XMLTemplateInfo
+
+    const char *type = *reinterpret_cast<const char *const *>(
+        node + Offsets::OFF_XML_NODE_TAG);
+    Game::Lua::SetFieldString(L, "type", type != nullptr ? type : "");
+
+    double w = 0.0, h = 0.0;
+    ReadSize(node, &w, &h);
+    Game::Lua::SetFieldNumber(L, "width", w);
+    Game::Lua::SetFieldNumber(L, "height", h);
+
+    // keyValues: vanilla's XML schema has no <KeyValues> element, so this is
+    // always an empty table (parity with retail's "empty if none defined").
+    Game::Lua::PushString(L, "keyValues");
+    Game::Lua::NewTable(L);
+    Game::Lua::SetTable(L, -3);
+
+    // inherits: the comma-delimited `inherits=` attribute, or nil (field left
+    // unset) when the template inherits nothing.
+    const char *inherits = Attr(node, "inherits");
+    if (inherits != nullptr && *inherits != '\0')
+        Game::Lua::SetFieldString(L, "inherits", inherits);
+
+    // sourceLocation is intentionally omitted (nil): vanilla records no
+    // file/line for XML nodes — a 10.2.0 addition gated behind the
+    // enableSourceLocationLookup CVar even on retail.
+    return 1;
+}
+
+// `C_XMLUtil.DoesTemplateExist(name)` -> bool.
+int __fastcall Script_DoesTemplateExist(void *L) {
+    if (!Game::Lua::IsString(L, 1)) {
+        Game::Lua::Error(L, "Usage: C_XMLUtil.DoesTemplateExist(\"name\")");
+        return 0;
+    }
+    const char *name = Game::Lua::ToString(L, 1);
+    const uint8_t *node = (name != nullptr) ? LookupTemplate(name) : nullptr;
+    Game::Lua::PushBool(L, node != nullptr);
+    return 1;
+}
+
 } // namespace
 
 static void RegisterLuaFunctions() {
     Game::Lua::RegisterTableFunction("C_XMLUtil", "GetTemplates",
                                      &Script_GetTemplates);
+    Game::Lua::RegisterTableFunction("C_XMLUtil", "GetTemplateInfo",
+                                     &Script_GetTemplateInfo);
+    Game::Lua::RegisterTableFunction("C_XMLUtil", "DoesTemplateExist",
+                                     &Script_DoesTemplateExist);
 }
 
 static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};

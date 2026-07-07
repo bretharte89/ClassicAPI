@@ -422,6 +422,8 @@ build instructions.
 
 - [XMLUtil](#xmlutil)
   - [`C_XMLUtil.GetTemplates()`](#c_xmlutilgettemplates)
+  - [`C_XMLUtil.GetTemplateInfo(name)`](#c_xmlutilgettemplateinfoname)
+  - [`C_XMLUtil.DoesTemplateExist(name)`](#c_xmlutildoestemplateexistname)
   - [`C_TTSSettings` — getters & setters](#c_ttssettings--getters--setters)
   - [TTS events](#tts-events)
   - [TTS CVars](#tts-cvars)
@@ -10228,3 +10230,41 @@ Returns an empty table if no template has registered yet.
 > the `name` and `type` fields, both provided here. There's no filtering —
 > every virtual template is returned, in hash-table order (not load or
 > alphabetical order).
+
+### `C_XMLUtil.GetTemplateInfo(name)`
+
+Returns an `XMLTemplateInfo` table for the named template, or `nil` if no
+template of that name is registered:
+
+```lua
+local info = C_XMLUtil.GetTemplateInfo("StatFrameTemplate")
+-- { type = "Frame", width = 104, height = 13, keyValues = {}, inherits = nil }
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `type` | string | The template's frame type — its XML element tag (`"Frame"`, `"Button"`, …). |
+| `width` / `height` | number | The size **statically declared on the template itself** via a `<Size>` element, or `0` if it declares none (including when the size comes from an inherited template rather than a direct `<Size>`). |
+| `keyValues` | table | Always an **empty table** in 1.12 — the vanilla XML schema has no `<KeyValues>` element, so no template can carry key/value pairs. Present for API parity. |
+| `inherits` | string? | The template's `inherits=` attribute (a comma-delimited list), or `nil` if it inherits nothing. |
+
+Lookup is by name through the engine's own template registry — the same
+resolution `inherits=` uses — so it's case-insensitive and covers both
+Blizzard FrameXML and addon templates.
+
+> **Not provided:** retail's `sourceLocation` field (file:line where the
+> template was defined) is a 10.2.0 addition; vanilla records no source
+> location for XML nodes, so the field is omitted (reads as `nil`).
+
+### `C_XMLUtil.DoesTemplateExist(name)`
+
+Returns `true` if a virtual template of that name is registered, `false`
+otherwise:
+
+```lua
+if C_XMLUtil.DoesTemplateExist("MyAddonRowTemplate") then
+    button = CreateFrame("Button", nil, parent, "MyAddonRowTemplate")
+end
+```
+
+Case-insensitive, resolved through the same registry as `inherits=`.
