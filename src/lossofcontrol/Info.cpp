@@ -288,9 +288,13 @@ void OnWorldTick() {
         if (!ContainsKey(cur, n, g_prev[i]))
             changed = true; // an effect ended (fell off / lockout expired)
     }
-    // Any add or removal fires one coalesced "re-scan" signal.
+    // Any add or removal fires one coalesced "re-scan" signal. The payload is
+    // the affected unit — always "player" here (vanilla only exposes the local
+    // player's control-loss state), but passing it keeps the event shape
+    // forward-compatible with per-unit tracking and matches modern WoW, whose
+    // LOSS_OF_CONTROL_UPDATE carries the unit token.
     if (changed)
-        Event::Custom::Fire(Event::Custom::Lookup(kEventUpdate), "");
+        Event::Custom::Fire(Event::Custom::Lookup(kEventUpdate), "%s", "player");
 
     for (int i = 0; i < n; ++i)
         g_prev[i] = cur[i];

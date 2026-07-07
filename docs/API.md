@@ -2321,7 +2321,7 @@ Register like any engine event
 | Event | Args | When |
 |---|---|---|
 | `LOSS_OF_CONTROL_ADDED` | `eventIndex` (number) | A new effect was applied — `eventIndex` is its 1-based index for [`C_LossOfControl.GetActiveLossOfControlData`](#c_lossofcontrolgetactivelossofcontroldataindex). |
-| `LOSS_OF_CONTROL_UPDATE` | *(none)* | The active set changed — an effect was added, fell off, or expired. Re-scan with `GetActiveLossOfControlData`. |
+| `LOSS_OF_CONTROL_UPDATE` | `unitToken` (string) | The active set changed — an effect was added, fell off, or expired. Re-scan with `GetActiveLossOfControlData`. Always `"player"` (vanilla only tracks the local player), but passed so the event shape matches modern WoW and leaves room for per-unit tracking. |
 
 Detection is a per-frame diff of the active set (effect *expiry* has no engine
 packet to hook), so events land within a frame of the change and coalesce
