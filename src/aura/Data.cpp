@@ -515,12 +515,18 @@ int CountSlots(const uint8_t *unit, Filter filter, bool playerOnly) {
 constexpr int kFallbackMax = Offsets::UNIT_AURA_TOTAL;
 
 // Whether cache entry `c` should be surfaced as a fallback for `unit` under
-// `filter`/`playerOnly`: it must not already be in a populated descriptor slot
-// (no double-listing the same live aura) and, when player-filtered, must have
-// been cast by us. Superseded / dispelled auras are kept out of the cache by
-// `Aura::Source`'s removal eviction, not filtered here.
+// `filter`/`playerOnly`: the spell must be a user-visible aura, it must not
+// already be in a populated descriptor slot (no double-listing the same live
+// aura) and, when player-filtered, must have been cast by us. Superseded /
+// dispelled auras are kept out of the cache by `Aura::Source`'s removal
+// eviction, not filtered here.
 bool FallbackEligible(const uint8_t *unit, const Aura::Source::CachedAura &c,
                       Filter filter, bool playerOnly) {
+    if (!IsVisible(SpellRecord(c.spellId)))
+        return false; // hidden/internal aura (e.g. SPELL_ATTR_HIDDEN_CLIENTSIDE):
+                      // the descriptor path drops these via IsSlotPopulated, so
+                      // the cache path must apply the same engine predicate or
+                      // they leak through as tooltip-less phantom buffs.
     if (FindSlotBySpellID(unit, c.spellId, &filter, false) >= 0)
         return false; // still in the descriptor — returned via the slot path
     if (playerOnly && c.casterGuid != Unit::Identity::PlayerGuid())
