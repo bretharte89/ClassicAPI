@@ -35,5 +35,6 @@ Util\EquipmentManager.lua
 Util\PlayerUtil.lua
 Util\SlashCommandsRegistry.lua
 Util\LinkUtil.lua
+Util\TradeSkillLink.lua
 Util\IconDataProvider.lua
 Util\GameTooltip.lua

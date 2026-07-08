@@ -390,6 +390,11 @@ build instructions.
   - [`C_DateAndTime.GetServerTimeLocal()`](#c_dateandtimegetservertimelocal)
   - [`C_DateAndTime.GetSecondsUntilDailyReset()`](#c_dateandtimegetsecondsuntildailyreset)
 
+- [TradeSkillUI](#tradeskillui)
+  - [`C_TradeSkillUI.GetTradeSkillListLink()`](#c_tradeskilluigettradeskilllistlink)
+  - [`C_TradeSkillUI.GetCraftListLink()`](#c_tradeskilluigetcraftlistlink)
+  - [`C_TradeSkillUI.GetTradeSkillListRecipes(skillLineID, bits)`](#c_tradeskilluigettradeskilllistrecipesskilllineid-bits)
+
 - [UIColor](#uicolor)
   - [`C_UIColor.GetColors()`](#c_uicolorgetcolors)
 
@@ -9405,6 +9410,93 @@ wall-clock time). Returns 0 if called before login.
 > See the overview's "Daily reset semantics" note — this uses server
 > midnight, not UTC midnight (though they happen to coincide for
 > Turtle WoW since the server reports UTC-aligned components).
+
+## TradeSkillUI
+
+Backports the 2.x+ **trade-skill list link** — the shareable
+`|Htrade:...|h[Profession]|h` link that shows a player's profession and
+which recipes they know. Vanilla 1.12 has no such link type (the engine's
+hyperlink parser only knows `item:` and `enchant:`), so both the link and the
+click-to-view UI are synthesized. Clicking a received link opens a scroll
+frame listing the recipes the linker knows, with an "X of Y recipes known"
+summary of the whole profession.
+
+The "known recipes" data is a bitfield over the skill line's **canonical
+recipe list** — every `SkillLineAbility.dbc` row for the skill line that is a
+craftable recipe, in ascending record-ID order. That ordering is identical on
+every client with the same DBC, so the sender and reader agree on the
+bit-index space with no handshake. Whether the sender knows a given recipe
+comes from the same player-spell bitmap `IsPlayerSpell` reads (which covers
+profession recipes), so the link is self-contained — the reader needs neither
+the sender online nor the profession itself.
+
+### `C_TradeSkillUI.GetTradeSkillListLink()`
+
+Returns the `|Htrade:...|h` link for the **currently-open** trade skill
+window, or `nil` if no profession window is open.
+
+```lua
+-- with a profession window open:
+local link = C_TradeSkillUI.GetTradeSkillListLink()
+-- "|cffffd000|Htrade:164:300:300:Bob:eE0C...|h[Blacksmithing]|h|r"
+ChatEdit_InsertLink(link)   -- or SendChatMessage(link, "GUILD"), etc.
+```
+
+Built entirely in the DLL — no addon wiring. The window only needs to be open
+long enough to identify the profession; the recipe data is read from the spell
+bitmap, not the window's server list. Wire format (a ClassicAPI-private shape
+modeled on the 2.x link, with the linker's name in the slot 2.x used for the
+GUID):
+
+```
+|cffffd000|Htrade:<skillLineID>:<curRank>:<maxRank>:<linkerName>:<base64 bits>|h[Name]|h|r
+```
+
+`skillLineID` is the `SkillLine.dbc` row (164 = Blacksmithing); `curRank` /
+`maxRank` are the linker's skill level (cosmetic); `linkerName` is the linking
+character's name (shown in the viewer title); the base64 tail packs 6 recipes
+per character, LSB-first. Links from before this field was added (no
+`linkerName`) still decode — the viewer just omits the name from its title.
+
+Clicking a `trade:` link is handled automatically (an override of
+`SetItemRef`) — it opens the recipe viewer. No addon wiring needed.
+
+### `C_TradeSkillUI.GetCraftListLink()`
+
+Same as `GetTradeSkillListLink`, but for the **Craft window** — vanilla's
+separate profession frame used by Enchanting and pet training. Returns `nil`
+unless `CraftFrame` is shown. The two windows have separate storage and can be
+open simultaneously, so they get separate builders (matching WotLK); the
+resulting link is the same `|Htrade:...|h` format and opens the same viewer.
+
+```lua
+local link = C_TradeSkillUI.GetCraftListLink()   -- with the enchanting window open
+-- "|cffffd000|Htrade:333:300:300:Bob:...|h[Enchanting]|h|r"
+```
+
+### `C_TradeSkillUI.GetTradeSkillListRecipes(skillLineID, bits)`
+
+Decodes a link's bitfield against a skill line's canonical recipe list.
+Returns an array table:
+
+```lua
+local recipes = C_TradeSkillUI.GetTradeSkillListRecipes(164, "eE0C...")
+-- recipes[i] = { spellID = <number>, isKnown = <bool>, trivialLevel = <number> }
+for i = 1, table.getn(recipes) do
+    local name = GetSpellInfo(recipes[i].spellID)
+    print(name, recipes[i].isKnown and "known" or "unknown")
+end
+```
+
+`trivialLevel` is the skill level the recipe turns grey at — its difficulty
+tier (the required-skill field is uselessly `1` for nearly every
+trainer-taught recipe). The viewer sorts on it descending so the highest
+crafts appear first.
+
+The array is in canonical recipe order (one entry per *possible* recipe in the
+skill line, not just the known ones). Turn a `spellID` into a name/icon with
+[`GetSpellInfo`](#getspellinfospellid). Recipes past the end of a short/garbled
+`bits` string decode as not-known rather than erroring.
 
 ## UIColor
 

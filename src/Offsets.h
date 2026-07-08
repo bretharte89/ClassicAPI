@@ -2184,6 +2184,15 @@ enum Offsets {
     OFF_SLA_CLASS_MASK = 0x10,
     OFF_SLA_EXCLUDE_RACE = 0x14,
     OFF_SLA_EXCLUDE_CLASS = 0x18,
+    // Skill-up threshold ranks (grey / green) at record fields 10/11.
+    // A row with either nonzero is a craftable recipe; profession
+    // rank-up / passive rows have both zero. Empirically: the
+    // Blacksmithing skill line has 343 SLA rows, 334 with a nonzero
+    // threshold — the 9 excluded are the Apprentice..Artisan rank
+    // spells and skill grants. This is the discriminator
+    // `TradeSkill::Link` uses to build the canonical recipe universe.
+    OFF_SLA_TRIVIAL_SKILL_HIGH = 0x28,
+    OFF_SLA_TRIVIAL_SKILL_LOW = 0x2C,
 
     // SkillLine.dbc — the skill/category each SLA row points into via
     // its `skillId` field. Each record carries a 9-locale localized
@@ -2215,6 +2224,24 @@ enum Offsets {
     VAR_PLAYER_SKILL_COUNT = 0x00B731B8,
     OFF_PLAYER_SKILL_LINE_ID = 0x00,
     OFF_PLAYER_SKILL_RANK = 0x10,
+
+    // Live per-skill current/max rank. These are NOT in
+    // `VAR_PLAYER_SKILL_LIST` (that entry's `+0x10` is numTempPoints) —
+    // the real ranks live in the CGPlayer `+0xE68` sub-struct
+    // (`OFF_CGPLAYER_INFO`). `FUN_SKILL_LINE_TO_SLOT`
+    // (`__thiscall(player, skillLineID) -> slot`) maps a SkillLine.dbc
+    // row to its slot; the slot indexes a `SKILL_INFO_STRIDE`-byte
+    // record at `[player+0xE68] + OFF_SKILL_INFO_TABLE + slot*stride`:
+    // current `+0x0`, max `+0x2`, rank bonus `+0x6` (all u16 — add the
+    // bonus when the base value is nonzero). Source: `Script_GetTradeSkillLine`
+    // (`0x004FDD40`) / `Script_GetSkillLineInfo` (`0x004D3610`). Verified
+    // in-game vs. those functions (Tailoring 261/300, Enchanting 186/240).
+    FUN_SKILL_LINE_TO_SLOT = 0x005EA3F0,
+    OFF_SKILL_INFO_TABLE = 0x84C,
+    SKILL_INFO_STRIDE = 0xC,
+    OFF_SKILL_INFO_CUR = 0x0,
+    OFF_SKILL_INFO_MAX = 0x2,
+    OFF_SKILL_INFO_BONUS = 0x6,
 
     // Per-itemClass proficiency bitmap maintained by the engine.
     // 17 u32 entries (indexed by Item.dbc `m_class`, 0..16). Each
@@ -4534,6 +4561,19 @@ enum Offsets {
     // with craft).
     VAR_TRADESKILL_ENTRIES = 0x00BDDFC0,
     VAR_TRADESKILL_COUNT = 0x00BDE04C,
+    // SkillLine.dbc row ID of the currently-open trade skill window
+    // (the profession the player has open). Bounds-checked against
+    // `VAR_SKILL_LINE_COUNT` and used as `records[id]` by
+    // `Script_GetTradeSkillLine` (`0x004FDD40`). <= 0 / stale when no
+    // window is open. `FUN_004FC870` zeroes it on close (and fires
+    // event `0x13B`), so `> 0` reliably means "trade window open".
+    VAR_CURRENT_TRADESKILL_LINE = 0x00BDE040,
+    // Craft window (Enchanting, pet training) open-state flag — nonzero
+    // (3 for the enchanting-style craft) while open; `FUN_004F5FE0`
+    // zeroes it on close (fires event `0x169`). The Craft window has no
+    // skill-line-ID global — `TradeSkill::Link` derives the skill line
+    // from the first craft recipe — so this is the "craft open" gate.
+    VAR_CRAFT_WINDOW_STATE = 0x00BDCFB8,
     // Spell.dbc "produced item" field for crafting recipes — the
     // itemID this spell creates when cast. Reagent itemIDs and
     // counts live at `OFF_SPELL_REAGENT_ID` / `OFF_SPELL_REAGENT_COUNT`
