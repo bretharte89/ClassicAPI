@@ -4598,6 +4598,18 @@ enum Offsets {
     OFF_SPELL_RECORD_EFFECT_MISC_VALUE = 0x1A8,       // int32[3]
     SPELL_RECORD_EFFECT_COUNT = 3,
 
+    // SPELL_EFFECT_* id array (`Effect[3]`) — five arrays before
+    // EffectBasePoints (`+0x130`), so `0x130 - 5*0xC`. Used to tell craft
+    // recipes from profession abilities (Disenchant etc.) that also carry
+    // skill-up thresholds. Recipe-producing effects: CREATE_ITEM (items),
+    // ENCHANT_ITEM / _TEMPORARY (enchants), and LEARN_SPELL (Turtle's custom
+    // recipes, e.g. "Steel Plate Boots" = effect 36).
+    OFF_SPELL_RECORD_EFFECT = 0xF4,                   // int32[3]
+    SPELL_EFFECT_CREATE_ITEM = 24,
+    SPELL_EFFECT_LEARN_SPELL = 36,
+    SPELL_EFFECT_ENCHANT_ITEM = 53,
+    SPELL_EFFECT_ENCHANT_ITEM_TEMPORARY = 54,
+
     // EffectBasePoints[3] — the base magnitude of each effect, stored as
     // (value - 1) for the fixed-die spells that back item stats (the
     // engine adds a 1..dieSides roll; dieSides == 1 makes it value = base

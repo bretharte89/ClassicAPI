@@ -31,8 +31,9 @@
 //     one bit per possible recipe, set = the linker knows it.
 //
 // The canonical recipe list is every SkillLineAbility.dbc row for the skill
-// line that is a craftable recipe (nonzero skill-up threshold — see
-// OFF_SLA_TRIVIAL_SKILL_*), in ascending record-ID order. That ordering is
+// line whose spell actually produces a craft (see IsCraftRecipe — an item,
+// enchant, or Turtle LEARN_SPELL recipe; this excludes profession abilities
+// like Disenchant), in ascending record-ID order. That ordering is
 // deterministic and identical on every client with the same DBC, so builder
 // and reader agree on the bit-index space without any handshake. "Which
 // recipes does the linker know" comes from the player-spell bitmap
@@ -77,24 +78,36 @@ int Base64Value(char c) {
     return -1;
 }
 
-// A row is a craftable recipe (vs. a profession rank-up / passive spell) iff
-// it carries a skill-up threshold. See OFF_SLA_TRIVIAL_SKILL_* in Offsets.h.
-bool IsRecipeRow(const uint8_t *rec) {
-    const int hi =
-        *reinterpret_cast<const int *>(rec + Offsets::OFF_SLA_TRIVIAL_SKILL_HIGH);
-    const int lo =
-        *reinterpret_cast<const int *>(rec + Offsets::OFF_SLA_TRIVIAL_SKILL_LOW);
-    return hi != 0 || lo != 0;
+// A spell is a craftable recipe (vs. a profession ability like Disenchant, or
+// a rank-up / skill-grant spell) iff one of its effects produces a craft: an
+// item (CREATE_ITEM), an enchant (ENCHANT_ITEM / _TEMPORARY), or Turtle's
+// custom recipes (LEARN_SPELL). Filtering on the skill-up threshold alone
+// wrongly kept Disenchant (which carries thresholds but isn't a recipe).
+bool IsCraftRecipe(int spellID) {
+    const uint8_t *rec = Spell::Lookup::RecordForID(spellID);
+    if (rec == nullptr)
+        return false;
+    const int32_t *eff = reinterpret_cast<const int32_t *>(
+        rec + Offsets::OFF_SPELL_RECORD_EFFECT);
+    for (int i = 0; i < Offsets::SPELL_RECORD_EFFECT_COUNT; ++i) {
+        const int e = eff[i];
+        if (e == Offsets::SPELL_EFFECT_CREATE_ITEM ||
+            e == Offsets::SPELL_EFFECT_LEARN_SPELL ||
+            e == Offsets::SPELL_EFFECT_ENCHANT_ITEM ||
+            e == Offsets::SPELL_EFFECT_ENCHANT_ITEM_TEMPORARY)
+            return true;
+    }
+    return false;
 }
 
 // Fills `outSpell` with the recipe spellIDs for `skillLineID`, in canonical
-// (ascending record-ID) order, and — when non-null — `outLevel` with the skill
-// level each recipe turns grey at (its difficulty tier; the required-skill
-// field 7 is uselessly 1 for nearly every trainer-taught recipe). Returns the
-// count (capped at `maxOut`). Same walk builder and reader use, so the
-// bit-index space is identical.
-int BuildRecipeList(uint32_t skillLineID, int *outSpell, int *outLevel,
-                    int maxOut) {
+// (ascending record-ID) order, and — when non-null — `outGrey`/`outGreen` with
+// the skill levels the recipe turns grey / green at (its difficulty tiers; the
+// required-skill field 7 is uselessly 1 for nearly every trainer-taught
+// recipe). Returns the count (capped at `maxOut`). Same walk builder and reader
+// use, so the bit-index space is identical.
+int BuildRecipeList(uint32_t skillLineID, int *outSpell, int *outGrey,
+                    int *outGreen, int maxOut) {
     auto *const *records = *reinterpret_cast<const uint8_t *const *const *>(
         static_cast<uintptr_t>(Offsets::VAR_SKILL_LINE_ABILITY_RECORDS));
     const int count = *reinterpret_cast<const int *>(
@@ -110,13 +123,17 @@ int BuildRecipeList(uint32_t skillLineID, int *outSpell, int *outLevel,
         if (static_cast<uint32_t>(*reinterpret_cast<const int *>(
                 rec + Offsets::OFF_SLA_SKILL_ID)) != skillLineID)
             continue;
-        if (!IsRecipeRow(rec))
-            continue;
-        if (outLevel != nullptr)
-            outLevel[n] = *reinterpret_cast<const int *>(
-                rec + Offsets::OFF_SLA_TRIVIAL_SKILL_HIGH);
-        outSpell[n++] =
+        const int spellID =
             *reinterpret_cast<const int *>(rec + Offsets::OFF_SLA_SPELL_ID);
+        if (!IsCraftRecipe(spellID))
+            continue;
+        if (outGrey != nullptr)
+            outGrey[n] = *reinterpret_cast<const int *>(
+                rec + Offsets::OFF_SLA_TRIVIAL_SKILL_HIGH);
+        if (outGreen != nullptr)
+            outGreen[n] = *reinterpret_cast<const int *>(
+                rec + Offsets::OFF_SLA_TRIVIAL_SKILL_LOW);
+        outSpell[n++] = spellID;
     }
     return n;
 }
@@ -183,7 +200,8 @@ uint32_t CraftSkillLine() {
 // line has no recipes.
 int EncodeKnownBits(uint32_t skillLineID, char *out) {
     int spells[kMaxRecipes];
-    const int n = BuildRecipeList(skillLineID, spells, nullptr, kMaxRecipes);
+    const int n = BuildRecipeList(skillLineID, spells, nullptr, nullptr,
+                                  kMaxRecipes);
     if (n <= 0)
         return -1;
 
@@ -302,9 +320,11 @@ int __fastcall Script_GetCraftListLink(void *L) {
 }
 
 // `C_TradeSkillUI.GetTradeSkillListRecipes(skillLineID, bits)`
-//     -> { { spellID = <number>, isKnown = <bool>, trivialLevel = <number> }, ... }
-// `trivialLevel` is the skill level the recipe turns grey at — its difficulty
-// tier, for sorting.
+//     -> { { spellID, isKnown, trivialLevel, greenLevel, createdItem }, ... }
+// `trivialLevel` / `greenLevel` are the skill levels the recipe turns
+// grey / green at — its difficulty tiers, for sorting and colouring.
+// `createdItem` is the crafted item's ID (0 for enchants) — the viewer
+// derives its subclass filter from it.
 //
 // Rebuilds the canonical recipe list for `skillLineID` and decodes `bits`
 // against it. Recipes past the end of `bits` (shorter/garbled string) decode
@@ -322,8 +342,9 @@ int __fastcall Script_GetTradeSkillListRecipes(void *L) {
     const int blen = (bits != nullptr) ? static_cast<int>(std::strlen(bits)) : 0;
 
     int spells[kMaxRecipes];
-    int levels[kMaxRecipes];
-    const int n = BuildRecipeList(skillLine, spells, levels, kMaxRecipes);
+    int greys[kMaxRecipes];
+    int greens[kMaxRecipes];
+    const int n = BuildRecipeList(skillLine, spells, greys, greens, kMaxRecipes);
 
     Game::Lua::NewTable(L);
     for (int i = 0; i < n; ++i) {
@@ -336,12 +357,25 @@ int __fastcall Script_GetTradeSkillListRecipes(void *L) {
                 known = (v & (1 << bi)) != 0;
         }
 
+        // The recipe's crafted item (0 for enchants) — the viewer groups the
+        // subclass filter by this item's subclass.
+        const uint8_t *srec = Spell::Lookup::RecordForID(spells[i]);
+        const int createdItem =
+            (srec != nullptr)
+                ? *reinterpret_cast<const int *>(
+                      srec + Offsets::OFF_SPELL_RECORD_CREATED_ITEM)
+                : 0;
+
         Game::Lua::PushNumber(L, static_cast<double>(i + 1));
         Game::Lua::NewTable(L);
         Game::Lua::SetFieldNumber(L, "spellID", static_cast<double>(spells[i]));
         Game::Lua::SetFieldBool(L, "isKnown", known);
         Game::Lua::SetFieldNumber(L, "trivialLevel",
-                                  static_cast<double>(levels[i]));
+                                  static_cast<double>(greys[i]));
+        Game::Lua::SetFieldNumber(L, "greenLevel",
+                                  static_cast<double>(greens[i]));
+        Game::Lua::SetFieldNumber(L, "createdItem",
+                                  static_cast<double>(createdItem));
         Game::Lua::SetTable(L, -3);
     }
     return 1;

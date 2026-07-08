@@ -9417,9 +9417,10 @@ Backports the 2.x+ **trade-skill list link** — the shareable
 `|Htrade:...|h[Profession]|h` link that shows a player's profession and
 which recipes they know. Vanilla 1.12 has no such link type (the engine's
 hyperlink parser only knows `item:` and `enchant:`), so both the link and the
-click-to-view UI are synthesized. Clicking a received link opens a scroll
-frame listing the recipes the linker knows, with an "X of Y recipes known"
-summary of the whole profession.
+click-to-view UI are synthesized. Clicking a received link opens a
+crafting-window-style frame (the real `TradeSkillFrame` parchment art) listing
+the recipes the linker knows — difficulty-coloured and sorted high-craft-first
+— with a skill-rank bar and an "X of Y recipes known" summary.
 
 The "known recipes" data is a bitfield over the skill line's **canonical
 recipe list** — every `SkillLineAbility.dbc` row for the skill line that is a
@@ -9481,17 +9482,18 @@ Returns an array table:
 
 ```lua
 local recipes = C_TradeSkillUI.GetTradeSkillListRecipes(164, "eE0C...")
--- recipes[i] = { spellID = <number>, isKnown = <bool>, trivialLevel = <number> }
+-- recipes[i] = { spellID, isKnown, trivialLevel, greenLevel, createdItem }
 for i = 1, table.getn(recipes) do
     local name = GetSpellInfo(recipes[i].spellID)
     print(name, recipes[i].isKnown and "known" or "unknown")
 end
 ```
 
-`trivialLevel` is the skill level the recipe turns grey at — its difficulty
-tier (the required-skill field is uselessly `1` for nearly every
-trainer-taught recipe). The viewer sorts on it descending so the highest
-crafts appear first.
+`trivialLevel` / `greenLevel` are the skill levels the recipe turns grey /
+green at — the recipe's difficulty band, coloured against the linker's skill
+exactly as the default UI does (the required-skill field is uselessly `1` for
+nearly every trainer-taught recipe). `createdItem` is the crafted item's ID
+(`0` for enchants), which the viewer uses to build its subclass filter.
 
 The array is in canonical recipe order (one entry per *possible* recipe in the
 skill line, not just the known ones). Turn a `spellID` into a name/icon with
