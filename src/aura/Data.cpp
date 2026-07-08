@@ -492,6 +492,25 @@ void PushFromCache(void *L, const uint8_t *unit,
                c.casterGuid);
 }
 
+// True if `unit`'s descriptor currently exposes any visible aura in either
+// range. The cache fallback is only trustworthy when the descriptor has been
+// wholesale-cleared: the two states it exists for — rogue stealth and party
+// range fluctuation — clear the *entire* aura array at once. If the unit shows
+// even one live aura, the descriptor is authoritative, so a cache entry the
+// descriptor lacks is a genuinely-gone aura we never saw removed (e.g. a
+// no-duration debuff — Ghost/Spirit — on a unit that died and resurrected out
+// of our visibility, so no OnAuraRemoved fired and its infinite entry never
+// expired). Surfacing it then produces a stuck phantom.
+bool DescriptorHasVisibleAura(const uint8_t *unit) {
+    if (unit == nullptr)
+        return false;
+    for (int slot = 0; slot < Offsets::UNIT_AURA_TOTAL; ++slot) {
+        if (IsSlotPopulated(unit, slot))
+            return true;
+    }
+    return false;
+}
+
 // Counts populated descriptor slots matching `filter` (and `playerOnly`).
 int CountSlots(const uint8_t *unit, Filter filter, bool playerOnly) {
     if (unit == nullptr)
@@ -540,6 +559,8 @@ bool PushNthCacheFallback(void *L, const uint8_t *unit, int oneBasedIndex,
                           Filter filter, bool playerOnly) {
     if (unit == nullptr)
         return false;
+    if (DescriptorHasVisibleAura(unit))
+        return false; // descriptor authoritative — see DescriptorHasVisibleAura
     // The descriptor held `descCount` matches; the caller already found fewer
     // than `oneBasedIndex` there, so the cache supplies index
     // `oneBasedIndex - descCount` (1-based) of the entries it didn't.
@@ -568,6 +589,8 @@ void AppendCacheFallbacks(void *L, const uint8_t *unit, Filter filter,
                           bool playerOnly, int outerIdx, int &nextKey) {
     if (unit == nullptr)
         return;
+    if (DescriptorHasVisibleAura(unit))
+        return; // descriptor authoritative — see DescriptorHasVisibleAura
     const uint64_t guid = UnitGuid(unit);
     if (guid == 0)
         return;
