@@ -62,6 +62,19 @@
 // BLP1 and BLP2 keep width/height at header offsets +0x0C/+0x10.
 // Resolution runs once per overlay per session (cached).
 //
+// ## HD map patches (uniform tile upscale)
+//
+// A custom `patch-*.mpq` can replace the overlay art with higher-res tiles
+// (every 256px tile re-exported at 256*scale). Because we read the *file*
+// dimensions, that upscale must not be assumed to be 256: the resolver
+// detects the full-cell size `S` (the largest tile dimension = 256*scale)
+// and expresses both the partial-tile threshold and the texcoords relative
+// to it. Draw sizes/positions remain in logical map pixels (the patch changes
+// texture resolution, not the map canvas), so an interior tile reads texcoord
+// 1.0 at any scale and stock data (S == 256) is byte-identical to before.
+// The upscale factor need not be integral; only a uniform per-overlay scale
+// is assumed.
+//
 // ## Return shape
 //
 // Array of overlay tables:
@@ -102,6 +115,17 @@ using SMemFree_t = void(__stdcall *)(void *ptr, const char *file, int line,
 
 constexpr int kMaxTiles = 64;
 
+// Smallest power of two >= v (min 16), matching the engine's own
+// WorldMapFrame tile-file-size loop. A tile's content fills content/NextPot
+// of its (power-of-two) file — a fraction that's identical whether the file
+// is stock or HD-upscaled, so texcoords derived from it are scale-invariant.
+int NextPot(int v) {
+    int p = 16;
+    while (p < v)
+        p <<= 1;
+    return p;
+}
+
 // Resolved tile grid for one overlay, cached for the session (DBC and
 // MPQ contents are immutable per process).
 struct ResolvedOverlay {
@@ -109,6 +133,7 @@ struct ResolvedOverlay {
     uint8_t rows;
     uint8_t count; // tiles to draw (foreign tail already dropped)
     bool upscaled;
+    uint16_t cell; // full-cell file size (256 on stock, 256*scale on an HD patch)
     uint16_t fileW[kMaxTiles]; // BLP file dimensions per tile
     uint16_t fileH[kMaxTiles];
 };
@@ -161,13 +186,29 @@ void ResolveTiles(ResolvedOverlay *out, const char *basePath, int dbcW,
     if (dbcRows < 1)
         dbcRows = 1;
 
+    // Full-cell file size. On stock data a full (interior) tile is 256px; an
+    // HD map patch (patch-*.mpq) upscales every tile uniformly, so a full cell
+    // is 256*scale. Full tiles are the largest; edges/slivers are smaller — so
+    // the max tile dimension is the full-cell size. Partial-tile detection
+    // (and the texcoords in PushTiles) must compare against this S, not a
+    // hardcoded 256, or an HD edge tile (e.g. a 200px edge upscaled to 400px)
+    // reads as "full" and shears the row-major grid into diagonal strips.
+    int S = 256;
+    for (int i = 0; i < n; ++i) {
+        if (out->fileW[i] > S)
+            S = out->fileW[i];
+        if (out->fileH[i] > S)
+            S = out->fileH[i];
+    }
+    out->cell = static_cast<uint16_t>(S);
+
     // Real column count: the first partial-width tile is a row's right
     // edge. Search one past dbcCols so a sliver column the DBC width
     // rounds off is still found.
     int cols = dbcCols;
     bool widthEdge = false;
     for (int i = 0; i < n && i <= dbcCols; ++i) {
-        if (out->fileW[i] < 256) {
+        if (out->fileW[i] < S) {
             cols = i + 1;
             widthEdge = true;
             break;
@@ -179,7 +220,7 @@ void ResolveTiles(ResolvedOverlay *out, const char *basePath, int dbcW,
     int rows = dbcRows;
     bool heightEdge = false;
     for (int i = 0; i < n; ++i) {
-        if (out->fileH[i] < 256) {
+        if (out->fileH[i] < S) {
             rows = i / cols + 1;
             heightEdge = true;
             break;
@@ -304,27 +345,45 @@ void PushTiles(void *L, const ResolvedOverlay *r, const char *basePath,
             posX = offX + col * drawW;
             posY = offY + row * drawH;
         } else {
-            // Canonical 256px grid. Edge tiles draw their content pixels:
-            // from the DBC remainder when it's honest, else (sliver
-            // column the DBC rounded away) the whole file.
+            // Canonical 256px logical grid. Draw sizes/positions stay in
+            // logical map pixels; the texcoord is the content fraction of the
+            // (possibly HD-upscaled) file. `scale` = file px per logical px
+            // (1 on stock, 2/4 on an HD patch), so a full interior tile reads
+            // texCoord 1.0 regardless of file size, and an edge's content
+            // (remainder * scale) is measured against its actual file width.
             const int fileW = r->fileW[i];
             const int fileH = r->fileH[i];
-            int pixW = 256;
-            int pixH = 256;
+            const double scale = (r->cell > 0) ? (r->cell / 256.0) : 1.0;
+
+            double logicalW = 256.0, logicalH = 256.0;
+            tcX = 1.0;
+            tcY = 1.0;
             if (col == r->cols - 1) {
-                pixW = dbcW - 256 * (r->cols - 1);
-                if (pixW <= 0 || pixW > fileW)
-                    pixW = fileW;
+                const int rem = dbcW - 256 * (r->cols - 1);
+                if (rem <= 0) {
+                    // Sliver the DBC width rounded away: whole file is content
+                    // (its logical width is the file width de-scaled).
+                    logicalW = fileW / scale;
+                } else {
+                    // Content fills rem/NextPot(rem) of the POT tile file.
+                    // Scale-invariant, so an HD-upscaled file (POT*scale)
+                    // reads the same fraction — using the raw file width here
+                    // would halve the texcoord on any tile the patch doubled.
+                    logicalW = rem;
+                    tcX = rem / static_cast<double>(NextPot(rem));
+                }
             }
             if (row == r->rows - 1) {
-                pixH = dbcH - 256 * (r->rows - 1);
-                if (pixH <= 0 || pixH > fileH)
-                    pixH = fileH;
+                const int rem = dbcH - 256 * (r->rows - 1);
+                if (rem <= 0) {
+                    logicalH = fileH / scale;
+                } else {
+                    logicalH = rem;
+                    tcY = rem / static_cast<double>(NextPot(rem));
+                }
             }
-            drawW = pixW;
-            drawH = pixH;
-            tcX = static_cast<double>(pixW) / fileW;
-            tcY = static_cast<double>(pixH) / fileH;
+            drawW = logicalW;
+            drawH = logicalH;
             posX = offX + col * 256;
             posY = offY + row * 256;
         }
