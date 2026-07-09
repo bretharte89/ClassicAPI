@@ -68,6 +68,23 @@ local BAND_COLOR = {
 	[3] = TRIVIAL_DIFFICULTY_COLOR,    -- grey
 };
 
+local function CraftableCount(entry)
+	local reagents = entry.reagents;
+	if not reagents or table.getn(reagents) == 0 then
+		return nil;
+	end
+	local best;
+	for i = 1, table.getn(reagents) do
+		local r = reagents[i];
+		local need = r.count or 1;
+		local n = math.floor((C_Item.GetItemCount(r.itemID) or 0) / need);
+		if not best or n < best then
+			best = n;
+		end
+	end
+	return best;
+end
+
 local function ParseTradeLink(link)
 	-- Current format, with the linker's name: trade:id:cur:max:Name:bits
 	local _, _, id, cur, max, who, bits =
@@ -445,12 +462,14 @@ local function CreateFrame_TradeSkillLink()
 
 	function f:SelectRecipe(entry)
 		self.selectedSpellID = entry.spellID;
+		self.selectedEntry = entry;
 		self:RenderDetail(entry);
 		self:Refresh();
 	end
 
 	function f:ClearDetail()
 		self.selectedSpellID = nil;
+		self.selectedEntry = nil;
 		self.prodIcon:Hide();
 		self.prodName:SetText("");
 		self.prodDesc:SetText("");
@@ -468,7 +487,13 @@ local function CreateFrame_TradeSkillLink()
 			local row = self.rows[i];
 			local entry = recipes[offset + i];
 			if entry then
-				row:SetText(entry.name or "");
+				-- Append " [N]" when the reader can craft any (Blizzard's list).
+				local craftable = CraftableCount(entry);
+				local label = entry.name or "";
+				if craftable and craftable > 0 then
+					label = label .. " [" .. craftable .. "]";
+				end
+				row:SetText(label);
 				local r, g, b = BAND_COLOR[entry.band or 3]:GetRGB();
 				if self.selectedSpellID and entry.spellID == self.selectedSpellID then
 					row.select:SetVertexColor(r, g, b);
@@ -509,6 +534,17 @@ local function CreateFrame_TradeSkillLink()
 		end
 		self:Refresh();
 	end
+
+	f:RegisterEvent("BAG_UPDATE_DELAYED");
+	f:SetScript("OnEvent", function()
+		if not f:IsShown() then
+			return;
+		end
+		f:Refresh();
+		if f.selectedEntry then
+			f:RenderDetail(f.selectedEntry);
+		end
+	end);
 
 	return f;
 end
