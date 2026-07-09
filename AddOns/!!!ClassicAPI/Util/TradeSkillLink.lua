@@ -17,10 +17,6 @@ local FRAME_W, FRAME_H = 768, 512;
 local NUM_ROWS   = 19;
 local ROW_HEIGHT = 16;
 
--- Profession portrait icons, keyed by SkillLine.dbc id. Vanilla's DBC icon
--- field is a "Temp" placeholder for professions, so the real TradeSkillFrame
--- hardcodes these too (Blizzard_TradeSkillUI's TradeSkillIcons table) — we key
--- by id instead of name so it's locale-independent.
 local PROFESSION_ICONS = {
 	[171] = "Trade_Alchemy",
 	[164] = "Trade_BlackSmithing",
@@ -47,11 +43,6 @@ local function ProfessionIcon(skillLineID)
 		or "Interface\\Icons\\INV_Misc_QuestionMark";
 end
 
--- Exact port of the engine's trade-skill difficulty (the builder inside
--- Script_GetTradeSkillInfo, FUN_004fca20): `hi` = SkillLineAbility trivialHigh,
--- `lo` = trivialLow (defaults to hi-25 when zero), yellow = midpoint. Returns
--- the band 0..3 (orange/yellow/green/grey) for the linker's skill — identical
--- to what the default UI shows in the linker's own window.
 local function DifficultyBand(skill, hi, lo)
 	if not hi or hi <= 0 then
 		return 3;
@@ -77,10 +68,6 @@ local BAND_COLOR = {
 	[3] = TRIVIAL_DIFFICULTY_COLOR,    -- grey
 };
 
--- Parse a `trade:` hyperlink body into its fields. Returns
--- `id, cur, max, linkerName, bits` (linkerName may be nil), or nil if
--- malformed. `bits` may legitimately be empty (a profession with zero
--- recipes).
 local function ParseTradeLink(link)
 	-- Current format, with the linker's name: trade:id:cur:max:Name:bits
 	local _, _, id, cur, max, who, bits =
@@ -102,12 +89,6 @@ end
 ------------------------------------------------------------------------------
 
 local frame;
-
--- Resolve each recipe's crafted-item subclass. Returns the sorted distinct
--- subclass list, and whether any recipe crafts an item at all (false for
--- enchanting -> no filter shown). For items whose data isn't cached yet,
--- registers an Item-mixin load callback (`onLoaded`) so the list fills in as
--- the data arrives — no global GET_ITEM_INFO_RECEIVED polling.
 local function ResolveSubclasses(list, onLoaded)
 	local present, subs, anyItem = {}, {}, false;
 	for i = 1, table.getn(list) do
@@ -135,11 +116,6 @@ local function ResolveSubclasses(list, onLoaded)
 	return subs, anyItem;
 end
 
--- Subclass dropdown: "All Subclasses" + each distinct subclass. Buttons carry
--- their subclass in `value` so the shared click handler needs no per-iteration
--- closures (Lua 5.0 safe). The "All" button uses a sentinel because vanilla's
--- UIDropDownMenu_AddButton defaults an absent `value` to the button text —
--- which would otherwise filter by "All Subclasses" and match nothing.
 local SUBCLASS_ALL = {};
 
 local function SubClassButton_OnClick()
@@ -170,12 +146,6 @@ local function SubClassDropDown_Initialize()
 	end
 end
 
--- (Re)build the subclass dropdown from the frame's recipe list and register
--- load callbacks (via ResolveSubclasses) for any crafted items not yet cached
--- — passing itself as the callback, so each arrival refreshes the dropdown.
--- Only rebuilds the visible list when a subclass filter is active (the "All"
--- view doesn't depend on subclasses, so we avoid resetting the scroll on every
--- item that loads).
 local function RefreshSubclasses()
 	if not (frame and frame:IsShown() and frame.recipes) then
 		return;
@@ -207,15 +177,11 @@ local function CreateFrame_TradeSkillLink()
 	f:SetFrameStrata("DIALOG");
 	f:Hide();
 
-	-- Portrait sits BEHIND the parchment so the corner ring frames it (the
-	-- TopLeft quadrant art has a transparent ring cut-out).
 	local portrait = f:CreateTexture(nil, "BACKGROUND");
 	portrait:SetSize(60, 60);
 	portrait:SetPoint("TOPLEFT", 7, -6);
 	f.portrait = portrait;
 
-	-- Authentic TradeSkillFrame parchment: four quadrant textures, on BORDER
-	-- so they overlay (and frame) the portrait behind them.
 	local function Quad(file, w, h, point)
 		local tx = f:CreateTexture(nil, "BORDER");
 		tx:SetTexture("Interface\\TradeSkillFrame\\" .. file);
@@ -234,16 +200,12 @@ local function CreateFrame_TradeSkillLink()
 	local close = CreateFrame("Button", nil, f, "UIPanelCloseButton");
 	close:SetPoint("TOPRIGHT", -77, -8);
 
-	-- Skill-rank bar — matches TradeSkillRankFrame: 596x15 at (76,-44), blue
-	-- fill over the skills-bar texture with a dark-blue background.
 	local bar = CreateFrame("StatusBar", nil, f);
 	bar:SetSize(596, 15);
 	bar:SetPoint("TOPLEFT", 76, -44);
 	bar:SetStatusBarTexture("Interface\\PaperDollInfoFrame\\UI-Character-Skills-Bar");
 	bar:SetStatusBarColor(0.0, 0.0, 1.0, 0.5);
 	bar:SetMinMaxValues(0, 1);
-	-- Background: white @ a=0.2 tinted dark blue @ 0.5 (alphas multiply, so it's
-	-- faint) — matches TradeSkillRankFrameBackground exactly.
 	local barBg = bar:CreateTexture(nil, "BACKGROUND");
 	barBg:SetAllPoints(bar);
 	barBg:SetTexture(1, 1, 1, 0.2);
@@ -256,9 +218,6 @@ local function CreateFrame_TradeSkillLink()
 		edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", edgeSize = 16,
 	});
 	border:SetBackdropBorderColor(0.4, 0.4, 0.4);
-	-- Two FontStrings, exactly like TradeSkillRankFrame: the profession name in
-	-- GameFontNormalSmall (gold) at LEFT (6,1), then the rank in
-	-- GameFontHighlightSmall (white) 13px to its right.
 	local barName = bar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall");
 	barName:SetPoint("LEFT", 6, 1);
 	local barRank = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall");
@@ -273,8 +232,6 @@ local function CreateFrame_TradeSkillLink()
 	summary:SetPoint("TOPRIGHT", -110, -70);
 	f.summary = summary;
 
-	-- Subclass filter (item-producing professions only; hidden for enchanting,
-	-- which crafts no items). Mirrors TradeSkillSubClassDropDown at (56,-64).
 	local dropdown = CreateFrame("Frame", "ClassicAPITradeSkillLinkSubClass", f,
 		"UIDropDownMenuTemplate");
 	dropdown:SetPoint("TOPLEFT", 40, -60);
@@ -292,11 +249,6 @@ local function CreateFrame_TradeSkillLink()
 
 	f.rows = {};
 	for i = 1, NUM_ROWS do
-		-- Inherit the real row button the CraftFrame/TradeSkillFrame use
-		-- (CraftButtonTemplate -> ClassTrainerSkillButtonTemplate). The name is
-		-- rendered through the template's ButtonText with Blizzard's exact font
-		-- metrics, so the row spacing is identical to those windows — no
-		-- hand-placed FontString to get wrong.
 		local rowName = "ClassicAPITradeSkillLinkRow" .. i;
 		local row = CreateFrame("Button", rowName, f,
 			"ClassTrainerSkillButtonTemplate");
@@ -307,28 +259,16 @@ local function CreateFrame_TradeSkillLink()
 			row:SetPoint("TOPLEFT", f.rows[i - 1], "BOTTOMLEFT", 0, 0);
 		end
 
-		-- Flat list (no collapsible headers): drop the +/- tree icon and its
-		-- icon-sized hover art.
 		row:SetNormalTexture("");
 		row:SetDisabledTexture("");
 		row:SetHighlightTexture("");
-		-- Keep difficulty colour on hover (don't swap to the white HighlightFont).
-		-- if row.SetHighlightFontObject then
-		-- 	row:SetHighlightFontObject(GameFontNormal);
-		-- end
 
-		-- The template anchors ButtonText past the (now hidden) tree icon;
-		-- re-anchor it to the row's left edge since we show no icon.
 		local txt = getglobal(rowName .. "Text");
 		if txt then
 			txt:ClearAllPoints();
 			txt:SetPoint("LEFT", row, "LEFT", 4, 0);
 		end
 
-		-- Selection bar: Blizzard's exact selection texture (UI-Listbox-Highlight2,
-		-- full alpha, default BLEND — its translucency is baked into the texture,
-		-- so we don't guess an alpha), tinted per-row to the recipe's difficulty
-		-- colour via SetVertexColor in Refresh.
 		local sel = row:CreateTexture(nil, "BACKGROUND");
 		sel:SetTexture("Interface\\Buttons\\UI-Listbox-Highlight2");
 		sel:SetAllPoints(row);
@@ -358,16 +298,12 @@ local function CreateFrame_TradeSkillLink()
 	local hdrRight = prodIcon:CreateTexture(nil, "BACKGROUND");
 	hdrRight:SetTexture("Interface\\ClassTrainerFrame\\UI-ClassTrainer-DetailHeaderRight");
 	hdrRight:SetSize(64, 64);
-	-- Adjacent to the left piece (no overlap), like Blizzard's detail header.
 	hdrRight:SetPoint("TOPLEFT", hdrLeft, "TOPRIGHT", 0, 0);
 	local prodCount = prodIcon:CreateFontString(nil, "ARTWORK", "NumberFontNormal");
 	prodCount:SetPoint("BOTTOMRIGHT", -5, 2);
 	prodIcon.count = prodCount;
 	f.prodIcon = prodIcon;
 
-	-- Name is a child of the icon (ARTWORK, like the reagents) so it draws
-	-- above the plate; starts 5px right of the icon (matching the reagents'
-	-- icon.right + 5) so it clears the icon that now sits on the plate.
 	local prodName = prodIcon:CreateFontString(nil, "ARTWORK", "GameFontNormal");
 	prodName:SetPoint("LEFT", prodIcon, "RIGHT", 5, 0);
 	prodName:SetWidth(240);
@@ -375,9 +311,6 @@ local function CreateFrame_TradeSkillLink()
 	prodName:SetJustifyV("MIDDLE");
 	f.prodName = prodName;
 
-	-- Spell description (enchants only — item recipes leave it empty so it
-	-- collapses to zero height and the reagent label sits right under the
-	-- icon). White, wrapping, like the real Craft window's CraftDescription.
 	local prodDesc = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall");
 	prodDesc:SetPoint("TOPLEFT", prodIcon, "BOTTOMLEFT", 0, -6);
 	prodDesc:SetWidth(280);
@@ -385,18 +318,11 @@ local function CreateFrame_TradeSkillLink()
 	prodDesc:SetJustifyV("TOP");
 	f.prodDesc = prodDesc;
 
-	-- Reagent label sits below the description (which is empty for items, so
-	-- it lands ~7px below the 37px icon — matching TradeSkillReagentLabel).
 	local reagentLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall");
 	reagentLabel:SetPoint("TOPLEFT", prodDesc, "BOTTOMLEFT", 0, -8);
 	reagentLabel:SetText(SPELL_REAGENTS or "Reagents:");
 	f.reagentLabel = reagentLabel;
 
-	-- Reagent slots: two columns, four rows — Blizzard's exact geometry
-	-- (TradeSkillReagentN off QuestItemTemplate): 39px icons, reagent1 at the
-	-- label's BOTTOMLEFT (-5,-3), 147px horizontal pitch (button width), 43px
-	-- vertical (41px button + 2px gap). Count at the icon's bottom-right, name
-	-- (90px) to its right.
 	f.reagents = {};
 	for i = 1, NUM_REAGENTS do
 		local rowN = math.floor((i - 1) / 2);
@@ -406,8 +332,6 @@ local function CreateFrame_TradeSkillLink()
 		btn:SetPoint("TOPLEFT", reagentLabel, "BOTTOMLEFT",
 			col * 147 - 5, -3 - rowN * 43);
 		btn:SetNormalTexture("Interface\\Icons\\INV_Misc_QuestionMark");
-		-- Name plate behind each reagent — QuestItemTemplate's $parentNameFrame
-		-- (UI-QuestItemNameFrame, 128x64, LEFT of the icon's RIGHT at x=-10).
 		local plate = btn:CreateTexture(nil, "BACKGROUND");
 		plate:SetTexture("Interface\\QuestFrame\\UI-QuestItemNameFrame");
 		plate:SetSize(128, 64);
@@ -415,10 +339,6 @@ local function CreateFrame_TradeSkillLink()
 		local cnt = btn:CreateFontString(nil, "ARTWORK", "NumberFontNormal");
 		cnt:SetPoint("BOTTOMRIGHT", -4, 1);
 		btn.count = cnt;
-		-- Name anchored to the plate (LEFT + 15), exactly like the template.
-		-- The 90x36 box + MIDDLE vertical justify is what keeps the name
-		-- centered on the icon whether it's one line or wraps to two (the
-		-- template's $parentName carries the same explicit size).
 		local nm = btn:CreateFontString(nil, "ARTWORK", "GameFontHighlight");
 		nm:SetPoint("LEFT", plate, "LEFT", 15, 0);
 		nm:SetSize(90, 36);
@@ -437,14 +357,7 @@ local function CreateFrame_TradeSkillLink()
 		f.reagents[i] = btn;
 	end
 
-	-- Populate the detail pane for `entry` (a recipe from the list). Item
-	-- name/icon/link come from the Item mixin; uncached items re-render this
-	-- pane via ContinueOnItemLoad (guarded against a newer selection). On-hand
-	-- counts from GetItemCount. Enchants (createdItem 0) show the spell instead.
 	function f:RenderDetail(entry)
-		-- Fetch an item's name/icon/link via the Item mixin. If its data isn't
-		-- cached yet, re-render this pane when it loads — but only if this recipe
-		-- is still the selected one (a later selection must not be clobbered).
 		local function itemInfo(id)
 			local item = Item:CreateFromItemID(id);
 			if not item:IsItemDataCached() then
@@ -457,9 +370,6 @@ local function CreateFrame_TradeSkillLink()
 			return item:GetItemName(), item:GetItemIcon(), item:GetItemLink();
 		end
 
-		-- Product: item icon/name for craft recipes, spell icon/name for
-		-- enchants. Name is coloured by difficulty band, like the list row and
-		-- the real window's skill-name.
 		local prodTex, prodText, prodLink;
 		local created = entry.createdItem or 0;
 		if created > 0 then
@@ -468,12 +378,9 @@ local function CreateFrame_TradeSkillLink()
 			prodTex = tex;
 			prodLink = link;
 		else
-			-- Enchant / non-item recipe: use the spell's presentation.
 			prodText = entry.name;
 			prodTex = C_Spell.GetSpellTexture(entry.spellID);
 		end
-		-- Enchants carry a spell description (white); item recipes don't, so
-		-- the description collapses and the reagents move up under the icon.
 		if created > 0 then
 			self.prodDesc:SetText("");
 		else
@@ -482,8 +389,6 @@ local function CreateFrame_TradeSkillLink()
 		self.prodIcon:SetNormalTexture(prodTex or
 			"Interface\\Icons\\INV_Misc_QuestionMark");
 		self.prodName:SetText(prodText or "");
-		-- The skill name is always the default gold, like the real window
-		-- (Blizzard never difficulty-colours the detail's product name).
 		self.prodName:SetTextColor(NORMAL_FONT_COLOR:GetRGB());
 		self.prodIcon.itemLink = prodLink;      -- item tooltip when created > 0
 		self.prodIcon.spellID = entry.spellID;  -- else spell tooltip
@@ -559,14 +464,10 @@ local function CreateFrame_TradeSkillLink()
 				row:SetText(entry.name or "");
 				local r, g, b = BAND_COLOR[entry.band or 3]:GetRGB();
 				if self.selectedSpellID and entry.spellID == self.selectedSpellID then
-					-- Selected: Blizzard's highlight texture tinted to the
-					-- difficulty colour (its own translucency sets the intensity),
-					-- text white.
 					row.select:SetVertexColor(r, g, b);
 					row.select:Show();
 					row:SetTextColor(1, 1, 1);
 				else
-					-- Unselected: no bar, text in the difficulty colour.
 					row.select:Hide();
 					row:SetTextColor(r, g, b);
 				end
@@ -649,8 +550,6 @@ local function ShowTradeSkillLink(link, text)
 
 	frame:ClearDetail();
 	frame:Show();
-	-- Build the subclass dropdown (fills in async as uncached crafted items
-	-- load, via the Item mixin) then the visible list, then auto-select row 1.
 	RefreshSubclasses();
 	frame:ApplyFilter();
 	local first = frame.displayed and frame.displayed[1];
@@ -659,11 +558,6 @@ local function ShowTradeSkillLink(link, text)
 	end
 	return true;
 end
-
--- Uncached crafted items no longer need a global GET_ITEM_INFO_RECEIVED
--- watcher: the subclass dropdown (RefreshSubclasses) and the detail pane
--- (RenderDetail) each register per-item Item-mixin ContinueOnItemLoad
--- callbacks that fill themselves in as the data arrives.
 
 ------------------------------------------------------------------------------
 -- Click interception: handle `trade:` before the engine's SetHyperlink (which
