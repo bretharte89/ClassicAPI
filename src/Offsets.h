@@ -2279,7 +2279,18 @@ enum Offsets {
     // Verified via the `IsAssistingRitual` development session by
     // observing `0xEE00 → 0xEE05` on `/sit` over a chair (the medium-
     // chair sit value 5).
+    //
+    // Byte 3 (the AnimTier / misc-flags byte, mask 0x02000000 on the
+    // u32) is the **stealth / sneak flag**: set while the unit is in
+    // the sneaking anim tier (Rogue Stealth, Druid Prowl, Shadowmeld),
+    // which is what drives the client's semi-transparent render of a
+    // stealthed unit. Verified via `_classicapi_DiffAll`: a Prowl
+    // toggle from a Cat-Form baseline flips byte 3 `0x00 → 0x02` while
+    // every other descriptor change is aura-array slot metadata — so
+    // this is the only standalone broadcast bit that means "stealthed".
+    // Read by `IsStealthed()`.
     OFF_UNIT_FIELD_BYTES_1 = 0x210,
+    UNIT_BYTES_1_STEALTH_FLAG = 0x02000000,
 
     // `__fastcall(void)` engine helper that refreshes the bonus
     // action bar from the local player's current shapeshift form
@@ -3880,23 +3891,15 @@ enum Offsets {
     VAR_ADDON_ARRAY = 0x00BE1B94,
     VAR_ADDON_COUNT = 0x00BE1B90,
 
-    // Player visibility/state byte field, broadcast in UpdateFields.
-    // Found empirically via _classicapi_DescDump (see src/debug/).
-    // Treated as a u32 but the meaningful bits all live in byte 0:
-    //   0x02 — set when the player has any visibility/form-modifying
-    //          state active (stealth, mount, possibly shapeshift —
-    //          set by stealth and mount in our test data).
-    //   0x08, 0x10 — set together when mounted (alongside 0x02).
-    //
-    // Ambiguity: bit 0x02 alone doesn't distinguish stealth from
-    // other visibility-modifying states. Stealth detection AND-gates
-    // with `mountDisplayID == 0` to exclude mount; if shapeshift
-    // also sets bit 0x02 we'd false-positive on druids in form
-    // (untested). The robust path is to walk the player's aura
-    // list looking for the actual stealth/prowl spell — left as
-    // future work if false-positives turn up.
-    OFF_PLAYER_FIELD_VIS_BYTES = 0x17C,
-    PLAYER_VIS_BIT_STEALTH = 0x02,
+    // NOTE: an earlier revision defined OFF_PLAYER_FIELD_VIS_BYTES /
+    // PLAYER_VIS_BIT_STEALTH here at 0x17C, believing bit 0x02 was a
+    // "stealth bit". That was wrong: 0x17C is UNIT_FIELD_AURALEVELS
+    // (per-slot caster-level bytes; see OFF_UNIT_FIELD_AURALEVELS above),
+    // and the old read only appeared to work by coincidence (a caster-
+    // level byte that happened to have bit 0x02 set on the test char;
+    // at level 60 = 0x3C it doesn't, so it read false). The real stealth
+    // flag is UNIT_FIELD_BYTES_1 byte 3 (UNIT_BYTES_1_STEALTH_FLAG); see
+    // that field above. IsStealthed reads it.
 
     // Mount display ID — the creature display ID the engine renders
     // under the mounted player. Zero when not mounted, non-zero
@@ -4650,6 +4653,7 @@ enum Offsets {
     // reads `spellRec[+0x14]` as the spell's mechanic when the per-
     // effect EffectMiscValue is 0. Read by C_Spell.GetSpellMechanicByID.
     OFF_SPELL_RECORD_MECHANIC = 0x14,
+    SPELL_AURA_MOD_STEALTH = 16,
     SPELL_AURA_MOD_SHAPESHIFT = 36,
     SPELL_AURA_MOUNTED = 78,
 

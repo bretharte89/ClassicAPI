@@ -46,6 +46,34 @@ uint32_t MountDisplayID(const uint8_t *desc) {
         desc + Offsets::OFF_UNIT_FIELD_MOUNTDISPLAYID);
 }
 
+// Scans the player's helpful-aura (buff) slots for the first spell whose
+// Spell.dbc record lists `auraEffect` (a `SPELL_AURA_*` code) in any of
+// its three effect slots, and returns that spellID (0 if none). Used by
+// `Dismount` to find the active mount aura to cancel — the engine's
+// `CMSG_CANCEL_AURA` needs the spellID, not a slot index.
+uint32_t FindPlayerBuffWithEffect(int auraEffect) {
+    auto *player = Unit::Identity::PlayerObject();
+    if (player == nullptr)
+        return 0;
+
+    for (int slot = 0; slot < Offsets::UNIT_AURA_BUFF_COUNT; ++slot) {
+        if (!Aura::Data::IsSlotPopulated(player, slot))
+            continue;
+        const uint32_t spellID = Aura::Data::ReadSpellID(player, slot);
+        const uint8_t *record = Spell::Lookup::RecordForID(static_cast<int>(spellID));
+        if (record == nullptr)
+            continue;
+
+        auto *auraTypes = reinterpret_cast<const int32_t *>(
+            record + Offsets::OFF_SPELL_RECORD_EFFECT_APPLY_AURA_NAME);
+        for (int eff = 0; eff < Offsets::SPELL_RECORD_EFFECT_COUNT; ++eff) {
+            if (auraTypes[eff] == auraEffect)
+                return spellID;
+        }
+    }
+    return 0;
+}
+
 // `IsMounted()` — true iff the player is currently mounted. Reads
 // `UNIT_FIELD_MOUNTDISPLAYID` from the descriptor; non-zero means
 // the engine is rendering a mount under the player.
@@ -71,46 +99,35 @@ int __fastcall Script_Dismount(void *L) {
     if (MountDisplayID(desc) == 0)
         return 0;
 
-    auto *player = Unit::Identity::PlayerObject();
-    if (player == nullptr)
-        return 0;
-
-    for (int slot = 0; slot < Offsets::UNIT_AURA_BUFF_COUNT; ++slot) {
-        if (!Aura::Data::IsSlotPopulated(player, slot))
-            continue;
-        const uint32_t spellID = Aura::Data::ReadSpellID(player, slot);
-        const uint8_t *record = Spell::Lookup::RecordForID(static_cast<int>(spellID));
-        if (record == nullptr)
-            continue;
-
-        auto *auraTypes = reinterpret_cast<const int32_t *>(
-            record + Offsets::OFF_SPELL_RECORD_EFFECT_APPLY_AURA_NAME);
-        for (int eff = 0; eff < Offsets::SPELL_RECORD_EFFECT_COUNT; ++eff) {
-            if (auraTypes[eff] != Offsets::SPELL_AURA_MOUNTED)
-                continue;
-            auto fn = reinterpret_cast<CancelAuraSend_t>(
-                static_cast<uintptr_t>(Offsets::FUN_CANCEL_AURA_SEND));
-            fn(static_cast<int>(spellID));
-            return 0;
-        }
+    const uint32_t spellID = FindPlayerBuffWithEffect(Offsets::SPELL_AURA_MOUNTED);
+    if (spellID != 0) {
+        auto fn = reinterpret_cast<CancelAuraSend_t>(
+            static_cast<uintptr_t>(Offsets::FUN_CANCEL_AURA_SEND));
+        fn(static_cast<int>(spellID));
     }
     return 0;
 }
 
 // `IsStealthed()` — true iff the player is currently stealthed
-// (Rogue Stealth / Druid Prowl). Checks `PLAYER_FIELD_VIS_BYTES`
-// bit 0x02. Mount also sets that bit, so we AND-gate with
-// `mountDisplayID == 0` to disambiguate. See the comment on
-// `OFF_PLAYER_FIELD_VIS_BYTES` in Offsets.h for the full bit map
-// and known limitations (untested for shapeshift forms).
+// (Rogue Stealth / Druid Prowl / Night Elf Shadowmeld / etc.). Reads
+// the sneak flag in `UNIT_FIELD_BYTES_1` byte 3 (mask
+// `UNIT_BYTES_1_STEALTH_FLAG`) — the same broadcast bit the client's
+// render path uses to draw a stealthed unit semi-transparent.
+//
+// Derived via `_classicapi_DiffAll`: a Prowl toggle from a Cat-Form
+// baseline flips byte 3 `0x00 -> 0x02` and touches nothing else but
+// aura-array slot metadata, so this is the one standalone descriptor
+// bit that means "stealthed" (the earlier `0x17C & 0x02` read was
+// actually AURALEVELS and only worked by coincidence). Being a unit
+// anim-tier flag rather than a class field, it covers every stealth
+// source and rank without a spellID list or an aura scan.
 int __fastcall Script_IsStealthed(void *L) {
     auto *desc = Unit::Identity::PlayerDescriptor();
     bool stealthed = false;
     if (desc != nullptr) {
-        const uint32_t visBytes = *reinterpret_cast<const uint32_t *>(
-            desc + Offsets::OFF_PLAYER_FIELD_VIS_BYTES);
-        stealthed = (visBytes & Offsets::PLAYER_VIS_BIT_STEALTH) != 0
-                    && MountDisplayID(desc) == 0;
+        const uint32_t bytes1 = *reinterpret_cast<const uint32_t *>(
+            desc + Offsets::OFF_UNIT_FIELD_BYTES_1);
+        stealthed = (bytes1 & Offsets::UNIT_BYTES_1_STEALTH_FLAG) != 0;
     }
     Game::Lua::PushBool(L, stealthed);
     return 1;
