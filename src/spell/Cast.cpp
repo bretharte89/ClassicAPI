@@ -133,6 +133,26 @@ void StampChannel(int spellID, int startMs, int endMs) {
 
 int NowMs() { return static_cast<int>(reinterpret_cast<TickMs_t>(Offsets::FUN_OS_TICKCOUNT_MS)()); }
 
+// Pushes an engine-ms timestamp to Lua as an UNSIGNED 32-bit value.
+//
+// `FUN_OS_TICKCOUNT_MS` returns a 64-bit ms tick from one of two backends
+// (GetTickCount, or a scaled rdtsc — the latter survives warm reboots, so
+// the value can be well past 2^31 even right after a "restart"). We keep
+// ticks in a signed int internally, which is fine for the small deltas and
+// window compares (they cancel), but a direct int->double push surfaces a
+// NEGATIVE startTimeMs/endTimeMs once the tick's high bit is set.
+//
+// The contract is that these match `GetTime()*1000`. Script_GetTime
+// (0x00515EA0) does `(double)(tick & 0xFFFFFFFF) * 0.001` — i.e. it masks
+// the tick to the low 32 bits UNSIGNED, then scales. So reinterpreting our
+// stored tick as uint32 reproduces GetTime()'s exact value for the whole
+// range, including across the ~49.7-day 2^32 wrap (both wrap together).
+// Carrying 64-bit precision here would be WRONG: it would diverge from
+// GetTime() past 2^32 and break addons' (now-start)/(end-start) math.
+void PushMs(void *L, int ms) {
+    Game::Lua::PushNumber(L, static_cast<double>(static_cast<uint32_t>(ms)));
+}
+
 void *Resolve(const char *token) {
     return reinterpret_cast<ResolveUnitToken_t>(Offsets::FUN_RESOLVE_UNIT_TOKEN)(token);
 }
@@ -200,8 +220,8 @@ int PushCastInfo(void *L, const TrackedSpell &c) {
     Game::Lua::PushString(L, name);                          // 1 name
     Game::Lua::PushString(L, name);                          // 2 displayName
     Game::Lua::PushString(L, SpellIconPath(rec));            // 3 textureID (path)
-    Game::Lua::PushNumber(L, static_cast<double>(c.startMs)); // 4 startTimeMs
-    Game::Lua::PushNumber(L, static_cast<double>(c.endMs));   // 5 endTimeMs
+    PushMs(L, c.startMs);                                    // 4 startTimeMs
+    PushMs(L, c.endMs);                                      // 5 endTimeMs
     Game::Lua::PushBool(L, IsTradeskill(rec));               // 6 isTradeskill
     Game::Lua::PushNil(L);                                   // 7 castID
     Game::Lua::PushBool(L, false);                           // 8 notInterruptible
@@ -230,8 +250,8 @@ int PushChannelInfo(void *L, int spellID, int startMs, int endMs, bool haveTimes
     Game::Lua::PushString(L, name);                          // 2 text / displayName
     Game::Lua::PushString(L, SpellIconPath(rec));            // 3 textureID (path)
     if (haveTimes) {
-        Game::Lua::PushNumber(L, static_cast<double>(startMs)); // 4 startTimeMs
-        Game::Lua::PushNumber(L, static_cast<double>(endMs));   // 5 endTimeMs
+        PushMs(L, startMs);                                  // 4 startTimeMs
+        PushMs(L, endMs);                                    // 5 endTimeMs
     } else {
         Game::Lua::PushNil(L);
         Game::Lua::PushNil(L);
