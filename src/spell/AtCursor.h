@@ -46,6 +46,12 @@ bool CommitAtCoords(const float coords[3]);
 // `CommitAtCoords`); for a normal spell it fires immediately. Returns
 // true if the cast was dispatched (spell is in the player's
 // spellbook), false otherwise.
+//
+// The numeric form casts the *exact* spellID (a specific rank). The
+// name form defers to the engine's own resolver, which parses a
+// trailing `(Rank N)` — `"Blizzard"` casts the highest known rank,
+// `"Blizzard(Rank 6)"` casts that rank.
 bool DispatchSpellCast(int spellID);
+bool DispatchSpellCastByName(const char *name);
 
 } // namespace Spell::AtCursor

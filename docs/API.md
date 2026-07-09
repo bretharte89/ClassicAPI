@@ -343,8 +343,8 @@ build instructions.
   - [`C_Spell.IsSpellHarmful(spellID)` / `C_Spell.IsSpellHelpful(spellID)`](#c_spellisspellharmfulspellid--c_spellisspellhelpfulspellid)
   - [`GetSpellSchool(spellID)`](#getspellschoolspellid)
   - [`CastSpellNoToggle(name | spellID)`](#castspellnotogglename--spellid)
-  - [`C_Spell.CastAtCursor(spellID)`](#c_spellcastatcursorspellid)
-  - [`C_Spell.CastAtUnit(spellID, unit)`](#c_spellcastatunitspellid-unit)
+  - [`C_Spell.CastAtCursor(spellIDOrName)`](#c_spellcastatcursorspellidorname)
+  - [`C_Spell.CastAtUnit(spellIDOrName, unit)`](#c_spellcastatunitspellidorname-unit)
   - [`C_Spell.CancelSpellByID(spellID)` / `CancelSpellByName(name)`](#c_spellcancelspellbyidspellid--cancelspellbynamename)
   - [`C_Spell.UnitCastingInfo(unit)` / `C_Spell.CastingInfo()`](#c_spellunitcastinginfounit--c_spellcastinginfo)
   - [`C_Spell.UnitChannelInfo(unit)` / `C_Spell.ChannelInfo()`](#c_spellunitchannelinfounit--c_spellchannelinfo)
@@ -5507,7 +5507,7 @@ C_Item.UseAtCursor("Iron Grenade")
 
 Implementation chains the existing item-use path
 (`Item::Location::FindByArgInBags` + `FUN_ITEM_USE`) with
-[`Spell::AtCursor::Resolve`](#c_spellcastatcursorspellid) — same
+[`Spell::AtCursor::Resolve`](#c_spellcastatcursorspellidorname) — same
 cursor-resolution helper `C_Spell.CastAtCursor` uses. When the item
 fires a non-ground-target spell, the cursor leg no-ops and returns
 `false`; the item still uses normally (any implicit target — current
@@ -5535,7 +5535,7 @@ C_Item.UseAtUnit("Iron Grenade", "player")
 Same chain as `UseAtCursor` (`Item::Location::FindByArgInBags` +
 `FUN_ITEM_USE`) but committing the placement at the unit's world
 position via
-[`Spell::AtCursor::CommitAtCoords`](#c_spellcastatunitspellid-unit)
+[`Spell::AtCursor::CommitAtCoords`](#c_spellcastatunitspellidorname-unit)
 instead of the cursor raycast. Returns `true` when the placement
 landed at the unit; `false` for non-ground-target items (the item
 still fires with any implicit target), unparseable input,
@@ -8474,28 +8474,37 @@ Using this from inside a macro action slot? See
 [`CastSpellNoToggle` as a macro cast line](#castspellnotoggle-as-a-macro-cast-line) below for the additional
 parser support that makes the slot tag correctly for action-bar UIs.
 
-### `C_Spell.CastAtCursor(spellID)`
+### `C_Spell.CastAtCursor(spellIDOrName)`
 
 Casts a ground-target spell at the player's current cursor world
 position, bypassing the manual click on the AoE reticle the engine
 would otherwise require. ClassicAPI's analog of modern's
 `/cast [@cursor] Blizzard`. Returns `true` when the cursor-placement
 leg landed; `false` for non-ground-target spells (cast still fires
-normally on the current target), unknown spellIDs, cursor over UI /
+normally on the current target), unknown spells, cursor over UI /
 off-screen, etc.
 
+Accepts a **spellID** or a **spell name**:
+
 ```lua
-C_Spell.CastAtCursor(10)    -- Blizzard rank 1 at cursor
-C_Spell.CastAtCursor(2120)  -- Flamestrike rank 1 at cursor
+C_Spell.CastAtCursor(10)                  -- Blizzard Rank 1 (exact spellID)
+C_Spell.CastAtCursor(2120)                -- Flamestrike Rank 1
+C_Spell.CastAtCursor("Blizzard")          -- highest known rank
+C_Spell.CastAtCursor("Blizzard(Rank 6)")  -- that specific rank
 ```
+
+A **numeric** spellID casts that *exact* spell — every rank is its own
+spellID, so `10` casts Blizzard Rank 1 (not the highest known rank). A
+**name** goes through the engine's own resolver, which parses a trailing
+`(Rank N)`; a bare name casts the highest rank you know.
 
 Two-stage internally:
 
-1. Initiates the cast through the same path
-   [`CastSpellByName`](docs/API.md#numeric-spellids-in-cast-and-castspellbyname)
-   uses (`FUN_RESOLVE_SPELL_NAME_TO_SLOT` + the engine's cast
-   dispatcher). If the spell needs a ground target, the engine
-   enters placement mode and arms the AoE reticle.
+1. Initiates the cast: a numeric spellID resolves to its exact spellbook
+   slot (`Spell::Lookup::FindSpellbookSlot`, so the requested rank is the one
+   that fires), a name goes through `FUN_RESOLVE_SPELL_NAME_TO_SLOT`; either
+   way it dispatches through the engine's cast dispatcher. If the spell needs
+   a ground target, the engine enters placement mode and arms the AoE reticle.
 
 2. Refreshes the cursor's screen→world raycast via
    `FUN_REFRESH_CURSOR_RAYCAST` (the same internal the engine fires
@@ -8514,24 +8523,28 @@ The companion item version is
 [`C_Item.UseAtCursor`](#c_itemuseatcursoriteminfo) — same chain via
 the item-use path for grenades / on-use ground-target items.
 
-### `C_Spell.CastAtUnit(spellID, unit)`
+### `C_Spell.CastAtUnit(spellIDOrName, unit)`
 
 Casts a ground-target spell at `unit`'s feet, bypassing the AoE
 reticle click. ClassicAPI's analog of modern's
-`/cast [@unit] Flamestrike` — `CastAtUnit(spellID, "player")` drops it
+`/cast [@unit] Flamestrike` — `CastAtUnit(spell, "player")` drops it
 at the player's position, `"target"` at the target's, and so on for
 any unit token (`"mouseover"`, `"party1"`, `"raid7"`, …). Returns
 `true` when the placement landed at the unit; `false` for
 non-ground-target spells (cast still fires normally), unknown
-spellIDs, or a unit with no resolvable position.
+spells, or a unit with no resolvable position.
+
+The first argument takes a spellID or a spell name, with the same
+exact-rank / `(Rank N)` semantics as `CastAtCursor`.
 
 ```lua
-C_Spell.CastAtUnit(2120, "target")   -- Flamestrike at the target's feet
-C_Spell.CastAtUnit(10, "player")     -- Blizzard centered on yourself
+C_Spell.CastAtUnit(2120, "target")            -- Flamestrike at the target's feet
+C_Spell.CastAtUnit(10, "player")              -- Blizzard Rank 1 on yourself
+C_Spell.CastAtUnit("Blizzard(Rank 6)", "target")
 ```
 
 Same two-stage shape as
-[`C_Spell.CastAtCursor`](#c_spellcastatcursorspellid), but instead of
+[`C_Spell.CastAtCursor`](#c_spellcastatcursorspellidorname), but instead of
 the cursor raycast, step 2 reads the unit's world position from its
 `GetPosition` virtual (the same one `CheckInteractDistance` /
 `UnitInRange` use) and commits placement there via

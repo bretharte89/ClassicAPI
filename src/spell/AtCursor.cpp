@@ -17,13 +17,12 @@
 //
 // Implementation chains the engine's existing primitives:
 //
-//   1. Initiate the cast the same way `Script_CastSpellByName` does:
-//      resolve `spellID` (via our `Spell::CastByID` numeric-name hook)
-//      to a spellbook slot through `FUN_RESOLVE_SPELL_NAME_TO_SLOT`,
-//      then dispatch through `FUN_SPELL_CAST_DISPATCH`. For a ground-
-//      target spell, the engine enters placement mode at this point
-//      (sets `VAR_SPELL_PLACEMENT_STATE`); for a normal cast, it
-//      fires immediately.
+//   1. Initiate the cast: resolve the *exact* `spellID` to its spellbook
+//      slot (`Spell::Lookup::FindSpellbookSlot` — NOT name resolution, which
+//      would cast the highest rank) and dispatch through
+//      `FUN_SPELL_CAST_DISPATCH`. For a ground-target spell, the engine
+//      enters placement mode at this point (sets `VAR_SPELL_PLACEMENT_STATE`);
+//      for a normal cast, it fires immediately.
 //
 //   2. `Spell::AtCursor::Resolve()` then refreshes the cursor's world
 //      raycast via `FUN_REFRESH_CURSOR_RAYCAST` and commits the
@@ -41,10 +40,10 @@
 
 #include "Game.h"
 #include "Offsets.h"
+#include "spell/Lookup.h"
 #include "spell/MacroPrimarySpell.h"
 
 #include <cstdint>
-#include <cstdio>
 #include <cstring>
 
 namespace Spell::AtCursor {
@@ -141,9 +140,16 @@ bool Resolve() {
 
 namespace {
 
-using NameToSlot_t = int(__fastcall *)(const char *name, void *out);
 using CastDispatch_t = void(__fastcall *)(unsigned slot, int bookType,
                                            unsigned targetGuidLo, float targetGuidHi);
+using NameToSlot_t = int(__fastcall *)(const char *name, void *out);
+
+void DispatchSlot(int slot0Based, int bookType) {
+    auto dispatch = reinterpret_cast<CastDispatch_t>(
+        Offsets::FUN_SPELL_CAST_DISPATCH);
+    // (0, 0) GUID = no implicit target; the engine handles placement.
+    dispatch(static_cast<unsigned>(slot0Based), bookType, 0, 0.0f);
+}
 
 } // namespace
 
@@ -151,39 +157,54 @@ bool DispatchSpellCast(int spellID) {
     if (spellID <= 0)
         return false;
 
-    // Hand the spellID off as a numeric string — our `Spell::CastByID`
-    // hook on `FUN_RESOLVE_SPELL_NAME_TO_SLOT` translates pure-numeric
-    // input into the locale-resolved spell name internally, so the
-    // engine treats it just like `CastSpellByName("Blizzard")`.
-    char numBuf[16];
-    std::snprintf(numBuf, sizeof(numBuf), "%d", spellID);
+    // Resolve the EXACT spellID to its spellbook slot. Every rank is its own
+    // slot, so we must NOT go through name resolution — that walks to the
+    // highest rank and would cast Blizzard(Rank 6) for a Rank 1 (spellID 10)
+    // request. `FindSpellbookSlot` returns a 1-based slot; the dispatcher
+    // wants the 0-based index into `VAR_PLAYER_SPELLBOOK`.
+    int bookType = 0;
+    const int slot1 = Spell::Lookup::FindSpellbookSlot(spellID, &bookType);
+    if (slot1 <= 0)
+        return false; // not in the player's spellbook
 
+    DispatchSlot(slot1 - 1, bookType);
+    return true;
+}
+
+bool DispatchSpellCastByName(const char *name) {
+    if (name == nullptr || *name == '\0')
+        return false;
+
+    // The engine's resolver strips a trailing `(Rank N)` and returns the
+    // 0-based spellbook slot (highest rank when no rank is given). This is the
+    // by-name path — for an exact rank prefer the numeric spellID overload.
     auto nameToSlot = reinterpret_cast<NameToSlot_t>(
         Offsets::FUN_RESOLVE_SPELL_NAME_TO_SLOT);
     int bookType = 0;
-    const int slot = nameToSlot(numBuf, &bookType);
+    const int slot = nameToSlot(name, &bookType);
     if (slot < 0)
         return false; // not in the player's spellbook
 
-    auto dispatch = reinterpret_cast<CastDispatch_t>(
-        Offsets::FUN_SPELL_CAST_DISPATCH);
-    dispatch(static_cast<unsigned>(slot), bookType,
-             0, 0.0f); // no implicit target unit; engine handles placement
+    DispatchSlot(slot, bookType);
     return true;
 }
 
 namespace {
 
 int __fastcall Script_C_Spell_CastAtCursor(void *L) {
-    if (!Game::Lua::IsNumber(L, 1)) {
-        Game::Lua::PushBool(L, false);
-        return 1;
+    // Accept a numeric spellID (exact rank) or a spell name (the engine's
+    // resolver parses a trailing "(Rank N)"). IsNumber is checked first so a
+    // numeric string like "10" still takes the exact-spellID path.
+    bool dispatched = false;
+    if (Game::Lua::IsNumber(L, 1)) {
+        dispatched = DispatchSpellCast(static_cast<int>(Game::Lua::ToNumber(L, 1)));
+    } else if (Game::Lua::IsString(L, 1)) {
+        dispatched = DispatchSpellCastByName(Game::Lua::ToString(L, 1));
     }
-    const int spellID = static_cast<int>(Game::Lua::ToNumber(L, 1));
 
-    // Spell not in the player's spellbook → match `CastSpellByName`'s
-    // silent failure.
-    if (!DispatchSpellCast(spellID)) {
+    // Bad input / spell not in the player's spellbook → match
+    // `CastSpellByName`'s silent failure.
+    if (!dispatched) {
         Game::Lua::PushBool(L, false);
         return 1;
     }

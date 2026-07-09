@@ -43,11 +43,14 @@ namespace Spell::AtUnit {
 namespace {
 
 int __fastcall Script_C_Spell_CastAtUnit(void *L) {
-    if (!Game::Lua::IsNumber(L, 1) || !Game::Lua::IsString(L, 2)) {
+    // arg1: numeric spellID (exact rank) or spell name ("(Rank N)"-aware).
+    // arg2: unit token.
+    const bool byNumber = Game::Lua::IsNumber(L, 1);
+    if ((!byNumber && !Game::Lua::IsString(L, 1)) ||
+        !Game::Lua::IsString(L, 2)) {
         Game::Lua::PushBool(L, false);
         return 1;
     }
-    const int spellID = static_cast<int>(Game::Lua::ToNumber(L, 1));
     const char *token = Game::Lua::ToString(L, 2);
 
     // Resolve the unit's position before dispatching — fail fast so a
@@ -61,7 +64,12 @@ int __fastcall Script_C_Spell_CastAtUnit(void *L) {
         return 1;
     }
 
-    if (!Spell::AtCursor::DispatchSpellCast(spellID)) {
+    const bool dispatched =
+        byNumber
+            ? Spell::AtCursor::DispatchSpellCast(
+                  static_cast<int>(Game::Lua::ToNumber(L, 1)))
+            : Spell::AtCursor::DispatchSpellCastByName(Game::Lua::ToString(L, 1));
+    if (!dispatched) {
         Game::Lua::PushBool(L, false);
         return 1;
     }
