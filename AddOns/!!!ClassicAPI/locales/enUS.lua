@@ -24,3 +24,4 @@ SLASH_EQUIP_SET2 = "/equipset";
 SLASH_FOCUS1 = "/focus";
 SLASH_FOCUS2 = "/focus";
 TARGETFOCUS = "Target Focus";
+LINK_TRADESKILL_TOOLTIP = "Click here to create a link to your profession.";

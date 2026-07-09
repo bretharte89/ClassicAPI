@@ -620,3 +620,43 @@ function SetItemRef(link, text, button, chatFrame)
 	end
 	return originalSetItemRef(link, text, button, chatFrame);
 end
+
+local function CreateProfessionLinkButton(parentName, getLink)
+	local parent = _G[parentName];
+	local btnName = parentName .. "LinkButton";
+	if _G[btnName] or not parent then
+		return;
+	end
+	local btn = CreateFrame("Button", btnName, parent);
+	btn:SetSize(16, 16);
+	btn:SetPoint("LEFT", _G[parentName .. "TitleText"], "RIGHT", 4, 0);
+
+	local icon = "Interface\\GossipFrame\\PetitionGossipIcon";
+	btn:SetNormalTexture(icon);
+	btn:SetHighlightTexture(icon, "ADD");
+
+	btn:SetScript("OnClick", function()
+		local link = getLink();
+		if not link then
+			return;
+		end
+		if not ChatFrameEditBox:IsVisible() then
+			ChatFrameEditBox:Show();
+		end
+		ChatFrameEditBox:Insert(link);
+	end);
+	btn:SetScript("OnEnter", function()
+		GameTooltip:SetOwner(this, "ANCHOR_TOPLEFT");
+		GameTooltip:SetText(LINK_TRADESKILL_TOOLTIP, nil, nil, nil, nil, 1);
+		GameTooltip:Show();
+	end);
+	btn:SetScript("OnLeave", GameTooltip_Hide);
+end
+
+EventUtil.ContinueOnAddOnLoaded("Blizzard_TradeSkillUI", function()
+	CreateProfessionLinkButton("TradeSkillFrame", C_TradeSkillUI.GetTradeSkillListLink);
+end);
+
+EventUtil.ContinueOnAddOnLoaded("Blizzard_CraftUI", function()
+	CreateProfessionLinkButton("CraftFrame", C_TradeSkillUI.GetCraftListLink);
+end);
