@@ -103,11 +103,12 @@ end
 
 local frame;
 
--- Resolve each recipe's crafted-item subclass (via GetItemInfo, which also
--- warms uncached items so a later GET_ITEM_INFO_RECEIVED can fill them in).
--- Returns the sorted distinct subclass list, and whether any recipe crafts an
--- item at all (false for enchanting -> no filter shown).
-local function ResolveSubclasses(list)
+-- Resolve each recipe's crafted-item subclass. Returns the sorted distinct
+-- subclass list, and whether any recipe crafts an item at all (false for
+-- enchanting -> no filter shown). For items whose data isn't cached yet,
+-- registers an Item-mixin load callback (`onLoaded`) so the list fills in as
+-- the data arrives — no global GET_ITEM_INFO_RECEIVED polling.
+local function ResolveSubclasses(list, onLoaded)
 	local present, subs, anyItem = {}, {}, false;
 	for i = 1, table.getn(list) do
 		local r = list[i];
@@ -115,13 +116,13 @@ local function ResolveSubclasses(list)
 			anyItem = true;
 			if not r.subclass then
 				-- GetItemInfoInstant's 3rd return is the localized subclass
-				-- name (or nil when uncached); GetItemInfo warms it so a later
-				-- GET_ITEM_INFO_RECEIVED can fill it in.
+				-- name (or nil when uncached).
 				local _, _, subType = C_Item.GetItemInfoInstant(r.createdItem);
 				if subType and subType ~= "" then
 					r.subclass = subType;
-				else
-					GetItemInfo(r.createdItem);
+				elseif onLoaded then
+					-- Not cached — re-derive when the item loads.
+					Item:CreateFromItemID(r.createdItem):ContinueOnItemLoad(onLoaded);
 				end
 			end
 			if r.subclass and not present[r.subclass] then
@@ -166,6 +167,31 @@ local function SubClassDropDown_Initialize()
 		b.checked = (frame.subclassFilter == subs[i]);
 		b.func = SubClassButton_OnClick;
 		UIDropDownMenu_AddButton(b);
+	end
+end
+
+-- (Re)build the subclass dropdown from the frame's recipe list and register
+-- load callbacks (via ResolveSubclasses) for any crafted items not yet cached
+-- — passing itself as the callback, so each arrival refreshes the dropdown.
+-- Only rebuilds the visible list when a subclass filter is active (the "All"
+-- view doesn't depend on subclasses, so we avoid resetting the scroll on every
+-- item that loads).
+local function RefreshSubclasses()
+	if not (frame and frame:IsShown() and frame.recipes) then
+		return;
+	end
+	local subs, anyItem = ResolveSubclasses(frame.recipes, RefreshSubclasses);
+	frame.subclasses = subs;
+	if anyItem then
+		UIDropDownMenu_Initialize(frame.dropdown, SubClassDropDown_Initialize);
+		UIDropDownMenu_SetWidth(120, frame.dropdown);
+		UIDropDownMenu_SetText(frame.subclassFilter or ALL_SUBCLASSES, frame.dropdown);
+		frame.dropdown:Show();
+	else
+		frame.dropdown:Hide();
+	end
+	if frame.subclassFilter then
+		frame:ApplyFilter();
 	end
 end
 
@@ -412,28 +438,39 @@ local function CreateFrame_TradeSkillLink()
 	end
 
 	-- Populate the detail pane for `entry` (a recipe from the list). Item
-	-- names/textures/qualities come from GetItemInfo (warmed if uncached — a
-	-- later GET_ITEM_INFO_RECEIVED re-renders); on-hand counts from
-	-- GetItemCount. Enchants (createdItem 0) show the spell's own icon + name.
+	-- name/icon/link come from the Item mixin; uncached items re-render this
+	-- pane via ContinueOnItemLoad (guarded against a newer selection). On-hand
+	-- counts from GetItemCount. Enchants (createdItem 0) show the spell instead.
 	function f:RenderDetail(entry)
+		-- Fetch an item's name/icon/link via the Item mixin. If its data isn't
+		-- cached yet, re-render this pane when it loads — but only if this recipe
+		-- is still the selected one (a later selection must not be clobbered).
+		local function itemInfo(id)
+			local item = Item:CreateFromItemID(id);
+			if not item:IsItemDataCached() then
+				item:ContinueOnItemLoad(function()
+					if self:IsShown() and self.selectedSpellID == entry.spellID then
+						self:RenderDetail(entry);
+					end
+				end);
+			end
+			return item:GetItemName(), item:GetItemIcon(), item:GetItemLink();
+		end
+
 		-- Product: item icon/name for craft recipes, spell icon/name for
 		-- enchants. Name is coloured by difficulty band, like the list row and
 		-- the real window's skill-name.
 		local prodTex, prodText, prodLink;
 		local created = entry.createdItem or 0;
 		if created > 0 then
-			local name, link, _, _, _, _, _, _, tex = GetItemInfo(created);
-			if name then
-				prodText, prodLink, prodTex = name, link, tex;
-			else
-				GetItemInfo(created); -- warm; re-render on GET_ITEM_INFO_RECEIVED
-				prodText = entry.name;
-			end
+			local name, tex, link = itemInfo(created);
+			prodText = name or entry.name;
+			prodTex = tex;
+			prodLink = link;
 		else
 			-- Enchant / non-item recipe: use the spell's presentation.
 			prodText = entry.name;
-			local spellTex = C_Spell.GetSpellTexture(entry.spellID);
-			prodTex = spellTex;
+			prodTex = C_Spell.GetSpellTexture(entry.spellID);
 		end
 		-- Enchants carry a spell description (white); item recipes don't, so
 		-- the description collapses and the reagents move up under the icon.
@@ -459,7 +496,7 @@ local function CreateFrame_TradeSkillLink()
 			local btn = self.reagents[i];
 			local r = reagents[i];
 			if r then
-				local name, link, _, _, _, _, _, _, tex = GetItemInfo(r.itemID);
+				local name, tex, link = itemInfo(r.itemID);
 				btn:SetNormalTexture(tex or
 					"Interface\\Icons\\INV_Misc_QuestionMark");
 				btn.itemLink = link;
@@ -610,19 +647,11 @@ local function ShowTradeSkillLink(link, text)
 	frame.recipes = knownList;
 	frame.subclassFilter = nil;
 
-	local subs, anyItem = ResolveSubclasses(knownList);
-	frame.subclasses = subs;
-	if anyItem then
-		UIDropDownMenu_Initialize(frame.dropdown, SubClassDropDown_Initialize);
-		UIDropDownMenu_SetWidth(120, frame.dropdown);
-		UIDropDownMenu_SetText(ALL_SUBCLASSES, frame.dropdown);
-		frame.dropdown:Show();
-	else
-		frame.dropdown:Hide();
-	end
-
 	frame:ClearDetail();
 	frame:Show();
+	-- Build the subclass dropdown (fills in async as uncached crafted items
+	-- load, via the Item mixin) then the visible list, then auto-select row 1.
+	RefreshSubclasses();
 	frame:ApplyFilter();
 	local first = frame.displayed and frame.displayed[1];
 	if first then
@@ -631,35 +660,10 @@ local function ShowTradeSkillLink(link, text)
 	return true;
 end
 
-local subclassWatcher = CreateFrame("Frame");
-subclassWatcher:RegisterEvent("GET_ITEM_INFO_RECEIVED");
-subclassWatcher:SetScript("OnEvent", function()
-	if subclassWatcher.pending or not (frame and frame:IsShown() and frame.recipes) then
-		return;
-	end
-	subclassWatcher.pending = true;
-	C_Timer.After(0.3, function()
-		subclassWatcher.pending = nil;
-		if not (frame and frame:IsShown() and frame.recipes) then
-			return;
-		end
-		local subs, anyItem = ResolveSubclasses(frame.recipes);
-		frame.subclasses = subs;
-		if anyItem then
-			UIDropDownMenu_Initialize(frame.dropdown, SubClassDropDown_Initialize);
-		end
-		frame:ApplyFilter();
-		if frame.selectedSpellID then
-			for i = 1, table.getn(frame.displayed or {}) do
-				local e = frame.displayed[i];
-				if e.spellID == frame.selectedSpellID then
-					frame:RenderDetail(e);
-					break;
-				end
-			end
-		end
-	end);
-end);
+-- Uncached crafted items no longer need a global GET_ITEM_INFO_RECEIVED
+-- watcher: the subclass dropdown (RefreshSubclasses) and the detail pane
+-- (RenderDetail) each register per-item Item-mixin ContinueOnItemLoad
+-- callbacks that fill themselves in as the data arrives.
 
 ------------------------------------------------------------------------------
 -- Click interception: handle `trade:` before the engine's SetHyperlink (which
