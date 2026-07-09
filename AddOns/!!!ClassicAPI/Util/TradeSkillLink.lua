@@ -230,10 +230,18 @@ local function CreateFrame_TradeSkillLink()
 		edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", edgeSize = 16,
 	});
 	border:SetBackdropBorderColor(0.4, 0.4, 0.4);
-	local barText = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall");
-	barText:SetPoint("LEFT", 6, 1);
+	-- Two FontStrings, exactly like TradeSkillRankFrame: the profession name in
+	-- GameFontNormalSmall (gold) at LEFT (6,1), then the rank in
+	-- GameFontHighlightSmall (white) 13px to its right.
+	local barName = bar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall");
+	barName:SetPoint("LEFT", 6, 1);
+	local barRank = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall");
+	barRank:SetJustifyH("LEFT");
+	barRank:SetWidth(128);
+	barRank:SetPoint("LEFT", barName, "RIGHT", 13, 0);
 	f.bar = bar;
-	f.barText = barText;
+	f.barName = barName;
+	f.barRank = barRank;
 
 	local summary = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall");
 	summary:SetPoint("TOPRIGHT", -110, -70);
@@ -258,36 +266,248 @@ local function CreateFrame_TradeSkillLink()
 
 	f.rows = {};
 	for i = 1, NUM_ROWS do
-		local row = CreateFrame("Frame", nil, f);
-		row:SetSize(290, ROW_HEIGHT);
+		-- Inherit the real row button the CraftFrame/TradeSkillFrame use
+		-- (CraftButtonTemplate -> ClassTrainerSkillButtonTemplate). The name is
+		-- rendered through the template's ButtonText with Blizzard's exact font
+		-- metrics, so the row spacing is identical to those windows — no
+		-- hand-placed FontString to get wrong.
+		local rowName = "ClassicAPITradeSkillLinkRow" .. i;
+		local row = CreateFrame("Button", rowName, f,
+			"ClassTrainerSkillButtonTemplate");
+		row:SetWidth(290); -- height (16) comes from the template
 		if i == 1 then
 			row:SetPoint("TOPLEFT", scroll, "TOPLEFT", 0, 0);
 		else
 			row:SetPoint("TOPLEFT", f.rows[i - 1], "BOTTOMLEFT", 0, 0);
 		end
 
-		local hl = row:CreateTexture(nil, "HIGHLIGHT");
-		hl:SetTexture("Interface\\Buttons\\UI-Listbox-Highlight2");
-		hl:SetBlendMode("ADD");
-		hl:SetAllPoints(row);
-		hl:SetAlpha(0.5);
+		-- Flat list (no collapsible headers): drop the +/- tree icon and its
+		-- icon-sized hover art.
+		row:SetNormalTexture("");
+		row:SetDisabledTexture("");
+		row:SetHighlightTexture("");
+		-- Keep difficulty colour on hover (don't swap to the white HighlightFont).
+		-- if row.SetHighlightFontObject then
+		-- 	row:SetHighlightFontObject(GameFontNormal);
+		-- end
 
-		local label = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall");
-		label:SetPoint("LEFT", 4, 0);
-		label:SetJustifyH("LEFT");
-		row.label = label;
+		-- The template anchors ButtonText past the (now hidden) tree icon;
+		-- re-anchor it to the row's left edge since we show no icon.
+		local txt = getglobal(rowName .. "Text");
+		if txt then
+			txt:ClearAllPoints();
+			txt:SetPoint("LEFT", row, "LEFT", 4, 0);
+		end
 
-		row:EnableMouse(true);
-		row:SetScript("OnEnter", function()
-			if this.spellID then
+		-- Selection bar: Blizzard's exact selection texture (UI-Listbox-Highlight2,
+		-- full alpha, default BLEND — its translucency is baked into the texture,
+		-- so we don't guess an alpha), tinted per-row to the recipe's difficulty
+		-- colour via SetVertexColor in Refresh.
+		local sel = row:CreateTexture(nil, "BACKGROUND");
+		sel:SetTexture("Interface\\Buttons\\UI-Listbox-Highlight2");
+		sel:SetAllPoints(row);
+		sel:Hide();
+		row.select = sel;
+
+		-- Override the template's trainer scripts with ours.
+		row:SetScript("OnClick", function()
+			if this.entry then
+				f:SelectRecipe(this.entry);
+			end
+		end);
+
+		f.rows[i] = row;
+	end
+
+	local NUM_REAGENTS = 8;
+
+	local prodIcon = CreateFrame("Button", nil, f);
+	prodIcon:SetSize(37, 37);  -- TradeSkillSkillIcon is 37x37
+	prodIcon:SetPoint("TOPLEFT", 379, -113);
+	prodIcon:SetNormalTexture("Interface\\Icons\\INV_Misc_QuestionMark");
+	local hdrLeft = prodIcon:CreateTexture(nil, "BACKGROUND");
+	hdrLeft:SetTexture("Interface\\ClassTrainerFrame\\UI-ClassTrainer-DetailHeaderLeft");
+	hdrLeft:SetSize(256, 64); -- Blizzard's native fill width (+64 cap = 320 total)
+	hdrLeft:SetPoint("TOPLEFT", prodIcon, "TOPLEFT", -8, 6);
+	local hdrRight = prodIcon:CreateTexture(nil, "BACKGROUND");
+	hdrRight:SetTexture("Interface\\ClassTrainerFrame\\UI-ClassTrainer-DetailHeaderRight");
+	hdrRight:SetSize(64, 64);
+	-- Adjacent to the left piece (no overlap), like Blizzard's detail header.
+	hdrRight:SetPoint("TOPLEFT", hdrLeft, "TOPRIGHT", 0, 0);
+	local prodCount = prodIcon:CreateFontString(nil, "ARTWORK", "NumberFontNormal");
+	prodCount:SetPoint("BOTTOMRIGHT", -5, 2);
+	prodIcon.count = prodCount;
+	f.prodIcon = prodIcon;
+
+	-- Name is a child of the icon (ARTWORK, like the reagents) so it draws
+	-- above the plate; starts 5px right of the icon (matching the reagents'
+	-- icon.right + 5) so it clears the icon that now sits on the plate.
+	local prodName = prodIcon:CreateFontString(nil, "ARTWORK", "GameFontNormal");
+	prodName:SetPoint("LEFT", prodIcon, "RIGHT", 5, 0);
+	prodName:SetWidth(240);
+	prodName:SetJustifyH("LEFT");
+	prodName:SetJustifyV("MIDDLE");
+	f.prodName = prodName;
+
+	-- Spell description (enchants only — item recipes leave it empty so it
+	-- collapses to zero height and the reagent label sits right under the
+	-- icon). White, wrapping, like the real Craft window's CraftDescription.
+	local prodDesc = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall");
+	prodDesc:SetPoint("TOPLEFT", prodIcon, "BOTTOMLEFT", 0, -6);
+	prodDesc:SetWidth(280);
+	prodDesc:SetJustifyH("LEFT");
+	prodDesc:SetJustifyV("TOP");
+	f.prodDesc = prodDesc;
+
+	-- Reagent label sits below the description (which is empty for items, so
+	-- it lands ~7px below the 37px icon — matching TradeSkillReagentLabel).
+	local reagentLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall");
+	reagentLabel:SetPoint("TOPLEFT", prodDesc, "BOTTOMLEFT", 0, -8);
+	reagentLabel:SetText(SPELL_REAGENTS or "Reagents:");
+	f.reagentLabel = reagentLabel;
+
+	-- Reagent slots: two columns, four rows — Blizzard's exact geometry
+	-- (TradeSkillReagentN off QuestItemTemplate): 39px icons, reagent1 at the
+	-- label's BOTTOMLEFT (-5,-3), 147px horizontal pitch (button width), 43px
+	-- vertical (41px button + 2px gap). Count at the icon's bottom-right, name
+	-- (90px) to its right.
+	f.reagents = {};
+	for i = 1, NUM_REAGENTS do
+		local rowN = math.floor((i - 1) / 2);
+		local col = (i - 1) - rowN * 2;
+		local btn = CreateFrame("Button", nil, f);
+		btn:SetSize(39, 39);
+		btn:SetPoint("TOPLEFT", reagentLabel, "BOTTOMLEFT",
+			col * 147 - 5, -3 - rowN * 43);
+		btn:SetNormalTexture("Interface\\Icons\\INV_Misc_QuestionMark");
+		-- Name plate behind each reagent — QuestItemTemplate's $parentNameFrame
+		-- (UI-QuestItemNameFrame, 128x64, LEFT of the icon's RIGHT at x=-10).
+		local plate = btn:CreateTexture(nil, "BACKGROUND");
+		plate:SetTexture("Interface\\QuestFrame\\UI-QuestItemNameFrame");
+		plate:SetSize(128, 64);
+		plate:SetPoint("LEFT", btn, "RIGHT", -10, 0);
+		local cnt = btn:CreateFontString(nil, "ARTWORK", "NumberFontNormal");
+		cnt:SetPoint("BOTTOMRIGHT", -4, 1);
+		btn.count = cnt;
+		-- Name anchored to the plate (LEFT + 15), exactly like the template.
+		-- The 90x36 box + MIDDLE vertical justify is what keeps the name
+		-- centered on the icon whether it's one line or wraps to two (the
+		-- template's $parentName carries the same explicit size).
+		local nm = btn:CreateFontString(nil, "ARTWORK", "GameFontHighlight");
+		nm:SetPoint("LEFT", plate, "LEFT", 15, 0);
+		nm:SetSize(90, 36);
+		nm:SetJustifyH("LEFT");
+		nm:SetJustifyV("MIDDLE");
+		btn.nameText = nm;
+		btn:SetScript("OnEnter", function()
+			if this.itemLink then
 				GameTooltip:SetOwner(this, "ANCHOR_RIGHT");
-				GameTooltip:SetSpellByID(this.spellID);
+				GameTooltip:SetHyperlink(this.itemLink);
 				GameTooltip:Show();
 			end
 		end);
-		row:SetScript("OnLeave", GameTooltip_Hide);
+		btn:SetScript("OnLeave", GameTooltip_Hide);
+		btn:Hide();
+		f.reagents[i] = btn;
+	end
 
-		f.rows[i] = row;
+	-- Populate the detail pane for `entry` (a recipe from the list). Item
+	-- names/textures/qualities come from GetItemInfo (warmed if uncached — a
+	-- later GET_ITEM_INFO_RECEIVED re-renders); on-hand counts from
+	-- GetItemCount. Enchants (createdItem 0) show the spell's own icon + name.
+	function f:RenderDetail(entry)
+		-- Product: item icon/name for craft recipes, spell icon/name for
+		-- enchants. Name is coloured by difficulty band, like the list row and
+		-- the real window's skill-name.
+		local prodTex, prodText, prodLink;
+		local created = entry.createdItem or 0;
+		if created > 0 then
+			local name, link, _, _, _, _, _, _, tex = GetItemInfo(created);
+			if name then
+				prodText, prodLink, prodTex = name, link, tex;
+			else
+				GetItemInfo(created); -- warm; re-render on GET_ITEM_INFO_RECEIVED
+				prodText = entry.name;
+			end
+		else
+			-- Enchant / non-item recipe: use the spell's presentation.
+			prodText = entry.name;
+			local spellTex = C_Spell.GetSpellTexture(entry.spellID);
+			prodTex = spellTex;
+		end
+		-- Enchants carry a spell description (white); item recipes don't, so
+		-- the description collapses and the reagents move up under the icon.
+		if created > 0 then
+			self.prodDesc:SetText("");
+		else
+			self.prodDesc:SetText(C_Spell.GetSpellDescription(entry.spellID) or "");
+		end
+		self.prodIcon:SetNormalTexture(prodTex or
+			"Interface\\Icons\\INV_Misc_QuestionMark");
+		self.prodName:SetText(prodText or "");
+		-- The skill name is always the default gold, like the real window
+		-- (Blizzard never difficulty-colours the detail's product name).
+		self.prodName:SetTextColor(NORMAL_FONT_COLOR:GetRGB());
+		self.prodIcon.itemLink = prodLink;      -- item tooltip when created > 0
+		self.prodIcon.spellID = entry.spellID;  -- else spell tooltip
+		local made = entry.numMade or 0;
+		self.prodIcon.count:SetText(made > 1 and tostring(made) or "");
+		self.prodIcon:Show();
+
+		local reagents = entry.reagents or {};
+		for i = 1, NUM_REAGENTS do
+			local btn = self.reagents[i];
+			local r = reagents[i];
+			if r then
+				local name, link, _, _, _, _, _, _, tex = GetItemInfo(r.itemID);
+				btn:SetNormalTexture(tex or
+					"Interface\\Icons\\INV_Misc_QuestionMark");
+				btn.itemLink = link;
+				btn.nameText:SetText(name or ("item:" .. r.itemID));
+				local need = r.count or 1;
+				local have = C_Item.GetItemCount(r.itemID) or 0;
+				if have >= need then
+					btn:GetNormalTexture():SetVertexColor(1, 1, 1);
+					btn.nameText:SetTextColor(HIGHLIGHT_FONT_COLOR:GetRGB());
+				else
+					btn:GetNormalTexture():SetVertexColor(0.5, 0.5, 0.5);
+					btn.nameText:SetTextColor(GRAY_FONT_COLOR:GetRGB());
+				end
+				local haveText = (have >= 100) and "*" or tostring(have);
+				btn.count:SetText(haveText .. " /" .. need);
+				btn:Show();
+			else
+				btn.itemLink = nil;
+				btn:Hide();
+			end
+		end
+	end
+
+	prodIcon:SetScript("OnEnter", function()
+		GameTooltip:SetOwner(this, "ANCHOR_RIGHT");
+		if this.itemLink then
+			GameTooltip:SetHyperlink(this.itemLink);
+		elseif this.spellID then
+			GameTooltip:SetSpellByID(this.spellID);
+		end
+		GameTooltip:Show();
+	end);
+	prodIcon:SetScript("OnLeave", GameTooltip_Hide);
+
+	function f:SelectRecipe(entry)
+		self.selectedSpellID = entry.spellID;
+		self:RenderDetail(entry);
+		self:Refresh();
+	end
+
+	function f:ClearDetail()
+		self.selectedSpellID = nil;
+		self.prodIcon:Hide();
+		self.prodName:SetText("");
+		self.prodDesc:SetText("");
+		for i = 1, NUM_REAGENTS do
+			self.reagents[i]:Hide();
+		end
 	end
 
 	function f:Refresh()
@@ -299,19 +519,32 @@ local function CreateFrame_TradeSkillLink()
 			local row = self.rows[i];
 			local entry = recipes[offset + i];
 			if entry then
-				row.label:SetText(entry.name or "");
-				row.label:SetTextColor(BAND_COLOR[entry.band or 3]:GetRGB());
+				row:SetText(entry.name or "");
+				local r, g, b = BAND_COLOR[entry.band or 3]:GetRGB();
+				if self.selectedSpellID and entry.spellID == self.selectedSpellID then
+					-- Selected: Blizzard's highlight texture tinted to the
+					-- difficulty colour (its own translucency sets the intensity),
+					-- text white.
+					row.select:SetVertexColor(r, g, b);
+					row.select:Show();
+					row:SetTextColor(1, 1, 1);
+				else
+					-- Unselected: no bar, text in the difficulty colour.
+					row.select:Hide();
+					row:SetTextColor(r, g, b);
+				end
 				row.spellID = entry.spellID;
+				row.entry = entry;
 				row:Show();
 			else
 				row.spellID = nil;
+				row.entry = nil;
+				row.select:Hide();
 				row:Hide();
 			end
 		end
 	end
 
-	-- Rebuild the displayed list from `recipes` and the active subclass filter,
-	-- reset scroll, and redraw.
 	function f:ApplyFilter()
 		local src = self.recipes or {};
 		if not self.subclassFilter then
@@ -346,8 +579,6 @@ local function ShowTradeSkillLink(link, text)
 	end
 
 	local prof = text and string.match(text, "|h%[(.+)%]|h") or "Trade Skills";
-	-- Show only the recipes the linker knows, ordered like the real window:
-	-- by difficulty band (orange -> grey), then alphabetically within a band.
 	local total = table.getn(recipes);
 	local knownList = {};
 	for i = 1, total do
@@ -373,13 +604,12 @@ local function ShowTradeSkillLink(link, text)
 	SetPortraitToTexture(frame.portrait, ProfessionIcon(id));
 	frame.bar:SetMinMaxValues(0, (max and max > 0) and max or 1);
 	frame.bar:SetValue(cur or 0);
-	frame.barText:SetText(string.format("%s  %d/%d", prof, cur or 0, max or 0));
+	frame.barName:SetText(prof);
+	frame.barRank:SetText(string.format("%d/%d", cur or 0, max or 0));
 	frame.summary:SetText(string.format("%d of %d recipes known", known, total));
 	frame.recipes = knownList;
 	frame.subclassFilter = nil;
 
-	-- Subclass filter: derive from the recipes' crafted items. Item-producing
-	-- professions get the dropdown; enchanting (no items) doesn't.
 	local subs, anyItem = ResolveSubclasses(knownList);
 	frame.subclasses = subs;
 	if anyItem then
@@ -391,14 +621,16 @@ local function ShowTradeSkillLink(link, text)
 		frame.dropdown:Hide();
 	end
 
+	frame:ClearDetail();
 	frame:Show();
 	frame:ApplyFilter();
+	local first = frame.displayed and frame.displayed[1];
+	if first then
+		frame:SelectRecipe(first);
+	end
 	return true;
 end
 
--- Crafted items may not be cached when a link opens; as they arrive, re-derive
--- the subclass list and reapply the filter (debounced — GET_ITEM_INFO_RECEIVED
--- can fire once per item).
 local subclassWatcher = CreateFrame("Frame");
 subclassWatcher:RegisterEvent("GET_ITEM_INFO_RECEIVED");
 subclassWatcher:SetScript("OnEvent", function()
@@ -417,6 +649,15 @@ subclassWatcher:SetScript("OnEvent", function()
 			UIDropDownMenu_Initialize(frame.dropdown, SubClassDropDown_Initialize);
 		end
 		frame:ApplyFilter();
+		if frame.selectedSpellID then
+			for i = 1, table.getn(frame.displayed or {}) do
+				local e = frame.displayed[i];
+				if e.spellID == frame.selectedSpellID then
+					frame:RenderDetail(e);
+					break;
+				end
+			end
+		end
 	end);
 end);
 
@@ -428,9 +669,6 @@ end);
 local originalSetItemRef = SetItemRef;
 function SetItemRef(link, text, button, chatFrame)
 	if type(link) == "string" and string.sub(link, 1, 6) == "trade:" then
-		-- Shift-click pastes the full link into the active chat editbox,
-		-- exactly like an item link (1.12 has no IsModifiedClick); a plain
-		-- click opens the viewer.
 		if IsShiftKeyDown() and ChatFrameEditBox and ChatFrameEditBox:IsVisible() then
 			ChatFrameEditBox:Insert(text);
 			return;

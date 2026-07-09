@@ -320,16 +320,26 @@ int __fastcall Script_GetCraftListLink(void *L) {
 }
 
 // `C_TradeSkillUI.GetTradeSkillListRecipes(skillLineID, bits)`
-//     -> { { spellID, isKnown, trivialLevel, greenLevel, createdItem }, ... }
+//     -> { { spellID, isKnown, trivialLevel, greenLevel, createdItem,
+//            numMade, reagents = { { itemID, count }, ... } }, ... }
 // `trivialLevel` / `greenLevel` are the skill levels the recipe turns
 // grey / green at — its difficulty tiers, for sorting and colouring.
 // `createdItem` is the crafted item's ID (0 for enchants) — the viewer
-// derives its subclass filter from it.
+// derives its subclass filter from it. `numMade` is how many the recipe
+// yields (CREATE_ITEM base points + dice; 0 for enchants). `reagents` lists
+// each consumed item + required count in DBC slot order (stopping at the
+// first empty slot, the engine's own convention), for the detail pane.
 //
 // Rebuilds the canonical recipe list for `skillLineID` and decodes `bits`
 // against it. Recipes past the end of `bits` (shorter/garbled string) decode
 // as not-known rather than erroring. The Lua caller (the viewer) turns each
-// spellID into a name/icon via GetSpellInfo.
+// spellID into a name/icon via GetSpellInfo and each reagent itemID into
+// name/texture/on-hand-count via GetItemInfo / GetItemCount.
+//
+// The real 3.3.5 reagent API (GetTradeSkillReagentInfo etc.) can't serve this:
+// it's indexed by position in the player's *own* open trade window, so it
+// can't describe a linked recipe from someone else's profession. We read the
+// reagents straight from Spell.dbc instead.
 int __fastcall Script_GetTradeSkillListRecipes(void *L) {
     if (!Game::Lua::IsNumber(L, 1) || !Game::Lua::IsString(L, 2)) {
         Game::Lua::Error(
@@ -358,13 +368,28 @@ int __fastcall Script_GetTradeSkillListRecipes(void *L) {
         }
 
         // The recipe's crafted item (0 for enchants) — the viewer groups the
-        // subclass filter by this item's subclass.
+        // subclass filter by this item's subclass — plus its yield count.
         const uint8_t *srec = Spell::Lookup::RecordForID(spells[i]);
-        const int createdItem =
-            (srec != nullptr)
-                ? *reinterpret_cast<const int *>(
-                      srec + Offsets::OFF_SPELL_RECORD_CREATED_ITEM)
-                : 0;
+        int createdItem = 0;
+        int numMade = 0;
+        if (srec != nullptr) {
+            createdItem = *reinterpret_cast<const int *>(
+                srec + Offsets::OFF_SPELL_RECORD_CREATED_ITEM);
+            // Yield: the CREATE_ITEM effect's magnitude (base points + dice),
+            // mirroring the engine's item-creation math. 0 for enchants.
+            const int32_t *eff = reinterpret_cast<const int32_t *>(
+                srec + Offsets::OFF_SPELL_RECORD_EFFECT);
+            const int32_t *basePts = reinterpret_cast<const int32_t *>(
+                srec + Offsets::OFF_SPELL_RECORD_EFFECT_BASE_POINTS);
+            const int32_t *baseDice = reinterpret_cast<const int32_t *>(
+                srec + Offsets::OFF_SPELL_RECORD_EFFECT_BASE_DICE);
+            for (int e = 0; e < Offsets::SPELL_RECORD_EFFECT_COUNT; ++e) {
+                if (eff[e] == Offsets::SPELL_EFFECT_CREATE_ITEM) {
+                    numMade = basePts[e] + baseDice[e];
+                    break;
+                }
+            }
+        }
 
         Game::Lua::PushNumber(L, static_cast<double>(i + 1));
         Game::Lua::NewTable(L);
@@ -376,6 +401,32 @@ int __fastcall Script_GetTradeSkillListRecipes(void *L) {
                                   static_cast<double>(greens[i]));
         Game::Lua::SetFieldNumber(L, "createdItem",
                                   static_cast<double>(createdItem));
+        Game::Lua::SetFieldNumber(L, "numMade", static_cast<double>(numMade));
+
+        // reagents = { {itemID, count}, ... } — nested array under "reagents"
+        // (no SetField helper takes a table value, so push key + build + SetTable).
+        Game::Lua::PushString(L, "reagents");
+        Game::Lua::NewTable(L);
+        if (srec != nullptr) {
+            const int32_t *rids = reinterpret_cast<const int32_t *>(
+                srec + Offsets::OFF_SPELL_REAGENT_ID);
+            const int32_t *rcounts = reinterpret_cast<const int32_t *>(
+                srec + Offsets::OFF_SPELL_REAGENT_COUNT);
+            int outIdx = 0;
+            for (int r = 0; r < Offsets::SPELL_MAX_REAGENTS; ++r) {
+                if (rids[r] == 0)
+                    break; // first empty slot ends the list
+                Game::Lua::PushNumber(L, static_cast<double>(++outIdx));
+                Game::Lua::NewTable(L);
+                Game::Lua::SetFieldNumber(L, "itemID",
+                                          static_cast<double>(rids[r]));
+                Game::Lua::SetFieldNumber(L, "count",
+                                          static_cast<double>(rcounts[r]));
+                Game::Lua::SetTable(L, -3); // reagents[outIdx] = {itemID,count}
+            }
+        }
+        Game::Lua::SetTable(L, -3); // entry.reagents = { ... }
+
         Game::Lua::SetTable(L, -3);
     }
     return 1;
