@@ -137,6 +137,7 @@ build instructions.
   - [`frame:SetShown(shown)`](#framesetshownshown)
   - [`frame:SetResizeBounds(minWidth, minHeight [, maxWidth, maxHeight])`](#framesetresizeboundsminwidth-minheight--maxwidth-maxheight)
   - [`frame:HookScript(scriptType, handler)`](#framehookscriptscripttype-handler)
+  - [`frame:IsEventRegistered(event)`](#frameiseventregisteredevent)
 
 - [FriendList](#friendlist)
   - [`C_FriendList.SendWhoQueryByName(name)`](#c_friendlistsendwhoquerybynamename)
@@ -3141,6 +3142,22 @@ button:HookScript("OnEnter", function(self)
     GameTooltip:SetText("hello")
     GameTooltip:Show()
 end)
+```
+
+### `frame:IsEventRegistered(event)`
+
+Vanilla ships `RegisterEvent` / `UnregisterEvent` but not the query.
+Returns `true` if the frame is currently registered for `event`,
+`false` otherwise (including for an unknown event name). Reuses the
+engine's own subscriber-chain membership check — the same walk
+`RegisterEvent` performs before appending — so the answer is exactly
+what the event dispatcher sees. Works on any frame.
+
+```lua
+local f = CreateFrame("Frame")
+f:RegisterEvent("PLAYER_LOGIN")
+f:IsEventRegistered("PLAYER_LOGIN")   -- true
+f:IsEventRegistered("PLAYER_LOGOUT")  -- false
 ```
 
 ## FriendList

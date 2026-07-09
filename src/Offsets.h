@@ -3463,6 +3463,15 @@ enum Offsets {
     OFF_EVENT_ENTRY_NAME = 0x00,
     OFF_EVENT_ENTRY_HEAD = 0x0C,
 
+    // Subscriber-chain node layout — the linked list hanging off each
+    // entry's +0x0C head, derived from Frame::RegisterEvent
+    // (FUN_00702140): each node is `{ ?, next@+0x04, frame@+0x08 }`, where
+    // `frame` is the CFrameScriptObject* subscriber. A node value with its
+    // low bit set (or null) is the end/empty sentinel. Walked by
+    // Frame:IsEventRegistered to test membership.
+    OFF_EVENT_NODE_NEXT = 0x04,
+    OFF_EVENT_NODE_FRAME = 0x08,
+
     // `Frame::RegisterEvent` — the C++ helper called by the Lua
     // `frame:RegisterEvent(eventName)` method (`Script_RegisterEvent` at
     // `0x00774A40`). `__thiscall` with `(this=frame, eventName)`. Walks
