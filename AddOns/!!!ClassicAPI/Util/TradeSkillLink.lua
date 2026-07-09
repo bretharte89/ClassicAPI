@@ -171,6 +171,7 @@ local function CreateFrame_TradeSkillLink()
 	f:SetPoint("CENTER", 0, 0);
 	f:SetMovable(true);
 	f:EnableMouse(true);
+	f:SetHitRectInsets(2, 82, 2, 73);
 	f:RegisterForDrag("LeftButton");
 	f:SetScript("OnDragStart", function() this:StartMoving(); end);
 	f:SetScript("OnDragStop", function() this:StopMovingOrSizing(); end);
@@ -186,12 +187,12 @@ local function CreateFrame_TradeSkillLink()
 		local tx = f:CreateTexture(nil, "BORDER");
 		tx:SetTexture("Interface\\TradeSkillFrame\\" .. file);
 		tx:SetSize(w, h);
-		tx:SetPoint(point, 0, 0);
+		tx:SetPoint(point);
 	end
-	Quad("TW-TradeSkill-TopLeft",  512, 256, "TOPLEFT");
-	Quad("TW-TradeSkill-TopRight", 256, 256, "TOPRIGHT");
-	Quad("TW-TradeSkill-BotLeft",  512, 256, "BOTTOMLEFT");
-	Quad("TW-TradeSkill-BotRight", 256, 256, "BOTTOMRIGHT");
+	Quad("TW-TradeSkill-TopLeft",   512, 256, "TOPLEFT");
+	Quad("TW-TradeSkill-TopRight",  256, 256, "TOPRIGHT");
+	Quad("TW-TradeSkill-BotLeft2",  512, 256, "BOTTOMLEFT");
+	Quad("TW-TradeSkill-BotRight2", 256, 256, "BOTTOMRIGHT");
 
 	local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal");
 	title:SetPoint("TOP", 0, -18);
@@ -199,6 +200,12 @@ local function CreateFrame_TradeSkillLink()
 
 	local close = CreateFrame("Button", nil, f, "UIPanelCloseButton");
 	close:SetPoint("TOPRIGHT", -77, -8);
+
+	local exit = CreateFrame("Button", nil, f, "UIPanelButtonTemplate");
+	exit:SetSize(80, 22);
+	exit:SetPoint("CENTER", f, "BOTTOMRIGHT", -128, 92);
+	exit:SetText(EXIT or "Exit");
+	exit:SetScript("OnClick", function() f:Hide(); end);
 
 	local bar = CreateFrame("StatusBar", nil, f);
 	bar:SetSize(596, 15);
