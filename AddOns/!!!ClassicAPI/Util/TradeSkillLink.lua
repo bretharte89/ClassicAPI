@@ -11,11 +11,50 @@
 -- knows (with an "X of Y" summary of the whole skill line), regardless of what
 -- the reader can craft themselves.
 
--- Frame geometry mirrors the real TradeSkillFrame (Blizzard_TradeSkillUI):
--- 768x512, TW-TradeSkill quadrant art, 19 rows of 16px, list at (37,-98).
-local FRAME_W, FRAME_H = 768, 512;
-local NUM_ROWS   = 19;
+-- Frame geometry mirrors the real TradeSkillFrame. Turtle ships an HD
+-- 768x512 two-column frame (TW-TradeSkill art); stock 1.12.1 only has the
+-- vanilla 384x512 single-column art, so on that client we fall back to the
+-- native Blizzard_TradeSkillUI geometry (list on top, detail below) rather
+-- than stretch the wide art. LO holds every layout value that differs.
+local TURTLE     = (TURTLE_WOW_VERSION ~= nil);
+local FRAME_W    = TURTLE and 768 or 384;
+local FRAME_H    = 512;
+local NUM_ROWS   = TURTLE and 19 or 8;
 local ROW_HEIGHT = 16;
+
+local LO = TURTLE and {
+	hit     = { 2, 82, 2, 73 },
+	quads   = {
+		{ "Interface\\TradeSkillFrame\\TW-TradeSkill-TopLeft",   512, 256, "TOPLEFT" },
+		{ "Interface\\TradeSkillFrame\\TW-TradeSkill-TopRight",  256, 256, "TOPRIGHT" },
+		{ "Interface\\TradeSkillFrame\\TW-TradeSkill-BotLeft2",  512, 256, "BOTTOMLEFT" },
+		{ "Interface\\TradeSkillFrame\\TW-TradeSkill-BotRight2", 256, 256, "BOTTOMRIGHT" },
+	},
+	close   = { -77, -8 },
+	bar     = { 596, 15, 76, -44 },
+	barBdr  = { 604, 22 },
+	summary = { "TOPRIGHT", -110, -70 },
+	drop    = { 40, -60 },
+	scroll  = { 296, 330, 37, -98 },
+	detail  = { 379, -113 },
+	exit    = { "CENTER", "BOTTOMRIGHT", -128, 92 },
+} or {
+	hit     = { 0, 34, 0, 75 },
+	quads   = {
+		{ "Interface\\ClassTrainerFrame\\UI-ClassTrainer-TopLeft",  256, 256, "TOPLEFT" },
+		{ "Interface\\ClassTrainerFrame\\UI-ClassTrainer-TopRight", 128, 256, "TOPRIGHT" },
+		{ "Interface\\TradeSkillFrame\\UI-TradeSkill-BotLeft",      256, 256, "BOTTOMLEFT" },
+		{ "Interface\\ClassTrainerFrame\\UI-ClassTrainer-BotRight", 128, 256, "BOTTOMRIGHT" },
+	},
+	close   = { -29, -8 },
+	bar     = { 268, 15, 73, -37 },
+	barBdr  = { 278, 22 },
+	summary = { "TOPRIGHT", -40, -58 },
+	drop    = { 12, -62 },
+	scroll  = { 296, 130, 21, -96 },
+	detail  = { 28, -237 },
+	exit    = { "CENTER", "TOPLEFT", 305, -422 },
+};
 
 local PROFESSION_ICONS = {
 	[171] = "Trade_Alchemy",
@@ -32,7 +71,7 @@ local PROFESSION_ICONS = {
 	[356] = "Trade_Fishing",
 };
 
-if TURTLE_WOW_VERSION then
+if TURTLE then
 	PROFESSION_ICONS[142] = "Trade_Survival"
 	PROFESSION_ICONS[755] = "INV_Misc_Gem_01" -- Jewelcrafting
 end
@@ -188,7 +227,7 @@ local function CreateFrame_TradeSkillLink()
 	f:SetPoint("CENTER", 0, 0);
 	f:SetMovable(true);
 	f:EnableMouse(true);
-	f:SetHitRectInsets(2, 82, 2, 73);
+	f:SetHitRectInsets(LO.hit[1], LO.hit[2], LO.hit[3], LO.hit[4]);
 	f:RegisterForDrag("LeftButton");
 	f:SetScript("OnDragStart", function() this:StartMoving(); end);
 	f:SetScript("OnDragStop", function() this:StopMovingOrSizing(); end);
@@ -200,33 +239,30 @@ local function CreateFrame_TradeSkillLink()
 	portrait:SetPoint("TOPLEFT", 7, -6);
 	f.portrait = portrait;
 
-	local function Quad(file, w, h, point)
+	for i = 1, table.getn(LO.quads) do
+		local q = LO.quads[i];
 		local tx = f:CreateTexture(nil, "BORDER");
-		tx:SetTexture("Interface\\TradeSkillFrame\\" .. file);
-		tx:SetSize(w, h);
-		tx:SetPoint(point);
+		tx:SetTexture(q[1]);
+		tx:SetSize(q[2], q[3]);
+		tx:SetPoint(q[4]);
 	end
-	Quad("TW-TradeSkill-TopLeft",   512, 256, "TOPLEFT");
-	Quad("TW-TradeSkill-TopRight",  256, 256, "TOPRIGHT");
-	Quad("TW-TradeSkill-BotLeft2",  512, 256, "BOTTOMLEFT");
-	Quad("TW-TradeSkill-BotRight2", 256, 256, "BOTTOMRIGHT");
 
 	local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal");
 	title:SetPoint("TOP", 0, -18);
 	f.title = title;
 
 	local close = CreateFrame("Button", nil, f, "UIPanelCloseButton");
-	close:SetPoint("TOPRIGHT", -77, -8);
+	close:SetPoint("TOPRIGHT", LO.close[1], LO.close[2]);
 
 	local exit = CreateFrame("Button", nil, f, "UIPanelButtonTemplate");
 	exit:SetSize(80, 22);
-	exit:SetPoint("CENTER", f, "BOTTOMRIGHT", -128, 92);
+	exit:SetPoint(LO.exit[1], f, LO.exit[2], LO.exit[3], LO.exit[4]);
 	exit:SetText(EXIT or "Exit");
 	exit:SetScript("OnClick", function() f:Hide(); end);
 
 	local bar = CreateFrame("StatusBar", nil, f);
-	bar:SetSize(596, 15);
-	bar:SetPoint("TOPLEFT", 76, -44);
+	bar:SetSize(LO.bar[1], LO.bar[2]);
+	bar:SetPoint("TOPLEFT", LO.bar[3], LO.bar[4]);
 	bar:SetStatusBarTexture("Interface\\PaperDollInfoFrame\\UI-Character-Skills-Bar");
 	bar:SetStatusBarColor(0.0, 0.0, 1.0, 0.5);
 	bar:SetMinMaxValues(0, 1);
@@ -236,7 +272,7 @@ local function CreateFrame_TradeSkillLink()
 	barBg:SetVertexColor(0.0, 0.0, 0.75, 0.5);
 	-- Border: tooltip edge around the bar (TradeSkillRankFrameBorder).
 	local border = CreateFrame("Frame", nil, bar);
-	border:SetSize(604, 22);
+	border:SetSize(LO.barBdr[1], LO.barBdr[2]);
 	border:SetPoint("LEFT", -5, 1);
 	border:SetBackdrop({
 		edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", edgeSize = 16,
@@ -253,19 +289,19 @@ local function CreateFrame_TradeSkillLink()
 	f.barRank = barRank;
 
 	local summary = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall");
-	summary:SetPoint("TOPRIGHT", -110, -70);
+	summary:SetPoint(LO.summary[1], LO.summary[2], LO.summary[3]);
 	f.summary = summary;
 
 	local dropdown = CreateFrame("Frame", "ClassicAPITradeSkillLinkSubClass", f,
 		"UIDropDownMenuTemplate");
-	dropdown:SetPoint("TOPLEFT", 40, -60);
+	dropdown:SetPoint("TOPLEFT", LO.drop[1], LO.drop[2]);
 	f.dropdown = dropdown;
 	f.subclassFilter = nil; -- nil = all subclasses
 
 	local scroll = CreateFrame("ScrollFrame", "ClassicAPITradeSkillLinkScroll",
 		f, "FauxScrollFrameTemplate");
-	scroll:SetSize(296, 330);
-	scroll:SetPoint("TOPLEFT", 37, -98);
+	scroll:SetSize(LO.scroll[1], LO.scroll[2]);
+	scroll:SetPoint("TOPLEFT", LO.scroll[3], LO.scroll[4]);
 	scroll:SetScript("OnVerticalScroll", function()
 		FauxScrollFrame_OnVerticalScroll(ROW_HEIGHT, function() f:Refresh(); end)
 	end)
@@ -313,7 +349,7 @@ local function CreateFrame_TradeSkillLink()
 
 	local prodIcon = CreateFrame("Button", nil, f);
 	prodIcon:SetSize(37, 37);  -- TradeSkillSkillIcon is 37x37
-	prodIcon:SetPoint("TOPLEFT", 379, -113);
+	prodIcon:SetPoint("TOPLEFT", LO.detail[1], LO.detail[2]);
 	prodIcon:SetNormalTexture("Interface\\Icons\\INV_Misc_QuestionMark");
 	local hdrLeft = prodIcon:CreateTexture(nil, "BACKGROUND");
 	hdrLeft:SetTexture("Interface\\ClassTrainerFrame\\UI-ClassTrainer-DetailHeaderLeft");
