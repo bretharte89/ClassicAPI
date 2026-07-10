@@ -36,7 +36,9 @@ local LO = TURTLE and {
 	summary = { "TOPRIGHT", -110, -70 },
 	drop    = { 40, -60 },
 	scroll  = { 296, 330, 37, -98 },
-	detail  = { 379, -113 },
+	-- detail scroll frame: { x, y, width, height }. Tall enough that the
+	-- content fits (scrollbar auto-hides) — Turtle's right column is roomy.
+	detail  = { 371, -110, 340, 290 },
 	exit    = { "CENTER", "BOTTOMRIGHT", -128, 92 },
 } or {
 	hit     = { 0, 34, 0, 75 },
@@ -52,9 +54,31 @@ local LO = TURTLE and {
 	summary = { "TOPRIGHT", -40, -58 },
 	drop    = { 12, -62 },
 	scroll  = { 296, 130, 21, -96 },
-	detail  = { 28, -237 },
+	-- detail scroll frame { x, y, width, height } — native TradeSkillFrame's
+	-- TradeSkillDetailScrollFrame values. Small enough that many-reagent
+	-- recipes scroll (clipping partial rows), like native.
+	detail  = { 20, -234, 297, 176 },
 	exit    = { "CENTER", "TOPLEFT", 305, -422 },
+	sep     = { 15, -221, 331 },
 };
+
+-- Reagents render in a 2-column grid inside the detail scroll child (see
+-- the detail pane below). The detail is a real ScrollFrame like the
+-- native TradeSkillFrame, so the whole pane pixel-scrolls and clips
+-- partial reagent rows — `REAGENT_ROW_HEIGHT` is just the vertical stride
+-- of one reagent row.
+local REAGENT_ROW_HEIGHT = 43;
+
+-- Scroll-frame templates. Stock mimics the native TradeSkillFrame, whose
+-- list/detail scrolls use the ClassTrainer templates (they add the
+-- decorative UI-ClassTrainer-ScrollBar track). Turtle's HD frame art
+-- doesn't want that groove, so it keeps the plain templates. Both detail
+-- templates are real ScrollFrames (ClassTrainerDetail... inherits
+-- UIPanelScrollFrameTemplate), so the pixel-scroll logic is identical.
+local LIST_SCROLL_TEMPLATE   = TURTLE and "FauxScrollFrameTemplate"
+	or "ClassTrainerListScrollFrameTemplate";
+local DETAIL_SCROLL_TEMPLATE = TURTLE and "UIPanelScrollFrameTemplate"
+	or "ClassTrainerDetailScrollFrameTemplate";
 
 local PROFESSION_ICONS = {
 	[171] = "Trade_Alchemy",
@@ -248,6 +272,20 @@ local function CreateFrame_TradeSkillLink()
 		tx:SetPoint(q[4]);
 	end
 
+	-- Horizontal divider between the recipe list and the detail pane.
+	-- Stock only (Turtle's HD frame art already has its own).
+	if LO.sep then
+		-- Decoded the BLP: it's a thin divider rod whose graphic lives in the
+		-- top quarter of the 256x64 texture (a 2nd rod fills the next quarter,
+		-- bottom half empty). So sample the top quarter, stretched to width —
+		-- the same region the native TradeSkillFrame uses for this divider.
+		local bar = f:CreateTexture(nil, "ARTWORK");
+		bar:SetTexture("Interface\\ClassTrainerFrame\\UI-ClassTrainer-HorizontalBar");
+		bar:SetTexCoord(0, 1, 0, 0.25);
+		bar:SetSize(LO.sep[3], 16);
+		bar:SetPoint("TOPLEFT", LO.sep[1], LO.sep[2]);
+	end
+
 	local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal");
 	title:SetPoint("TOP", 0, -18);
 	f.title = title;
@@ -300,7 +338,7 @@ local function CreateFrame_TradeSkillLink()
 	f.subclassFilter = nil; -- nil = all subclasses
 
 	local scroll = CreateFrame("ScrollFrame", "ClassicAPITradeSkillLinkScroll",
-		f, "FauxScrollFrameTemplate");
+		f, LIST_SCROLL_TEMPLATE);
 	scroll:SetSize(LO.scroll[1], LO.scroll[2]);
 	scroll:SetPoint("TOPLEFT", LO.scroll[3], LO.scroll[4]);
 	scroll:SetScript("OnVerticalScroll", function()
@@ -346,17 +384,54 @@ local function CreateFrame_TradeSkillLink()
 		f.rows[i] = row;
 	end
 
-	local NUM_REAGENTS = 8;
+	-- Detail pane: a real ScrollFrame (like the native TradeSkillFrame's
+	-- TradeSkillDetailScrollFrame) whose scroll child holds the product
+	-- header + reagent grid, so the whole pane pixel-scrolls — clipping
+	-- partial reagent rows — with the standard UIPanelScrollBar. The bar
+	-- auto-hides when the content fits (scrollBarHideable).
+	local detailScroll = CreateFrame("ScrollFrame",
+		"ClassicAPITradeSkillLinkDetailScroll", f, DETAIL_SCROLL_TEMPLATE);
+	detailScroll:SetSize(LO.detail[3], LO.detail[4]);
+	detailScroll:SetPoint("TOPLEFT", LO.detail[1], LO.detail[2]);
+	detailScroll.scrollBarHideable = 1;  -- template sets this too; belt-and-suspenders
+	f.detailScroll = detailScroll;
+	-- Off until a recipe overflows the pane (toggled in RenderDetail).
+	-- The template shows its slider and enables the wheel by default; on
+	-- the roomy Turtle pane that leaves a dead scrollbar that still eats
+	-- wheel events and over-scrolls a hair. Start both disabled.
+	detailScroll:EnableMouseWheel(false);
+	local detailSB = getglobal("ClassicAPITradeSkillLinkDetailScrollScrollBar");
+	if detailSB then
+		detailSB:Hide();
+	end
+	-- The template re-shows its slider when the frame transitions to shown
+	-- (on first open, before the auto-selected recipe's RenderDetail runs),
+	-- leaving a dead scrollbar until the first click. Re-assert the hidden
+	-- state on show unless the current recipe genuinely overflows.
+	detailScroll:SetScript("OnShow", function()
+		f:UpdateDetailScrollbar();
+		RunNextFrame(function()
+			if f:IsShown() then
+				f:UpdateDetailScrollbar();
+			end
+		end);
+	end);
 
-	local prodIcon = CreateFrame("Button", nil, f);
-	prodIcon:SetSize(37, 37);  -- TradeSkillSkillIcon is 37x37
-	prodIcon:SetPoint("TOPLEFT", LO.detail[1], LO.detail[2]);
+	local detailChild = CreateFrame("Frame",
+		"ClassicAPITradeSkillLinkDetailChild", detailScroll);
+	detailChild:SetSize(LO.detail[3], LO.detail[4]);
+	detailScroll:SetScrollChild(detailChild);
+	f.detailChild = detailChild;
+
+	local prodIcon = CreateFrame("Button", nil, detailChild);
+	prodIcon:SetSize(37, 37);  -- native TradeSkillSkillIcon (37x37 @ 8,-3)
+	prodIcon:SetPoint("TOPLEFT", 8, -3);
 	prodIcon:SetNormalTexture("Interface\\Icons\\INV_Misc_QuestionMark");
-	local hdrLeft = prodIcon:CreateTexture(nil, "BACKGROUND");
+	local hdrLeft = detailChild:CreateTexture(nil, "BACKGROUND");
 	hdrLeft:SetTexture("Interface\\ClassTrainerFrame\\UI-ClassTrainer-DetailHeaderLeft");
 	hdrLeft:SetSize(256, 64); -- Blizzard's native fill width (+64 cap = 320 total)
 	hdrLeft:SetPoint("TOPLEFT", prodIcon, "TOPLEFT", -8, 6);
-	local hdrRight = prodIcon:CreateTexture(nil, "BACKGROUND");
+	local hdrRight = detailChild:CreateTexture(nil, "BACKGROUND");
 	hdrRight:SetTexture("Interface\\ClassTrainerFrame\\UI-ClassTrainer-DetailHeaderRight");
 	hdrRight:SetSize(64, 64);
 	hdrRight:SetPoint("TOPLEFT", hdrLeft, "TOPRIGHT", 0, 0);
@@ -365,44 +440,61 @@ local function CreateFrame_TradeSkillLink()
 	prodIcon.count = prodCount;
 	f.prodIcon = prodIcon;
 
-	local prodName = prodIcon:CreateFontString(nil, "ARTWORK", "GameFontNormal");
+	local prodName = detailChild:CreateFontString(nil, "ARTWORK", "GameFontNormal");
 	prodName:SetPoint("LEFT", prodIcon, "RIGHT", 5, 0);
-	prodName:SetWidth(240);
+	prodName:SetWidth(LO.detail[3] - 60);
 	prodName:SetJustifyH("LEFT");
 	prodName:SetJustifyV("MIDDLE");
 	f.prodName = prodName;
 
-	local prodDesc = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall");
+	local prodDesc = detailChild:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall");
 	prodDesc:SetPoint("TOPLEFT", prodIcon, "BOTTOMLEFT", 0, -6);
-	prodDesc:SetWidth(280);
+	prodDesc:SetWidth(LO.detail[3] - 20);
 	prodDesc:SetJustifyH("LEFT");
 	prodDesc:SetJustifyV("TOP");
 	f.prodDesc = prodDesc;
 
-	local reagentLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall");
+	local reagentLabel = detailChild:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall");
 	reagentLabel:SetPoint("TOPLEFT", prodDesc, "BOTTOMLEFT", 0, -8);
 	reagentLabel:SetText(SPELL_REAGENTS or "Reagents:");
 	f.reagentLabel = reagentLabel;
 
+	prodIcon:SetScript("OnEnter", function()
+		GameTooltip:SetOwner(this, "ANCHOR_RIGHT");
+		if this.itemLink then
+			GameTooltip:SetHyperlink(this.itemLink);
+		elseif this.spellID then
+			GameTooltip:SetSpellByID(this.spellID);
+		end
+		GameTooltip:Show();
+	end);
+	prodIcon:SetScript("OnLeave", GameTooltip_Hide);
+
+	-- Reagent buttons live in the scroll child (2 per row), built on
+	-- demand so any reagent count is handled and they scroll/clip with
+	-- the child.
 	f.reagents = {};
-	for i = 1, NUM_REAGENTS do
+	local function AcquireReagent(i)
+		if f.reagents[i] then
+			return f.reagents[i];
+		end
 		local rowN = math.floor((i - 1) / 2);
 		local col = (i - 1) - rowN * 2;
-		local btn = CreateFrame("Button", nil, f);
+		local btn = CreateFrame("Button", nil, detailChild);
 		btn:SetSize(39, 39);
 		btn:SetPoint("TOPLEFT", reagentLabel, "BOTTOMLEFT",
-			col * 147 - 5, -3 - rowN * 43);
+			col * 134 - 5, -3 - rowN * REAGENT_ROW_HEIGHT);
 		btn:SetNormalTexture("Interface\\Icons\\INV_Misc_QuestionMark");
 		local plate = btn:CreateTexture(nil, "BACKGROUND");
 		plate:SetTexture("Interface\\QuestFrame\\UI-QuestItemNameFrame");
-		plate:SetSize(128, 64);
+		plate:SetSize(114, 64);
 		plate:SetPoint("LEFT", btn, "RIGHT", -10, 0);
 		local cnt = btn:CreateFontString(nil, "ARTWORK", "NumberFontNormal");
 		cnt:SetPoint("BOTTOMRIGHT", -4, 1);
 		btn.count = cnt;
 		local nm = btn:CreateFontString(nil, "ARTWORK", "GameFontHighlight");
 		nm:SetPoint("LEFT", plate, "LEFT", 15, 0);
-		nm:SetSize(90, 36);
+		nm:SetSize(80, 36);
 		nm:SetJustifyH("LEFT");
 		nm:SetJustifyV("MIDDLE");
 		btn.nameText = nm;
@@ -414,8 +506,23 @@ local function CreateFrame_TradeSkillLink()
 			end
 		end);
 		btn:SetScript("OnLeave", GameTooltip_Hide);
-		btn:Hide();
 		f.reagents[i] = btn;
+		return btn;
+	end
+
+	-- Show the detail slider + enable the wheel only when the current
+	-- recipe overflows the pane (tracked by `detailNeedScroll`).
+	function f:UpdateDetailScrollbar()
+		local need = self.detailNeedScroll and true or false;
+		self.detailScroll:EnableMouseWheel(need);
+		local sb = getglobal("ClassicAPITradeSkillLinkDetailScrollScrollBar");
+		if sb then
+			if need then
+				sb:Show();
+			else
+				sb:Hide();
+			end
+		end
 	end
 
 	function f:RenderDetail(entry)
@@ -442,11 +549,9 @@ local function CreateFrame_TradeSkillLink()
 			prodText = entry.name;
 			prodTex = C_Spell.GetSpellTexture(entry.spellID);
 		end
-		if created > 0 then
-			self.prodDesc:SetText("");
-		else
-			self.prodDesc:SetText(C_Spell.GetSpellDescription(entry.spellID) or "");
-		end
+		local descText = (created > 0) and ""
+			or (C_Spell.GetSpellDescription(entry.spellID) or "");
+		self.prodDesc:SetText(descText);
 		self.prodIcon:SetNormalTexture(prodTex or
 			"Interface\\Icons\\INV_Misc_QuestionMark");
 		self.prodName:SetText(prodText or "");
@@ -457,50 +562,66 @@ local function CreateFrame_TradeSkillLink()
 		self.prodIcon.count:SetText(made > 1 and tostring(made) or "");
 		self.prodIcon:Show();
 
+		-- Fill every reagent slot; the scroll child clips/scrolls the
+		-- overflow. Buttons past the count are hidden.
 		local reagents = entry.reagents or {};
-		for i = 1, NUM_REAGENTS do
-			local btn = self.reagents[i];
+		local total = table.getn(reagents);
+		for i = 1, total do
+			local btn = AcquireReagent(i);
 			local r = reagents[i];
-			if r then
-				local name, tex, link = itemInfo(r.itemID);
-				btn:SetNormalTexture(tex or
-					"Interface\\Icons\\INV_Misc_QuestionMark");
-				btn.itemLink = link;
-				btn.nameText:SetText(name or ("item:" .. r.itemID));
-				local need = r.count or 1;
-				local have = C_Item.GetItemCount(r.itemID) or 0;
-				if have >= need then
-					btn:GetNormalTexture():SetVertexColor(1, 1, 1);
-					btn.nameText:SetTextColor(HIGHLIGHT_FONT_COLOR:GetRGB());
-				else
-					btn:GetNormalTexture():SetVertexColor(0.5, 0.5, 0.5);
-					btn.nameText:SetTextColor(GRAY_FONT_COLOR:GetRGB());
-				end
-				local haveText = (have >= 100) and "*" or tostring(have);
-				btn.count:SetText(haveText .. " /" .. need);
-				btn:Show();
+			local name, tex, link = itemInfo(r.itemID);
+			btn:SetNormalTexture(tex or "Interface\\Icons\\INV_Misc_QuestionMark");
+			btn.itemLink = link;
+			btn.nameText:SetText(name or ("item:" .. r.itemID));
+			local need = r.count or 1;
+			local have = C_Item.GetItemCount(r.itemID) or 0;
+			if have >= need then
+				btn:GetNormalTexture():SetVertexColor(1, 1, 1);
+				btn.nameText:SetTextColor(HIGHLIGHT_FONT_COLOR:GetRGB());
 			else
-				btn.itemLink = nil;
-				btn:Hide();
+				btn:GetNormalTexture():SetVertexColor(0.5, 0.5, 0.5);
+				btn.nameText:SetTextColor(GRAY_FONT_COLOR:GetRGB());
 			end
+			local haveText = (have >= 100) and "*" or tostring(have);
+			btn.count:SetText(haveText .. " /" .. need);
+			btn:Show();
 		end
-	end
+		for i = total + 1, table.getn(self.reagents) do
+			self.reagents[i].itemLink = nil;
+			self.reagents[i]:Hide();
+		end
 
-	prodIcon:SetScript("OnEnter", function()
-		GameTooltip:SetOwner(this, "ANCHOR_RIGHT");
-		if this.itemLink then
-			GameTooltip:SetHyperlink(this.itemLink);
-		elseif this.spellID then
-			GameTooltip:SetSpellByID(this.spellID);
+		-- Grow the scroll child to the content height so the pane scrolls
+		-- once the header + reagent rows exceed the visible area. Reagent
+		-- row 0 sits ~67px below the child top (icon + label); add the
+		-- wrapped description height for spell recipes.
+		local descH = (descText ~= "") and self.prodDesc:GetHeight() or 0;
+		local rows = math.ceil(total / 2);
+		local contentH = 67 + descH + rows * REAGENT_ROW_HEIGHT + 8;
+		self.detailChild:SetHeight(math.max(contentH, LO.detail[4]));
+		-- Reset to the top and manage the slider explicitly: a range that
+		-- stays 0 (content fits, e.g. Turtle's roomy pane) never fires the
+		-- range-changed event that `scrollBarHideable` relies on, so the
+		-- slider would otherwise sit visible-but-useless. Show it only when
+		-- the content actually overflows.
+		self.detailNeedScroll = contentH > LO.detail[4];
+		local sb = getglobal("ClassicAPITradeSkillLinkDetailScrollScrollBar");
+		if sb then
+			sb:SetValue(0);
 		end
-		GameTooltip:Show();
-	end);
-	prodIcon:SetScript("OnLeave", GameTooltip_Hide);
+		self.detailScroll:SetVerticalScroll(0);
+		self:UpdateDetailScrollbar();
+		RunNextFrame(function()
+			if self:IsShown() then
+				self:UpdateDetailScrollbar();
+			end
+		end)
+	end
 
 	function f:SelectRecipe(entry)
 		self.selectedSpellID = entry.spellID;
 		self.selectedEntry = entry;
-		self:RenderDetail(entry);
+		self:RenderDetail(entry);   -- also resets the detail scroll to top
 		self:Refresh();
 	end
 
@@ -510,9 +631,14 @@ local function CreateFrame_TradeSkillLink()
 		self.prodIcon:Hide();
 		self.prodName:SetText("");
 		self.prodDesc:SetText("");
-		for i = 1, NUM_REAGENTS do
+		for i = 1, table.getn(self.reagents) do
+			self.reagents[i].itemLink = nil;
 			self.reagents[i]:Hide();
 		end
+		self.detailChild:SetHeight(LO.detail[4]);
+		self.detailNeedScroll = false;
+		self:UpdateDetailScrollbar();
+		self.detailScroll:SetVerticalScroll(0);
 	end
 
 	function f:Refresh()
