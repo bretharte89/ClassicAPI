@@ -99,6 +99,7 @@ build instructions.
   - [`EQUIPMENT_SWAP_PENDING` event](#equipment_swap_pending-event)
   - [`EQUIPMENT_SWAP_FINISHED` event](#equipment_swap_finished-event)
   - [`FACTION_STANDING_CHANGED` event](#faction_standing_changed-event)
+  - [`LOOT_HISTORY_ROLL_CHANGED` / `LOOT_HISTORY_ROLL_COMPLETE` / `LOOT_HISTORY_FULL_UPDATE` events](#loot_history_roll_changed--loot_history_roll_complete--loot_history_full_update-events)
   - [`LOOT_SCAN_COMPLETED` event](#loot_scan_completed-event)
   - [`LOSS_OF_CONTROL_ADDED` / `LOSS_OF_CONTROL_UPDATE` events](#loss_of_control_added--loss_of_control_update-events)
   - [`MODIFIER_STATE_CHANGED` event](#modifier_state_changed-event)
@@ -254,6 +255,11 @@ build instructions.
   - [`C_Loot.ScanNearbyLoot()`](#c_lootscannearbyloot)
   - [`C_Loot.IsScanInProgress()`](#c_lootisscaninprogress)
   - [`C_Loot.GetLastScanResults()`](#c_lootgetlastscanresults)
+
+- [LootHistory](#loothistory)
+  - [`C_LootHistory.GetNumItems()`](#c_loothistorygetnumitems)
+  - [`C_LootHistory.GetItem(itemIndex)`](#c_loothistorygetitemitemindex)
+  - [`C_LootHistory.GetPlayerInfo(itemIndex, playerIndex)`](#c_loothistorygetplayerinfoitemindex-playerindex)
 
 - [LossOfControl](#lossofcontrol)
   - [`C_LossOfControl.GetActiveLossOfControlDataCount()`](#c_lossofcontrolgetactivelossofcontroldatacount)
@@ -2294,6 +2300,22 @@ snapshot of `(factionID, newStanding, repGained)` is captured before
 forwarding, which [`C_Reputation.GetLastStandingChange`](#c_reputationgetlaststandingchange)
 exposes — so addons can read the structured payload from inside the
 chat event without re-parsing the localized string.
+
+### `LOOT_HISTORY_ROLL_CHANGED` / `LOOT_HISTORY_ROLL_COMPLETE` / `LOOT_HISTORY_FULL_UPDATE` events
+
+Fire as group-loot rolls progress, so a loot-history UI can update without
+polling. Register like any engine event
+(`frame:RegisterEvent("LOOT_HISTORY_ROLL_COMPLETE")`), then read the item via
+[`C_LootHistory.GetItem`](#c_loothistorygetitemitemindex) /
+[`C_LootHistory.GetPlayerInfo`](#c_loothistorygetplayerinfoitemindex-playerindex).
+
+| Event | Args | When |
+|---|---|---|
+| `LOOT_HISTORY_ROLL_CHANGED` | `itemIndex`, `playerIndex` (numbers) | A player rolled or passed on an item. |
+| `LOOT_HISTORY_ROLL_COMPLETE` | `itemIndex` (number) | The item was decided — won or all-passed. |
+| `LOOT_HISTORY_FULL_UPDATE` | — | Reserved for API / `IsEventValid` completeness (the display frame fires it on open); the DLL doesn't dispatch it. |
+
+See the [LootHistory](#loothistory) section for the reconstruction and read API.
 
 ### `LOOT_SCAN_COMPLETED` event
 
@@ -6124,6 +6146,57 @@ tooltip display, extract the payload form via
 `string.match(link, "|H(item:[^|]+)|h")` — vanilla's `SetHyperlink`
 requires the literal `"item:"` prefix and rejects full `|cff...|Hitem...|h`
 input.
+
+## LootHistory
+
+Backport of the MoP `C_LootHistory` namespace — group-loot roll history.
+Vanilla 1.12 has no loot-history store, but it does receive the live
+group-loot roll traffic (`SMSG_LOOT_ROLL` per player, `SMSG_LOOT_ROLL_WON`,
+`SMSG_LOOT_ALL_PASSED`) — which the stock UI only turns into chat lines. This
+reconstructs the history client-side: packet co-hooks accumulate a ring of
+rolled items with per-player Need/Greed/Pass results and the winner, exposed
+through the namespace. Rollers' **name and class come from the engine
+NameCache** captured at roll time, so they resolve even for a player who has
+left the group by the time their roll arrives.
+
+History is in-memory (last 128 rolled items) and resets on `/reload` or logout.
+The MoP master-loot management functions (`SetExpiration` / `GiveMasterLoot` /
+`CanMasterLoot`) are intentionally omitted — they drive server support 1.12
+doesn't have.
+
+Progress is signalled by the `LOOT_HISTORY_ROLL_CHANGED` /
+`LOOT_HISTORY_ROLL_COMPLETE` events — see the
+[Events](#loot_history_roll_changed--loot_history_roll_complete--loot_history_full_update-events)
+section.
+
+### `C_LootHistory.GetNumItems()`
+
+Returns the number of rolled items currently in the history.
+
+### `C_LootHistory.GetItem(itemIndex)`
+
+`1`-based. Returns `itemLink, numPlayers, isDone, winnerName`:
+- `itemLink` — `item:<id>:0:<suffix>:<unique>` (valid for `GetItemInfo` /
+  `GameTooltip:SetHyperlink`), carrying the roll's random suffix so
+  "of the X" items keep their affix.
+- `numPlayers` — how many players have rolled/passed so far.
+- `isDone` — `true` once the item is decided (won or all-passed).
+- `winnerName` — the winner's name, or `nil` if undecided / all passed.
+
+Returns nothing for an out-of-range index.
+
+### `C_LootHistory.GetPlayerInfo(itemIndex, playerIndex)`
+
+Both `1`-based. Returns `name, class, rollType, roll, isWinner, isMe`:
+- `name` — the roller's name (from the NameCache).
+- `class` — the class token (`"WARRIOR"`, `"MAGE"`, …) for
+  `RAID_CLASS_COLORS`, or `nil` if unknown.
+- `rollType` — `0` = pass, `1` = need, `2` = greed.
+- `roll` — the `1`–`100` roll, or `0` if they passed.
+- `isWinner` — `true` if this player won the item.
+- `isMe` — `true` if this roller is the local player.
+
+Returns nothing for an out-of-range item or player index.
 
 ## LossOfControl
 

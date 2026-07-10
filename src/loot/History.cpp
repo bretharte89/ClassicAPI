@@ -1,0 +1,466 @@
+// This file is part of ClassicAPI.
+//
+// ClassicAPI is free software: you can redistribute it and/or modify it under the terms
+// of the GNU General Public License as published by the Free Software Foundation, either
+// version 3 of the License, or (at your option) any later version.
+//
+// ClassicAPI is distributed in the hope that it will be useful, but WITHOUT ANY
+// WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+// PURPOSE. See the GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along with
+// ClassicAPI. If not, see <https://www.gnu.org/licenses/>.
+
+// C_LootHistory backport.
+//
+// Modern WoW (2.x+, incl. 5.4.8) exposes a `C_LootHistory` namespace backed
+// by an engine-maintained ring buffer that a dedicated loot-history server
+// packet fills. Vanilla 1.12 has NO such packet or store — but it DOES
+// receive the raw group-loot roll traffic (SMSG_LOOT_ROLL per player,
+// SMSG_LOOT_ROLL_WON, SMSG_LOOT_ALL_PASSED), which the default UI only turns
+// into chat lines. So we reconstruct the history client-side (à la
+// Aura::Source): co-hook the three roll-result handlers and accumulate a ring
+// of rolled items + per-player results, then expose C_LootHistory reading
+// from it.
+//
+// The handlers run on the deserialized PendingLootRoll message (0x48 bytes,
+// LootRoll.cpp) with the fields at the OFF_LOOTROLL_* offsets. The message is
+// populated at handler entry and freed at exit, so each co-hook reads its
+// fields BEFORE calling the original.
+//
+// === Handler ABI (verified from disassembly — RET conventions DIFFER) ===
+//   ROLL   FUN_0061C0B0: __fastcall(msg=ECX, ctx=EDX, int stackArg) -> RET 4
+//   WON    FUN_0061B9E0: __fastcall(ctx=ECX, msg=EDX, int stackArg) -> RET 4
+//   PASSED FUN_0061B640: __fastcall(ctx=ECX, msg=EDX)               -> RET 0
+// The trailing stack arg (and matching callee cleanup) is LOAD-BEARING: an
+// earlier revision declared these as 2-arg hooks (implicit RET 0), so every
+// ROLL/WON call left ESP unbalanced by 4 -> stack corruption -> crash on the
+// first loot roll. Each hook below matches its handler's exact shape.
+//
+// Name + class per roller come from the engine NameCache (read at hook time,
+// guaranteed loaded then), so they resolve even for someone who has left the
+// group by the time their roll packet arrives. Surface: C_LootHistory
+// GetNumItems / GetItem / GetPlayerInfo, plus LOOT_HISTORY_ROLL_CHANGED /
+// _ROLL_COMPLETE events. The MoP master-loot management functions
+// (SetExpiration / GiveMasterLoot / CanMasterLoot) are intentionally omitted
+// — they depend on server support 1.12 doesn't have.
+
+#include "Game.h"
+#include "Offsets.h"
+#include "event/Custom.h"
+#include "unit/Identity.h"
+
+#include <cstdint>
+#include <cstdio>
+
+namespace Loot::History {
+
+namespace {
+
+template <typename T>
+T Read(const void *base, int off) {
+    return *reinterpret_cast<const T *>(static_cast<const uint8_t *>(base) + off);
+}
+
+// Modern rollType constants (what C_LootHistory.GetPlayerInfo returns).
+constexpr int ROLL_PASS = 0;
+constexpr int ROLL_NEED = 1;
+constexpr int ROLL_GREED = 2;
+
+// The SMSG_LOOT_ROLL packet encodes rollType as 0 = need, 2 = greed; map to
+// the modern convention. A "didn't actually roll" (pass) is flagged by the
+// high bit of the roll-number byte, handled by the caller.
+int MapRollType(int packetType) {
+    return packetType == 2 ? ROLL_GREED : ROLL_NEED;
+}
+
+// GUID -> engine NameCache entry-data block. This is the same primitive the
+// engine's own `%N` name substitution uses (FUN_005083A0): for a LOADED entry
+// the lookup returns the data block (name[48] at +0, class at +0x140, …),
+// regardless of the (null) callback and regardless of current group
+// membership — so it resolves a roller who has since left the group, which
+// is exactly what a loot roll needs (the roll packet arrives after they may
+// have gone). Guaranteed loaded at hook time: the roll handler's wrapper
+// gates on this same lookup succeeding. Returns nullptr if not cached.
+const uint8_t *LookupPlayerRecord(uint64_t guid) {
+    if (guid == 0)
+        return nullptr;
+    using Lookup_t = const uint8_t *(__thiscall *)(void *cache, uint32_t lo,
+                                                   uint32_t hi, void *cookie,
+                                                   void *cb, void *ud, char flag);
+    auto fn = reinterpret_cast<Lookup_t>(
+        static_cast<uintptr_t>(Offsets::FUN_PLAYER_INFO_LOOKUP));
+    uint32_t cookie[2] = {0, 0};
+    return fn(reinterpret_cast<void *>(
+                  static_cast<uintptr_t>(Offsets::VAR_PLAYER_NAME_CACHE)),
+              static_cast<uint32_t>(guid), static_cast<uint32_t>(guid >> 32),
+              cookie, nullptr, nullptr, 0);
+}
+
+const char *NameFromRecord(const uint8_t *rec) {
+    return rec != nullptr
+               ? reinterpret_cast<const char *>(rec + Offsets::OFF_PLAYER_INFO_NAME)
+               : nullptr;
+}
+
+uint32_t ClassIdFromRecord(const uint8_t *rec) {
+    return rec != nullptr
+               ? *reinterpret_cast<const uint32_t *>(rec + Offsets::OFF_PLAYER_INFO_CLASS)
+               : 0;
+}
+
+// ChrClasses.dbc record ID -> class token ("WARRIOR", "MAGE", …). The DBC's
+// filename field is the token; RAID_CLASS_COLORS et al. key on it. nullptr if
+// the ID is out of range or the record is missing.
+const char *ClassTokenForId(uint32_t classId) {
+    if (classId == 0)
+        return nullptr;
+    const int count = *reinterpret_cast<const int *>(
+        static_cast<uintptr_t>(Offsets::VAR_CHRCLASSES_COUNT));
+    const uint8_t *const *records = *reinterpret_cast<const uint8_t *const *const *>(
+        static_cast<uintptr_t>(Offsets::VAR_CHRCLASSES_RECORDS));
+    if (records == nullptr || static_cast<int>(classId) > count)
+        return nullptr;
+    const uint8_t *rec = records[classId];
+    if (rec == nullptr)
+        return nullptr;
+    return *reinterpret_cast<const char *const *>(
+        rec + Offsets::OFF_CHRCLASSES_FILENAME);
+}
+
+constexpr int kNameLen = 48; // engine NameCache inline name[48]
+
+void CopyName(char *dst, const char *src) {
+    if (src == nullptr) {
+        dst[0] = '\0';
+        return;
+    }
+    int i = 0;
+    for (; i < kNameLen - 1 && src[i] != '\0'; ++i)
+        dst[i] = src[i];
+    dst[i] = '\0';
+}
+
+struct PlayerRoll {
+    uint64_t guid;
+    char name[kNameLen];
+    uint32_t classId; // ChrClasses.dbc ID (0 = unknown)
+    int rollType;     // ROLL_* (modern); ROLL_PASS when the player passed
+    int roll;         // 1..100, or 0 if they passed / didn't roll
+};
+
+constexpr int kMaxPlayers = 40;
+
+struct HistItem {
+    uint64_t sourceGuid; // looted-object GUID — the roll's identity
+    uint32_t slot;
+    uint32_t itemId;
+    int32_t itemSuffix;  // random suffix/property ID (link suffix field)
+    uint32_t itemSeed;   // random seed (link unique field)
+    uint64_t winnerGuid;
+    char winnerName[kNameLen];
+    bool hasWinner;
+    bool isDone;
+    PlayerRoll players[kMaxPlayers];
+    int playerCount;
+    bool used;
+};
+
+// Ring of recent rolled items. g_write is the next slot to fill; g_count
+// saturates at kMaxItems. GetNumItems returns g_count; item index i (1-based,
+// oldest→newest) maps to ring[(g_write - g_count + i - 1) mod kMaxItems].
+// ~3 KB per item (players[40] dominates), so 128 is ~380 KB static — bump
+// freely if a longer history is wanted.
+constexpr int kMaxItems = 128;
+HistItem g_items[kMaxItems];
+int g_write = 0;
+int g_count = 0;
+
+HistItem *Find(uint64_t sourceGuid, uint32_t slot) {
+    for (auto &e : g_items) {
+        if (e.used && e.sourceGuid == sourceGuid && e.slot == slot)
+            return &e;
+    }
+    return nullptr;
+}
+
+HistItem *FindOrCreate(uint64_t sourceGuid, uint32_t slot, uint32_t itemId) {
+    HistItem *e = Find(sourceGuid, slot);
+    if (e != nullptr) {
+        if (itemId != 0)
+            e->itemId = itemId;
+        return e;
+    }
+    e = &g_items[g_write];
+    g_write = (g_write + 1) % kMaxItems;
+    if (g_count < kMaxItems)
+        ++g_count;
+    *e = HistItem{};
+    e->used = true;
+    e->sourceGuid = sourceGuid;
+    e->slot = slot;
+    e->itemId = itemId;
+    return e;
+}
+
+// 1-based access in oldest→newest order (matching GetNumItems' count).
+HistItem *GetEntry(int index1Based) {
+    if (index1Based < 1 || index1Based > g_count)
+        return nullptr;
+    const int start = (g_write - g_count + kMaxItems) % kMaxItems;
+    return &g_items[(start + index1Based - 1) % kMaxItems];
+}
+
+// The 1-based index of an entry in oldest→newest order (0 if not live).
+int IndexOf(const HistItem *e) {
+    const int start = (g_write - g_count + kMaxItems) % kMaxItems;
+    for (int i = 0; i < g_count; ++i) {
+        if (&g_items[(start + i) % kMaxItems] == e)
+            return i + 1;
+    }
+    return 0;
+}
+
+// Modern loot-history events. ROLL_CHANGED(itemIdx, playerIdx) fires on each
+// roll; ROLL_COMPLETE(itemIdx) when the item is decided (winner / all-passed).
+// FULL_UPDATE is reserved for API/IsEventValid completeness (the UI fires it
+// on open); we don't dispatch it from C.
+constexpr const char *kRollChanged = "LOOT_HISTORY_ROLL_CHANGED";
+constexpr const char *kRollComplete = "LOOT_HISTORY_ROLL_COMPLETE";
+constexpr const char *kFullUpdate = "LOOT_HISTORY_FULL_UPDATE";
+const Event::Custom::AutoReserve _evRollChanged{kRollChanged};
+const Event::Custom::AutoReserve _evRollComplete{kRollComplete};
+const Event::Custom::AutoReserve _evFullUpdate{kFullUpdate};
+
+// Returns the 1-based item index and writes the 1-based player index to
+// `*outPlayerIdx` (0 if none), so the hook can fire ROLL_CHANGED.
+int RecordRoll(const void *msg, int *outPlayerIdx) {
+    *outPlayerIdx = 0;
+    const uint64_t src = Read<uint64_t>(msg, Offsets::OFF_LOOTROLL_SOURCE_GUID);
+    const uint32_t slot = Read<uint32_t>(msg, Offsets::OFF_LOOTROLL_SLOT);
+    const uint32_t itemId = Read<uint32_t>(msg, Offsets::OFF_LOOTROLL_ITEM_ID);
+    const uint64_t roller = Read<uint64_t>(msg, Offsets::OFF_LOOTROLL_ROLLER_GUID);
+    const uint8_t rollByte = Read<uint8_t>(msg, Offsets::OFF_LOOTROLL_ROLL_NUM);
+    const int packetType = Read<int32_t>(msg, Offsets::OFF_LOOTROLL_ROLL_TYPE);
+
+    const bool didRoll = (rollByte & 0x80) == 0;
+    const int rollNum = didRoll ? (rollByte & 0x7F) : 0;
+    const int rollType = didRoll ? MapRollType(packetType) : ROLL_PASS;
+
+    HistItem *e = FindOrCreate(src, slot, itemId);
+    if (roller == 0)
+        return IndexOf(e);
+
+    int slotIdx = -1;
+    for (int i = 0; i < e->playerCount; ++i) {
+        if (e->players[i].guid == roller) {
+            slotIdx = i;
+            break;
+        }
+    }
+    if (slotIdx < 0 && e->playerCount < kMaxPlayers) {
+        slotIdx = e->playerCount++;
+        const uint8_t *rec = LookupPlayerRecord(roller); // cache loaded now
+        e->players[slotIdx].guid = roller;
+        CopyName(e->players[slotIdx].name, NameFromRecord(rec));
+        e->players[slotIdx].classId = ClassIdFromRecord(rec);
+    }
+    if (slotIdx >= 0) {
+        e->players[slotIdx].rollType = rollType;
+        e->players[slotIdx].roll = rollNum;
+        *outPlayerIdx = slotIdx + 1;
+    }
+    return IndexOf(e);
+}
+
+int RecordWinner(const void *msg) {
+    const uint64_t src = Read<uint64_t>(msg, Offsets::OFF_LOOTROLL_SOURCE_GUID);
+    const uint32_t slot = Read<uint32_t>(msg, Offsets::OFF_LOOTROLL_SLOT);
+    const uint32_t itemId = Read<uint32_t>(msg, Offsets::OFF_LOOTROLL_ITEM_ID);
+    const uint64_t winner = Read<uint64_t>(msg, Offsets::OFF_LOOTROLL_ROLLER_GUID);
+
+    HistItem *e = FindOrCreate(src, slot, itemId);
+    e->winnerGuid = winner;
+    CopyName(e->winnerName, NameFromRecord(LookupPlayerRecord(winner)));
+    e->hasWinner = true;
+    e->isDone = true;
+    return IndexOf(e);
+}
+
+int RecordAllPassed(const void *msg) {
+    const uint64_t src = Read<uint64_t>(msg, Offsets::OFF_LOOTROLL_SOURCE_GUID);
+    const uint32_t slot = Read<uint32_t>(msg, Offsets::OFF_LOOTROLL_SLOT);
+    const uint32_t itemId = Read<uint32_t>(msg, Offsets::OFF_LOOTROLL_ITEM_ID);
+
+    HistItem *e = FindOrCreate(src, slot, itemId);
+    e->isDone = true;
+    return IndexOf(e);
+}
+
+// SMSG_LOOT_START_ROLL carries the item's random suffix/seed; the result
+// packets don't. It's read from the freshly-built store-head node (rather
+// than the packet) right after the START_ROLL handler runs — the node has
+// the same field offsets as the message. This is the only place the random
+// fields are populated, so the result recorders leave them alone.
+void RecordStart() {
+    const uint8_t *node = *reinterpret_cast<const uint8_t *const *>(
+        static_cast<uintptr_t>(Offsets::VAR_LOOTROLL_STORE_HEAD));
+    if (node == nullptr)
+        return;
+    const uint64_t src = Read<uint64_t>(node, Offsets::OFF_LOOTROLL_SOURCE_GUID);
+    const uint32_t slot = Read<uint32_t>(node, Offsets::OFF_LOOTROLL_SLOT);
+    const uint32_t itemId = Read<uint32_t>(node, Offsets::OFF_LOOTROLL_ITEM_ID);
+    HistItem *e = FindOrCreate(src, slot, itemId);
+    e->itemSuffix = Read<int32_t>(node, Offsets::OFF_LOOTROLL_ITEM_SUFFIX);
+    e->itemSeed = Read<uint32_t>(node, Offsets::OFF_LOOTROLL_ITEM_SEED);
+}
+
+// ---- Packet co-hooks -------------------------------------------------------
+// Signatures match the verified per-handler ABI above (note the differing
+// message register, stack arg, and RET). Read the message fields before the
+// original runs — it frees the message.
+
+using RollFn_t = void(__fastcall *)(void *msg, void *ctx, int a3);   // RET 4
+using WonFn_t = void(__fastcall *)(void *ctx, void *msg, int a3);    // RET 4
+using PassedFn_t = void(__fastcall *)(void *ctx, void *msg);         // RET 0
+using StartFn_t = void(__fastcall *)(void *packet);                 // RET 0
+
+RollFn_t g_origRoll = nullptr;
+WonFn_t g_origWon = nullptr;
+PassedFn_t g_origPassed = nullptr;
+StartFn_t g_origStart = nullptr;
+
+// START_ROLL: let the original build the store node, then read the item's
+// random suffix off it. Adds the item to the history so a UI can show it as
+// soon as the roll opens (before any roll comes in).
+void __fastcall Start_h(void *packet) {
+    g_origStart(packet);
+    RecordStart();
+}
+
+// Record fields (message is freed by the original), run the original, THEN
+// fire the event — firing after the original keeps the engine's own handler
+// off our re-entrancy (same order Item::Data uses from its packet hook).
+void __fastcall Roll_h(void *msg, void *ctx, int a3) {
+    int itemIdx = 0, playerIdx = 0;
+    if (msg != nullptr)
+        itemIdx = RecordRoll(msg, &playerIdx);
+    g_origRoll(msg, ctx, a3);
+    if (itemIdx > 0)
+        Event::Custom::Fire(Event::Custom::Lookup(kRollChanged), "%d%d", itemIdx,
+                            playerIdx);
+}
+
+void __fastcall Won_h(void *ctx, void *msg, int a3) {
+    int itemIdx = 0;
+    if (msg != nullptr)
+        itemIdx = RecordWinner(msg);
+    g_origWon(ctx, msg, a3);
+    if (itemIdx > 0)
+        Event::Custom::Fire(Event::Custom::Lookup(kRollComplete), "%d", itemIdx);
+}
+
+void __fastcall Passed_h(void *ctx, void *msg) {
+    int itemIdx = 0;
+    if (msg != nullptr)
+        itemIdx = RecordAllPassed(msg);
+    g_origPassed(ctx, msg);
+    if (itemIdx > 0)
+        Event::Custom::Fire(Event::Custom::Lookup(kRollComplete), "%d", itemIdx);
+}
+
+const Game::HookAutoRegister _hookRoll{
+    Offsets::FUN_LOOT_ROLL_HANDLER, reinterpret_cast<void *>(&Roll_h),
+    reinterpret_cast<void **>(&g_origRoll)};
+const Game::HookAutoRegister _hookWon{
+    Offsets::FUN_LOOT_ROLL_WON_HANDLER, reinterpret_cast<void *>(&Won_h),
+    reinterpret_cast<void **>(&g_origWon)};
+const Game::HookAutoRegister _hookPassed{
+    Offsets::FUN_LOOT_ALL_PASSED_HANDLER, reinterpret_cast<void *>(&Passed_h),
+    reinterpret_cast<void **>(&g_origPassed)};
+const Game::HookAutoRegister _hookStart{
+    Offsets::FUN_LOOT_START_ROLL_HANDLER, reinterpret_cast<void *>(&Start_h),
+    reinterpret_cast<void **>(&g_origStart)};
+
+// ---- Lua surface -----------------------------------------------------------
+
+// `C_LootHistory.GetNumItems()` -> number of rolled items in the history.
+int __fastcall Script_GetNumItems(void *L) {
+    Game::Lua::PushNumber(L, static_cast<double>(g_count));
+    return 1;
+}
+
+// `C_LootHistory.GetItem(itemIndex)` -> itemLink, numPlayers, isDone, winner.
+// itemLink is the `item:id:enchant:suffix:unique` form (valid for GetItemInfo
+// / SetHyperlink), carrying the roll's random suffix so "of the X" items keep
+// their affix; `winner` is the winner's name, or nil if undecided.
+int __fastcall Script_GetItem(void *L) {
+    if (!Game::Lua::IsNumber(L, 1)) {
+        Game::Lua::Error(L, "Usage: GetItem(itemIndex)");
+        return 0;
+    }
+    HistItem *e = GetEntry(static_cast<int>(Game::Lua::ToNumber(L, 1)));
+    if (e == nullptr)
+        return 0;
+    static char link[64];
+    // Vanilla item link: item:id:enchant:suffix:unique. Carry the roll's
+    // random suffix/seed so "of the Bear"-style items keep their affix.
+    std::snprintf(link, sizeof(link), "item:%u:0:%d:%u", e->itemId,
+                  e->itemSuffix, e->itemSeed);
+    Game::Lua::PushString(L, link);                                 // 1 itemLink
+    Game::Lua::PushNumber(L, static_cast<double>(e->playerCount));  // 2 numPlayers
+    Game::Lua::PushBool(L, e->isDone);                              // 3 isDone
+    if (e->hasWinner && e->winnerName[0] != '\0')
+        Game::Lua::PushString(L, e->winnerName);                    // 4 winner
+    else
+        Game::Lua::PushNil(L);
+    return 4;
+}
+
+// `C_LootHistory.GetPlayerInfo(itemIndex, playerIndex)` ->
+// name, classToken, rollType, roll, isWinner, isMe. classToken is the
+// ChrClasses filename ("WARRIOR", …) for RAID_CLASS_COLORS-style coloring;
+// both name and class come from the engine NameCache captured at roll time.
+// isMe compares the roller GUID to the local player's.
+int __fastcall Script_GetPlayerInfo(void *L) {
+    if (!Game::Lua::IsNumber(L, 1) || !Game::Lua::IsNumber(L, 2)) {
+        Game::Lua::Error(L, "Usage: GetPlayerInfo(itemIndex, playerIndex)");
+        return 0;
+    }
+    HistItem *e = GetEntry(static_cast<int>(Game::Lua::ToNumber(L, 1)));
+    if (e == nullptr)
+        return 0;
+    const int p = static_cast<int>(Game::Lua::ToNumber(L, 2)) - 1;
+    if (p < 0 || p >= e->playerCount)
+        return 0;
+    const PlayerRoll &r = e->players[p];
+    if (r.name[0] != '\0')
+        Game::Lua::PushString(L, r.name);                    // 1 name
+    else
+        Game::Lua::PushNil(L);
+    const char *classToken = ClassTokenForId(r.classId);     // 2 class token
+    if (classToken != nullptr)
+        Game::Lua::PushString(L, classToken);
+    else
+        Game::Lua::PushNil(L);
+    Game::Lua::PushNumber(L, static_cast<double>(r.rollType)); // 3 rollType
+    Game::Lua::PushNumber(L, static_cast<double>(r.roll));     // 4 roll
+    Game::Lua::PushBool(L, e->hasWinner && e->winnerGuid == r.guid); // 5 isWinner
+    Game::Lua::PushBool(L, r.guid == Unit::Identity::PlayerGuid());  // 6 isMe
+    return 6;
+}
+
+void RegisterLuaFunctions() {
+    Game::Lua::RegisterTableFunction("C_LootHistory", "GetNumItems",
+                                     &Script_GetNumItems);
+    Game::Lua::RegisterTableFunction("C_LootHistory", "GetItem",
+                                     &Script_GetItem);
+    Game::Lua::RegisterTableFunction("C_LootHistory", "GetPlayerInfo",
+                                     &Script_GetPlayerInfo);
+}
+
+const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
+
+} // namespace
+
+} // namespace Loot::History

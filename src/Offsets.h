@@ -1218,6 +1218,42 @@ enum Offsets {
     // aura that's still inside its computed duration window.
     FUN_ON_AURA_REMOVED = 0x00612320,
 
+    // Group-loot roll packet handlers (the inner display functions in
+    // LootRoll.cpp). Each is `__fastcall`; the deserialized 0x48-byte
+    // PendingLootRoll message struct is fully populated at entry and freed
+    // at exit, so read its fields BEFORE calling the original. The register
+    // the message arrives in differs per handler (matched in
+    // loot/History.cpp): ROLL passes it in ECX, WON / ALL_PASSED in EDX.
+    // Backs the C_LootHistory backport (loot/History.cpp) — 1.12 has no
+    // loot-history store, so we reconstruct one from these packets.
+    FUN_LOOT_ROLL_HANDLER = 0x0061C0B0,       // SMSG_LOOT_ROLL       (msg=ECX)
+    FUN_LOOT_ROLL_WON_HANDLER = 0x0061B9E0,   // SMSG_LOOT_ROLL_WON   (msg=EDX)
+    FUN_LOOT_ALL_PASSED_HANDLER = 0x0061B640, // SMSG_LOOT_ALL_PASSED (msg=EDX)
+
+    // SMSG_LOOT_START_ROLL (opcode 0x2A1) handler — `__fastcall(ECX = packet)`,
+    // RET 0. The result packets (ROLL/WON/PASSED) carry 0 for the item's
+    // random suffix/seed; only START_ROLL does. It deserializes a fresh
+    // PendingLootRoll node (same 0x20/0x24 field offsets as the message) and
+    // publishes it as the store head at VAR_LOOTROLL_STORE_HEAD, so we read
+    // the suffix straight off that node right after the original runs.
+    FUN_LOOT_START_ROLL_HANDLER = 0x0061B310,
+    VAR_LOOTROLL_STORE_HEAD = 0x00C4DC00, // PendingLootRoll* — newest node
+
+    // PendingLootRoll message field offsets, derived from the SMSG_LOOT_ROLL
+    // deserializer FUN_0061BFA0 (reads GUID/u32/byte fields off the packet).
+    OFF_LOOTROLL_SOURCE_GUID = 0x10, // u64 looted-object GUID (roll identity)
+    OFF_LOOTROLL_SLOT = 0x18,        // u32 loot slot
+    OFF_LOOTROLL_ITEM_ID = 0x1C,     // u32 itemID
+    // Random-enchant fields for the item link `item:id:enchant:suffix:unique`.
+    // +0x20 is the suffix/random-property ID the engine's item-name builder
+    // FUN_005D8B00 uses (indexes the random-properties DBC for the "of the X"
+    // name); +0x24 is the paired seed/unique value.
+    OFF_LOOTROLL_ITEM_SUFFIX = 0x20, // i32 random suffix / property ID
+    OFF_LOOTROLL_ITEM_SEED = 0x24,   // u32 random seed (link unique field)
+    OFF_LOOTROLL_ROLLER_GUID = 0x30, // u64 roller / winner GUID
+    OFF_LOOTROLL_ROLL_NUM = 0x38,    // u8 roll (1..100); high bit = didn't roll
+    OFF_LOOTROLL_ROLL_TYPE = 0x40,   // u32 rollType: 0 = need, 2 = greed
+
     // CGPlayer-side sub-struct, allocated for any player-controlled
     // unit (local self, target, party, raid, inspect targets — all of
     // them). Holds player-specific data that's *not* in the broadcast
