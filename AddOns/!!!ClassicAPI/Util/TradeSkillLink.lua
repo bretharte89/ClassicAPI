@@ -793,9 +793,24 @@ local function CreateProfessionLinkButton(parentName, getLink)
 	if _G[btnName] or not parent then
 		return;
 	end
+	local title = _G[parentName .. "TitleText"];
 	local btn = CreateFrame("Button", btnName, parent);
 	btn:SetSize(16, 16);
-	btn:SetPoint("LEFT", _G[parentName .. "TitleText"], "RIGHT", 4, 0);
+
+	local function reposition()
+		if not title then
+			return;
+		end
+		btn:ClearAllPoints();
+		if title:GetJustifyH() == "LEFT" then
+			btn:SetPoint("LEFT", title, "LEFT", title:GetStringWidth() + 4, 0);
+		else
+			btn:SetPoint("LEFT", title, "CENTER", title:GetStringWidth() / 2 + 4, 0);
+		end
+	end
+	reposition()
+	btn:SetScript("OnShow", function() RunNextFrame(reposition) end)
+	hooksecurefunc(title, "SetText", function() RunNextFrame(reposition) end)
 
 	local icon = "Interface\\GossipFrame\\PetitionGossipIcon";
 	btn:SetNormalTexture(icon);
@@ -821,8 +836,20 @@ end
 
 EventUtil.ContinueOnAddOnLoaded("Blizzard_TradeSkillUI", function()
 	CreateProfessionLinkButton("TradeSkillFrame", C_TradeSkillUI.GetTradeSkillListLink);
-end);
+end)
 
 EventUtil.ContinueOnAddOnLoaded("Blizzard_CraftUI", function()
-	CreateProfessionLinkButton("CraftFrame", C_TradeSkillUI.GetCraftListLink);
-end);
+	CreateProfessionLinkButton("CraftFrame", C_TradeSkillUI.GetCraftListLink)
+end)
+
+EventUtil.ContinueOnAddOnLoaded("AdvancedTradeSkillWindow", function()
+	CreateProfessionLinkButton("ATSWFrame", function()
+		return atsw_oldmode and C_TradeSkillUI.GetCraftListLink() or C_TradeSkillUI.GetTradeSkillListLink()
+	end)
+end)
+
+EventUtil.ContinueOnAddOnLoaded("AdvancedTradeSkillWindow2", function()
+	CreateProfessionLinkButton("ATSWFrame", function()
+		return ATSW_TradeSkill() and C_TradeSkillUI.GetTradeSkillListLink() or C_TradeSkillUI.GetCraftListLink()
+	end)
+end)
