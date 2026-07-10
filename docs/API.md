@@ -20,6 +20,7 @@ build instructions.
   - [`C_AddOns.IsAddOnLoaded(indexOrName)`](#c_addonsisaddonloadedindexorname)
   - [`C_AddOns.GetAddOnSecurity(indexOrName)`](#c_addonsgetaddonsecurityindexorname)
   - [`C_AddOns.DoesAddOnExist(indexOrName)`](#c_addonsdoesaddonexistindexorname)
+  - [`C_AddOns.GetAddOnOptionalDependencies(indexOrName)`](#c_addonsgetaddonoptionaldependenciesindexorname)
 
 - [CharacterList](#characterlist)
   - [`GetSavedCharacterOrder(realm)` / `SetSavedCharacterOrder(realm, order)` — GlueXML only](#getsavedcharacterorderrealm--setsavedcharacterorderrealm-order--gluexml-only)
@@ -611,11 +612,12 @@ the comment in [src/action/Info.cpp](../src/action/Info.cpp).
 
 ## AddOns
 
-Six modern `C_AddOns.*` getters that splat the legacy
+Modern `C_AddOns.*` getters that splat the legacy
 `GetAddOnInfo(arg)` 7-tuple `(name, title, notes, enabled,
-loadable, reason, security)` into single-field accessors. Most
-bypass `GetAddOnInfo` entirely and call the engine's per-field
-helpers directly.
+loadable, reason, security)` into single-field accessors, plus a
+getter for the addon's optional dependencies. Most bypass
+`GetAddOnInfo` entirely and call the engine's per-field helpers
+directly.
 
 All accept either a 1-based index (`1..GetNumAddOns()`) or an
 addon directory name string.
@@ -730,6 +732,25 @@ string. This wrapper avoids that.
 ```lua
 C_AddOns.DoesAddOnExist("DebugTools")  -- true
 C_AddOns.DoesAddOnExist("garbage")     -- false
+```
+
+### `C_AddOns.GetAddOnOptionalDependencies(indexOrName)`
+
+Returns the addon's `## OptionalDeps:` names as multiple return
+values, in declared order — the counterpart to the stock
+`GetAddOnDependencies` (required deps), which vanilla exposes but
+never gave an optional-deps equivalent. An addon with no
+`## OptionalDeps:` field returns nothing.
+
+Arg and error handling match stock `GetAddOnDependencies`: a
+numeric index out of range (or a non-string/non-number argument)
+raises the usage error; an unknown *name* string returns nothing
+without erroring.
+
+```lua
+-- ## OptionalDeps: Atlas, pfQuest
+C_AddOns.GetAddOnOptionalDependencies("MyAddon")  -- "Atlas", "pfQuest"
+C_AddOns.GetAddOnOptionalDependencies("Atlas")    -- (nothing — no OptionalDeps)
 ```
 
 ## CharacterList

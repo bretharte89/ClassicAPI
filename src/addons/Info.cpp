@@ -41,6 +41,11 @@ using CanLoadFn_t = uint8_t(__fastcall *)(const uint8_t *entry, char fullCheck,
                                           int *outStatus, int *outDepHandle,
                                           const char *accountName);
 using GetAccountName_t = const char *(*)();
+// Hash-lookup by name → the matched record's RequiredDeps descriptor
+// (`record + 0x48`), NULL on miss. Accepts an entry pointer too (its
+// first bytes are the inline name). We use it only to recover the
+// record base for string input; see `Script_GetAddOnOptionalDependencies`.
+using ResolveReqDeps_t = uint8_t *(__fastcall *)(const char *nameOrEntry);
 
 // Resolves the user's arg to a `const uint8_t *` that the engine's
 // per-field accessors can consume. They all read the addon name as
@@ -295,6 +300,67 @@ int __fastcall Script_DoesAddOnExist(void *L) {
     return 1;
 }
 
+// `C_AddOns.GetAddOnOptionalDependencies(indexOrName)` — the addon's
+// `## OptionalDeps:` names as multiple return values, in declared order.
+// The exact shape of the stock `GetAddOnDependencies`, but reading the
+// *optional* dep array instead of the required one. No optional deps →
+// returns nothing.
+//
+// Vanilla parses `## OptionalDeps:` in the TOC parser `FUN_0051c9b0`
+// into a `{cap, count, data, quantum}` name-array descriptor at
+// `record+0x38` (count@+0x3C, data@+0x40), but ships no getter for it.
+//
+// Arg/error handling mirrors stock `Script_GetAddOnDependencies`
+// (`0x0048E5E0`): numeric out-of-range or a non-string/non-number arg
+// raises the usage error; an unknown *name* string returns nothing
+// (no error), matching the engine's own not-found path.
+//
+// Unlike the single-field getters above, this can't reuse
+// `ResolveAddOnName` for string input — it needs the AddOnEntry base to
+// read the dep array, not the raw name the field accessors take. So it
+// resolves the name via `FUN_ADDON_RESOLVE_REQ_DEPS` and subtracts the
+// descriptor offset to recover the base.
+int __fastcall Script_GetAddOnOptionalDependencies(void *L) {
+    static constexpr const char *kUsage =
+        "Usage: C_AddOns.GetAddOnOptionalDependencies(index or \"name\")";
+
+    const uint8_t *record = nullptr;
+    const int t = Game::Lua::Type(L, 1);
+    if (t == Game::Lua::TYPE_NUMBER) {
+        const int idx0 = static_cast<int>(Game::Lua::ToNumber(L, 1)) - 1;
+        auto byIndex =
+            reinterpret_cast<GetByIndex_t>(Offsets::FUN_ADDON_GET_BY_INDEX);
+        record = static_cast<const uint8_t *>(byIndex(idx0));
+        if (record == nullptr) {
+            Game::Lua::Error(L, "%s", kUsage);
+            return 0;
+        }
+    } else if (t == Game::Lua::TYPE_STRING) {
+        const char *name = Game::Lua::ToString(L, 1);
+        auto resolve = reinterpret_cast<ResolveReqDeps_t>(
+            Offsets::FUN_ADDON_RESOLVE_REQ_DEPS);
+        uint8_t *reqDesc = resolve(name);
+        if (reqDesc == nullptr)
+            return 0; // unknown addon name — no error, push nothing
+        record = reqDesc - Offsets::OFF_ADDON_REQDEPS_DESC;
+    } else {
+        Game::Lua::Error(L, "%s", kUsage);
+        return 0;
+    }
+
+    const uint32_t count = *reinterpret_cast<const uint32_t *>(
+        record + Offsets::OFF_ADDON_OPTIONALDEPS_COUNT);
+    if (count == 0)
+        return 0;
+    auto names = *reinterpret_cast<const char *const *const *>(
+        record + Offsets::OFF_ADDON_OPTIONALDEPS_ARRAY);
+    if (names == nullptr)
+        return 0;
+    for (uint32_t i = 0; i < count; ++i)
+        Game::Lua::PushString(L, names[i]); // NULL → pushnil, per engine
+    return static_cast<int>(count);
+}
+
 // `Enum.AddOnSecurityStatus` — what `C_AddOns.GetAddOnSecurity`
 // returns. Slots 0..2 match the engine's own ordering at
 // `VAR_ADDON_SECURITY_TABLE`; slot 3 is our addition for
@@ -323,6 +389,8 @@ static void RegisterLuaFunctions() {
                                      &Script_DoesAddOnExist);
     Game::Lua::RegisterTableFunction("C_AddOns", "IsAddOnLoaded",
                                      &Script_IsAddOnLoaded);
+    Game::Lua::RegisterTableFunction("C_AddOns", "GetAddOnOptionalDependencies",
+                                     &Script_GetAddOnOptionalDependencies);
     Game::Lua::RegisterIntegerEnum(
         "Enum", "AddOnSecurityStatus",
         kAddOnSecurityStatusEntries,

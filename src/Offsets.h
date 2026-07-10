@@ -3870,6 +3870,30 @@ enum Offsets {
     FUN_ADDON_GET_TITLE_BY_NAME = 0x0051DF20,   // (name) → title string or NULL
     FUN_ADDON_GET_NOTES_BY_NAME = 0x0051E050,   // (name) → notes string or NULL
 
+    // `__fastcall(const char *nameOrEntry) → AddOnEntry*+0x48 or NULL`.
+    // Hash-table lookup by name (accepts an entry pointer too — its
+    // first 12 bytes are the inline name), returning a pointer to the
+    // matched record's RequiredDeps descriptor (`record + 0x48`), or
+    // NULL on a miss. Stock `Script_GetAddOnDependencies` (`0x0048E5E0`)
+    // calls this then reads count@+4 / data@+8 off the return to walk
+    // the required deps. We reuse it only to recover the record base for
+    // string input: `record = resolve(name) - OFF_ADDON_REQDEPS_DESC`.
+    FUN_ADDON_RESOLVE_REQ_DEPS = 0x0051E350,
+
+    // AddOnEntry dependency-array descriptors are `{cap, count, data,
+    // quantum}` (each field 4 bytes) laid out 0x10 apart, parsed by the
+    // TOC parser `FUN_0051c9b0`:
+    //     OptionalDeps  desc@+0x38  (count@+0x3C, data@+0x40)
+    //     RequiredDeps  desc@+0x48  (count@+0x4C, data@+0x50) ← stock walks
+    //     LoadWith      desc@+0x58
+    // Optional offsets verified against the parser's append site at
+    // `0x0051CDBA` (`mov esi,[rec+0x3C]` count, `lea edi,[rec+0x38]`);
+    // required desc@+0x48 confirmed by `FUN_ADDON_RESOLVE_REQ_DEPS`'s
+    // `lea eax,[rec+0x48]` return.
+    OFF_ADDON_REQDEPS_DESC = 0x48,
+    OFF_ADDON_OPTIONALDEPS_COUNT = 0x3C,
+    OFF_ADDON_OPTIONALDEPS_ARRAY = 0x40,
+
     // Per-field accessors `Script_GetAddOnInfo` calls internally for
     // returns 5 (loadable), 6 (reason string), 7 (security category).
     // We dispatch to these directly so the wrappers don't need to

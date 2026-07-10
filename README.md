@@ -18,7 +18,7 @@ Full per-function reference: **[docs/API.md](docs/API.md)**.
 | Namespace | Calls |
 |-----------|-------|
 | [Action](docs/API.md#action) | `GetActionInfo` |
-| [AddOns](docs/API.md#addons) | `C_AddOns.DoesAddOnExist`, `C_AddOns.GetAddOnName`, `C_AddOns.GetAddOnNotes`, `C_AddOns.GetAddOnSecurity`, `C_AddOns.GetAddOnTitle`, `C_AddOns.IsAddOnLoadable`, `C_AddOns.IsAddOnLoaded` |
+| [AddOns](docs/API.md#addons) | `C_AddOns.DoesAddOnExist`, `C_AddOns.GetAddOnName`, `C_AddOns.GetAddOnNotes`, `C_AddOns.GetAddOnOptionalDependencies`, `C_AddOns.GetAddOnSecurity`, `C_AddOns.GetAddOnTitle`, `C_AddOns.IsAddOnLoadable`, `C_AddOns.IsAddOnLoaded` |
 | [Chat](docs/API.md#chat) | `GetCurrentChatGUID` |
 | [Class](docs/API.md#class) | `FillLocalizedClassList` |
 | [Combat](docs/API.md#combat) | `InCombatLockdown` |
