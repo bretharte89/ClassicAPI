@@ -519,14 +519,13 @@ local function CreateFrame_TradeSkillLink()
 	function f:UpdateDetailScrollbar()
 		local need = self.detailNeedScroll and true or false;
 		self.detailScroll:EnableMouseWheel(need);
-		local sb = getglobal("ClassicAPITradeSkillLinkDetailScrollScrollBar");
-		if sb then
-			if need then
-				sb:Show();
-			else
-				sb:Hide();
-			end
-		end
+		local base = "ClassicAPITradeSkillLinkDetailScroll";
+		local sb = getglobal(base .. "ScrollBar");
+		if sb then sb:SetShown(need) end
+		local top = getglobal(base .. "Top");
+		if top then top:SetShown(need) end
+		local bottom = getglobal(base .. "Bottom");
+		if bottom then bottom:SetShown(need) end
 	end
 
 	function f:RenderDetail(entry)
