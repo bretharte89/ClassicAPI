@@ -484,6 +484,10 @@ local function CreateFrame_TradeSkillLink()
 		btn:SetSize(39, 39);
 		btn:SetPoint("TOPLEFT", reagentLabel, "BOTTOMLEFT",
 			col * 134 - 5, -3 - rowN * REAGENT_ROW_HEIGHT);
+		-- Extend the hit area rightward over the name plate so the tooltip
+		-- fires anywhere on the element, not just the icon. Stop short of the
+		-- next column (pitch 134 − icon 39) so hovers don't bleed across.
+		btn:SetHitRectInsets(0, -(134 - 39), 0, 0);
 		btn:SetNormalTexture("Interface\\Icons\\INV_Misc_QuestionMark");
 		local plate = btn:CreateTexture(nil, "BACKGROUND");
 		plate:SetTexture("Interface\\QuestFrame\\UI-QuestItemNameFrame");
