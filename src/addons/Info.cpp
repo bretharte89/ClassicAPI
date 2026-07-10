@@ -315,38 +315,34 @@ int __fastcall Script_DoesAddOnExist(void *L) {
 // raises the usage error; an unknown *name* string returns nothing
 // (no error), matching the engine's own not-found path.
 //
-// Unlike the single-field getters above, this can't reuse
-// `ResolveAddOnName` for string input — it needs the AddOnEntry base to
-// read the dep array, not the raw name the field accessors take. So it
-// resolves the name via `FUN_ADDON_RESOLVE_REQ_DEPS` and subtracts the
-// descriptor offset to recover the base.
+// Resolution mirrors stock `Script_GetAddOnDependencies` exactly: the
+// arg is first turned into a name-usable pointer (`ResolveAddOnName` —
+// numeric via `FUN_ADDON_GET_BY_INDEX`, string is the raw string), then
+// routed through the by-name hash lookup `FUN_ADDON_RESOLVE_REQ_DEPS`
+// to reach the deps-bearing record. `FUN_ADDON_GET_BY_INDEX` returns a
+// *name pointer*, NOT the record — reading dep offsets off it lands in
+// string memory and crashes (a numeric-path caller like pfUI's addon
+// list hit exactly that). The resolver returns the RequiredDeps
+// descriptor at `record+0x48`; subtract to recover the base. An unknown
+// name yields NULL → return nothing (no error), like stock.
 int __fastcall Script_GetAddOnOptionalDependencies(void *L) {
     static constexpr const char *kUsage =
         "Usage: C_AddOns.GetAddOnOptionalDependencies(index or \"name\")";
 
-    const uint8_t *record = nullptr;
-    const int t = Game::Lua::Type(L, 1);
-    if (t == Game::Lua::TYPE_NUMBER) {
-        const int idx0 = static_cast<int>(Game::Lua::ToNumber(L, 1)) - 1;
-        auto byIndex =
-            reinterpret_cast<GetByIndex_t>(Offsets::FUN_ADDON_GET_BY_INDEX);
-        record = static_cast<const uint8_t *>(byIndex(idx0));
-        if (record == nullptr) {
-            Game::Lua::Error(L, "%s", kUsage);
-            return 0;
-        }
-    } else if (t == Game::Lua::TYPE_STRING) {
-        const char *name = Game::Lua::ToString(L, 1);
-        auto resolve = reinterpret_cast<ResolveReqDeps_t>(
-            Offsets::FUN_ADDON_RESOLVE_REQ_DEPS);
-        uint8_t *reqDesc = resolve(name);
-        if (reqDesc == nullptr)
-            return 0; // unknown addon name — no error, push nothing
-        record = reqDesc - Offsets::OFF_ADDON_REQDEPS_DESC;
-    } else {
+    // NULL ⇒ out-of-range numeric index or a non-string/non-number arg;
+    // stock raises the usage error in both cases.
+    const uint8_t *nameOrEntry = ResolveAddOnName(L);
+    if (nameOrEntry == nullptr) {
         Game::Lua::Error(L, "%s", kUsage);
         return 0;
     }
+
+    auto resolve = reinterpret_cast<ResolveReqDeps_t>(
+        Offsets::FUN_ADDON_RESOLVE_REQ_DEPS);
+    uint8_t *reqDesc = resolve(reinterpret_cast<const char *>(nameOrEntry));
+    if (reqDesc == nullptr)
+        return 0; // unknown addon name — no error, push nothing
+    const uint8_t *record = reqDesc - Offsets::OFF_ADDON_REQDEPS_DESC;
 
     const uint32_t count = *reinterpret_cast<const uint32_t *>(
         record + Offsets::OFF_ADDON_OPTIONALDEPS_COUNT);
