@@ -150,10 +150,40 @@ void Evict(uint64_t targetGuid, uint32_t spellId) {
     }
 }
 
+// Wipe the whole cache. Used on a map transition (see OnWorldTick).
+void FlushAll() {
+    for (auto &e : g_cache)
+        e.used = false;
+}
+
+// -1 = no map seen yet (never a valid Map.dbc id), so the first tick just
+// records the current map without flushing.
+int g_lastMapId = -1;
+
 // Drop entries whose timed aura has elapsed so the table doesn't fill with
 // stale combat debuffs. Infinite-duration entries (expirationMs == 0) stay
 // until overwritten.
+//
+// Also flush the entire cache on a map-ID change. A battleground/instance/
+// continent transition (including the teleport out of a BG via /afk) bulk-
+// clears the player's aura descriptor WITHOUT firing per-aura OnAuraRemoved,
+// so entries for auras that are now gone would linger and the
+// GetAuraDataByIndex fallback would keep surfacing them — the "buffs/debuffs
+// stuck after leaving a battleground" report. Every other unit from the old
+// map has despawned too, and the local player's real auras re-sync into the
+// descriptor / PLAYER_BUFF tables on entering the new world, so a full flush
+// loses nothing legitimate. Crucially, the descriptor drops the fallback
+// must survive — rogue stealth and party-range fluctuation — do NOT change
+// the map ID, so they're unaffected.
 void OnWorldTick() {
+    const int mapId = *reinterpret_cast<const int *>(
+        static_cast<uintptr_t>(Offsets::VAR_CURRENT_MAP_ID));
+    if (mapId != g_lastMapId) {
+        if (g_lastMapId != -1)
+            FlushAll();
+        g_lastMapId = mapId;
+    }
+
     const uint32_t now = NowMs();
     for (auto &e : g_cache) {
         if (e.used && e.expirationMs != 0 && now >= e.expirationMs)
