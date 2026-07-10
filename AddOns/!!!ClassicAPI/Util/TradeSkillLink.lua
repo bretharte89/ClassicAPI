@@ -233,6 +233,7 @@ local function CreateFrame_TradeSkillLink()
 	f:SetScript("OnDragStop", function() this:StopMovingOrSizing(); end);
 	f:SetFrameStrata("DIALOG");
 	f:Hide();
+	tinsert(UISpecialFrames, f:GetName())
 
 	local portrait = f:CreateTexture(nil, "BACKGROUND");
 	portrait:SetSize(60, 60);
