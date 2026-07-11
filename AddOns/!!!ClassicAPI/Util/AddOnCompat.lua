@@ -20,15 +20,14 @@ if C_AddOns.DoesAddOnExist('pfUI') then
         -- X-Website tag and left alone. The wrapper is removed as soon as the
         -- actionbar module finishes loading so it affects nothing else.
         local website = GetAddOnMetadata("pfUI", "X-Website")
-        if not website or not string.find(GetAddOnMetadata("pfUI", "X-Website") or '', 'brues') then
+        if not website or not strfind(website, 'brues') then
             local _createFrame = CreateFrame
             local HookedCreateFrame = function(frameType, name, parent, template)
-                if frameType == "Button" and string.find(name or "", "pfActionBar") then
-                    local frame = _createFrame(frameType, name, parent, template)
+                local frame = _createFrame(frameType, name, parent, template)
+                if frameType == "Button" and strfind(name or "", "pfActionBar") then
                     frame.HookScript = false
-                    return frame
                 end
-                return _createFrame(frameType, name, parent, template)
+                return frame
             end
             hooksecurefunc(pfUI, 'LoadModule', function(frame, moduleName)
                 if moduleName == "updatenotify" then
