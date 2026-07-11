@@ -2334,7 +2334,7 @@ polling. Register like any engine event
 |---|---|---|
 | `LOOT_HISTORY_ROLL_CHANGED` | `itemIndex`, `playerIndex` (numbers) | A player rolled or passed on an item. |
 | `LOOT_HISTORY_ROLL_COMPLETE` | `itemIndex` (number) | The item was decided — won or all-passed. |
-| `LOOT_HISTORY_FULL_UPDATE` | — | Reserved for API / `IsEventValid` completeness (the display frame fires it on open); the DLL doesn't dispatch it. |
+| `LOOT_HISTORY_FULL_UPDATE` | — | The item set changed structurally — a new item appeared (roll opened) or the 128-item ring evicted the oldest (every index shifted). Re-read the whole list. Also fired by `C_LootHistory.Clear()`. |
 
 See the [LootHistory](#loothistory) section for the reconstruction and read API.
 
@@ -6196,13 +6196,23 @@ Returns the number of rolled items currently in the history.
 
 ### `C_LootHistory.GetItem(itemIndex)`
 
-`1`-based. Returns `itemLink, numPlayers, isDone, winnerName`:
+`1`-based. Returns `rollID, itemLink, numPlayers, isDone, winnerIdx, timestamp`
+(matches the MoP signature, with `timestamp` as a ClassicAPI extension):
+- `rollID` — a **stable** monotonic ID for the roll. Unlike `itemIndex` (which
+  shifts as the 128-item ring saturates), `rollID` never changes, so key
+  "keep this row expanded" / "highlight this roll" state on it.
 - `itemLink` — `item:<id>:0:<suffix>:<unique>` (valid for `GetItemInfo` /
   `GameTooltip:SetHyperlink`), carrying the roll's random suffix so
   "of the X" items keep their affix.
 - `numPlayers` — how many players have rolled/passed so far.
 - `isDone` — `true` once the item is decided (won or all-passed).
-- `winnerName` — the winner's name, or `nil` if undecided / all passed.
+- `winnerIdx` — the winner's `1`-based **player index**, for
+  `C_LootHistory.GetPlayerInfo(itemIndex, winnerIdx)` (name, class token,
+  winning roll). `nil` if undecided / all passed. The winner is guaranteed to
+  be in the player list even if their individual roll packet never arrived.
+- `timestamp` — the roll's creation time in seconds, directly comparable to
+  `GetTime()` (e.g. `GetTime() - timestamp` for "N seconds ago"). ClassicAPI
+  extension — no MoP equivalent.
 
 Returns nothing for an out-of-range index.
 
@@ -6218,6 +6228,12 @@ Both `1`-based. Returns `name, class, rollType, roll, isWinner, isMe`:
 - `isMe` — `true` if this roller is the local player.
 
 Returns nothing for an out-of-range item or player index.
+
+### `C_LootHistory.Clear()`
+
+Wipes the accumulated roll history (returns nothing). A ClassicAPI extension
+with no MoP equivalent, for a "clear history" button. Fires
+`LOOT_HISTORY_FULL_UPDATE` so any open display rebuilds empty.
 
 ## LossOfControl
 

@@ -62,6 +62,15 @@ T Read(const void *base, int off) {
     return *reinterpret_cast<const T *>(static_cast<const uint8_t *>(base) + off);
 }
 
+// Engine millisecond clock — same source (and epoch) as Lua's `GetTime()`
+// (which reads this scaled by 0.001), so a value stored here is directly
+// comparable to `GetTime()` once divided by 1000.
+uint32_t NowMs() {
+    using TickCount_t = uint32_t(__fastcall *)();
+    return reinterpret_cast<TickCount_t>(
+        static_cast<uintptr_t>(Offsets::FUN_OS_TICKCOUNT_MS))();
+}
+
 // Modern rollType constants (what C_LootHistory.GetPlayerInfo returns).
 constexpr int ROLL_PASS = 0;
 constexpr int ROLL_NEED = 1;
@@ -152,15 +161,16 @@ struct PlayerRoll {
 constexpr int kMaxPlayers = 40;
 
 struct HistItem {
+    uint32_t rollID;     // stable monotonic ID — survives ring-index shifts
     uint64_t sourceGuid; // looted-object GUID — the roll's identity
     uint32_t slot;
     uint32_t itemId;
     int32_t itemSuffix;  // random suffix/property ID (link suffix field)
     uint32_t itemSeed;   // random seed (link unique field)
-    uint64_t winnerGuid;
-    char winnerName[kNameLen];
+    uint64_t winnerGuid; // winner's roller GUID (0 if undecided)
     bool hasWinner;
     bool isDone;
+    uint32_t createdMs;  // engine tick at creation (GetTime()*1000 epoch)
     PlayerRoll players[kMaxPlayers];
     int playerCount;
     bool used;
@@ -175,6 +185,13 @@ constexpr int kMaxItems = 128;
 HistItem g_items[kMaxItems];
 int g_write = 0;
 int g_count = 0;
+uint32_t g_nextRollId = 1; // 0 is reserved as "invalid" (never assigned)
+
+// Set by FindOrCreate for the most recent call, read by the hooks to decide
+// whether a structural LOOT_HISTORY_FULL_UPDATE is warranted (a new item
+// appeared, or the ring evicted an old one so every index shifted).
+bool g_createdNew = false;
+bool g_evicted = false;
 
 HistItem *Find(uint64_t sourceGuid, uint32_t slot) {
     for (auto &e : g_items) {
@@ -185,6 +202,8 @@ HistItem *Find(uint64_t sourceGuid, uint32_t slot) {
 }
 
 HistItem *FindOrCreate(uint64_t sourceGuid, uint32_t slot, uint32_t itemId) {
+    g_createdNew = false;
+    g_evicted = false;
     HistItem *e = Find(sourceGuid, slot);
     if (e != nullptr) {
         if (itemId != 0)
@@ -192,15 +211,52 @@ HistItem *FindOrCreate(uint64_t sourceGuid, uint32_t slot, uint32_t itemId) {
         return e;
     }
     e = &g_items[g_write];
+    g_evicted = e->used; // overwriting a live slot => ring full => eviction
     g_write = (g_write + 1) % kMaxItems;
     if (g_count < kMaxItems)
         ++g_count;
     *e = HistItem{};
     e->used = true;
+    e->rollID = g_nextRollId++;
+    e->createdMs = NowMs();
     e->sourceGuid = sourceGuid;
     e->slot = slot;
     e->itemId = itemId;
+    g_createdNew = true;
     return e;
+}
+
+// Find the player-roll slot for `guid`, appending a fresh one (name/class
+// resolved from the NameCache) if absent and there's room. Returns the
+// 0-based index, or -1 when the roster is full. Shared by the roll recorder
+// and the winner recorder — the winner may never have sent an individual
+// SMSG_LOOT_ROLL (joined late / master loot), so ensuring they're present
+// lets GetItem's winnerIdx resolve through GetPlayerInfo.
+int FindOrAddPlayer(HistItem *e, uint64_t guid) {
+    for (int i = 0; i < e->playerCount; ++i) {
+        if (e->players[i].guid == guid)
+            return i;
+    }
+    if (e->playerCount >= kMaxPlayers)
+        return -1;
+    const int idx = e->playerCount++;
+    const uint8_t *rec = LookupPlayerRecord(guid); // cache loaded at hook time
+    e->players[idx] = PlayerRoll{};
+    e->players[idx].guid = guid;
+    CopyName(e->players[idx].name, NameFromRecord(rec));
+    e->players[idx].classId = ClassIdFromRecord(rec);
+    return idx;
+}
+
+// 1-based index within players[] of the winner, or 0 if undecided / absent.
+int WinnerIndex(const HistItem *e) {
+    if (!e->hasWinner || e->winnerGuid == 0)
+        return 0;
+    for (int i = 0; i < e->playerCount; ++i) {
+        if (e->players[i].guid == e->winnerGuid)
+            return i + 1;
+    }
+    return 0;
 }
 
 // 1-based access in oldest→newest order (matching GetNumItems' count).
@@ -251,20 +307,7 @@ int RecordRoll(const void *msg, int *outPlayerIdx) {
     if (roller == 0)
         return IndexOf(e);
 
-    int slotIdx = -1;
-    for (int i = 0; i < e->playerCount; ++i) {
-        if (e->players[i].guid == roller) {
-            slotIdx = i;
-            break;
-        }
-    }
-    if (slotIdx < 0 && e->playerCount < kMaxPlayers) {
-        slotIdx = e->playerCount++;
-        const uint8_t *rec = LookupPlayerRecord(roller); // cache loaded now
-        e->players[slotIdx].guid = roller;
-        CopyName(e->players[slotIdx].name, NameFromRecord(rec));
-        e->players[slotIdx].classId = ClassIdFromRecord(rec);
-    }
+    const int slotIdx = FindOrAddPlayer(e, roller);
     if (slotIdx >= 0) {
         e->players[slotIdx].rollType = rollType;
         e->players[slotIdx].roll = rollNum;
@@ -281,9 +324,10 @@ int RecordWinner(const void *msg) {
 
     HistItem *e = FindOrCreate(src, slot, itemId);
     e->winnerGuid = winner;
-    CopyName(e->winnerName, NameFromRecord(LookupPlayerRecord(winner)));
     e->hasWinner = true;
     e->isDone = true;
+    if (winner != 0)
+        FindOrAddPlayer(e, winner); // so GetItem's winnerIdx resolves
     return IndexOf(e);
 }
 
@@ -330,22 +374,39 @@ WonFn_t g_origWon = nullptr;
 PassedFn_t g_origPassed = nullptr;
 StartFn_t g_origStart = nullptr;
 
+// Fire LOOT_HISTORY_FULL_UPDATE (no payload) — the "rebuild everything"
+// signal, matching the UI's full refresh. Called when the item set changes
+// structurally: a new item appears or the ring evicts an old one (shifting
+// every index).
+void FireFullUpdate() {
+    Event::Custom::Fire(Event::Custom::Lookup(kFullUpdate), "");
+}
+
 // START_ROLL: let the original build the store node, then read the item's
 // random suffix off it. Adds the item to the history so a UI can show it as
-// soon as the roll opens (before any roll comes in).
+// soon as the roll opens (before any roll comes in) — hence the FULL_UPDATE.
 void __fastcall Start_h(void *packet) {
     g_origStart(packet);
     RecordStart();
+    if (g_createdNew || g_evicted)
+        FireFullUpdate();
 }
 
 // Record fields (message is freed by the original), run the original, THEN
 // fire the event — firing after the original keeps the engine's own handler
-// off our re-entrancy (same order Item::Data uses from its packet hook).
+// off our re-entrancy (same order Item::Data uses from its packet hook). A
+// structural FULL_UPDATE (if any) precedes the granular event so a listener
+// that rebuilds on FULL_UPDATE sees the new row before the row-level refresh.
 void __fastcall Roll_h(void *msg, void *ctx, int a3) {
     int itemIdx = 0, playerIdx = 0;
-    if (msg != nullptr)
+    bool structural = false;
+    if (msg != nullptr) {
         itemIdx = RecordRoll(msg, &playerIdx);
+        structural = g_createdNew || g_evicted;
+    }
     g_origRoll(msg, ctx, a3);
+    if (structural)
+        FireFullUpdate();
     if (itemIdx > 0)
         Event::Custom::Fire(Event::Custom::Lookup(kRollChanged), "%d%d", itemIdx,
                             playerIdx);
@@ -353,18 +414,28 @@ void __fastcall Roll_h(void *msg, void *ctx, int a3) {
 
 void __fastcall Won_h(void *ctx, void *msg, int a3) {
     int itemIdx = 0;
-    if (msg != nullptr)
+    bool structural = false;
+    if (msg != nullptr) {
         itemIdx = RecordWinner(msg);
+        structural = g_createdNew || g_evicted;
+    }
     g_origWon(ctx, msg, a3);
+    if (structural)
+        FireFullUpdate();
     if (itemIdx > 0)
         Event::Custom::Fire(Event::Custom::Lookup(kRollComplete), "%d", itemIdx);
 }
 
 void __fastcall Passed_h(void *ctx, void *msg) {
     int itemIdx = 0;
-    if (msg != nullptr)
+    bool structural = false;
+    if (msg != nullptr) {
         itemIdx = RecordAllPassed(msg);
+        structural = g_createdNew || g_evicted;
+    }
     g_origPassed(ctx, msg);
+    if (structural)
+        FireFullUpdate();
     if (itemIdx > 0)
         Event::Custom::Fire(Event::Custom::Lookup(kRollComplete), "%d", itemIdx);
 }
@@ -390,10 +461,15 @@ int __fastcall Script_GetNumItems(void *L) {
     return 1;
 }
 
-// `C_LootHistory.GetItem(itemIndex)` -> itemLink, numPlayers, isDone, winner.
-// itemLink is the `item:id:enchant:suffix:unique` form (valid for GetItemInfo
-// / SetHyperlink), carrying the roll's random suffix so "of the X" items keep
-// their affix; `winner` is the winner's name, or nil if undecided.
+// `C_LootHistory.GetItem(itemIndex)` ->
+//   rollID, itemLink, numPlayers, isDone, winnerIdx, timestamp
+// Matches the MoP signature: `rollID` is a stable ID (unlike itemIndex, which
+// shifts as the ring saturates — key expanded/highlighted rows on it);
+// `itemLink` is the `item:id:enchant:suffix:unique` form (valid for
+// GetItemInfo / SetHyperlink), carrying the roll's random suffix so "of the X"
+// items keep their affix; `winnerIdx` is the winner's 1-based playerIndex for
+// GetPlayerInfo(itemIndex, winnerIdx) (nil if undecided). `timestamp` is a
+// ClassicAPI extension: the `GetTime()`-comparable creation time in seconds.
 int __fastcall Script_GetItem(void *L) {
     if (!Game::Lua::IsNumber(L, 1)) {
         Game::Lua::Error(L, "Usage: GetItem(itemIndex)");
@@ -407,14 +483,17 @@ int __fastcall Script_GetItem(void *L) {
     // random suffix/seed so "of the Bear"-style items keep their affix.
     std::snprintf(link, sizeof(link), "item:%u:0:%d:%u", e->itemId,
                   e->itemSuffix, e->itemSeed);
-    Game::Lua::PushString(L, link);                                 // 1 itemLink
-    Game::Lua::PushNumber(L, static_cast<double>(e->playerCount));  // 2 numPlayers
-    Game::Lua::PushBool(L, e->isDone);                              // 3 isDone
-    if (e->hasWinner && e->winnerName[0] != '\0')
-        Game::Lua::PushString(L, e->winnerName);                    // 4 winner
+    Game::Lua::PushNumber(L, static_cast<double>(e->rollID));       // 1 rollID
+    Game::Lua::PushString(L, link);                                 // 2 itemLink
+    Game::Lua::PushNumber(L, static_cast<double>(e->playerCount));  // 3 numPlayers
+    Game::Lua::PushBool(L, e->isDone);                              // 4 isDone
+    const int winnerIdx = WinnerIndex(e);
+    if (winnerIdx > 0)
+        Game::Lua::PushNumber(L, static_cast<double>(winnerIdx));   // 5 winnerIdx
     else
         Game::Lua::PushNil(L);
-    return 4;
+    Game::Lua::PushNumber(L, e->createdMs / 1000.0);                // 6 timestamp
+    return 6;
 }
 
 // `C_LootHistory.GetPlayerInfo(itemIndex, playerIndex)` ->
@@ -450,6 +529,19 @@ int __fastcall Script_GetPlayerInfo(void *L) {
     return 6;
 }
 
+// `C_LootHistory.Clear()` -> wipe the accumulated history. A ClassicAPI
+// extension (no MoP equivalent) so a UI can offer a "clear history" button.
+// Fires LOOT_HISTORY_FULL_UPDATE so any open display rebuilds empty.
+int __fastcall Script_Clear(void *L) {
+    (void)L;
+    for (auto &e : g_items)
+        e.used = false;
+    g_write = 0;
+    g_count = 0;
+    FireFullUpdate();
+    return 0;
+}
+
 void RegisterLuaFunctions() {
     Game::Lua::RegisterTableFunction("C_LootHistory", "GetNumItems",
                                      &Script_GetNumItems);
@@ -457,6 +549,7 @@ void RegisterLuaFunctions() {
                                      &Script_GetItem);
     Game::Lua::RegisterTableFunction("C_LootHistory", "GetPlayerInfo",
                                      &Script_GetPlayerInfo);
+    Game::Lua::RegisterTableFunction("C_LootHistory", "Clear", &Script_Clear);
 }
 
 const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
