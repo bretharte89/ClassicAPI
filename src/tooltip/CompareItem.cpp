@@ -175,23 +175,71 @@ const char *FallbackLabel(const char *key) {
     return key; // last resort — raw key beats crashing
 }
 
-// Resolve a display label for `key` into `out`. Prefers the client's
-// `_G[key]` when it's a plain, non-empty string (respects localization /
-// server-defined labels), read via a direct globals-table access — no
-// pcall. Ignores format strings (a "%"-bearing global like "+%d Strength"
-// would render garbage), falling back to the built-in English label.
-void LabelFor(void *L, const char *key, char *out, int outSize) {
+// True if `s` contains a printf conversion (`%d`, `%s`, `%1$s`, …) as
+// opposed to a literal `%` used as a unit. A `%` at end-of-string, before
+// a space, or escaped as `%%` is treated as literal. Lets locale labels
+// like "Dodge %" through while still rejecting a format-string global
+// such as "+%d Strength" (which would render garbage via snprintf "%s").
+bool HasFormatSpecifier(const char *s) {
+    for (const char *p = std::strchr(s, '%'); p != nullptr;
+         p = std::strchr(p + 1, '%')) {
+        const char n = p[1];
+        if (n == '%') { // escaped "%%" — skip both, keep scanning
+            ++p;
+            continue;
+        }
+        if (n != '\0' && n != ' ')
+            return true; // "%d", "%s", "%1$..." → real conversion
+    }
+    return false;
+}
+
+bool EndsWithShort(const char *key) {
+    const size_t n = std::strlen(key);
+    return n >= 6 && std::strcmp(key + n - 6, "_SHORT") == 0;
+}
+
+// Copies `_G[key]` into `out` iff it's a plain, non-empty, non-format
+// string. Direct globals-table access, no pcall. Returns whether it took.
+bool TryGlobalLabel(void *L, const char *key, char *out, int outSize) {
     const int saved = Game::Lua::GetTop(L);
     Game::Lua::PushString(L, key);
     Game::Lua::GetTable(L, Game::Lua::GLOBALS_INDEX);
     const char *g = (Game::Lua::Type(L, -1) == Game::Lua::TYPE_STRING)
                         ? Game::Lua::ToString(L, -1)
                         : nullptr;
-    if (g != nullptr && *g != '\0' && std::strchr(g, '%') == nullptr)
+    const bool ok = (g != nullptr && *g != '\0' && !HasFormatSpecifier(g));
+    if (ok)
         std::snprintf(out, outSize, "%s", g);
-    else
-        std::snprintf(out, outSize, "%s", FallbackLabel(key));
     Game::Lua::SetTop(L, saved);
+    return ok;
+}
+
+// Resolve a display label for a stat `key` into `out`, respecting
+// localization. The rating/regen tokens GetItemStats keys on
+// (`ITEM_MOD_CRIT_MELEE_RATING`, …) carry a "%s" *description* as their
+// own global; their `_SHORT` sibling is the compact label a delta wants.
+// So for a key that isn't already `_SHORT`, prefer `_G[key.."_SHORT"]`:
+//   1. `_G[key.."_SHORT"]` — the compact label (skipped if `key` already
+//      ends in `_SHORT`, e.g. the primary stats, or has no `_SHORT`
+//      variant like `RESISTANCE*_NAME` / `CURRENTLY_EQUIPPED`).
+//   2. `_G[key]` — the key itself (primary stats resolve here; rating
+//      tokens only land here if no `_SHORT` global exists).
+//   3. Built-in English `FallbackLabel(key)`.
+// Preferring `_SHORT` first (rather than only when `_G[key]` fails) means
+// a server/addon defining the base rating token as a plain string can't
+// shadow the compact `_SHORT` label. StatAccum keys stay the canonical
+// GetItemStats tokens; this `_SHORT` mapping is display-only.
+void LabelFor(void *L, const char *key, char *out, int outSize) {
+    if (!EndsWithShort(key)) {
+        char shortKey[160];
+        std::snprintf(shortKey, sizeof(shortKey), "%s_SHORT", key);
+        if (TryGlobalLabel(L, shortKey, out, outSize))
+            return;
+    }
+    if (TryGlobalLabel(L, key, out, outSize))
+        return;
+    std::snprintf(out, outSize, "%s", FallbackLabel(key));
 }
 
 // Delta colors — the canonical GlobalColor.dbc tags modern WoW uses for
