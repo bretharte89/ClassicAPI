@@ -29,4 +29,12 @@ namespace Item::Spell {
 // the same use-spell still register).
 int OnUseSpellIDForItemID(uint32_t itemID);
 
+// Walks a cached `ItemStats_C` record's 5 spell slots and returns the
+// first ON_USE (trigger=0) spell ID, or 0 if none. Split out so callers
+// that already hold the record (e.g. `Item::Usable`, which also reads the
+// record's use requirements) don't peek the cache twice or re-derive the
+// slot walk. `OnUseSpellIDForItemID` is the peek-by-itemID convenience
+// wrapper over this.
+int FindOnUseSpellIDInRecord(const uint8_t *record);
+
 } // namespace Item::Spell

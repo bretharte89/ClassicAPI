@@ -903,6 +903,22 @@ enum Offsets {
     // folds in the descriptor cost mods).
     FUN_GET_SPELL_COST = 0x006E31B0,
 
+    // Full spell-castability check for the LOCAL player:
+    // `char __fastcall(const uint8_t *spellRecord /*ecx*/,
+    //                  int *outNoMana /*edx*/)`.
+    // Resolves the local player internally (no unit arg), then gates
+    // on casting state, stun/confuse flags, mechanic immunities,
+    // shapeshift/form + required stances, aura-state requirements,
+    // combo points (finishers), spell RequiredSkill, and finally the
+    // power check: `cost(FUN_GET_SPELL_COST) <= currentPower` → usable,
+    // else sets `*outNoMana = 1`. Returns nonzero (low byte) when
+    // usable. Does NOT check spell knowledge — so it's valid to feed
+    // an item's on-use spell record (which the player never "knows").
+    // This is the helper the action-usability recompute uses for
+    // player spell slots; `Item::Usable` reuses it for item on-use
+    // spells. Returns 0 cleanly pre-world (no player).
+    FUN_SPELL_IS_USABLE = 0x006E3D60,
+
     // Effective spell/channel duration (ms):
     // `__fastcall int(const void *spellRecord, int unit /*0 = player,
     // nonzero = pet*/, int skipMod /*0 = apply mods*/)`. SpellDuration

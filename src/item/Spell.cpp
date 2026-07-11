@@ -48,29 +48,6 @@ const uint8_t *FetchItemRecord(uint32_t itemID) {
     return fn(cache, itemID, &zeroGuid, nullptr, nullptr, false);
 }
 
-// Walks the item's 5 spell slots looking for the first ON_USE
-// (trigger=0) entry. Modern `GetItemSpell` returns only this kind;
-// passive-on-equip procs (trigger=1), weapon procs (trigger=2),
-// soulstones (trigger=4), and recipe-learn entries (trigger=6) all
-// stay invisible to the API.
-//
-// Vanilla server data on Turtle WoW has been observed to put the
-// ON_USE entry at slot index 0 for most items, but a few customized
-// items use later slots, so we scan all 5.
-int FindOnUseSpellIDInRecord(const uint8_t *record) {
-    auto *spellIDs = reinterpret_cast<const uint32_t *>(
-        record + Offsets::OFF_ITEMSTATS_SPELL_ID);
-    auto *triggers = reinterpret_cast<const uint32_t *>(
-        record + Offsets::OFF_ITEMSTATS_SPELL_TRIGGER);
-    for (int i = 0; i < Offsets::ITEMSTATS_SPELL_SLOT_COUNT; i++) {
-        if (spellIDs[i] != 0 &&
-            triggers[i] == Offsets::ITEM_SPELLTRIGGER_ON_USE) {
-            return static_cast<int>(spellIDs[i]);
-        }
-    }
-    return 0;
-}
-
 const char *SpellNameForID(int spellID) {
     const uint8_t *record = ::Spell::Lookup::RecordForID(spellID);
     if (record == nullptr)
@@ -109,6 +86,29 @@ int __fastcall Script_GetItemSpell(void *L) {
 }
 
 } // namespace
+
+// Walks the item's 5 spell slots looking for the first ON_USE
+// (trigger=0) entry. Modern `GetItemSpell` returns only this kind;
+// passive-on-equip procs (trigger=1), weapon procs (trigger=2),
+// soulstones (trigger=4), and recipe-learn entries (trigger=6) all
+// stay invisible to the API.
+//
+// Vanilla server data on Turtle WoW has been observed to put the
+// ON_USE entry at slot index 0 for most items, but a few customized
+// items use later slots, so we scan all 5.
+int FindOnUseSpellIDInRecord(const uint8_t *record) {
+    auto *spellIDs = reinterpret_cast<const uint32_t *>(
+        record + Offsets::OFF_ITEMSTATS_SPELL_ID);
+    auto *triggers = reinterpret_cast<const uint32_t *>(
+        record + Offsets::OFF_ITEMSTATS_SPELL_TRIGGER);
+    for (int i = 0; i < Offsets::ITEMSTATS_SPELL_SLOT_COUNT; i++) {
+        if (spellIDs[i] != 0 &&
+            triggers[i] == Offsets::ITEM_SPELLTRIGGER_ON_USE) {
+            return static_cast<int>(spellIDs[i]);
+        }
+    }
+    return 0;
+}
 
 int OnUseSpellIDForItemID(uint32_t itemID) {
     if (itemID == 0)

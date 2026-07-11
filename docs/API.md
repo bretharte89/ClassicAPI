@@ -227,6 +227,7 @@ build instructions.
   - [`C_Item.GetStackCount(itemLocation)`](#c_itemgetstackcountitemlocation)
   - [`C_Item.IsBound(itemLocation)`](#c_itemisbounditemlocation)
   - [`C_Item.IsEquippableItem(item)`](#c_itemisequippableitemitem)
+  - [`IsUsableItem(item)` / `C_Item.IsUsableItem(item)`](#isusableitemitem--c_itemisusableitemitem)
   - [`C_Item.IsEquippedItem(item)`](#c_itemisequippeditemitem)
   - [`C_Item.IsItemDataCachedByID(item)` / `C_Item.IsItemDataCached(itemLocation)`](#c_itemisitemdatacachedbyiditem--c_itemisitemdatacacheditemlocation)
   - [`C_Item.IsItemGUIDInInventory(itemGUID)`](#c_itemisitemguidininventoryitemguid)
@@ -5277,6 +5278,53 @@ first and re-check on `ITEM_DATA_LOAD_RESULT`.
 C_Item.IsEquippableItem(12640)  -- Lionheart Helm → true
 C_Item.IsEquippableItem(6948)   -- Hearthstone → false
 ```
+
+### `IsUsableItem(item)` / `C_Item.IsUsableItem(item)`
+
+Returns `(usable, noMana)` for an item's **on-use** ability — the item
+analog of [`IsUsableSpell`](#isusablespellspell--isusablespellslot-booktype).
+This asks "can I click this item right now?", **not** "can I equip it".
+Armor proficiency, class-restricted gear, and the like are *not* this
+function's concern (that's the tooltip's red requirement lines); only an
+item's usable/right-click effect matters here.
+
+The global `IsUsableItem(item)` returns `1`/`nil` pairs (matching stock
+`IsUsableAction`); `C_Item.IsUsableItem(item)` returns proper booleans
+per the `C_Item.*` convention. `item` is an itemID number or
+`"item:N..."` link.
+
+```lua
+IsUsableItem(6948)                     -- Hearthstone → 1, nil
+local usable, noMana = C_Item.IsUsableItem(13446)  -- Major Healing Potion
+-- usable=true,  noMana=false → click it
+-- usable=false, noMana=false → no on-use effect, below required level,
+--                              class/race-restricted, dead, on a form
+--                              that blocks it, etc.
+```
+
+> **What this function checks:**
+>
+> 1. The item has an **on-use** spell (an `ItemStats` spell slot with
+>    trigger `ON_USE`). Items with no usable effect — plain gear,
+>    materials, on-equip procs — return `(nil, nil)`.
+> 2. The item's **use requirements** are met: RequiredLevel, and the
+>    AllowableClass / AllowableRace masks. (These gate *activation* —
+>    a too-low-level potion, a class-specific trinket — so they belong
+>    here, unlike equip-only requirements.)
+> 3. The on-use spell is castable now — delegated to the engine's own
+>    spell-castability helper (`FUN_SPELL_IS_USABLE`, `0x006E3D60`),
+>    which folds in shapeshift/form, mechanic immunities, aura state,
+>    and the power check. Insufficient power is the *only* condition
+>    that sets `noMana=true`.
+>
+> Like `C_Item.IsEquippableItem`, this is a synchronous cache peek:
+> uncached items return `(nil/false, nil/false)` with no async load
+> fired. Call `C_Item.RequestLoadItemDataByID` first and re-check on
+> `ITEM_DATA_LOAD_RESULT` if you need it to wait.
+>
+> The on-use spell lookup is shared with
+> [`C_Item.GetItemSpell`](#c_itemgetitemspellitem)
+> (`Item::Spell::FindOnUseSpellIDInRecord`).
 
 ### `C_Item.IsEquippedItem(item)`
 
