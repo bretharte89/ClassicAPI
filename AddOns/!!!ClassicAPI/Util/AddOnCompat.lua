@@ -22,7 +22,7 @@ if C_AddOns.DoesAddOnExist('pfUI') then
         local website = GetAddOnMetadata("pfUI", "X-Website")
         if not website or not string.find(GetAddOnMetadata("pfUI", "X-Website") or '', 'brues') then
             local _createFrame = CreateFrame
-            CreateFrame = function(frameType, name, parent, template)
+            local HookedCreateFrame = function(frameType, name, parent, template)
                 if frameType == "Button" and string.find(name or "", "pfActionBar") then
                     local frame = _createFrame(frameType, name, parent, template)
                     frame.HookScript = false
@@ -31,7 +31,9 @@ if C_AddOns.DoesAddOnExist('pfUI') then
                 return _createFrame(frameType, name, parent, template)
             end
             hooksecurefunc(pfUI, 'LoadModule', function(frame, moduleName)
-                if moduleName == "actionbar" then
+                if moduleName == "updatenotify" then
+                    CreateFrame = HookedCreateFrame
+                elseif moduleName == "actionbar" then
                     CreateFrame = _createFrame
                 end
             end)
