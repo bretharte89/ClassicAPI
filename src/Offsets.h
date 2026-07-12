@@ -1304,6 +1304,17 @@ enum Offsets {
     // exists on the +0xE68 sub-struct here.
     OFF_CGPLAYER_INFO = 0xE68,
 
+    // PvP rank fields within the CGPlayer +0xE68 sub-struct (siblings of
+    // the combo-point byte at +0x1029). Read by the item tooltip's
+    // "Requires <rank>" / PVP_MEDAL red-text logic (FUN_0052B650) and
+    // mirrored by C_PlayerInfo.CanUseItem:
+    //   +0x102B  u8   current PvP honor rank (compared >= item
+    //                 RequiredHonorRank).
+    //   +0x1034  u32  earned PvP-medal/rank bitmask (item RequiredCityRank
+    //                 R passes when bit (R-1) is set).
+    OFF_CGPLAYER_HONOR_RANK = 0x102B,
+    OFF_CGPLAYER_PVP_MEDALS = 0x1034,
+
     // CGObject's `GetPosition` virtual — vtable slot 5 (offset 0x14).
     // Signature: `__thiscall(this, float outBuf[3]) → float *position`.
     // The returned float* may equal outBuf (the object filled it
@@ -2857,6 +2868,17 @@ enum Offsets {
     // Bitmap covers spellIDs 0..VAR_SPELL_RECORD_COUNT inclusive — the
     // size matches Spell.dbc's row count. Pre-login the slot is NULL.
     VAR_PLAYER_SPELL_BITMAP = 0x00B710FC,
+
+    // Spell-rank-chain knowledge check — `char __thiscall(player /*ecx*/,
+    // spellID)`. Walks `spellID`'s forward rank chain (the class/race-
+    // resolved chain via `0x0060C7C0`) and returns nonzero if the player
+    // knows any *higher* rank than `spellID` (each node tested through the
+    // bitmap helper `0x0060C740`). The item tooltip's "Requires <spell>"
+    // gate is `bitmap(spellID) OR this(spellID)`; C_PlayerInfo.CanUseItem
+    // mirrors that so a RequiredSpell satisfied by a higher known rank
+    // still passes. Does NOT test `spellID` itself — that's the caller's
+    // direct bitmap check.
+    FUN_SPELL_RANK_CHAIN_KNOWN = 0x0060C8D0,
 
     // Per-spell cooldown query. `__fastcall(int spellID, int bookType,
     // int *outDuration, int *outStart, int *outEnable)`. Same path

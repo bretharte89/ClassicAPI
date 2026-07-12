@@ -300,13 +300,15 @@ build instructions.
   - [`GetPlayerInfoByGUID(guid)`](#getplayerinfobyguidguid)
   - [`UnitNameFromGUID(guid)`](#unitnamefromguidguid)
   - [`C_PlayerCache.GetPlayerInfoByName(name)`](#c_playercachegetplayerinfobynamename)
-  - [`C_PlayerInfo.GUIDIsPlayer(guid)` / `GUIDIsCreature` / `GUIDIsPet` / `GUIDIsGameObject`](#c_playerinfoguidisplayerguid--guidiscreature--guidispet--guidisgameobject)
   - [`C_PlayerCache.RememberPlayer(guid, name, classToken)`](#c_playercacherememberplayerguid-name-classtoken)
   - [`C_PlayerCache.SetEnabled(enabled)`](#c_playercachesetenabledenabled)
   - [`C_PlayerCache.IsEnabled()`](#c_playercacheisenabled)
   - [`C_PlayerCache.SetScanEnabled(enabled)`](#c_playercachesetscanenabledenabled)
   - [`C_PlayerCache.IsScanEnabled()`](#c_playercacheisscanenabled)
 
+- [PlayerInfo](#playerinfo)
+  - [`C_PlayerInfo.CanUseItem(itemID)`](#c_playerinfocanuseitemitemid)
+  - [`C_PlayerInfo.GUIDIsPlayer(guid)` / `GUIDIsCreature` / `GUIDIsPet` / `GUIDIsGameObject`](#c_playerinfoguidisplayerguid--guidiscreature--guidispet--guidisgameobject)
 - [Quest](#quest)
   - [`C_QuestLog.GetQuestIDForLogIndex(index)`](#c_questlogGetQuestIDForLogIndexindex)
   - [`C_QuestLog.RequestLoadQuestByID(questID)`](#c_questlogrequestloadquestbyidquestid)
@@ -7219,40 +7221,6 @@ here: GUIDs are permanent for the life of a vanilla character, so
 the new character has a different GUID and gets a different cache
 entry.
 
-### `C_PlayerInfo.GUIDIsPlayer(guid)` / `GUIDIsCreature` / `GUIDIsPet` / `GUIDIsGameObject`
-
-Type checks on the raw 1.12 GUID format. Vanilla GUIDs encode the
-entity type in the high 16 bits of the qword — players have
-`0x0000` (low dword = player ID), creatures `0xF130xxxx`, pets
-`0xF140xxxx`, game objects (herbs / chests / etc.) `0xF110xxxx`,
-items `0x4000xxxx`. Each function returns `true` only for its
-specific prefix; the `"0x0000000000000000"` sentinel returns
-`false` from all four.
-
-```lua
-if C_PlayerInfo.GUIDIsPlayer(UnitGUID("target")) then
-    -- target is a player
-end
-
--- Combat-log row triage: was that a player kill or a mob kill?
-local function OnCombatLogEvent(_, _, eventType, srcGUID, ...)
-    if eventType == "PARTY_KILL" then
-        if C_PlayerInfo.GUIDIsPlayer(srcGUID) then ... end
-    end
-end
-```
-
-`GUIDIsPlayer` matches modern WoW's signature exactly; the other
-three are companions for the most common type-distinction needs.
-For other types (corpse, dynamic object, transport, item) the
-underlying classifier exists internally — let us know if you need
-one exposed.
-
-Accepts either the 16-digit `"0xHHHHHHHHLLLLLLLL"` form or the
-8-digit `"0xLLLLLLLL"` shortcut (high dword implicitly zero).
-Malformed input returns `false` rather than raising — matching
-modern's tolerance for stale GUIDs from addon-side caches.
-
 ### `C_PlayerCache.SetEnabled(enabled)`
 
 Opts into (or out of) the persistent name cache. `enabled` is a
@@ -7347,6 +7315,88 @@ if C_PlayerCache.IsScanEnabled()
     -- visible-object sweeps are running every ~10s
 end
 ```
+
+## PlayerInfo
+
+### `C_PlayerInfo.CanUseItem(itemID)`
+
+Returns `true` if the local player meets the item's **use/equip
+requirements**, `false` otherwise. This is the "would the item be red in
+the tooltip" gate, and rounds out the item-usability trio:
+
+| Function | Question it answers |
+|----------|---------------------|
+| `C_Item.IsEquippableItem(item)` | Does the item fit *some* slot? (static, player-independent) |
+| `IsUsableItem(item)` | Is the item's *on-use* ability castable right now? |
+| `C_PlayerInfo.CanUseItem(itemID)` | May *this* player equip/use it at all? |
+
+So this is what answers "a Mail chest on a Mage" (armor proficiency), "a
+level-40 item at level 20" (RequiredLevel), and class/race-restricted gear.
+
+`itemID` is a number (item links are also accepted). Checks performed:
+
+1. **Proficiency** — for weapons/armor, the engine keeps a per-item-class
+   subclass-proficiency bitmask (fed by `SMSG_SET_PROFICIENCY`); the item's
+   subclass bit must be set. Item classes with no proficiency concept
+   (consumables, trade goods, …) are unrestricted.
+2. **RequiredLevel** ≤ player level.
+3. **AllowableClass / AllowableRace** masks include the player.
+4. **RequiredSkill** — the player must have the item's skill line at an
+   effective rank ≥ `RequiredSkillRank` (e.g. a mount that "Requires
+   Riding (150)", a tool that "Requires Engineering (200)").
+5. **RequiredSpell** — the player must know the item's prerequisite spell
+   (or a higher rank of it): a crafting specialization ("Requires
+   Armorsmith") or a proficiency spell.
+6. **RequiredHonorRank / RequiredCityRank** — PvP-rank gates (the player's
+   honor rank and earned PvP-medal bitmask).
+7. **RequiredReputation** — current standing with the item's faction must
+   reach the required reaction band (e.g. "Requires Honored with …").
+
+```lua
+C_PlayerInfo.CanUseItem(12640)  -- Lionheart Helm (plate) → true on a Warrior, false on a Mage
+C_PlayerInfo.CanUseItem(6948)   -- Hearthstone → true (no restrictions)
+C_PlayerInfo.CanUseItem(19872)  -- a mount → false without Riding (150)
+C_PlayerInfo.CanUseItem(12717)  -- Plans: Lionheart Helm → false without the Armorsmith spec
+```
+
+> Synchronous, like `C_Item.IsEquippableItem`: an uncached item returns
+> `false` with no async load fired. Warm the cache
+> (`C_Item.RequestLoadItemDataByID`) and re-check on `ITEM_DATA_LOAD_RESULT`
+> if needed.
+
+### `C_PlayerInfo.GUIDIsPlayer(guid)` / `GUIDIsCreature` / `GUIDIsPet` / `GUIDIsGameObject`
+
+Type checks on the raw 1.12 GUID format. Vanilla GUIDs encode the
+entity type in the high 16 bits of the qword — players have
+`0x0000` (low dword = player ID), creatures `0xF130xxxx`, pets
+`0xF140xxxx`, game objects (herbs / chests / etc.) `0xF110xxxx`,
+items `0x4000xxxx`. Each function returns `true` only for its
+specific prefix; the `"0x0000000000000000"` sentinel returns
+`false` from all four.
+
+```lua
+if C_PlayerInfo.GUIDIsPlayer(UnitGUID("target")) then
+    -- target is a player
+end
+
+-- Combat-log row triage: was that a player kill or a mob kill?
+local function OnCombatLogEvent(_, _, eventType, srcGUID, ...)
+    if eventType == "PARTY_KILL" then
+        if C_PlayerInfo.GUIDIsPlayer(srcGUID) then ... end
+    end
+end
+```
+
+`GUIDIsPlayer` matches modern WoW's signature exactly; the other
+three are companions for the most common type-distinction needs.
+For other types (corpse, dynamic object, transport, item) the
+underlying classifier exists internally — let us know if you need
+one exposed.
+
+Accepts either the 16-digit `"0xHHHHHHHHLLLLLLLL"` form or the
+8-digit `"0xLLLLLLLL"` shortcut (high dword implicitly zero).
+Malformed input returns `false` rather than raising — matching
+modern's tolerance for stale GUIDs from addon-side caches.
 
 ## Quest
 
