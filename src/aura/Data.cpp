@@ -492,6 +492,31 @@ void PushFromCache(void *L, const uint8_t *unit,
                c.casterGuid);
 }
 
+// Reconciles the `Aura::Source` cache against `unit`'s descriptor: when the
+// descriptor holds at least one raw aura the unit is in view and fully synced,
+// so it's authoritative — any cached entry for the unit whose spell isn't in
+// the array was removed while we couldn't see it (e.g. cancelled out of range,
+// so no OnAuraRemoved reached us) and must be dropped before the fallback
+// resurfaces it as a phantom (an enumerated aura whose SetUnitAura tooltip is
+// empty). Reads the RAW slots (not IsSlotPopulated): a spell that's present
+// but flag-hidden is still legitimately on the unit. Skips when the array is
+// empty — that can't be told apart from an out-of-range descriptor drop, and
+// reconciling then would wipe still-valid out-of-range entries.
+void ReconcileCache(const uint8_t *unit) {
+    if (unit == nullptr)
+        return;
+    uint32_t present[Offsets::UNIT_AURA_TOTAL];
+    int n = 0;
+    for (int slot = 0; slot < Offsets::UNIT_AURA_TOTAL; ++slot) {
+        const uint32_t id = ReadSpellID(unit, slot);
+        if (id != 0)
+            present[n++] = id;
+    }
+    if (n == 0)
+        return;
+    Aura::Source::EvictAbsent(UnitGuid(unit), present, n);
+}
+
 // True if `unit`'s descriptor currently exposes any visible aura in either
 // range. The cache fallback is only trustworthy when the descriptor has been
 // wholesale-cleared: the two states it exists for — rogue stealth and party
@@ -559,6 +584,7 @@ bool PushNthCacheFallback(void *L, const uint8_t *unit, int oneBasedIndex,
                           Filter filter, bool playerOnly) {
     if (unit == nullptr)
         return false;
+    ReconcileCache(unit); // drop entries the (synced) descriptor contradicts
     if (DescriptorHasVisibleAura(unit))
         return false; // descriptor authoritative — see DescriptorHasVisibleAura
     // The descriptor held `descCount` matches; the caller already found fewer
@@ -589,6 +615,7 @@ void AppendCacheFallbacks(void *L, const uint8_t *unit, Filter filter,
                           bool playerOnly, int outerIdx, int &nextKey) {
     if (unit == nullptr)
         return;
+    ReconcileCache(unit); // drop entries the (synced) descriptor contradicts
     if (DescriptorHasVisibleAura(unit))
         return; // descriptor authoritative — see DescriptorHasVisibleAura
     const uint64_t guid = UnitGuid(unit);

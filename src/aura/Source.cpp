@@ -325,10 +325,18 @@ const Game::HookAutoRegister _hookAuraStacks{
     reinterpret_cast<void **>(&g_origOnAuraStacksChanged)};
 
 // OnAuraRemoved — a descriptor aura slot went empty: the aura fell off, was
-// dispelled, or was replaced by a higher rank (the diff dispatcher fires
-// Removed(old) + Added(new)). Evict the cache entry so the fallback stops
-// surfacing it. Same ABI as OnAuraAdded (unit in ecx, slot + spellId on the
-// stack); `slot` is unused here — we evict by spellId.
+// dispelled, was cancelled by its owner, or was replaced by a higher rank
+// (the diff dispatcher fires Removed(old) + Added(new)). Evict the cache
+// entry so the descriptor-drop fallback stops surfacing it. Same ABI as
+// OnAuraAdded (unit in ecx, slot + spellId on the stack); `slot` is unused
+// here — we evict by spellId.
+//
+// Always evict, even for a death-persistent aura (flask, world buff) on a
+// dead unit: the server keeps those through death WITHOUT changing any
+// field, so death itself fires no OnAuraRemoved. Any removal we do receive
+// for one is therefore genuine — e.g. the owner cancelled the flask while
+// dead — and must clear the cache, or the fallback keeps surfacing a phantom
+// whose SetUnitAura tooltip is empty.
 using OnAuraRemoved_t = void(__fastcall *)(void *unit, void *edx, uint32_t slot,
                                            uint32_t spellId);
 OnAuraRemoved_t g_origOnAuraRemoved = nullptr;
@@ -359,6 +367,23 @@ bool Get(uint64_t unitGuid, uint32_t spellId, uint64_t *outCaster,
         }
     }
     return false;
+}
+
+void EvictAbsent(uint64_t unitGuid, const uint32_t *presentSpellIds, int count) {
+    if (unitGuid == 0 || presentSpellIds == nullptr || count <= 0)
+        return;
+    for (auto &e : g_cache) {
+        if (!e.used || e.targetGuid != unitGuid)
+            continue;
+        bool present = false;
+        for (int i = 0; i < count; ++i)
+            if (presentSpellIds[i] == e.spellId) {
+                present = true;
+                break;
+            }
+        if (!present)
+            e.used = false;
+    }
 }
 
 int Enumerate(uint64_t unitGuid, bool harmful, CachedAura *out, int maxOut) {

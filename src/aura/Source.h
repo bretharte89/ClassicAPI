@@ -50,6 +50,18 @@ struct CachedAura {
     uint32_t durationMs;   // applied duration (incl. caster mods); 0 = none
 };
 
+// Evicts every cached entry for `unitGuid` whose spellId is NOT present in
+// `presentSpellIds[0..count)`. Used to reconcile the cache against a unit's
+// authoritative descriptor when it is back in view (a populated aura array
+// means the unit is fully synced): an entry the descriptor no longer lists
+// was removed while we couldn't observe it — e.g. a buff the owner cancelled
+// while out of our range, whose `OnAuraRemoved` we never received — so drop
+// it before the descriptor-drop fallback resurfaces it as a phantom. The
+// caller must only invoke this when the descriptor is populated (count > 0);
+// an empty array can't distinguish "out of range" from "genuinely buffless",
+// so reconciling then would wrongly wipe still-valid out-of-range entries.
+void EvictAbsent(uint64_t unitGuid, const uint32_t *presentSpellIds, int count);
+
 // Fills `out` with up to `maxOut` cached, non-expired auras on `unitGuid`
 // whose helpful/harmful classification matches `harmful`. Returns the count
 // written. The classification is recorded from the aura's descriptor slot at
