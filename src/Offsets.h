@@ -504,6 +504,29 @@ enum Offsets {
     // layout.
     OFF_UNIT_FIELD_TARGET = 0x28,
 
+    // Owner/controller GUID fields within `m_objectFields`, each a 64-bit
+    // GUID (lo/hi). Both byte-verified from engine readers:
+    //   CHARMEDBY +0x10 — `Script_UnitIsCharmed`
+    //                     (`mov ecx,[eax+0x10]; or ecx,[eax+0x14]; jz`).
+    //   CREATEDBY +0x20 — the unit owner/title builder `FUN_0052FD30`
+    //                     reads `[desc+0x20]`/`[+0x24]` as the summoner GUID.
+    // A pet/guardian/totem's owner lives in CREATEDBY; a charmed unit's in
+    // CHARMEDBY. `Unit::Pet` reads these to find a minion's player owner.
+    // (The engine uses only these two for ownership — there's a GUID slot
+    // at +0x18 too, but nothing reads it as an owner, so it's left out.)
+    OFF_UNIT_FIELD_CHARMEDBY = 0x10,
+    OFF_UNIT_FIELD_CREATEDBY = 0x20,
+
+    // Pet-vs-minion discriminator for an owned unit: `int __fastcall(unit)`.
+    // Returns 1 for a controllable **pet** (classified by creature family
+    // at descriptor +0x212 → family DBC, with a ChrRaces fallback), a
+    // non-1 value otherwise. The engine's unit-title builder `FUN_0052FD30`
+    // uses it as `(fn(unit) != 1) + 1` → 1 = "X's Pet" title, 2 = "X's
+    // Minion" — so it's the exact signal separating pet from minion, which
+    // neither the GUID (pets and guardians share the 0xF14… prefix) nor
+    // UNIT_FLAG_PLAYER_CONTROLLED reliably does.
+    FUN_UNIT_PET_MINION_CLASS = 0x00605570,
+
     // Party / raid roster counts and the party GUID array referenced
     // in the `FUN_TOKEN_TO_GUID` dispatch comment above. Used by
     // `UnitTokenFromGUID` to cap its candidate iteration — solo

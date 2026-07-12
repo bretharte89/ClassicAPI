@@ -421,6 +421,9 @@ build instructions.
   - [`UnitIsFeignDeath(unit)`](#unitisfeigndeathunit)
   - [`UnitIsInMyGuild(unitOrName)`](#unitisinmyguildunitorname)
   - [`UnitIsPossessed(unit)`](#unitispossessedunit)
+  - [`UnitIsMinion(unit)`](#unitisminionunit)
+  - [`UnitIsPet(unit)`](#unitispetunit)
+  - [`UnitIsOtherPlayersPet(unit)`](#unitisotherplayerspetunit)
   - [`UnitStandState(unit)`](#unitstandstateunit)
   - [`UnitInRange(unit)`](#unitinrangeunit)
   - [`UnitPower(unit [, powerType])` / `UnitPowerMax(unit [, powerType])`](#unitpowerunit--powertype--unitpowermaxunit--powertype)
@@ -10032,6 +10035,63 @@ UnitIsPossessed("target")   -- true if mind-controlled
 Distinct from `UnitIsCharmed`: charm covers any charm-type effect
 (including pets summoned via mob-charm spells), possess is the
 specific spell-driven take-over effect modern WoW splits out.
+
+### `UnitIsMinion(unit)`
+
+Returns `true` if `unit` is a **minion of a player** — a pet, guardian,
+totem, or charmed creature — `false` otherwise. Primarily owner-based: the
+unit's owner GUID (SummonedBy / CreatedBy / CharmedBy) must resolve to a
+player, with "player-controlled but not itself a player" as a fallback.
+Owner-based is needed because summoned **guardians** (shown as "X's
+Minion") carry an owner but not the `PLAYER_CONTROLLED` flag, so a
+flag-only check would miss them. Players, NPCs, and world creatures return
+`false`.
+
+A modern (12.0.0-era) addition with no vanilla or 3.3.5 equivalent —
+backported here from vanilla primitives. A bad or unresolved unit token
+returns `false`.
+
+```lua
+UnitIsMinion("pet")     -- your pet → true
+UnitIsMinion("player")  -- you → false
+UnitIsMinion("target")  -- another player's felhunter → true; a boar → false
+```
+
+### `UnitIsPet(unit)`
+
+Returns `true` if `unit` is a **pet** of a player (as opposed to a
+guardian/totem "minion"), `false` otherwise — the pet↔minion
+discriminator. Uses the engine's own classifier: owned by a player **and**
+the family-based pet/minion test that drives the `UNITNAME_TITLE_PET` vs
+`UNITNAME_TITLE_MINION` tooltip label. Neither the GUID (pets and guardians
+share the `0xF14…` prefix on this client) nor `UNIT_FLAG_PLAYER_CONTROLLED`
+(a "Minion" can carry it) reliably separates them, so the creature-family
+classifier is the correct signal; the owner-is-player gate also excludes
+wild tameable beasts of the same family.
+
+`UnitIsMinion` is the umbrella (pet + guardian + totem); `UnitIsPet` is the
+controllable subset. A ClassicAPI extension, not a stock WoW global. A bad
+or unresolved unit token returns `false`.
+
+```lua
+UnitIsPet("pet")                 -- your pet → true
+-- another player's "X's Pet"    → UnitIsMinion true, UnitIsPet true
+-- another player's "X's Minion" → UnitIsMinion true, UnitIsPet false (guardian, not controllable)
+```
+
+### `UnitIsOtherPlayersPet(unit)`
+
+Returns `true` if `unit` is a minion (pet, guardian, totem, or charmed
+creature) whose owner is a player **other than you**, `false` otherwise.
+Owner-based, matching 5.4.8's `Script_UnitIsOtherPlayersPet`: it reads the
+unit's owner GUID (SummonedBy / CreatedBy / CharmedBy), requires that owner
+to be a player, and requires it to differ from you. World creatures and
+players (no owner) return `false`; your own minions (owner is you) return
+`false`. A bad or unresolved unit token returns `false`.
+
+```lua
+UnitIsOtherPlayersPet("target")  -- a party member's pet → true; your own pet → false
+```
 
 ### `UnitStandState(unit)`
 
