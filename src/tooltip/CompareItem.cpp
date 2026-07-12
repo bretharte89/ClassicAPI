@@ -126,8 +126,9 @@ int SlotsForInvType(int invType, int *out) {
 // English fallback labels, used when the client doesn't define the
 // modern `_G[key]` global-string (vanilla 1.12 largely doesn't). Phrasing
 // mirrors pfUI's eqcompare so the deltas read consistently on this
-// client. Percent stats keep a "%" suffix since the values are native
-// vanilla percentages.
+// client. Percent stats carry NO "%" here — `IsPercentStat` appends the
+// "%" to the value ("-5% Block"), so the unit is correct regardless of
+// which label (Blizzard `_SHORT` or this fallback) is used.
 struct KeyLabel {
     const char *key;
     const char *label;
@@ -149,24 +150,45 @@ constexpr KeyLabel kFallbackLabels[] = {
     {"RESISTANCE6_NAME", "Arcane Resistance"},
     {"ITEM_MOD_ATTACK_POWER_SHORT", "Attack Power"},
     {"ITEM_MOD_RANGED_ATTACK_POWER_SHORT", "Ranged Attack Power"},
-    {"ITEM_MOD_CRIT_MELEE_RATING", "Melee Crit %"},
-    {"ITEM_MOD_CRIT_RANGED_RATING", "Ranged Crit %"},
-    {"ITEM_MOD_HIT_MELEE_RATING", "Melee Hit %"},
-    {"ITEM_MOD_HIT_RANGED_RATING", "Ranged Hit %"},
-    {"ITEM_MOD_HIT_SPELL_RATING", "Spell Hit %"},
-    {"ITEM_MOD_CRIT_SPELL_RATING", "Spell Crit %"},
+    {"ITEM_MOD_CRIT_MELEE_RATING", "Melee Crit"},
+    {"ITEM_MOD_CRIT_RANGED_RATING", "Ranged Crit"},
+    {"ITEM_MOD_HIT_MELEE_RATING", "Melee Hit"},
+    {"ITEM_MOD_HIT_RANGED_RATING", "Ranged Hit"},
+    {"ITEM_MOD_HIT_SPELL_RATING", "Spell Hit"},
+    {"ITEM_MOD_CRIT_SPELL_RATING", "Spell Crit"},
     {"ITEM_MOD_SPELL_DAMAGE_DONE_SHORT", "Spell Damage"},
     {"ITEM_MOD_SPELL_HEALING_DONE_SHORT", "Spell Healing"},
     {"ITEM_MOD_MANA_REGENERATION", "Mana Regen"},
     {"ITEM_MOD_DEFENSE_SKILL_RATING", "Defense"},
-    {"ITEM_MOD_DODGE_RATING", "Dodge %"},
-    {"ITEM_MOD_PARRY_RATING", "Parry %"},
-    {"ITEM_MOD_BLOCK_RATING", "Block %"},
+    {"ITEM_MOD_DODGE_RATING", "Dodge"},
+    {"ITEM_MOD_PARRY_RATING", "Parry"},
+    {"ITEM_MOD_BLOCK_RATING", "Block"},
     {"ITEM_MOD_BLOCK_VALUE", "Block Value"},
     {"ITEM_MOD_DAMAGE_PER_SECOND_SHORT", "Damage Per Second"},
     {"ITEM_DELTA_DESCRIPTION",
      "If you replace this item, the following stat changes will occur:"},
 };
+
+// Percent-valued stat keys: the block/dodge/parry *chances* and the
+// crit/hit percentages. Vanilla stores these as native percentages (a
+// value of 5 means 5%), so the delta must read "-5% Block", not "-5
+// Block". The "%" is attached to the NUMBER rather than the label, so it
+// stays correct in every locale and requires no `_SHORT` change.
+// NB: ITEM_MOD_DEFENSE_SKILL_RATING (skill points) and
+// ITEM_MOD_BLOCK_VALUE (flat block amount) are NOT percentages.
+bool IsPercentStat(const char *key) {
+    static const char *const kPercent[] = {
+        "ITEM_MOD_CRIT_MELEE_RATING",  "ITEM_MOD_CRIT_RANGED_RATING",
+        "ITEM_MOD_CRIT_SPELL_RATING",  "ITEM_MOD_HIT_MELEE_RATING",
+        "ITEM_MOD_HIT_RANGED_RATING",  "ITEM_MOD_HIT_SPELL_RATING",
+        "ITEM_MOD_DODGE_RATING",       "ITEM_MOD_PARRY_RATING",
+        "ITEM_MOD_BLOCK_RATING",
+    };
+    for (const char *k : kPercent)
+        if (std::strcmp(k, key) == 0)
+            return true;
+    return false;
+}
 
 const char *FallbackLabel(const char *key) {
     for (const auto &e : kFallbackLabels)
@@ -199,20 +221,61 @@ bool EndsWithShort(const char *key) {
     return n >= 6 && std::strcmp(key + n - 6, "_SHORT") == 0;
 }
 
-// Copies `_G[key]` into `out` iff it's a plain, non-empty, non-format
-// string. Direct globals-table access, no pcall. Returns whether it took.
-bool TryGlobalLabel(void *L, const char *key, char *out, int outSize) {
+// Raw `_G[key]` string fetch — no format-specifier filtering. Direct
+// globals-table access, no pcall. Returns whether a non-empty string was
+// copied into `out`.
+bool TryGlobalRaw(void *L, const char *key, char *out, int outSize) {
     const int saved = Game::Lua::GetTop(L);
     Game::Lua::PushString(L, key);
     Game::Lua::GetTable(L, Game::Lua::GLOBALS_INDEX);
     const char *g = (Game::Lua::Type(L, -1) == Game::Lua::TYPE_STRING)
                         ? Game::Lua::ToString(L, -1)
                         : nullptr;
-    const bool ok = (g != nullptr && *g != '\0' && !HasFormatSpecifier(g));
+    const bool ok = (g != nullptr && *g != '\0');
     if (ok)
         std::snprintf(out, outSize, "%s", g);
     Game::Lua::SetTop(L, saved);
     return ok;
+}
+
+// Copies `_G[key]` into `out` iff it's a plain, non-empty, non-format
+// string. Returns whether it took.
+bool TryGlobalLabel(void *L, const char *key, char *out, int outSize) {
+    char tmp[192];
+    if (!TryGlobalRaw(L, key, tmp, sizeof(tmp)) || HasFormatSpecifier(tmp))
+        return false;
+    std::snprintf(out, outSize, "%s", tmp);
+    return true;
+}
+
+// Formats a signed value token (e.g. "-5") as a localized percentage via
+// the PERCENTAGE_STRING global (typically "%s%%" → "-5%"). The locale
+// format is NEVER passed to snprintf — we substitute `num` into its first
+// conversion slot (`%s`/`%d`) by hand and collapse `%%` → `%`, so a
+// hostile or unexpected format can't misread the argument list. Falls back
+// to a plain "%" suffix when the global is absent.
+void FormatPercent(void *L, const char *num, char *out, int outSize) {
+    char fmt[64];
+    if (!TryGlobalRaw(L, "PERCENTAGE_STRING", fmt, sizeof(fmt))) {
+        std::snprintf(out, outSize, "%s%%", num);
+        return;
+    }
+    int o = 0;
+    bool inserted = false;
+    for (const char *p = fmt; *p != '\0' && o < outSize - 1; ++p) {
+        if (p[0] == '%' && p[1] == '%') { // literal percent
+            out[o++] = '%';
+            ++p;
+        } else if (p[0] == '%' && p[1] != '\0' && !inserted) { // value slot
+            for (const char *q = num; *q != '\0' && o < outSize - 1; ++q)
+                out[o++] = *q;
+            ++p; // consume the conversion letter (s / d)
+            inserted = true;
+        } else {
+            out[o++] = *p;
+        }
+    }
+    out[o] = '\0';
 }
 
 // Resolve a display label for a stat `key` into `out`, respecting
@@ -285,7 +348,14 @@ void RenderDeltas(void *self, void *L, const Accum *acc, double dpsDelta) {
         if (v == 0)
             continue;
         LabelFor(L, acc[i].key, label, sizeof(label));
-        std::snprintf(line, sizeof(line), "%s%ld %s", v > 0 ? "+" : "", v, label);
+        char num[48];
+        std::snprintf(num, sizeof(num), "%s%ld", v > 0 ? "+" : "", v);
+        if (IsPercentStat(acc[i].key)) {
+            char pct[64];
+            FormatPercent(L, num, pct, sizeof(pct));
+            std::snprintf(num, sizeof(num), "%s", pct);
+        }
+        std::snprintf(line, sizeof(line), "%s %s", num, label);
         AddColoredLine(self, line, v > 0 ? kGain : kLoss);
     }
 }
