@@ -428,6 +428,7 @@ build instructions.
   - [`UnitIsOtherPlayersPet(unit)`](#unitisotherplayerspetunit)
   - [`UnitStandState(unit)`](#unitstandstateunit)
   - [`UnitInRange(unit)`](#unitinrangeunit)
+  - [`UnitDistanceSquared(unit)`](#unitdistancesquaredunit)
   - [`UnitPower(unit [, powerType])` / `UnitPowerMax(unit [, powerType])`](#unitpowerunit--powertype--unitpowermaxunit--powertype)
   - [`UnitPowerType(unit)`](#unitpowertypeunit)
 
@@ -10210,6 +10211,44 @@ Works for any synced unit (party/raid members in your zone, target,
 mouseover, etc.). For raid members in a different zone or otherwise
 not in the engine's sync window, the position virtual returns null
 and the function reports `(false, false)`.
+
+### `UnitDistanceSquared(unit)`
+
+Returns `(distanceSquared, checkedPosition)` — the **squared** world
+distance (yards²) from the player to `unit`, and a flag indicating
+whether both positions were available.
+
+```lua
+local distSq, checked = UnitDistanceSquared("target")
+if checked and distSq <= 30 * 30 then
+    -- target is within 30 yards
+end
+```
+
+| Return | Meaning |
+|--------|---------|
+| `distanceSquared` | Squared distance player→unit. `0` when `checkedPosition` is `false` (a placeholder — matches retail's "always a number" shape). |
+| `checkedPosition` | `true` when both positions were read. `false` when `unit`'s position isn't available (empty `partyN` slot, no target, raid member outside the sync window, etc.). |
+
+The value is **squared** on purpose: nearly all distance logic is a
+threshold compare (`distSq <= range * range`) or a nearest-unit sort,
+neither of which needs the square root — so retail exposes only the
+squared form (added 5.0.4) and never a plain `UnitDistance`. Take
+`math.sqrt(distanceSquared)` only when you need a yard number to show a
+human.
+
+Reads world positions via the `CGObject::GetPosition` vtable virtual
+(slot 5, offset `+0x14`) — the same path `UnitInRange` /
+`CheckInteractDistance` use. **Center-to-center**, not reach-aware (that
+edge-to-edge nicety is UnitXP_SP3's niche); the value equals what you'd
+compute from SuperWoW's `UnitPosition`, but it's self-contained (no
+sibling-DLL dependency, and no clash with SuperWoW's own `UnitPosition`,
+which is left untouched).
+
+> No self-quirk (unlike `UnitInRange`): `UnitDistanceSquared("player")`
+> returns a legitimate `(0, true)`. Because a real `0` (self, or two
+> exactly co-located units) is indistinguishable by value from the miss
+> placeholder, always branch on `checkedPosition`.
 
 ### `UnitClassBase(unit)`
 
