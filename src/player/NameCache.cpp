@@ -23,13 +23,19 @@
 //       parse callbacks, and the registry handles load/save so neither
 //       this module nor `Charlist::Order` clobbers the other's lines.
 //
-//   `WTF\Account\<acct>\<realm>\ClassicAPI_NameCache.txt`
-//       Per-realm cache contents. v2 format. One entry per line:
-//           `guidHi  guidLo  classID  raceID  sex  name`
+//   `WTF\ClassicAPI\<realmList>\<realm>\ClassicAPI_NameCache.txt`
+//       Per-realm cache contents, SHARED across every account on the
+//       same server. Keyed by realmlist address (unambiguous server
+//       identity — can't collide across unrelated private servers) plus
+//       the realm name, rather than by account, so alts on different
+//       accounts pool into one file. Not under `Account\`, so we create
+//       the directory tree ourselves. v4 format. One entry per line:
+//           `name  guid  classID  raceID  sex`
 //       (fields tab-separated). Loaded once the realm name is
-//       available post-login. Saved when (a) a recent write hasn't
-//       been flushed AND (b) at least 30 seconds have elapsed since
-//       the prior save, OR (c) DLL teardown / `Flush()` is called.
+//       available post-login (migrating a pre-existing per-account file
+//       in on first load). Saved when (a) a recent write hasn't been
+//       flushed AND (b) at least 30 seconds have elapsed since the prior
+//       save, OR (c) DLL teardown / `Flush()` is called.
 //
 // Population sources:
 //   1. The engine's NameCache writer (`FUN_PLAYER_INFO_CACHE_WRITE`)
@@ -69,6 +75,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <istream>
 #include <ostream>
 #include <sstream>
 #include <string>
@@ -139,7 +146,57 @@ const char *ReadRealmName() {
 
 // ----- path resolution -----
 
+// realmList CVar value (the realmlist address, e.g.
+// "logon.turtle-wow.org") — the unambiguous server identity. Unlike the
+// friendly realm name it can't collide across unrelated private servers,
+// so it's the outer key for the shared cache path. Mirrors
+// `Security::CredStore`'s realm scoping.
+const char *ReadRealmList() {
+    using GetRealmList_t = const char *(__fastcall *)(int forceRefresh);
+    return reinterpret_cast<GetRealmList_t>(
+        static_cast<uintptr_t>(Offsets::FUN_CVAR_REALM_LIST))(0);
+}
+
+// Filesystem-safe path component. We create these directories ourselves
+// (WoW doesn't), so any character Windows rejects in a path — or that
+// could surprise, like the space/apostrophe in "N'Zoth" — becomes '_'.
+// Deterministic, so a realm always maps to the same folder.
+std::string SanitizeComponent(const char *s) {
+    std::string out;
+    for (const char *p = s; p != nullptr && *p; ++p) {
+        const char c = *p;
+        const bool safe = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+                          (c >= '0' && c <= '9') || c == '.' || c == '-' ||
+                          c == '_';
+        out.push_back(safe ? c : '_');
+    }
+    return out;
+}
+
+// Shared, server-specific cache path:
+//   WTF\ClassicAPI\<realmList>\<realmName>\ClassicAPI_NameCache.txt
+// Not under Account\, so alts on different accounts of the same server
+// share one pool. Empty (defer) until both realmlist + realm are known.
 std::string CachePath() {
+    const char *realmList = ReadRealmList();
+    if (realmList == nullptr || realmList[0] == '\0')
+        return {};
+    const char *realm = ReadRealmName();
+    if (realm == nullptr || realm[0] == '\0')
+        return {};
+    std::string out = "WTF\\ClassicAPI\\";
+    out += SanitizeComponent(realmList);
+    out += '\\';
+    out += SanitizeComponent(realm);
+    out += "\\ClassicAPI_NameCache.txt";
+    return out;
+}
+
+// The pre-shared per-account path, used only to migrate an existing
+// cache into the shared location on first load. Built exactly as it was
+// written (raw account + realm, unsanitized) so it matches the file
+// sitting in WoW's own folders.
+std::string OldCachePath() {
     const char *account = ReadAccountName();
     if (account == nullptr || account[0] == '\0')
         return {};
@@ -152,6 +209,21 @@ std::string CachePath() {
     out += realm;
     out += "\\ClassicAPI_NameCache.txt";
     return out;
+}
+
+// Creates every parent directory of `filePath` (mkdir -p). WoW makes
+// `WTF\` but not `WTF\ClassicAPI\...`, and ofstream won't create
+// directories, so a save into a fresh realm folder would silently fail
+// without this. CreateDirectory on an existing dir no-ops.
+void EnsureParentDirs(const std::string &filePath) {
+    for (size_t pos = 0;;) {
+        const size_t slash = filePath.find('\\', pos);
+        if (slash == std::string::npos)
+            break; // remainder is the filename
+        if (slash > 0)
+            CreateDirectoryA(filePath.substr(0, slash).c_str(), nullptr);
+        pos = slash + 1;
+    }
 }
 
 // ----- account settings (registered with Settings::Account) -----
@@ -259,21 +331,12 @@ bool Upsert(uint64_t guid, const std::string &name,
     return changed;
 }
 
-void LoadCacheIfNeeded() {
-    if (g_cacheLoaded)
-        return;
-    const std::string path = CachePath();
-    if (path.empty())
-        return; // pre-realm; retry on next call (g_cacheLoaded stays false)
-    g_cacheLoaded = true;
-
-    std::ifstream file(path);
-    if (!file.is_open())
-        return; // first run for this realm
-
-    // v4 format: `name\tguid\tclass\trace\tsex`. Name first since
-    // it's the primary key; GUID is a peripheral field carried for
-    // GUID-keyed lookups. Variable-width hex GUID (no leading zeros).
+// Parses v4 cache lines (`name\tguid\tclass\trace\tsex`) from `file`
+// into the store. Name first since it's the primary key; GUID is a
+// peripheral field carried for GUID-keyed lookups. Variable-width hex
+// GUID (no leading zeros). Shared by the normal load and the one-time
+// migration from the old per-account file.
+void LoadFromStream(std::istream &file) {
     std::string line;
     while (std::getline(file, line)) {
         while (!line.empty() && (line.back() == '\r' || line.back() == '\n'))
@@ -301,10 +364,42 @@ void LoadCacheIfNeeded() {
     }
 }
 
+void LoadCacheIfNeeded() {
+    if (g_cacheLoaded)
+        return;
+    const std::string path = CachePath();
+    if (path.empty())
+        return; // pre-realm; retry on next call (g_cacheLoaded stays false)
+    g_cacheLoaded = true;
+
+    std::ifstream file(path);
+    if (file.is_open()) {
+        LoadFromStream(file);
+        return;
+    }
+
+    // No shared file yet. One-time migration: seed from the old
+    // per-account file if it exists, then mark dirty so the next save
+    // writes the merged data into the shared path. Only when the shared
+    // file is absent — once it exists it's authoritative (a second
+    // account's old-only entries just repopulate via scan / SMSG).
+    const std::string oldPath = OldCachePath();
+    if (oldPath.empty())
+        return;
+    std::ifstream oldFile(oldPath);
+    if (oldFile.is_open()) {
+        LoadFromStream(oldFile);
+        g_dirty = true;
+    }
+}
+
 void SaveCache() {
     const std::string path = CachePath();
     if (path.empty())
         return;
+    // `WTF\ClassicAPI\<realmList>\<realm>\` isn't created by WoW — make
+    // the tree first, else the ofstream open below silently fails.
+    EnsureParentDirs(path);
     const std::string tmp = path + ".tmp";
     {
         std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
@@ -319,7 +414,7 @@ void SaveCache() {
         // sort/scan key when hand-editing. GUID is variable-width
         // hex — 1-8 digits for player GUIDs, up to 16 if a non-player
         // GUID ever lands here.
-        out << "# ClassicAPI name cache v4 (per-realm)\n";
+        out << "# ClassicAPI name cache v4 (per-realm, shared across accounts)\n";
         out << "# name\tguid\tclassID\traceID\tsex\n";
         for (const auto &kv : g_entries) {
             const std::string &name = kv.first;

@@ -7037,12 +7037,18 @@ Three population sources feed the cache when fully enabled:
 Storage:
 
 - `WTF\Account\<account>\ClassicAPI.txt` — account-level settings
-  (`PersistentNameCacheEnabled`, `NameCacheScanEnabled`).
-- `WTF\Account\<account>\<realm>\ClassicAPI_NameCache.txt` —
-  per-realm cache. Tab-separated text, ~30 bytes/entry,
-  hand-editable. Shared across all characters on the same
-  account+realm (a 50-character bank alt's chat scraping doesn't
-  double the storage cost).
+  (`PersistentNameCacheEnabled`, `NameCacheScanEnabled`). The
+  opt-in toggles stay per-account.
+- `WTF\ClassicAPI\<realmList>\<realm>\ClassicAPI_NameCache.txt` —
+  per-realm cache, **shared across every account on the same
+  server**. Keyed by the realmlist address (unambiguous server
+  identity, can't collide across unrelated private servers) plus the
+  realm name — so alts on different accounts pool into one file
+  rather than each rebuilding their own. Tab-separated text,
+  ~30 bytes/entry, hand-editable. On first load with no shared file
+  yet, a pre-existing per-account cache
+  (`WTF\Account\<account>\<realm>\ClassicAPI_NameCache.txt`) is
+  migrated in automatically.
 
 ### `GetPlayerInfoByGUID(guid)`
 
