@@ -359,6 +359,8 @@ build instructions.
   - [`C_Spell.CancelSpellByID(spellID)` / `CancelSpellByName(name)`](#c_spellcancelspellbyidspellid--cancelspellbynamename)
   - [`C_Spell.UnitCastingInfo(unit)` / `C_Spell.CastingInfo()`](#c_spellunitcastinginfounit--c_spellcastinginfo)
   - [`C_Spell.UnitChannelInfo(unit)` / `C_Spell.ChannelInfo()`](#c_spellunitchannelinfounit--c_spellchannelinfo)
+  - [`C_Spell.GetSpellLevelInfo(spellID)`](#c_spellgetspelllevelinfospellid)
+  - [`GetSpellRequiredTargetLevel(spellID)`](#getspellrequiredtargetlevelspellid)
 
 - [SpellBook](#spellbook)
   - [`FindSpellBookSlotByID(spellID)`](#findspellbookslotbyidspellid)
@@ -8923,6 +8925,55 @@ so a stale cache entry never applies to a different/ended channel);
 otherwise it falls back to `name`/`displayName`/`textureID`/`spellID` with
 **`nil` times**. The player path is unchanged (full timing). Same
 placeholder fields as `C_Spell.UnitCastingInfo`.
+
+### `C_Spell.GetSpellLevelInfo(spellID)`
+
+Returns the raw `Spell.dbc` level fields for a spell:
+
+```
+spellLevel, baseLevel, maxLevel = C_Spell.GetSpellLevelInfo(spellID)
+```
+
+- `spellLevel` — the rank's effective level (drives the target-level rule
+  below and per-level scaling).
+- `baseLevel` — the spell's base level.
+- `maxLevel` — the level at which per-level scaling caps (`0` = no cap).
+
+Returns `nil` for an invalid / unpopulated spellID.
+
+```lua
+C_Spell.GetSpellLevelInfo(14752)   -- 30, 30, 40  (Divine Spirit Rank 1)
+C_Spell.GetSpellLevelInfo(14818)   -- 40, 40, 50  (Divine Spirit Rank 2)
+```
+
+### `GetSpellRequiredTargetLevel(spellID)`
+
+Also `C_Spell.GetSpellRequiredTargetLevel(spellID)`. Returns the minimum
+level a **target** must be for this exact spell (rank) to apply — e.g.
+Divine Spirit Rank 1 can only be cast on a target level **20 or higher**.
+Returns `0` when the spell has no such restriction, or `nil` for an
+invalid spellID.
+
+```lua
+GetSpellRequiredTargetLevel(14752)   -- 20   (Divine Spirit Rank 1)
+GetSpellRequiredTargetLevel(14818)   -- 30   (Divine Spirit Rank 2)
+GetSpellRequiredTargetLevel(1243)    -- 0    (Fortitude Rank 1)
+GetSpellRequiredTargetLevel(10060)   -- 0    (Power Infusion — single rank)
+GetSpellRequiredTargetLevel(133)     -- 0    (Fireball — damage, not a buff)
+```
+
+Mirrors the server's `SelectAuraRankForLevel` rule: a **ranked beneficial
+aura** is castable when `targetLevel + 10 >= spellLevel`, so the minimum
+target level is `spellLevel - 10`. The restriction is applied only when the
+spell is a ranked positive aura — `spellLevel > 10`, not passive, part of a
+rank chain, and applying an aura to a friendly/party/raid target (or an
+`APPLY_AREA_AURA_PARTY` effect). Below the minimum, the lowest rank fails
+with `SPELL_FAILED_LOWLEVEL`; higher ranks auto-downrank.
+
+> The explicit `MinTargetLevel` / `MaxTargetLevel` spell fields the server
+> also enforces are **server-only** columns — they aren't present in the
+> 1.12 client's `Spell.dbc`, so the `spellLevel` rule is the only
+> client-readable target-level mechanism.
 
 ## SpellBook
 

@@ -117,6 +117,139 @@ bool SpellHiddenFromAutoLearn(int spellID) {
     return (attrEx2 & SPELL_ATTR_EX2_HIDE_FROM_AUTOLEARN) != 0;
 }
 
+// ---- Target-level gate for ranked beneficial auras ----------------------
+//
+// A ranked beneficial aura can't be applied to a target too low for the
+// rank — e.g. Divine Spirit Rank 1 (14752) requires the target to be level
+// >= 20. Server-enforced via `SpellMgr::SelectAuraRankForLevel`, whose rule
+// is: a ranked positive aura is castable when `targetLevel + 10 >=
+// spellLevel`, i.e. the minimum target level is `spellLevel - 10`. Below
+// it the lowest rank fails (SPELL_FAILED_LOWLEVEL); higher ranks auto-
+// downrank. The gate only applies to *ranked* *positive* *auras* — see
+// RequiredTargetLevel. Fully derivable from the client's Spell.dbc.
+//
+// (The explicit MinTargetLevel / MaxTargetLevel fields the server also
+// checks are NOT in the 1.12 client's Spell.dbc — server-only columns — so
+// the spellLevel rule is the only client-readable target-level mechanism.)
+
+constexpr int OFF_SPELL_MAX_LEVEL = 0x6C;         // uint32 (scaling cap level)
+constexpr int OFF_SPELL_SPELL_LEVEL = 0x74;       // uint32 (rank's effective level)
+constexpr int OFF_SPELL_EFFECT = 0xF4;            // uint32[3] effect type
+constexpr int OFF_SPELL_EFFECT_TARGET_A = 0x148;  // uint32[3] implicit target A
+constexpr int OFF_SPELL_RANK = 0x204;             // char*[9] localized rank text
+constexpr uint32_t SPELL_ATTR_PASSIVE = 0x40;                    // Attributes bit
+constexpr uint32_t SPELL_EFFECT_APPLY_AURA = 6;
+constexpr uint32_t SPELL_EFFECT_APPLY_AREA_AURA_PARTY = 35;
+
+int LocaleIndex() {
+    return *reinterpret_cast<const int *>(
+        static_cast<uintptr_t>(Offsets::VAR_LOCALE_INDEX));
+}
+
+// The friendly-target IDs the server's SelectAuraRankForLevel treats as
+// "positive" for rank selection: IsExplicitPositiveTarget (21/35/45/57/61)
+// plus IsAreaEffectPossitiveTarget (20/30/31/33/34/37/56/61). Narrower than
+// a general "is helpful" set — this is the exact gate the rank rule uses
+// (self-cast / pet targets don't count).
+bool IsPositiveRankTarget(uint32_t t) {
+    switch (t) {
+    case 21: // TARGET_UNIT_FRIEND
+    case 35: // TARGET_UNIT_PARTY
+    case 45: // TARGET_UNIT_FRIEND_CHAIN_HEAL
+    case 57: // TARGET_UNIT_RAID
+    case 61: // TARGET_UNIT_RAID_AND_CLASS
+    case 20: // TARGET_ENUM_UNITS_PARTY_WITHIN_CASTER_RANGE
+    case 30: // TARGET_ENUM_UNITS_FRIEND_AOE_AT_SRC_LOC
+    case 31: // TARGET_ENUM_UNITS_FRIEND_AOE_AT_DEST_LOC
+    case 33: // TARGET_ENUM_UNITS_PARTY_AOE_AT_SRC_LOC
+    case 34: // TARGET_ENUM_UNITS_PARTY_AOE_AT_DEST_LOC
+    case 37: // TARGET_UNIT_FRIEND_AND_PARTY
+    case 56: // TARGET_ENUM_UNITS_RAID_WITHIN_CASTER_RANGE
+        return true;
+    default:
+        return false;
+    }
+}
+
+// True if the record carries a localized "Rank N" string — the client's
+// marker for a spell in a ranked line (single-rank spells leave it empty).
+// Proxy for the server's `GetSpellRank(id) != 0`, verified against
+// single-rank buffs (Power Infusion / Innervate / Blessing of Kings, all
+// empty Rank and un-gated) vs ranked ones (Divine Spirit / Fortitude).
+bool HasRankString(const uint8_t *record) {
+    const char *rank = *reinterpret_cast<const char *const *>(
+        record + OFF_SPELL_RANK + LocaleIndex() * 4);
+    return rank != nullptr && *rank != '\0';
+}
+
+// Minimum target level required to apply this exact spell (rank), or 0 if
+// the spell isn't subject to the ranked-positive-aura target-level rule.
+int RequiredTargetLevel(const uint8_t *record) {
+    const int spellLevel =
+        *reinterpret_cast<const int *>(record + OFF_SPELL_SPELL_LEVEL);
+    if (spellLevel <= 10) // targetLevel + 10 >= spellLevel holds for any level
+        return 0;
+    const uint32_t attr =
+        *reinterpret_cast<const uint32_t *>(record + OFF_SPELL_RECORD_ATTRIBUTES);
+    if (attr & SPELL_ATTR_PASSIVE)
+        return 0;
+    if (!HasRankString(record)) // single-rank spell → not gated
+        return 0;
+
+    auto *effect = reinterpret_cast<const uint32_t *>(record + OFF_SPELL_EFFECT);
+    auto *targetA =
+        reinterpret_cast<const uint32_t *>(record + OFF_SPELL_EFFECT_TARGET_A);
+    bool positiveAura = false;
+    for (int i = 0; i < 3; ++i) {
+        if ((effect[i] == SPELL_EFFECT_APPLY_AURA &&
+             IsPositiveRankTarget(targetA[i])) ||
+            effect[i] == SPELL_EFFECT_APPLY_AREA_AURA_PARTY) {
+            positiveAura = true;
+            break;
+        }
+    }
+    if (!positiveAura)
+        return 0;
+    return spellLevel - 10;
+}
+
+int ArgSpellID(void *L) {
+    if (!Game::Lua::IsNumber(L, 1))
+        return 0;
+    return static_cast<int>(Game::Lua::ToNumber(L, 1));
+}
+
+// `C_Spell.GetSpellLevelInfo(spellID)` → spellLevel, baseLevel, maxLevel.
+// Raw Spell.dbc level fields: spellLevel (this rank's effective level),
+// baseLevel, maxLevel (level at which scaling caps). nil for an unknown
+// spellID.
+int __fastcall Script_GetSpellLevelInfo(void *L) {
+    const uint8_t *record = Spell::Lookup::RecordForID(ArgSpellID(L));
+    if (record == nullptr)
+        return 0;
+    Game::Lua::PushNumber(
+        L, static_cast<double>(
+               *reinterpret_cast<const int *>(record + OFF_SPELL_SPELL_LEVEL)));
+    Game::Lua::PushNumber(
+        L, static_cast<double>(
+               *reinterpret_cast<const int *>(record + Offsets::OFF_SPELL_RECORD_BASE_LEVEL)));
+    Game::Lua::PushNumber(
+        L, static_cast<double>(
+               *reinterpret_cast<const int *>(record + OFF_SPELL_MAX_LEVEL)));
+    return 3;
+}
+
+// `GetSpellRequiredTargetLevel(spellID)` → the minimum level a target must
+// be for this spell (rank) to apply (0 = no restriction). nil for an
+// unknown spellID. Ranked beneficial auras only; see RequiredTargetLevel.
+int __fastcall Script_GetSpellRequiredTargetLevel(void *L) {
+    const uint8_t *record = Spell::Lookup::RecordForID(ArgSpellID(L));
+    if (record == nullptr)
+        return 0;
+    Game::Lua::PushNumber(L, static_cast<double>(RequiredTargetLevel(record)));
+    return 1;
+}
+
 // `C_SpellBook.GetSpellLevelLearned(spellID)` — returns the level
 // at which a spell becomes available (the `BaseLevel` field in
 // Spell.dbc). Direct read off the record — no class/race filtering,
@@ -315,6 +448,12 @@ void RegisterLuaFunctions() {
                                       &Script_GetSpellLevelLearned);
     Game::Lua::RegisterTableFunction("C_SpellBook", "GetCurrentLevelSpells",
                                       &Script_GetCurrentLevelSpells);
+    Game::Lua::RegisterGlobalFunction("GetSpellRequiredTargetLevel",
+                                      &Script_GetSpellRequiredTargetLevel);
+    Game::Lua::RegisterTableFunction("C_Spell", "GetSpellLevelInfo",
+                                      &Script_GetSpellLevelInfo);
+    Game::Lua::RegisterTableFunction("C_Spell", "GetSpellRequiredTargetLevel",
+                                      &Script_GetSpellRequiredTargetLevel);
 }
 
 const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
