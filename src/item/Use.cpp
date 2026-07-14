@@ -130,12 +130,13 @@ int __fastcall Script_C_Item_UseItemByName(void *L) {
         return 0;
     }
 
+    const uint64_t targetGuid = ResolveUnitGuid(L, 2);
+
     Item::Location::ByGUIDResult found;
     if (!Item::Location::FindByArgInBags(L, arg, &found)) {
         return 0;
     }
 
-    const uint64_t targetGuid = ResolveUnitGuid(L, 2);
     auto useItem = reinterpret_cast<UseItem_t>(Offsets::FUN_ITEM_USE);
     useItem(found.item, &targetGuid, 0);
     return 0;
