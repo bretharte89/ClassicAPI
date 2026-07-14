@@ -4300,23 +4300,27 @@ end
 
 ### `GetMouseButtonClicked()`
 
-Returns the name of the button from the most recent mouse-button
-message (`"LeftButton"`, `"RightButton"`, `"MiddleButton"`,
-`"Button4"`, `"Button5"`), or `nil` before any click has occurred.
+Returns the name of the button responsible for the mouse handler
+currently running (`"LeftButton"`, `"RightButton"`, `"MiddleButton"`,
+`"Button4"`, `"Button5"`), or `nil` when no click is being handled.
 
 Modern addons call this inside a mouse handler (`OnClick`,
 `OnMouseDown`, `OnMouseUp`, `OnDragStart`, …) to learn which button
 drove it — an alternative to reading vanilla's `arg1`, and readable
 from nested helper functions where `arg1` isn't in scope. The value
 is captured by the same `WH_GETMESSAGE` hook behind
-`GLOBAL_MOUSE_DOWN` / `GLOBAL_MOUSE_UP`, at message-dequeue —
-synchronously *before* the engine dispatches the click to the Lua
-handler — so it reflects the button of the handler currently running.
+`GLOBAL_MOUSE_DOWN` / `GLOBAL_MOUSE_UP`, then evicted a couple of
+frames later so — matching the real API — it reads `nil` outside a
+handler rather than lingering as the last click forever.
 
-It is not cleared between events, so outside a mouse handler it
-returns the last-clicked button rather than `nil` (the 1.12 message
-stream carries no "handler ended" signal to clear on). In practice
-it's only meaningful inside a mouse handler, matching how it's used.
+The button stays readable for the whole frame its click lands in (so
+multiple addons hooking the same `OnClick` all see it), and while a
+button is physically held (so `OnDragStart` reads it). It is a
+best-effort replica: WoW dispatches these handlers deferred from the
+OS message, so eviction is time-based (per-frame) rather than exactly
+bracketed around the handler as on retail. Values can therefore
+linger ~2 frames past a click — harmless, since it's only meaningful
+inside a mouse handler.
 
 ```lua
 button:SetScript("OnClick", function()
