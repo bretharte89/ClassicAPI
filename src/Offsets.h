@@ -951,6 +951,25 @@ enum Offsets {
     // RECORD pointer, not a spellID.
     FUN_GET_SPELL_DURATION = 0x006EA000,
 
+    // Pure spell range check against a target:
+    // `char __fastcall(void *caster /*ecx*/, void *target /*edx*/,
+    //                  int spellID, char *outMinMaxFlag)`.
+    // Computes the spell's min/max range via `FUN_006e3480` (which folds
+    // in the target's bounding radius), reads both objects' world
+    // positions (GetPosition, vtable+0x14), and compares center-to-center
+    // squared distance. Returns low byte 1 = in range, 0 = out (too close
+    // OR too far); `*outMinMaxFlag` is set to 1 on a max-range (too far)
+    // failure so the caller can pick a "too close" vs "out of range" error
+    // string — we ignore it. Both objects must be non-null (it dereferences
+    // the GetPosition result without a null check). This is the geometric
+    // core the action-button range coloring uses: `Script_IsActionInRange`
+    // (`0x004E7550`) → `FUN_004E56F0` → `FUN_006E4440` → here. We call it
+    // directly for `C_Spell.IsSpellInRange` rather than `FUN_006E4440`,
+    // which additionally gates on target type and folds "range N/A" into
+    // the same truthy return as "in range" (so it can't yield true/false/
+    // nil cleanly).
+    FUN_SPELL_RANGE_CHECK = 0x006E47B0,
+
     // Spell.dbc `m_durationIndex` field — pointer into SpellDuration.dbc.
     // Verified via `FUN_004E44B0` (`0x004e44b0`) and `FUN_006EA000`
     // (`0x006ea000`), both of which read `[spellRec + 0x78]` and use

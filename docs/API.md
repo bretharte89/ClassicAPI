@@ -349,6 +349,7 @@ build instructions.
   - [`C_Spell.IsCurrentSpell(spellIdentifier)`](#c_spelliscurrentspellspellidentifier)
   - [`C_Spell.IsSelfBuff(spellID)`](#c_spellisselfbuffspellid)
   - [`C_Spell.SpellHasRange(spellIdentifier)` / `SpellHasRange(slot, bookType)`](#c_spellspellhasrangespellidentifier--spellhasrangeslot-booktype)
+  - [`C_Spell.IsSpellInRange(spellIdentifier, targetUnit)`](#c_spellisspellinrangespellidentifier-targetunit)
   - [`C_Spell.IsAutoAttackSpell(spellID)`](#c_spellisautoattackspellspellid)
   - [`C_Spell.IsRangedAutoAttackSpell(spellID)`](#c_spellisrangedautoattackspellspellid)
   - [`IsHarmfulSpell(spell)` / `IsHelpfulSpell(spell)`](#isharmfulspellspell--ishelpfulspellspell)
@@ -8455,6 +8456,34 @@ matching the dual-signature shape used elsewhere in this backport
 (`GetSpellInfo`, `GetSpellLink`, etc.). The `bookType` argument
 follows the same convention as `GetSpellName(slot, bookType)`:
 `"spell"` (or any non-pet value) → player book, `"pet"` → pet book.
+
+### `C_Spell.IsSpellInRange(spellIdentifier, targetUnit)`
+
+Returns `true` if the spell is in range of `targetUnit`, `false` if
+out of range, and `nil` when the range check doesn't apply — a
+rangeless spell (self buff), or an unresolvable spell / unit.
+
+`spellIdentifier` is a spellID, spell link, or the name of a spell in
+the player's spellbook. `targetUnit` is a unit token.
+
+```lua
+C_Spell.IsSpellInRange(133, "target")      -- Fireball → true / false
+C_Spell.IsSpellInRange("Fireball", "target")
+C_Spell.IsSpellInRange(1006, "target")     -- Inner Fire (self) → nil
+```
+
+Uses the engine's own geometric range core (the same one the action
+button range-out coloring uses via `IsActionInRange`): it derives the
+spell's min/max range — folding in the target's bounding radius — and
+compares center-to-center distance, so the boundary matches the
+client exactly, melee and min-range ("too close") spells included.
+
+Range-only, matching retail: it ignores line of sight, and it does
+**not** reject wrong-faction targets (a friendly-only heal still
+returns a range answer against an enemy). Check target validity
+separately if you need it. Absent tokens (e.g. `"target"` with no
+target) return `nil`; a genuinely unrecognized token string raises a
+Lua error, same contract as `UnitHealth("garbage")`.
 
 ### `C_Spell.IsAutoAttackSpell(spellID)`
 
