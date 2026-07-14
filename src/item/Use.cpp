@@ -48,7 +48,6 @@
 #include "item/Location.h"
 
 #include <cstdint>
-#include <cstring>
 
 namespace Item::Use {
 
@@ -59,67 +58,10 @@ using UseItem_t = unsigned(__thiscall *)(const void *item, const uint64_t *targe
 
 using TokenToGUID_t = uint64_t(__fastcall *)(const char *token);
 
-bool HasPrefix(const char *s, const char *prefix) {
-    return std::strncmp(s, prefix, std::strlen(prefix)) == 0;
-}
-
-// Walk past any "target" suffixes (`targettarget`, `focustargettarget`,
-// …); returns a pointer at the first non-"target" character.
-const char *SkipTargetSuffixes(const char *s) {
-    while (HasPrefix(s, "target"))
-        s += 6;
-    return s;
-}
-
-// Predicate mirror of the engine's token grammar inside
-// `FUN_TOKEN_TO_GUID` (`0x00515970`) plus the families our own
-// `Unit::TokenExtensions` hook adds (`focus`, `nameplateN`). The
-// engine raises a Lua error on unknown input, so we gate before
-// dispatching to keep our "silently no-ops on bad input" contract.
-//
-// Every base token may be followed by zero or more `target` suffixes
-// (`playertarget`, `party1targettarget`, …) which the engine's
-// resolver walks via `LAB_005159d3..0x00515A2C`.
-bool MatchBase(const char *s, const char *base, bool requireDigits) {
-    if (!HasPrefix(s, base))
-        return false;
-    const char *rest = s + std::strlen(base);
-    if (requireDigits) {
-        const char *p = rest;
-        while (*p >= '0' && *p <= '9')
-            ++p;
-        if (p == rest)
-            return false;
-        rest = p;
-    }
-    return *SkipTargetSuffixes(rest) == '\0';
-}
-
-bool LooksLikeToken(const char *s) {
-    if (s == nullptr || *s == '\0')
-        return false;
-    // Order matters for shared roots: longer prefix first
-    // (`partypet`/`raidpet` before `party`/`raid`).
-    if (MatchBase(s, "partypet", true))   return true;
-    if (MatchBase(s, "raidpet", true))    return true;
-    if (MatchBase(s, "party", true))      return true;
-    if (MatchBase(s, "raid", true))       return true;
-    if (MatchBase(s, "nameplate", true))  return true;
-    if (MatchBase(s, "mouseover", false)) return true;
-    if (MatchBase(s, "player", false))    return true;
-    if (MatchBase(s, "target", false))    return true;
-    if (MatchBase(s, "focus", false))     return true;
-    if (MatchBase(s, "npc", false))       return true;
-    if (MatchBase(s, "pet", false))       return true;
-    return false;
-}
-
 uint64_t ResolveUnitGuid(void *L, int idx) {
     if (!Game::Lua::IsString(L, idx))
         return 0;
     const char *token = Game::Lua::ToString(L, idx);
-    if (!LooksLikeToken(token))
-        return 0;
     auto fn = reinterpret_cast<TokenToGUID_t>(Offsets::FUN_TOKEN_TO_GUID);
     return fn(token);
 }
