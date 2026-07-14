@@ -194,6 +194,7 @@ build instructions.
   - [`IsLeftAltKeyDown()` / `IsRightAltKeyDown()`](#isleftaltkeydown--isrightaltkeydown)
   - [`IsModifierKeyDown()`](#ismodifierkeydown)
   - [`IsMouseButtonDown([button])`](#ismousebuttondownbutton)
+  - [`GetMouseButtonClicked()`](#getmousebuttonclicked)
 
 - [Instance](#instance)
   - [`GetInstanceInfo()`](#getinstanceinfo)
@@ -4295,6 +4296,34 @@ mouse focus, so this rarely matters in practice.
 if IsMouseButtonDown("RightButton") then
     -- right-button-held bindings
 end
+```
+
+### `GetMouseButtonClicked()`
+
+Returns the name of the button from the most recent mouse-button
+message (`"LeftButton"`, `"RightButton"`, `"MiddleButton"`,
+`"Button4"`, `"Button5"`), or `nil` before any click has occurred.
+
+Modern addons call this inside a mouse handler (`OnClick`,
+`OnMouseDown`, `OnMouseUp`, `OnDragStart`, …) to learn which button
+drove it — an alternative to reading vanilla's `arg1`, and readable
+from nested helper functions where `arg1` isn't in scope. The value
+is captured by the same `WH_GETMESSAGE` hook behind
+`GLOBAL_MOUSE_DOWN` / `GLOBAL_MOUSE_UP`, at message-dequeue —
+synchronously *before* the engine dispatches the click to the Lua
+handler — so it reflects the button of the handler currently running.
+
+It is not cleared between events, so outside a mouse handler it
+returns the last-clicked button rather than `nil` (the 1.12 message
+stream carries no "handler ended" signal to clear on). In practice
+it's only meaningful inside a mouse handler, matching how it's used.
+
+```lua
+button:SetScript("OnClick", function()
+    if GetMouseButtonClicked() == "RightButton" then
+        -- right-click behavior
+    end
+end)
 ```
 
 ## Instance

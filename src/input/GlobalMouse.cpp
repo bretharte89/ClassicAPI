@@ -24,6 +24,14 @@
 // as the events (single source of truth — events firing and the
 // state being readable happen at the same point in the pipeline).
 //
+// `GetMouseButtonClicked()` — the button name of the most recent
+// mouse button message (`"LeftButton"` / … / `"Button5"`), or nil
+// before any click. Modern addons call it inside a mouse handler to
+// learn which button drove it. The `WH_GETMESSAGE` hook runs at
+// message-dequeue, synchronously *before* the engine dispatches that
+// click to the Lua handler, so the value captured there is the right
+// one throughout the handler that the same message triggers.
+//
 // Same `WH_GETMESSAGE` thread-message hook pattern as
 // [Input::Modifier](Modifier.cpp): we intercept the WM_*BUTTON*
 // messages on the engine's main thread *before* dispatch. The hook
@@ -58,6 +66,13 @@ constexpr int BIT_BUTTON5       = 4;
 constexpr uint32_t MASK_ANY_BUTTON = 0x1F;
 
 uint32_t g_mouseButtonMask = 0;
+
+// Name of the button from the most recent mouse-button message, or
+// nullptr before any click. Points at one of DecodeButton's string
+// literals (stable for the process lifetime), so storing the pointer
+// is safe. `lua_pushstring(L, nullptr)` tail-jumps to pushnil, so a
+// null here surfaces as nil to the Lua caller with no extra branch.
+const char *g_lastButton = nullptr;
 
 HHOOK g_msgHook = nullptr;
 
@@ -101,6 +116,11 @@ void ProcessMouseMessage(UINT msg, WPARAM wParam) {
     if (name == nullptr)
         return;
 
+    // Capture for GetMouseButtonClicked on both press and release —
+    // during an OnClick / OnMouseUp handler the "clicked" button is the
+    // one just released, same as the press for a normal click.
+    g_lastButton = name;
+
     const int bitIdx = NameToBitIdx(name);
     if (bitIdx >= 0) {
         const uint32_t bit = 1u << bitIdx;
@@ -136,6 +156,13 @@ int __fastcall Script_IsMouseButtonDown(void *L) {
     return 1;
 }
 
+int __fastcall Script_GetMouseButtonClicked(void *L) {
+    // Null → pushnil (the engine's pushstring tail-jumps on NULL), so
+    // callers before any click see nil, matching the modern API.
+    Game::Lua::PushString(L, g_lastButton);
+    return 1;
+}
+
 LRESULT CALLBACK GetMsgHook(int code, WPARAM wParam, LPARAM lParam) {
     // Only process when the message is being removed from the queue
     // (`PM_REMOVE` / `GetMessage`); `PM_NOREMOVE` peeks would deliver
@@ -157,6 +184,8 @@ void InstallHook() {
 void RegisterLuaFunctions() {
     Game::Lua::RegisterGlobalFunction("IsMouseButtonDown",
                                       &Script_IsMouseButtonDown);
+    Game::Lua::RegisterGlobalFunction("GetMouseButtonClicked",
+                                      &Script_GetMouseButtonClicked);
     InstallHook();
 }
 
