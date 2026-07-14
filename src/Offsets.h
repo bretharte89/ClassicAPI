@@ -3476,6 +3476,17 @@ enum Offsets {
     // '%s' (%s)" (or "calling '%s' on bad self (%s)" for method-style
     // calls) and calls `lua_error`. Doesn't return.
     LUAL_ARG_ERROR = 0x6F4810,
+    // `luaL_setn(L, t, n)` — Lua 5.0 auxlib table-length setter
+    // (verified: `FUN_006f4ea0`, __fastcall L/ecx, t/edx, n/stack,
+    // RET 4). Matches 5.0.2 `luaL_setn`: sets `t.n = n` if a numeric
+    // `n` field exists, else `sizes[t] = n` in the registry's weak
+    // LUA_SIZES table. Found via `table.insert` (`FUN_007fb6b0`), which
+    // calls it to record the new length; `luaL_getn` is `FUN_006f5050`.
+    // Needed by `table.wipe` to reset the length after clearing keys —
+    // the length is out-of-band from the keys, so a `lua_next` +
+    // `rawset(nil)` clear leaves it stale and subsequent `table.insert`
+    // appends past the wiped slots.
+    LUAL_SETN = 0x6F4EA0,
     // `lua_iscfunction(L, idx)` — returns 1 if value is a function
     // closure with the `isC` byte set (`Closure.c.isC == 1`), 0
     // otherwise. Used by `coroutine.create` to reject C functions

@@ -29,6 +29,11 @@ namespace Table::Wipe {
 // guarantee holds in 1.12's Lua 5.0 (`luaH_next` at `0x006FA2A0`),
 // so the pattern ports verbatim.
 //
+// One divergence from the 3.3.5 source: 1.12's Lua 5.0 keeps a table's
+// `table.insert`/`getn` length out of band from its keys (see the
+// `luaL_setn` note below), so after the key-clear loop we must also
+// reset that counter — the 5.1 twipe had no such legacy to clear.
+//
 // Stack discipline matches 3.3.5 to the call:
 //   1. `lua_pushnil(L)`           — initial "no key" sentinel for next
 //   2. `lua_next(L, 1)`           — pops key, pushes (newKey, value)
@@ -50,6 +55,17 @@ static int __fastcall Script_table_wipe(void *L) {
         Game::Lua::PushNil(L);
         Game::Lua::RawSet(L, 1);     // t[key] = nil
     }
+
+    // Reset the Lua 5.0 length counter. In 5.0 a table's `table.insert`/
+    // `getn` length is stored OUT of band from its keys (in a `t.n`
+    // field or a weak `sizes[t]` registry entry), so the rawset(nil)
+    // loop above — which only clears keys — leaves it at its old value.
+    // Without this, `table.insert` after a wipe appends at
+    // `getn(t)+1`, past the now-nil slots, and `t[1]` stays nil. 5.1's
+    // wipe doesn't need this (no getn legacy), which is why the ported
+    // logic looked complete. `luaL_setn(L, 1, 0)` puts it back to 0 so
+    // inserts resume at `t[1]`.
+    Game::Lua::SetN(L, 1, 0);
 
     // The table is still at stack[1] and is the result we return.
     Game::Lua::SetTop(L, 1);

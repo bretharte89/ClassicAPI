@@ -56,7 +56,8 @@ namespace Lua {
     F(NewThread,   lua_newthread,   LUA_NEW_THREAD)   \
     F(Resume,      lua_resume,      LUA_RESUME)       \
     F(Yield,       lua_yield,       LUA_YIELD)        \
-    F(ArgError,    luaL_argerror,   LUAL_ARG_ERROR)
+    F(ArgError,    luaL_argerror,   LUAL_ARG_ERROR)   \
+    F(SetN,        luaL_setn,       LUAL_SETN)
 
 #define CLASSICAPI_BIND_LUA(Name, Typedef, Offset) \
     const Typedef##_t Name = reinterpret_cast<Typedef##_t>(Offsets::Offset);
