@@ -1369,6 +1369,32 @@ enum Offsets {
     // `0x0048BACF` / `0x0048BADC`.
     OFF_CGOBJECT_VTBL_GET_POSITION = 0x14,
 
+    // CGObject `m_objectType` field — 0 = (base) object, 1 = item,
+    // 2 = container, 3 = unit, 4 = player, 5 = gameobject, … Read as
+    // `*(int *)(obj + 0x14)`. (Distinct from GET_POSITION above, which
+    // is a *vtable* byte-offset that happens to also be 0x14.)
+    OFF_CGOBJECT_TYPE_ID = 0x14,
+    OBJECT_TYPE_UNIT = 3,
+    OBJECT_TYPE_PLAYER = 4,
+
+    // World line-segment collision test (client-side LoS core):
+    // `char __fastcall(const Vec3 *start /*ecx*/, const Vec3 *end /*edx*/,
+    //                  int unused, Vec3 *hitOut, float *tOut, uint32 flags)`.
+    // Returns nonzero if the ray hit world geometry; `*tOut` is the hit
+    // fraction along start→end (t in [0,1] ⇒ hit lies between the two
+    // points ⇒ blocked; t outside [0,1] or no hit ⇒ clear). `flags`
+    // selects geometry: 0x100111 = terrain + WMO (the LoS combo;
+    // 0x100171 also tests M2 doodads but crashes in some dungeons per
+    // UnitXP_SP3). Thin `__fastcall` shim that tail-calls the real
+    // intersect `FUN_0069BFF0`; verified in-binary and cross-checked
+    // against UnitXP_SP3's `CWorld_Intersect` (same VA + flags).
+    FUN_CWORLD_INTERSECT = 0x00672170,
+    // Collision-box height of a unit, read from its CMovement sub-struct
+    // (`[unit + OFF_UNIT_MOVEMENT_INFO_PTR]`) at `+0xB4`. Used as the
+    // eye-height offset for LoS so foot-to-foot traces don't false-block
+    // on terrain. (CMovement pointer offset 0x118 = OFF_UNIT_MOVEMENT_INFO_PTR.)
+    OFF_CMOVEMENT_COLLISION_BOX_HEIGHT = 0xB4,
+
     // Quest list array inside the `+0xE68` sub-struct. 20 fixed
     // slots of 0xC (12) bytes each — `questID` at slot+0x00, and
     // some flags/state in the remaining 8 bytes. Walked by

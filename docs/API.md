@@ -431,6 +431,7 @@ build instructions.
   - [`UnitStandState(unit)`](#unitstandstateunit)
   - [`UnitInRange(unit)`](#unitinrangeunit)
   - [`UnitDistanceSquared(unit)`](#unitdistancesquaredunit)
+  - [`UnitInLineOfSight(unit)`](#unitinlineofsightunit)
   - [`UnitPower(unit [, powerType])` / `UnitPowerMax(unit [, powerType])`](#unitpowerunit--powertype--unitpowermaxunit--powertype)
   - [`UnitPowerType(unit)`](#unitpowertypeunit)
 
@@ -10317,6 +10318,38 @@ which is left untouched).
 > returns a legitimate `(0, true)`. Because a real `0` (self, or two
 > exactly co-located units) is indistinguishable by value from the miss
 > placeholder, always branch on `checkedPosition`.
+
+### `UnitInLineOfSight(unit)`
+
+Returns `true` if the player has clear line of sight to `unit`, `false`
+if world geometry (terrain or a building) blocks it, and `nil` when the
+check can't apply — an absent / unresolvable token, or a non-unit
+object. A ClassicAPI extension (retail has no such global).
+
+```lua
+if UnitInLineOfSight("target") then
+    -- clear shot
+end
+```
+
+Traces a ray between the two units through the client's world-collision
+geometry (`CWorld::Intersect`, flags `terrain + WMO`). Endpoints are
+raised by each unit's collision-box height so a foot-to-foot ray doesn't
+false-block on terrain, and the trace runs in two passes (level look,
+then look up/down) for height mismatches — the same approach UnitXP_SP3
+uses, implemented natively so it works with or without that addon (a
+call routes harmlessly through UnitXP_SP3's hook when present).
+
+Notes and limits:
+- **Terrain + buildings (WMO) only** — M2 *doodads* (trees, small props)
+  are not tested (that flag combination crashes in some dungeons). This
+  matches vanilla server-side LoS, which also ignores most doodads.
+- **Center/eye-line**, not a volume — a sliver of a unit peeking past a
+  corner reads as blocked if the eye-line itself is occluded.
+- Pairs beyond ~150 yards report `false` (a guard against a
+  long-segment crash in the underlying trace); such units are usually
+  outside the client's object sync window anyway.
+- `UnitInLineOfSight("player")` is `true` (you always see yourself).
 
 ### `UnitClassBase(unit)`
 
