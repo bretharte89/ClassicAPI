@@ -232,6 +232,7 @@ build instructions.
   - [`C_Item.IsEquippedItem(item)`](#c_itemisequippeditemitem)
   - [`C_Item.IsItemDataCachedByID(item)` / `C_Item.IsItemDataCached(itemLocation)`](#c_itemisitemdatacachedbyiditem--c_itemisitemdatacacheditemlocation)
   - [`C_Item.IsItemGUIDInInventory(itemGUID)`](#c_itemisitemguidininventoryitemguid)
+  - [`C_Item.IsItemInRange(item, targetUnit)`](#c_itemisiteminrangeitem-targetunit)
   - [`C_Item.IsItemOpenable(itemLocation)`](#c_itemisitemopenableitemlocation)
   - [`C_Item.IsLocked(itemLocation)`](#c_itemislockeditemlocation)
   - [`C_Item.LockItem(itemLocation)`](#c_itemlockitemitemlocation)
@@ -5456,6 +5457,37 @@ C_Item.IsItemGUIDInInventory(
 Accepts the GUID string [`C_Item.GetItemGUID`](#c_itemgetitemguiditemlocation)
 / `UnitGUID` return; returns `false` for a malformed or zero GUID. To also
 cover the bank, use `C_Item.GetItemCount(itemID, true) > 0` instead.
+
+### `C_Item.IsItemInRange(item, targetUnit)`
+
+Returns `true` if the item is in range of `targetUnit`, `false` if out
+of range, and `nil` when the range check doesn't apply — the item has no
+on-use spell, its on-use spell is rangeless, or the item / unit can't be
+resolved. Matches retail, which likewise returns `nil` for items with no
+range restriction.
+
+`item` is an itemID, `"item:NNN"` string, or item link (item *names*
+aren't resolvable — vanilla has no name→ID map — and return `nil`).
+`targetUnit` is a unit token.
+
+```lua
+-- a targeted on-use item (net / bomb / thrown / targeted quest item):
+C_Item.IsItemInRange(itemID, "target")   -- true / false
+-- rangeless / self-use item:
+C_Item.IsItemInRange(118, "target")       -- Minor Healing Potion → nil
+```
+
+An item's range comes from the spell it fires on use, so this resolves
+the item to its on-use spell ([`C_Item.GetItemSpell`](#c_itemgetitemspellitem)'s
+spell) and runs the exact same range test as
+[`C_Spell.IsSpellInRange`](#c_spellisspellinrangespellidentifier-targetunit)
+— the two agree for the same underlying spell. Range-only like the spell
+version: it ignores line of sight and doesn't reject wrong-faction
+targets. Passive reader — an item not yet in the client item cache
+returns `nil` with no background fetch (items you'd range-check are
+normally in bags / on the action bar and already cached). Absent tokens
+(e.g. `"target"` with no target) return `nil`; a genuinely unrecognized
+token string raises a Lua error, same contract as `C_Spell.IsSpellInRange`.
 
 ### `C_Item.IsItemOpenable(itemLocation)`
 

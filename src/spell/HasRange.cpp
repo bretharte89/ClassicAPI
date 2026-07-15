@@ -23,57 +23,17 @@
 
 #include "Arg.h"
 #include "Lookup.h"
+#include "Range.h"
 
 #include "Game.h"
-#include "Offsets.h"
-#include "dbc/Lookup.h"
 
-#include <cstdint>
 #include <cstring>
 
 namespace Spell::HasRange {
 
-namespace {
-
-// Spell.dbc RangeIndex field — mirrors `Script_GetSpellInfo`'s
-// local constant. Future refactor: promote to `Offsets.h`.
-constexpr int OFF_SPELL_RANGE_INDEX = 0x90;
-
-// SpellRange.dbc record layout (verified, documented in CLAUDE.md
-// under "Sub-DBC record layouts"):
-//   +0x00 id, +0x04 minRange (float), +0x08 maxRange (float), ...
-constexpr int OFF_SPELLRANGE_MIN = 0x04;
-constexpr int OFF_SPELLRANGE_MAX = 0x08;
-
-bool SpellIDHasRange(int spellID) {
-    if (spellID <= 0)
-        return false;
-    const uint8_t *spellRec = DBC::Record(Offsets::VAR_SPELL_RECORDS,
-                                          Offsets::VAR_SPELL_RECORD_COUNT,
-                                          static_cast<uint32_t>(spellID));
-    if (spellRec == nullptr)
-        return false;
-    const uint32_t rangeIdx = *reinterpret_cast<const uint32_t *>(
-        spellRec + OFF_SPELL_RANGE_INDEX);
-    if (rangeIdx == 0)
-        return false;
-    const uint8_t *rangeRec = DBC::Record(Offsets::VAR_SPELL_RANGE_RECORDS,
-                                          Offsets::VAR_SPELL_RANGE_COUNT,
-                                          rangeIdx);
-    if (rangeRec == nullptr)
-        return false;
-    const float minRange = *reinterpret_cast<const float *>(
-        rangeRec + OFF_SPELLRANGE_MIN);
-    const float maxRange = *reinterpret_cast<const float *>(
-        rangeRec + OFF_SPELLRANGE_MAX);
-    return minRange > 0.0f || maxRange > 0.0f;
-}
-
-} // namespace
-
 static int __fastcall Script_C_Spell_SpellHasRange(void *L) {
     const int spellID = Spell::Arg::ResolveSpellID(L, 1);
-    Game::Lua::PushBool(L, SpellIDHasRange(spellID));
+    Game::Lua::PushBool(L, Spell::Range::SpellIDHasRange(spellID));
     return 1;
 }
 
@@ -94,7 +54,7 @@ static int __fastcall Script_SpellHasRange(void *L) {
             bookType = 1;
     }
     const int spellID = Spell::Lookup::SpellbookSlotToID(slot, bookType);
-    Game::Lua::PushBool(L, SpellIDHasRange(spellID));
+    Game::Lua::PushBool(L, Spell::Range::SpellIDHasRange(spellID));
     return 1;
 }
 
