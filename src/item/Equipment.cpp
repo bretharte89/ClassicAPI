@@ -14,6 +14,7 @@
 #include "Game.h"
 #include "Offsets.h"
 #include "item/Arg.h"
+#include "item/Cursor.h"
 #include "item/ID.h"
 #include "item/Location.h"
 #include "item/Swap.h"
@@ -181,8 +182,6 @@ int __fastcall Script_C_Item_EquipItemByName(void *L) {
     const bool hasDstSlot = Game::Lua::IsNumber(L, 2);
     const int dstSlot = hasDstSlot ? static_cast<int>(Game::Lua::ToNumber(L, 2)) : 0;
 
-    using ScriptFn_t = int(__fastcall *)(void *L);
-
     // Return any held cursor item to its slot BEFORE searching for
     // the target. FUN_INVENTORY_SWAP's end-of-call cleanup at
     // FUN_00495190(0, 1) clears LOCAL cursor globals but skips the
@@ -203,17 +202,16 @@ int __fastcall Script_C_Item_EquipItemByName(void *L) {
         return 0;
     }
 
-    // Auto-slot path: pickup the item via Script_PickupContainerItem
-    // (its state-machine handles spell-cast targeting / repair /
-    // enchant-scroll / etc., none of which we want to replicate), then
-    // call the engine's `CGPlayer::AutoEquipCursorItem` helper directly
-    // — `Script_AutoEquipCursorItem` is a thin wrapper that just
-    // resolves the local player and calls this with flag=0.
-    Game::Lua::SetTop(L, 0);
-    Game::Lua::PushNumber(L, static_cast<double>(found.bagID));
-    Game::Lua::PushNumber(L, static_cast<double>(found.slotIndex));
-    auto pickup = reinterpret_cast<ScriptFn_t>(Offsets::FUN_SCRIPT_PICKUP_CONTAINER_ITEM);
-    pickup(L);
+    // Auto-slot path: pick the item up onto the cursor, then call the
+    // engine's `CGPlayer::AutoEquipCursorItem` helper directly
+    // (`Script_AutoEquipCursorItem` is a thin wrapper that just resolves
+    // the local player and calls this with flag=0). The pickup goes through
+    // the shared `Item::Cursor::PickupBagItem`, which drives the engine's
+    // cursor primitive directly (no Script_PickupContainerItem stack-fake);
+    // its empty-cursor guard is satisfied by the ClearCursor above. Bail if
+    // the pickup didn't take (locked item / busy cursor) — nothing to equip.
+    if (!Item::Cursor::PickupBagItem(L, found.bagID, found.slotIndex))
+        return 0;
 
     using ResolveUnitToken_t = void *(__fastcall *)(const char *token);
     using AutoEquipCursor_t = void (__thiscall *)(void *player, int flag);
