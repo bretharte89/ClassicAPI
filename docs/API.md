@@ -3476,7 +3476,7 @@ local name, link, id = GameTooltip:GetItem()
 -- SetInventoryItem — full dressed link with enchant + random suffix
 GameTooltip:SetInventoryItem("player", INVSLOT_BACK)
 local name, link, id = GameTooltip:GetItem()
--- name = "Superior Cloak"
+-- name = "Superior Cloak of the Eagle"   -- decorated name, agrees with the link
 -- link = "|cff1eff00|Hitem:9805:247:843:0|h[Superior Cloak of the Eagle]|h|r"
 -- id   = 9805
 ```
@@ -4430,7 +4430,9 @@ the item's inventory type.
 `itemInfo` accepts the same shapes as
 [`C_Item.IsEquippedItem`](#c_itemisequippeditemitem) — itemID number,
 bare `"item:N"` string, full chat link, or a localized item name. Name
-matches are case-insensitive against the cached `m_name[0]`.
+matching is case-insensitive against each candidate's *decorated* name
+(random suffix included — a suffixed item matches its full name, not the
+base), the same shared predicate `C_Item.IsEquippedItem` uses.
 
 Returns nothing. Silently no-ops when:
 
@@ -4963,16 +4965,27 @@ after `GET_ITEM_INFO_RECEIVED`.
 
 ### `C_Item.GetItemName(itemLocation)` / `C_Item.GetItemNameByID(item)`
 
-Returns the cached display name as a string, or `nil` for empty /
-uncached / invalid inputs. Reads `m_name[0]` straight off the
-`ItemStats_C` cache record (`+0x08`) — no `GetItemInfo` round-trip.
+Returns the item's display name as a string, or `nil` for empty /
+uncached / invalid inputs.
 
-Cache miss on the `ByID` form returns `nil` and fires the cache fill
-so the next call (after `GET_ITEM_INFO_RECEIVED`) succeeds.
+The **location** form points at a live item instance, so it returns the
+*decorated* name — random suffix included (`"Iridium Chain of the Owl"`,
+not the base `"Iridium Chain"`) — built off the `CGItem` via the engine's
+own name builder, matching modern WoW and the bracketed name in
+[`C_Item.GetItemLink`](#c_itemgetitemlinkitemlocation). (It falls back to
+the base `ItemStats_C.m_name[0]` name if the instance build yields
+nothing.)
+
+The **ByID** form has no instance — an itemID can't carry a random suffix
+— so it returns the base `m_name[0]` name only. Cache miss on the `ByID`
+form returns `nil` and fires the cache fill so the next call (after
+`GET_ITEM_INFO_RECEIVED`) succeeds.
 
 ```lua
-local name = C_Item.GetItemName({bagID = 0, slotIndex = 1})
-local name = C_Item.GetItemNameByID(6948)   -- "Hearthstone"
+-- location form → decorated name (random suffix included)
+local name = C_Item.GetItemName({equipmentSlotIndex = 2})  -- "Iridium Chain of the Owl"
+-- ByID form → base name only (no instance → no suffix)
+local name = C_Item.GetItemNameByID(6948)                  -- "Hearthstone"
 ```
 
 ### `C_Item.GetItemQuality(itemLocation)` / `C_Item.GetItemQualityByID(item)`
@@ -5382,14 +5395,19 @@ short-circuits on the first match.
 | itemID | `2589` | exact `itemID` equality |
 | bare link | `"item:2589:0:0:0"` | parses the first numeric field |
 | chat link | `\124cffffffff\124Hitem:2589:0:0:0\124h[Linen Cloth]\124h\124r` | extracts itemID after `\124Hitem:` |
-| name | `"Linen Cloth"` | case-insensitive match against the cached `m_name[0]` of each equipped item |
+| name | `"Linen Cloth"` | case-insensitive match against each equipped item's *decorated* name (random suffix included) |
 
 Returns `false` (no Lua error) for invalid input — `nil`, empty string,
 or a string that doesn't parse as any of the above.
 
-The name-match path requires the candidate equipped item to be in the
-client item cache; equipped items are always cached, so this is a
-non-issue in practice.
+Name matching is against the item's **decorated** name: a random-suffix
+item matches only its full name (`"Krol Blade of the Bear"`), not the
+base (`"Krol Blade"`) — the same behavior as modern WoW (verified
+in-game). Unsuffixed items match their plain name. The candidate must be
+in the client item cache; equipped items always are, so that's a non-issue
+in practice. This match logic is shared with the by-name action APIs
+(`C_Item.UseItemByName` / `EquipItemByName`) — one predicate, one set of
+semantics.
 
 ```lua
 if C_Item.IsEquippedItem(2589) then
@@ -5707,8 +5725,9 @@ uses it. Returns nothing; silently no-ops when:
 `itemInfo` accepts the same shapes as
 [`C_Item.EquipItemByName`](#c_itemequipitembynameiteminfo--dstslot) —
 itemID number, bare `"item:N"` string, full chat link, or a localized
-item name. Name matches are case-insensitive against the cached
-`m_name[0]`.
+item name. Name matching is case-insensitive against each candidate's
+*decorated* name (random suffix included), the same shared predicate
+`C_Item.IsEquippedItem` uses.
 
 The optional `unit` argument is a unit token (`"player"`, `"target"`,
 `"focus"`, `"partyN"`, `"raidN"`, `"nameplateN"`, …) used as the cast
