@@ -96,6 +96,22 @@ bool FindByGUID(void *L, uint64_t guid, ByGUIDResult *out);
 // for link-decoration purposes. Stomps the Lua stack.
 bool FindByItemID(void *L, int itemID, ByGUIDResult *out);
 
+// Full detail for a bag slot, for callers that drive the engine's
+// cursor-pickup primitive — which needs the *container object* and the
+// engine *linear slot*, not just the CGItem.
+struct BagSlotDetail {
+    const uint8_t *container; // PackBagSlot container (invMgr for the backpack, else the bag)
+    int linearSlot;           // engine linear inventory slot
+    const uint8_t *item;      // CGItem at the slot, or null if the slot is empty
+};
+
+// Resolves `(bagID, slotIndex)` to its `BagSlotDetail`. Returns false when
+// the coordinates don't resolve (bad bag / out-of-range slot); a resolved
+// but empty slot returns true with `out->item == nullptr`. Stomps the Lua
+// stack (PackBagSlot). `ResolveBag`/`ResolveBagSlot` are thin wrappers that
+// keep only `out->item`.
+bool ResolveBagSlotDetail(void *L, int bagID, int slotIndex, BagSlotDetail *out);
+
 } // namespace Item::Location
 
 // Forward-declare for `FindByArgInBags` below.
@@ -124,6 +140,14 @@ bool MatchesArg(const uint8_t *cgItem, const Item::Arg::Resolved &arg);
 // equipment in the candidate pool (the engine doesn't equip-from-
 // equipped or use-from-equipped; the item has to be in bags first).
 bool FindByArgInBags(void *L, const Item::Arg::Resolved &arg, ByGUIDResult *out);
+
+// Like `FindByArgInBags` but searches **equipment (1..19) first, then
+// bags** — for callers that act on an item wherever it's carried (e.g.
+// `C_Item.PickupItem`). On hit `out->equipmentSlotIndex` is non-zero for
+// an equipped match, else `out->bagID`/`out->slotIndex` for a bag match.
+// `FindByItemID` is the itemID-only specialization of this. Stomps the
+// Lua stack.
+bool FindByArg(void *L, const Item::Arg::Resolved &arg, ByGUIDResult *out);
 
 // Parses the `"0xHHHHHHHHLLLLLLLL"` GUID string format
 // `C_Item.GetItemGUID` returns. Strict: requires exactly `0x` prefix

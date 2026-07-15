@@ -45,6 +45,8 @@
 // `CursorHasItem` / engine `PickupX` calls when they need to detect
 // that.
 
+#include "cursor/Info.h"
+
 #include "Game.h"
 #include "Offsets.h"
 #include "item/ID.h"
@@ -272,5 +274,10 @@ void RegisterLuaFunctions() {
 const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
 
 } // namespace
+
+bool HasItem() {
+    return ReadVar(Offsets::VAR_CURSOR_ITEM_GUID_LO) != 0 ||
+           ReadVar(Offsets::VAR_CURSOR_ITEM_GUID_HI) != 0;
+}
 
 } // namespace Cursor::Info

@@ -1595,6 +1595,17 @@ enum Offsets {
     // an item, swaps with the bag slot). Used by `EquipItemByName` to
     // pick up the source item before dispatching to the equip helpers.
     FUN_SCRIPT_PICKUP_CONTAINER_ITEM = 0x004F9B30,
+    // Container-content cursor-pickup PRIMITIVE — the plain-pickup branch
+    // inside `Script_PickupContainerItem`'s state machine, called directly
+    // (no Lua stack, no state-machine modes).
+    //   void __fastcall(uint linearSlot, int count, uint itemGuidLo,
+    //                   uint itemGuidHi, uint containerGuidLo,
+    //                   uint containerGuidHi, int flag)
+    // Self-resolves the player, sets the cursor-state globals
+    // (VAR_CURSOR_ITEM_GUID_*, cursor type = 1) and fires the cursor-update
+    // event itself. Does NOT apply the cursor-empty / item-lock guards the
+    // Script wrapper does — callers replicate those (Item::Cursor::PickupBagItem).
+    FUN_CURSOR_PICKUP_ITEM = 0x00494B60,
     // `CGItem::UseItem` — the engine's actual "use this item" primitive.
     // It's the fallback dispatch in `Script_UseContainerItem` (the call
     // site at 0x004FA430 after every special-cursor-mode branch is
@@ -4205,6 +4216,15 @@ enum Offsets {
     // assemble the pickup→equip chain for each set item.
     FUN_SCRIPT_CLEAR_CURSOR = 0x004895B0,
     FUN_SCRIPT_PICKUP_INVENTORY_ITEM = 0x004C8DA0,
+    // Equipment/bag-slot pickup PRIMITIVE behind Script_PickupInventoryItem
+    // (`FUN_004C8DA0` is just `FUN_004C7300(arg - 1)`). Called directly:
+    //   void __fastcall(uint slot0Based)
+    // Self-contained — resolves the player, applies its own cursor/lock
+    // guards, and handles the drop case (slot == 0xFFFFFFFF). Covers the
+    // 0-based equipment (0..18) and equipped-bag (19..22) slots; container
+    // contents go through FUN_CURSOR_PICKUP_ITEM instead. Modern
+    // `equipmentSlotIndex` is 1-based, so pass `equipmentSlotIndex - 1`.
+    FUN_PICKUP_INVENTORY_SLOT = 0x004C7300,
 
     // Bag-update fire sites — see TODO #67 for the full Ghidra
     // investigation. Hook these three to detect BAG_UPDATE fires and
