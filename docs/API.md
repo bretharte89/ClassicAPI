@@ -227,6 +227,7 @@ build instructions.
   - [`C_Item.GetItemUniqueness(itemLocation)` / `C_Item.GetItemUniquenessByID(item)`](#c_itemgetitemuniquenessitemlocation--c_itemgetitemuniquenessbyiditem)
   - [`C_Item.GetStackCount(itemLocation)`](#c_itemgetstackcountitemlocation)
   - [`C_Item.IsBound(itemLocation)`](#c_itemisbounditemlocation)
+  - [`IsConsumableItem(item)` / `C_Item.IsConsumableItem(item)`](#isconsumableitemitem--c_itemisconsumableitemitem)
   - [`C_Item.IsEquippableItem(item)`](#c_itemisequippableitemitem)
   - [`IsUsableItem(item)` / `C_Item.IsUsableItem(item)`](#isusableitemitem--c_itemisusableitemitem)
   - [`C_Item.IsEquippedItem(item)`](#c_itemisequippeditemitem)
@@ -5314,6 +5315,36 @@ if C_Item.IsBound({equipmentSlotIndex = INVSLOT_HEAD}) then ... end
 if C_Item.IsBound({bagID = 0, slotIndex = 1}) then ... end
 if C_Item.IsBound(itemGUID) then ... end
 ```
+
+### `IsConsumableItem(item)` / `C_Item.IsConsumableItem(item)`
+
+Returns `true` if the item is a consumable, `false` otherwise. An item
+counts as consumable when its **class is `Consumable` (0)** *or* its
+**inventory type is `INVTYPE_AMMO` (24) or `INVTYPE_THROWN` (25)** — ammo
+and thrown weapons being consumed in use. Registered as both the bare
+global and the namespaced `C_Item` form, like `IsUsableItem`.
+
+`item` is an itemID number or `"item:N..."` link. Item names aren't
+accepted (vanilla has no name→ID resolver). Returns `false` for uncached
+items (no async load fired) — same cache contract as
+`C_Item.IsEquippableItem`.
+
+```lua
+IsConsumableItem(118)              -- Minor Healing Potion → true  (class Consumable)
+C_Item.IsConsumableItem(1251)     -- Linen Bandage → true          (class Consumable)
+C_Item.IsConsumableItem(2512)     -- Rough Arrow → true            (INVTYPE_AMMO)
+C_Item.IsConsumableItem(6948)     -- Hearthstone → false
+C_Item.IsConsumableItem(18820)    -- Talisman of Ephemeral Power → false (on-use trinket)
+```
+
+This is a class/ammo check, **not** a "has a usable effect" check.
+3.3.5's `IsConsumableItem` walked the item's on-use spells and returned
+true for any with a real effect (which would include on-use trinkets),
+but that heuristic didn't survive into the modern client: verified in-game
+that an on-use trinket with a numeric `Use:` effect (Talisman of Ephemeral
+Power) returns `false`, while class-`Consumable` items (potions, bandages,
+the class-0 "Faintly Glowing Skull") and ammo return `true`. We match the
+modern contract.
 
 ### `C_Item.IsEquippableItem(item)`
 
