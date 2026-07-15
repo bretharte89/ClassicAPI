@@ -220,24 +220,19 @@ static int __fastcall Script_GameTooltipGetItem(void *L) {
             const char *link = Item::Link::FromCGItem(
                 static_cast<const uint8_t *>(cgItem));
             if (link != nullptr && *link != '\0') {
-                // Engine's link builder also writes the dressed
-                // (random-suffixed) name into the link's `[Name]`
-                // slot; pull it out by reading the cached base name
-                // for the return value. The engine doesn't expose
-                // the dressed name as a separate string, so we
-                // return the base name — matches modern semantics
-                // where (name, link) name is the cached display name
-                // and the link is the full hyperlink.
-                const uint8_t *record = PeekItemRecord(static_cast<uint32_t>(itemID));
-                if (record != nullptr) {
-                    const char *name = *reinterpret_cast<const char *const *>(
-                        record + Offsets::OFF_ITEMSTATS_NAME);
-                    if (name != nullptr && *name != '\0') {
-                        Game::Lua::PushString(L, name);
-                        Game::Lua::PushString(L, link);
-                        Game::Lua::PushNumber(L, static_cast<double>(itemID));
-                        return 3;
-                    }
+                // Return the dressed (random-suffixed) name the engine
+                // wrote into the link's `[Name]` slot — built off the same
+                // CGItem via Item::Link::NameFromCGItem — so the returned
+                // name agrees with the link ("Iridium Chain of the Owl",
+                // not the base "Iridium Chain") and matches modern
+                // GameTooltip:GetItem() on suffixed items.
+                char name[128];
+                if (Item::Link::NameFromCGItem(
+                        static_cast<const uint8_t *>(cgItem), name, sizeof(name))) {
+                    Game::Lua::PushString(L, name);
+                    Game::Lua::PushString(L, link);
+                    Game::Lua::PushNumber(L, static_cast<double>(itemID));
+                    return 3;
                 }
             }
         }

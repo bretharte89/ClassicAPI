@@ -27,6 +27,9 @@ namespace {
 
 using BuildItemLink_t = const char *(__fastcall *)(const void *cgItem);
 
+using BuildInstanceName_t = void(__thiscall *)(const void *cgItem, char *out,
+                                               unsigned outSize);
+
 // Cached ItemStats record lookup. Same `_GetRecord` pattern the rest of
 // the codebase uses; passes a noop NULL callback so no SMSG fires for
 // uncached items — caller treats "not cached" as a clean failure.
@@ -48,6 +51,16 @@ const char *FromCGItem(const uint8_t *cgItem) {
         return nullptr;
     auto fn = reinterpret_cast<BuildItemLink_t>(Offsets::FUN_GAMETOOLTIP_BUILD_ITEM_LINK);
     return fn(cgItem);
+}
+
+bool NameFromCGItem(const uint8_t *cgItem, char *out, size_t outSize) {
+    if (cgItem == nullptr || out == nullptr || outSize == 0)
+        return false;
+    out[0] = '\0';
+    auto fn = reinterpret_cast<BuildInstanceName_t>(
+        Offsets::FUN_ITEM_BUILD_INSTANCE_NAME);
+    fn(cgItem, out, static_cast<unsigned>(outSize));
+    return out[0] != '\0';
 }
 
 bool BasicFromItemID(uint32_t itemID, char *out, size_t outSize) {

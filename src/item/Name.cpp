@@ -16,6 +16,7 @@
 #include "item/Arg.h"
 #include "item/Data.h"
 #include "item/ID.h"
+#include "item/Link.h"
 #include "item/Location.h"
 
 #include <cstdint>
@@ -56,27 +57,13 @@ int PushNameForItemID(void *L, int itemID) {
     return 1;
 }
 
-// Engine's per-instance item-name builder: `__thiscall(CGItem *this,
-// char *outBuf, uint outSize)`. Reads the instance's random-suffix ID off
-// the descriptor (+0x98) and writes the decorated display name
-// ("Ethereum Torque of the Sorcerer"), or the base name when there's no
-// suffix. Same builder the item-link builder uses for the bracketed name,
-// so this matches `GetItemLink`'s name and modern `C_Item.GetItemName`.
-using BuildInstanceName_t = void(__thiscall *)(const void *cgItem, char *out,
-                                               unsigned outSize);
-
-// Pushes the suffix-decorated display name for a resolved `CGItem`.
-// Returns 0 (pushes nothing) for a null item or an empty build result,
-// so the caller can fall back to the base-name-by-itemID path.
+// Pushes the suffix-decorated display name for a resolved `CGItem` via
+// the shared engine name builder. Returns 0 (pushes nothing) for a null
+// item or an empty build result, so the caller can fall back to the
+// base-name-by-itemID path.
 int PushInstanceName(void *L, const uint8_t *cgItem) {
-    if (cgItem == nullptr)
-        return 0;
     char buf[128];
-    buf[0] = '\0';
-    auto fn = reinterpret_cast<BuildInstanceName_t>(
-        Offsets::FUN_ITEM_BUILD_INSTANCE_NAME);
-    fn(cgItem, buf, sizeof(buf));
-    if (buf[0] == '\0')
+    if (!Item::Link::NameFromCGItem(cgItem, buf, sizeof(buf)))
         return 0;
     Game::Lua::PushString(L, buf);
     return 1;

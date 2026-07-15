@@ -29,6 +29,17 @@ namespace Item::Link {
 // produce for the same slot.
 const char *FromCGItem(const uint8_t *cgItem);
 
+// Writes the item's per-instance decorated *display name* into `out` —
+// the same `[Name]` the engine stamps into `FromCGItem`'s link, e.g.
+// "Iridium Chain of the Owl" (or the base name when the instance carries
+// no random suffix). Reads the suffix ID off the CGItem descriptor
+// (`+0x98`) and formats it through the engine's own name builder
+// (`FUN_ITEM_BUILD_INSTANCE_NAME`). Returns false (and leaves `out`
+// empty) for a null item or an empty build result, so callers can fall
+// back to the base ItemStats name. Use whenever a name is returned
+// alongside a `FromCGItem` link, so the two agree.
+bool NameFromCGItem(const uint8_t *cgItem, char *out, size_t outSize);
+
 // Builds a basic itemID-only hyperlink (`"|cffRRGGBB|Hitem:N:0:0:0|h[Name]|h|r"`)
 // into `out` from the cached ItemStats record for `itemID`. No
 // enchant / random-suffix decoration — use this when the caller has
