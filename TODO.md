@@ -3615,3 +3615,203 @@ vs. any hidden fixed-30 assumption elsewhere; and that the Lua-created
 lines inherit height/spacing identical to the template's 1..30 so the
 tooltip grows seamlessly. Both are observable on the first >30-line
 hover.
+
+## 98. `UnitThreatSituation` / `UnitDetailedThreatSituation` / `GetThreatStatusColor` — NOT FEASIBLE in a client DLL
+
+Modern (WotLK+) exposes three threat APIs:
+[`UnitThreatSituation`](https://warcraft.wiki.gg/wiki/API_UnitThreatSituation)
+(unit → 0..3 aggro status),
+[`UnitDetailedThreatSituation`](https://warcraft.wiki.gg/wiki/API_UnitDetailedThreatSituation)
+(isTanking, status, threatPct, rawThreatPct, threatValue), and
+[`GetThreatStatusColor`](https://warcraft.wiki.gg/wiki/API_GetThreatStatusColor)
+(status → RGB). None of them can be backed by ClassicAPI, because
+**the underlying data does not exist on the 1.12 client** — not in a
+form a DLL can read, and not by any amount of RE.
+
+### Threat is 100% server-authoritative in vanilla; no threat opcode exists
+
+Vanilla 1.12's threat lives entirely inside the server's
+`ThreatManager` (per-creature `ThreatList` of `HostileReference`s —
+see Turtle's
+[`src/game/Threat/ThreatManager.cpp`](C:\Git\turtle-wow\Dumps\Source%20Code\16%20-%20Development_server\patch_1172\src\game\Threat\ThreatManager.cpp)).
+The 3.3.5 client can show a threat meter because WotLK added
+`SMSG_THREAT_UPDATE` / `SMSG_HIGHEST_THREAT_UPDATE` (and the client
+keeps a per-unit threat table those packets feed). **1.12 has no such
+opcode** — the protocol never transmits per-unit threat values, so
+there is nothing in client memory to read. This is the same class of
+limitation as `C_QuestLog.IsQuestFlaggedCompleted` (TODO #1): the
+client simply isn't told. Unlike cast timing (TODO #91, recoverable
+from `SMSG_SPELL_START`) or aura casters (recoverable from
+`SMSG_SPELL_GO`), there is **no incidental packet** that leaks threat
+either — the server computes tanking/aggro decisions internally and
+broadcasts none of the numbers.
+
+### How Turtle actually does it — a *server-side* addon-channel protocol
+
+TWThreat (`C:\WoW\Octo\Interface\Addons\TWThreat`) is not reading
+client memory; it round-trips through a **custom server patch**:
+
+1. Client → server: the addon `SendAddonMessage("TWT_UDTSv4"[.._TM],
+   "limit=NN", "PARTY"/"RAID")` — a normal `CMSG_MESSAGECHAT` addon
+   message (`TWThreat.lua:1207` `TWT.UnitDetailedThreatSituation`).
+2. Server intercepts the prefix in
+   [`ChatHandler.cpp:1051`](turtle-wow\Dumps\Source%20Code\16%20-%20Development_server\patch_1172\src\game\Handlers\ChatHandler.cpp)
+   (`strstr(msg, "TWT_UDTSv4")`), validates
+   `GetSelectedCreature()->CanHaveThreatList()`, and calls
+   `ThreatManager::UnitDetailedThreatSituation(creature, player, limit,
+   tankMode)`.
+3. That serializer (`ThreatManager.cpp:441`) walks the real
+   `getThreatList()` and builds a `TWTv4=name:pct:threat;…` string,
+   then `SendAddonMessage`s it back.
+4. Client parses it in `CHAT_MSG_ADDON` → `TWT.handleThreatPacket`
+   (`TWThreat.lua:790`).
+
+Every threat number the meter shows originated on the server and was
+put on the wire by a server-side code change ClassicAPI has no
+counterpart to. A client DLL cannot manufacture data the server never
+sends.
+
+### Even where a server *does* expose it, the transport is async
+
+The Turtle path is a request/response over the addon chat channel —
+fundamentally asynchronous (poll on `OnUpdate`, handle the reply on a
+later frame). It cannot back a **synchronous** `UnitThreatSituation()`
+that returns a value in the same call, which is exactly why TWThreat is
+structured around events and a cached `TWT.threats` table rather than a
+blocking query. A ClassicAPI shim would at best have to fake a
+synchronous return from a stale cache, and the cache only exists if a
+Turtle-style server is feeding it — i.e. the shim would add nothing the
+addon isn't already doing in Lua.
+
+### `GetThreatStatusColor` is the only client-pure piece — and it's trivial Lua
+
+`GetThreatStatusColor(status)` is just a fixed 0..3 → RGB map (grey /
+yellow / orange / red); no engine data involved. But it's meaningless
+without a real `status` to feed it, and it's a two-line Lua table
+lookup — no reason to spend a DLL global on it. If we ever ship a
+threat polyfill it belongs beside the (Lua, server-dependent) status
+source, not in the DLL.
+
+**Verdict:** skip all three. The data is server-only with no vanilla
+opcode, the only working implementation (Turtle) is a server patch plus
+an async addon-channel protocol that lives correctly in Lua, and the
+one client-pure function is a trivial color table. Nothing here is a
+client-DLL problem.
+
+### If we synthesized it anyway
+
+"Can't read it" and "can't estimate it" are separate claims. We can't
+read threat (above); *estimating* it is possible, but it splits into two
+tiers, and neither one is a DLL feature.
+
+**Tier 1 — client-only proxy from the mob's target (small, honest,
+nearly useless).** The one threat-correlated fact vanilla *does* sync to
+the client is the creature's current target (`UNIT_FIELD_TARGET` in the
+descriptor — the same field `"<mob>target"` / `targettarget` reads). A
+mob attacks its highest-threat valid target, so `mobTarget == unit` ≈
+"unit is tanking". That yields:
+
+- `UnitThreatSituation(unit, mob)` → `3` when the mob targets `unit`,
+  else `nil`. It **cannot** produce `1` ("higher than tank, about to
+  pull") or distinguish `2` from `3` — those are numeric comparisons and
+  we have no numbers.
+- `UnitDetailedThreatSituation` → `isTanking` only; `status` degenerate,
+  `threatpct` / `rawthreatpct` / `threatvalue` all unavailable.
+- Laggy: it changes only when the mob switches target (a descriptor
+  update), so it *trails* real threat and gives zero predictive warning
+  — the entire reason a threat meter exists.
+
+This needs no DLL: `UnitIsUnit("<mob>target", unit)` already does it in
+pure Lua. Shipping it under the real API names would be actively
+misleading (callers expect the 0–3 gradient plus percentages), so it's
+not worth it even as a stub.
+
+**Tier 2 — a real threat model (accurate-ish, huge, cooperative, ~95%
+Lua).** This is what KTM / KLHThreatMeter / vanilla-Omen actually do, and
+the only synthesis that fills the percentage/prediction dimensions the
+API is *for*:
+
+1. **Model your own threat.** Parse your outgoing combat events and
+   convert them to threat via a per-spell coefficient database (damage ≈
+   1 threat per point, healing ≈ 0.5/HP applied to *every* mob in combat,
+   flat-threat abilities like Sunder Armor / Demo Shout, per-spell
+   bonus/penalty coefficients), then apply your active multipliers —
+   stance/form (Defensive 1.3×, Berserker 0.8×, Bear/Cat), Righteous Fury
+   (+Holy threat), Blessing of Salvation (0.7×), threat-reduction
+   trinkets — and handle the sets/wipes: taunt (sets you to current top),
+   Feign Death, Vanish, Fade, Cower.
+2. **Broadcast** your per-mob estimate over `SendAddonMessage` and
+   **aggregate** everyone else's broadcasts into a per-mob table.
+3. Derive `isTanking` / `status` / the percentages by comparing each
+   member to the current tank against the **110% melee / 130% ranged**
+   pull threshold — the exact constants both Turtle's server serializer
+   (`ThreatManager.cpp:494`, `threatValue*100 / (tankThreat * (isMelee ?
+   1.1 : 1.3))`) and TWThreat's client fallback (`TWThreat.lua:932`)
+   use. Worth stealing verbatim so a synthesized `threatpct` lines up
+   with what real-threat clients show.
+
+Why it isn't ours to build:
+
+- The coefficient DB is **game-knowledge, not in the binary** — you
+  cannot RE it out of the client; it's the classic hand-maintained
+  Threat-1.0/KTM data. The parsing, broadcast, and aggregation are all
+  Lua. The talent/aura/stance *inputs* are already exposed by existing
+  ClassicAPI functions (`GetTalentInfo`, the aura APIs, `IsPlayerSpell`,
+  the spell-mod reads). **None of it is a client-DLL problem.**
+- **Cooperative-only.** You can precisely model only members running the
+  same addon and broadcasting; a non-participating tank is invisible (the
+  original KTM caveat). The intuitive objection — "I can see everyone's
+  damage in the combat log, why can't I model them from one client?" —
+  fails for three compounding reasons, none liftable by the DLL:
+  1. **You don't actually see everyone's events.** Vanilla's combat log
+     is visibility/range-gated — the server only broadcasts combat events
+     for units near you, not the whole raid. A stacked 5-man logs most of
+     it (so a single-observer model degrades *gracefully* in dungeons); a
+     spread 40-man leaves you blind to the ranged camp, the back-line
+     healers, anyone outside your bubble. The DLL can't recover these —
+     the server never sends the packets, so there's nothing to hook.
+  2. **Threat ≠ damage, and the missing factor is hidden.** Threat is
+     `damage × stance × talents × buffs`, not 1:1. The talent factor
+     (Defiance, Subtlety, Feral Instinct, Shadow Affinity, Frost
+     Channeling — the passive threat-mod talents) is **unreadable for
+     other players in vanilla**; there's no inspect path to it. Stance /
+     Blessing of Salvation / Fade are at least observable auras when the
+     unit is in range, but talents are pure hidden state, so an observer
+     can't derive a stranger's coefficient from their damage.
+  3. **Much threat has no attributable log line.** In-combat healing
+     generates threat on *every* mob the healer is engaged with (not the
+     mob the heal touched); buffs / HoTs / PW:Fortitude, flat-threat
+     abilities, and pet threat either don't appear in the log or can't be
+     pinned to the right mob from a single line.
+
+  Broadcasting sidesteps all three because each client computes threat
+  from *private, authoritative* knowledge — its own exact casts, its own
+  talents, its own active stance/buffs — then shares the finished number.
+  The Tier-1 mob-target read is worth keeping here *only* as a cross-check
+  — it reveals who actually holds aggro regardless of who's broadcasting.
+- **It's an estimate that drifts.** Addon threat models desync from the
+  server's true numbers (rounding, unmodeled effects, out-of-range or
+  missed events). That drift is precisely why Blizzard later added
+  `SMSG_THREAT_UPDATE` and why Turtle chose a server serializer over
+  blessing an addon guess.
+
+**The only DLL-shaped angle — and it's an *input*, not threat.** The one
+place a DLL beats Lua is the feed: vanilla's combat log is localized text
+keyed by unit *name* (ambiguous with duplicate names, breaks per-locale).
+Hooking the damage/heal packet handlers (`SMSG_SPELLNONMELEEDAMAGELOG`,
+`SMSG_ATTACKERSTATEUPDATE`, `SMSG_PERIODICAURALOG`) to emit precise,
+GUID-keyed, unlocalized damage/heal events would make any Lua threat
+model far more robust. But (a) that's a **separate feature** — a
+`COMBAT_LOG_EVENT`-style feed, useful well beyond threat — that should be
+filed on its own merits; (b) it still only *feeds* the Lua model — threat
+stays an estimate, computed cooperatively in Lua; and (c) on the actual
+target environment SuperWoW already exposes GUID-keyed combat info +
+`UNIT_CASTEVENT`, so even this niche is largely pre-filled.
+
+**Bottom line on synthesis:** Tier 1 is a Lua one-liner too degenerate to
+wear the API's name; Tier 2 is a full KTM/Omen reimplementation that is
+almost entirely Lua data + logic, cooperative-only, and inherently an
+estimate. Anyone who wants vanilla threat should run an existing threat
+addon. ClassicAPI's only worthwhile contribution in this space is an
+unrelated precise-combat-log event feed — filed as its own thing, not as
+"threat".
