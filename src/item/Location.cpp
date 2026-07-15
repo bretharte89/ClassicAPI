@@ -18,6 +18,7 @@
 #include "../guid/Guid.h"
 #include "Arg.h"
 #include "ID.h"
+#include "Link.h"
 
 #include <cstring>
 
@@ -186,6 +187,25 @@ bool FindByItemID(void *L, int itemID, ByGUIDResult *out) {
     return false;
 }
 
+bool MatchesArg(const uint8_t *cgItem, const Item::Arg::Resolved &arg) {
+    const int id = Item::ID::FromCGItem(cgItem);
+    if (id == 0)
+        return false;
+    if (arg.itemID > 0)
+        return id == arg.itemID;
+    if (arg.name == nullptr)
+        return false;
+    // Compare against the item's *decorated* display name (random suffix
+    // included) — modern IsEquippedItem / find-by-name match the full name
+    // only ("Foo of the Owl", not the base "Foo"; verified on the modern
+    // client). NameFromCGItem falls back to the base name for unsuffixed
+    // items, so plain items still match; uncached/unnameable → no match.
+    char name[128];
+    if (!Item::Link::NameFromCGItem(cgItem, name, sizeof(name)))
+        return false;
+    return _stricmp(name, arg.name) == 0;
+}
+
 bool FindByArgInBags(void *L, const Item::Arg::Resolved &arg, ByGUIDResult *out) {
     if (arg.itemID <= 0 && arg.name == nullptr)
         return false;
@@ -196,23 +216,8 @@ bool FindByArgInBags(void *L, const Item::Arg::Resolved &arg, ByGUIDResult *out)
             auto *item = ResolveBag(L, bagID, slotIndex);
             if (item == nullptr)
                 continue;
-
-            const int id = Item::ID::FromCGItem(item);
-            if (id == 0)
+            if (!MatchesArg(item, arg))
                 continue;
-
-            if (arg.itemID > 0) {
-                if (id != arg.itemID)
-                    continue;
-            } else {
-                auto *record = PeekItemRecord(static_cast<uint32_t>(id));
-                if (record == nullptr)
-                    continue;
-                const char *name = *reinterpret_cast<const char *const *>(
-                    record + Offsets::OFF_ITEMSTATS_NAME);
-                if (name == nullptr || _stricmp(name, arg.name) != 0)
-                    continue;
-            }
 
             out->equipmentSlotIndex = 0;
             out->bagID = bagID;

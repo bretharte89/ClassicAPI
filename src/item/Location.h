@@ -103,10 +103,19 @@ namespace Item::Arg { struct Resolved; }
 
 namespace Item::Location {
 
+// The single item name/id match predicate: true if `cgItem` satisfies
+// the resolved arg. `arg.itemID > 0` ⇒ exact itemID compare; otherwise
+// `arg.name` is matched case-insensitively against the item's *decorated*
+// display name (random suffix included — via `Item::Link::NameFromCGItem`,
+// which falls back to the base name for unsuffixed items). Matches modern
+// `IsEquippedItem` / by-name semantics: "Foo of the Owl" matches, the base
+// "Foo" does not. Null / uncached / unnameable items → false. Shared by
+// `FindByArgInBags` and `C_Item.IsEquippedItem` so the match logic lives
+// in exactly one place.
+bool MatchesArg(const uint8_t *cgItem, const Item::Arg::Resolved &arg);
+
 // Walks the player's bags (0..4 only — no equipment) looking for the
-// first item matching `arg`. `arg.itemID > 0` ⇒ direct ID compare;
-// otherwise `arg.name` is matched case-insensitively against the
-// cached `ItemStats_C.m_name[0]` of each candidate. On hit, populates
+// first item matching `arg` (via `MatchesArg`). On hit, populates
 // `out->bagID` / `out->slotIndex` / `out->item` and sets
 // `equipmentSlotIndex = 0`. Stomps the Lua stack.
 //

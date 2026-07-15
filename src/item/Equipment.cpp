@@ -19,7 +19,6 @@
 #include "item/Swap.h"
 
 #include <cstdint>
-#include <string.h>
 
 namespace Item::Equipment {
 
@@ -132,31 +131,13 @@ int __fastcall Script_C_Item_IsEquippedItem(void *L) {
         return 1;
     }
 
+    // Equipment-first walk; itemID or decorated-name match via the shared
+    // `Item::Location::MatchesArg` predicate (same logic the bag find-by-
+    // name uses, so match semantics live in one place).
     for (int slot = Offsets::EQUIPMENT_SLOT_FIRST; slot <= Offsets::EQUIPMENT_SLOT_LAST; ++slot) {
         auto *item = Item::Location::ResolveEquipmentSlot(slot);
         if (item == nullptr) continue;
-
-        const int id = Item::ID::FromCGItem(item);
-        if (id == 0) continue;
-
-        if (arg.itemID > 0) {
-            if (id == arg.itemID) {
-                Game::Lua::PushBoolean(L, 1);
-                return 1;
-            }
-            continue;
-        }
-
-        // Name-match path — peek the item-cache record and compare
-        // `m_name[0]`. Uncached items short-circuit to "no match"
-        // rather than firing a load; matches modern API semantics
-        // (sync call, possibly stale, never blocks).
-        auto *record = PeekItemRecord(static_cast<uint32_t>(id));
-        if (record == nullptr) continue;
-        const char *name = *reinterpret_cast<const char *const *>(
-            record + Offsets::OFF_ITEMSTATS_NAME);
-        if (name == nullptr) continue;
-        if (_stricmp(name, arg.name) == 0) {
+        if (Item::Location::MatchesArg(item, arg)) {
             Game::Lua::PushBoolean(L, 1);
             return 1;
         }
