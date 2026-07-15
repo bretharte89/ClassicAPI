@@ -287,6 +287,18 @@ enum Offsets {
     // the item isn't in the player's bag/equipment.
     FUN_GAMETOOLTIP_BUILD_ITEM_LINK = 0x0052AE00,
 
+    // CGItem → decorated instance display name. __thiscall(ecx = CGItem *,
+    // char *outBuf, uint outSize). Reads the instance's random-suffix ID
+    // off the descriptor (+0x98, gated on the broken flag) and writes the
+    // plain — uncolored, unbracketed — display name into outBuf:
+    // "Ethereum Torque of the Sorcerer" when a suffix is present, the base
+    // ItemStats name otherwise (via the item cache + ItemRandomProperties
+    // localized suffix at record +0x1c). This is the inner name builder
+    // FUN_GAMETOOLTIP_BUILD_ITEM_LINK wraps in brackets, so the name it
+    // produces matches GetItemLink's bracketed name and modern
+    // C_Item.GetItemName exactly. Inner formatter FUN_005D8B00.
+    FUN_ITEM_BUILD_INSTANCE_NAME = 0x005D8BC0,
+
     // Engine's inventory swap-and-send. Same primitive
     // `Script_EquipCursorItem` (0x00489660) uses after the cursor's
     // source location has been resolved. Sends opcode 0x10D
