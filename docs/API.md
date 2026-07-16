@@ -238,6 +238,7 @@ build instructions.
   - [`C_Item.IsLocked(itemLocation)`](#c_itemislockeditemlocation)
   - [`C_Item.LockItem(itemLocation)`](#c_itemlockitemitemlocation)
   - [`C_Item.LockItemByGUID(itemGUID)`](#c_itemlockitembyguiditemguid)
+  - [`C_Item.PickupItem(itemInfo)`](#c_itempickupitemiteminfo)
   - [`C_Item.RequestLoadItemDataByID(item)` / `C_Item.RequestLoadItemData(itemLocation)`](#c_itemrequestloaditemdatabyiditem--c_itemrequestloaditemdataitemlocation)
   - [`C_Item.UnlockAllItems()`](#c_itemunlockallitems)
   - [`C_Item.UnlockItem(itemLocation)`](#c_itemunlockitemitemlocation)
@@ -5634,6 +5635,47 @@ C_Item.LockItemByGUID(guid)
 
 Same caveats as `LockItem` — purely client-side, doesn't affect any
 real engine transaction state.
+
+### `C_Item.PickupItem(itemInfo)`
+
+Finds the item matching `itemInfo` and picks it up onto the cursor —
+the C-side equivalent of clicking it. From there the held item can be
+dropped into a bag/equipment slot, deleted (`DeleteCursorItem`), sold
+at a merchant, etc.
+
+`itemInfo` accepts the same shapes as
+[`C_Item.EquipItemByName`](#c_itemequipitembynameiteminfo--dstslot) —
+itemID number, bare `"item:N"` string, full chat link, or a localized
+item name (matched case-insensitively against each candidate's
+*decorated* name, random suffix included). Unlike the by-name equip/use
+functions, the search covers **equipment (slots 1..19, checked first)
+and then bags (0..4)**, so `PickupItem` picks up a worn item as readily
+as a bagged one.
+
+Returns nothing. Silently no-ops when:
+
+- the input is `nil`, an empty string, or otherwise unparseable
+- no matching item is found in equipment or bags
+- the cursor is already holding something (`CursorHasItem()` is true)
+- the matched item is locked (mid-transaction)
+
+Drives the engine's cursor primitives directly — the paperdoll-slot
+pickup (`FUN_004C7300`) for an equipped match, the container pickup
+(`FUN_00494B60` + client-side item lock) for a bag match — not the Lua
+`PickupInventoryItem` / `PickupContainerItem` globals. Same shared
+`Item::Cursor` wrappers `EquipItemByName`'s auto-slot path uses.
+
+```lua
+-- Pick up a bagged item by name, then drop it into the off-hand slot:
+C_Item.PickupItem("Linen Cloth")
+PickupInventoryItem(17)  -- or EquipCursorItem(), etc.
+
+-- Pick up a worn item by ID (unequips onto the cursor):
+C_Item.PickupItem(2589)
+
+-- From a chat link:
+C_Item.PickupItem(itemLink)
+```
 
 ### `C_Item.RequestLoadItemDataByID(item)` / `C_Item.RequestLoadItemData(itemLocation)`
 
