@@ -282,6 +282,7 @@ build instructions.
   - [`GetInboxItemLink(messageIndex[, attachmentIndex])`](#getinboxitemlinkmessageindex-attachmentindex)
 
 - [Map](#map)
+  - [`C_Map.GetAreaTriggerInfo(triggerID)` / `C_Map.GetAreaTriggers([mapID])`](#c_mapgetareatriggerinfotriggerid--c_mapgetareatriggersmapid)
   - [`C_Map.GetBestMapForUnit(unitToken)`](#c_mapgetbestmapforunitunittoken)
   - [`C_Map.GetMapOverlays([areaID])`](#c_mapgetmapoverlaysareaid)
 
@@ -6846,6 +6847,75 @@ end
 > correct. `textureWidth`/`textureHeight` remain the raw DBC rect —
 > reliable for placement; it's only the tile count they imply that
 > lies.
+
+### `C_Map.GetAreaTriggerInfo(triggerID)` / `C_Map.GetAreaTriggers([mapID])`
+
+ClassicAPI extension. Exposes `AreaTrigger.dbc` — the client's 517
+static trigger volumes (subzone-entry, exploration, and teleport
+triggers). Vanilla loads the DBC but exposes **none** of its geometry
+to Lua, which is why map addons (pfQuest et al.) ship hand-scraped
+trigger tables; this is a live DBC read, same "surface the hidden data"
+pattern as [`C_Map.GetMapOverlays`](#c_mapgetmapoverlaysareaid).
+
+- `GetAreaTriggerInfo(triggerID)` — one trigger's info table, or `nil`
+  for a missing / out-of-range id.
+- `GetAreaTriggers([mapID])` — an array of every trigger's info table,
+  optionally filtered to a single `Map.dbc` id (`0` Eastern Kingdoms,
+  `1` Kalimdor, `30` Alterac Valley, `489` Warsong Gulch, …).
+
+Each info table carries both the **authoritative raw geometry** and a
+**derived, ready-to-draw form**:
+
+| field | meaning |
+|---|---|
+| `id` | `AreaTrigger.dbc` row id |
+| `mapID` | `Map.dbc` id (continent, or an instance map) |
+| `x` / `y` / `z` | continent-space **world** coordinates of the center |
+| `radius` | sphere-trigger radius (`0` for a box trigger) |
+| `isBox` | `true` when the trigger is an oriented box |
+| `boxLength` / `boxWidth` / `boxHeight` / `boxYaw` | box dims + yaw (all `0` for a sphere) |
+| `areaID` | `AreaTable` zone the point falls in — **absent** if unresolved |
+| `mapX` / `mapY` | position as a `0..100` zone-relative percent — **absent** alongside `areaID` |
+
+The raw `x`/`y`/`z` come straight from the DBC. `areaID`/`mapX`/`mapY`
+are derived from the `WorldMapArea.dbc` zone rect (WoW's world axes:
+`+X` north, `+Y` west). `mapX` is the **horizontal** map axis (off
+world Y), `mapY` the **vertical** (off world X) — the standard WoW /
+pfQuest / Astrolabe convention:
+
+```
+mapX% = (locLeft - y) / (locLeft - locRight)  * 100   -- horizontal
+mapY% = (locTop  - x) / (locTop  - locBottom) * 100   -- vertical
+```
+
+The zone is chosen by containment — among the zone rects on the
+trigger's map that enclose the point, the smallest-area one wins (so a
+subzone beats its parent). When no zone rect contains the point (open
+sea, an instance with no `WorldMapArea` row, a degenerate rect), the
+three derived fields are simply omitted — the raw world coords are
+always present.
+
+```lua
+-- One trigger, its position as a world-map percent point:
+local t = C_Map.GetAreaTriggerInfo(2)
+if t.areaID then
+    print(t.areaID, t.mapX, t.mapY)  -- 85  21.89  67.87  (Tirisfal)
+end
+
+-- Every trigger in Warsong Gulch:
+for _, t in ipairs(C_Map.GetAreaTriggers(489)) do
+    -- t.x/y/z world coords, t.radius or t.isBox geometry, t.mapX/mapY
+end
+```
+
+> **Matches the pfQuest-turtle trigger table 1:1.** Keyed by trigger
+> id, the resolved `areaID` + `mapX`/`mapY` line up with
+> `pfQuest-turtle`'s scraped `areatrigger-turtle.lua` (id 2 →
+> `{21.89, 67.87, 85}` Tirisfal; id 45 → `{68, 17, 796}`). One
+> difference in kind: a scraped table may list a trigger under several
+> maps at once (a subzone *and* its parent continent); this resolves to
+> the single **tightest** zone whose rect contains the point. An addon
+> can drop `GetAreaTriggers()` straight in place of a shipped table.
 
 Backports the six `C_MerchantFrame.*` calls retail addons use when
 interacting with a vendor. All entry points read the engine's

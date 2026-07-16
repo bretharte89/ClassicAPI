@@ -1207,8 +1207,33 @@ enum Offsets {
     //    locLeft/locRight/locTop/locBottom floats}
     VAR_WORLDMAP_AREA_RECORDS = 0x00C0D5BC,
     VAR_WORLDMAP_AREA_COUNT = 0x00C0D5C0,
+    OFF_WMA_MAP_ID = 0x04,
     OFF_WMA_AREA_ID = 0x08,
     OFF_WMA_NAME = 0x0C,
+    OFF_WMA_LOC_LEFT = 0x10,   // world Y at the map's left edge (max Y)
+    OFF_WMA_LOC_RIGHT = 0x14,  // world Y at the map's right edge (min Y)
+    OFF_WMA_LOC_TOP = 0x18,    // world X at the map's top edge (max X)
+    OFF_WMA_LOC_BOTTOM = 0x1C, // world X at the map's bottom edge (min X)
+
+    // AreaTrigger.dbc record (10 fields, 0x28 bytes) — instance cataloged
+    // in docs/DBCs.md (records slot 0x00C0E034, count 0x00C0E038). The
+    // client loads it but exposes NO geometry to Lua, which is why map
+    // addons (pfQuest et al.) ship hand-scraped trigger tables. Schema:
+    //   {ID@+0, mapID@+4 (Map.dbc — continent or instance),
+    //    x@+8, y@+0xC, z@+0x10 (continent-space world coords),
+    //    radius@+0x14 (sphere trigger; 0 => box trigger),
+    //    boxLength@+0x18, boxWidth@+0x1C, boxHeight@+0x20, boxYaw@+0x24}
+    VAR_AREATRIGGER_RECORDS = 0x00C0E034,
+    VAR_AREATRIGGER_COUNT = 0x00C0E038,
+    OFF_AT_MAP_ID = 0x04,
+    OFF_AT_X = 0x08,
+    OFF_AT_Y = 0x0C,
+    OFF_AT_Z = 0x10,
+    OFF_AT_RADIUS = 0x14,
+    OFF_AT_BOX_LENGTH = 0x18,
+    OFF_AT_BOX_WIDTH = 0x1C,
+    OFF_AT_BOX_HEIGHT = 0x20,
+    OFF_AT_BOX_YAW = 0x24,
 
     // WorldMapOverlay.dbc record (17 fields, 0x44 bytes):
     //   {ID@+0, worldMapAreaID@+4 (-> WorldMapArea row),
