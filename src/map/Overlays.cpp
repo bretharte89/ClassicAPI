@@ -80,6 +80,9 @@
 // Array of overlay tables:
 //   textureName   — bare DBC name ("GOLDSHIRE")
 //   texturePath   — "Interface\WorldMap\<dir>\GOLDSHIRE" (engine format)
+//   areaID        — primary AreaTable id revealed (first nonzero)
+//   areaIDs       — all AreaTable ids revealed (WorldMapOverlay.dbc
+//                   areaID[4]; usually one, some overlays span 2-3 subzones)
 //   textureWidth / textureHeight — the DBC placement rect (reliable for
 //                   placement; its IMPLIED tile count is what lies)
 //   offsetX / offsetY — placement on the zone canvas
@@ -437,6 +440,29 @@ int __fastcall Script_GetMapOverlays(void *L) {
             L, "mapPointX", fieldInt(Offsets::OFF_WMO_MAP_POINT_X));
         Game::Lua::SetFieldNumber(
             L, "mapPointY", fieldInt(Offsets::OFF_WMO_MAP_POINT_Y));
+
+        // AreaTable ids this overlay reveals (WorldMapOverlay.dbc areaID[4]).
+        // `areaID` is the primary (first nonzero — every overlay has one);
+        // `areaIDs` is the full nonzero list (52 of 707 overlays span 2-3
+        // subzones, e.g. a lake straddling two areas). Same table shape as
+        // `tiles` — build the array, then assign the scalar.
+        int firstArea = 0, aCount = 0;
+        Game::Lua::PushString(L, "areaIDs");
+        Game::Lua::NewTable(L);
+        for (int k = 0; k < 4; ++k) {
+            const int aid = fieldInt(Offsets::OFF_WMO_AREA_ID + k * 4);
+            if (aid == 0)
+                continue;
+            if (firstArea == 0)
+                firstArea = aid;
+            aCount += 1;
+            Game::Lua::PushNumber(L, static_cast<double>(aCount));
+            Game::Lua::PushNumber(L, static_cast<double>(aid));
+            Game::Lua::SetTable(L, -3);
+        }
+        Game::Lua::SetTable(L, -3); // overlay.areaIDs = { ... }
+        Game::Lua::SetFieldNumber(L, "areaID", firstArea);
+
         if (r != nullptr) {
             Game::Lua::SetFieldNumber(L, "tileCols", r->cols);
             Game::Lua::SetFieldNumber(L, "tileRows", r->rows);

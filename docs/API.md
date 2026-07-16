@@ -6806,6 +6806,8 @@ Each overlay table:
 |---|---|
 | `textureName` | bare DBC name (`"GOLDSHIRE"`) |
 | `texturePath` | `Interface\WorldMap\<dir>\GOLDSHIRE` (engine format) |
+| `areaID` | primary `AreaTable` id the overlay reveals (first nonzero) |
+| `areaIDs` | array of all `AreaTable` ids it reveals (usually one; 52 of 707 overlays span 2–3 subzones) |
 | `textureWidth` / `textureHeight` | the DBC placement rect |
 | `offsetX` / `offsetY` | placement on the zone canvas |
 | `mapPointX` / `mapPointY` | DBC map-point fields |
