@@ -63,6 +63,8 @@ build instructions.
   - [`C_CreatureInfo.GetCreatureID(guid)`](#c_creatureinfogetcreatureidguid)
   - [`C_CreatureInfo.GetCreatureInfoByID(creatureID)`](#c_creatureinfogetcreatureinfobyidcreatureid)
   - [`C_CreatureInfo.RequestLoadCreatureByID(creatureID)`](#c_creatureinforequestloadcreaturebyidcreatureid)
+  - [`C_CreatureInfo.GetRaceInfo(raceID)`](#c_creatureinfogetraceinforaceid)
+  - [`C_CreatureInfo.GetClassInfo(classID)`](#c_creatureinfogetclassinfoclassid)
 
 - [CVar](#cvar)
   - [`C_CVar.GetCVarBool(cvar)`](#c_cvargetcvarboolcvar)
@@ -1680,6 +1682,41 @@ creature/gameobject caches use this generic parser; the item and quest
 caches have their own, so there's no hook collision. Verified in-game: `RequestLoadCreatureByID(10184)` on
 an uncached Onyxia fired the event and populated the cache (type 2
 Dragonkin, rank 3 world boss).
+
+### `C_CreatureInfo.GetRaceInfo(raceID)`
+
+Localized race name + non-localized token for a race id, read from
+`ChrRaces.dbc` (always loaded, so this works for any id at any time —
+no unit token required, unlike `UnitRace`). Returns a `RaceInfo` table,
+or `nil` for a non-numeric / non-positive id or one with no row.
+
+```lua
+local info = C_CreatureInfo.GetRaceInfo(4)
+-- { raceName = "Night Elf", clientFileString = "NightElf", raceID = 4 }
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `raceName` | string | Localized display name (client's active locale). |
+| `clientFileString` | string | Non-localized token (`"Human"`, `"NightElf"`, `"Scourge"`) — the same string `UnitRace` returns as its 2nd value, used for texture paths. |
+| `raceID` | number | Echo of the input id. |
+
+### `C_CreatureInfo.GetClassInfo(classID)`
+
+Localized class name + locale-independent token for a class id, read
+from `ChrClasses.dbc`. Returns a `ClassInfo` table, or `nil` for a
+non-numeric / non-positive id or one with no row.
+
+```lua
+local info = C_CreatureInfo.GetClassInfo(1)
+-- { className = "Warrior", classFile = "WARRIOR", classID = 1 }
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `className` | string | Localized display name (client's active locale). |
+| `classFile` | string | Locale-independent token (`"WARRIOR"`, `"MAGE"`) — the same string `UnitClass` returns as its 2nd value, and the key used for class colors / icon coords. |
+| `classID` | number | Echo of the input id. |
 
 ## CVar
 
