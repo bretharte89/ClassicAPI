@@ -97,6 +97,7 @@
 #include "Game.h"
 #include "Offsets.h"
 #include "dbc/Lookup.h"
+#include "map/Area.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -279,46 +280,8 @@ const ResolvedOverlay *CachedResolve(int overlayId, const char *basePath,
     return g_cache[overlayId];
 }
 
-// WorldMapArea row id for the world map's current view — the same
-// resolution the engine's current-map-name getter (FUN_004a6cf0, behind
-// GetMapInfo) performs: continent/zone selection indexes into the
-// per-continent data blob; no continent selected falls back to the
-// default row global.
-int CurrentWorldMapAreaRow() {
-    const int continent =
-        *reinterpret_cast<const int *>(Offsets::VAR_WORLDMAP_CONTINENT_INDEX);
-    if (continent < 0)
-        return *reinterpret_cast<const int *>(
-            Offsets::VAR_WORLDMAP_DEFAULT_AREA_ROW);
-    const uint8_t *blob = *reinterpret_cast<const uint8_t *const *>(
-        Offsets::VAR_WORLDMAP_CONTINENT_DATA);
-    if (blob == nullptr)
-        return -1;
-    const uint8_t *entry = blob + continent * Offsets::WORLDMAP_CONTINENT_STRIDE;
-    const int zone =
-        *reinterpret_cast<const int *>(Offsets::VAR_WORLDMAP_ZONE_INDEX);
-    if (zone < 0)
-        return *reinterpret_cast<const int *>(entry + 0x04);
-    const int *zoneRows = *reinterpret_cast<const int *const *>(entry + 0x10);
-    return (zoneRows != nullptr) ? zoneRows[zone] : -1;
-}
-
-// WorldMapArea row id for an AreaTable areaID. Linear walk — the table
-// has ~175 rows; called once per Lua call.
-int WorldMapAreaRowForAreaID(uint32_t areaID) {
-    const int count =
-        *reinterpret_cast<const int *>(Offsets::VAR_WORLDMAP_AREA_COUNT);
-    for (int id = 1; id <= count; ++id) {
-        const uint8_t *rec = DBC::Record(Offsets::VAR_WORLDMAP_AREA_RECORDS,
-                                         Offsets::VAR_WORLDMAP_AREA_COUNT,
-                                         static_cast<uint32_t>(id));
-        if (rec != nullptr &&
-            *reinterpret_cast<const uint32_t *>(rec + Offsets::OFF_WMA_AREA_ID) ==
-                areaID)
-            return id;
-    }
-    return -1;
-}
+// WorldMapArea row resolution (areaID → row, current view → row) lives in
+// the shared `Map::Area` helper — `GetMapWorldSize` keys off the same rows.
 
 // Pushes the `tiles` array for one overlay (leaves it on the stack top).
 void PushTiles(void *L, const ResolvedOverlay *r, const char *basePath,
@@ -405,10 +368,10 @@ void PushTiles(void *L, const ResolvedOverlay *r, const char *basePath,
 int __fastcall Script_GetMapOverlays(void *L) {
     int wmaRow = -1;
     if (Game::Lua::IsNumber(L, 1)) {
-        wmaRow = WorldMapAreaRowForAreaID(
+        wmaRow = Map::Area::RowForAreaID(
             static_cast<uint32_t>(Game::Lua::ToNumber(L, 1)));
     } else {
-        wmaRow = CurrentWorldMapAreaRow();
+        wmaRow = Map::Area::CurrentViewRow();
     }
 
     Game::Lua::SetTop(L, 0);

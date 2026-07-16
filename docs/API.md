@@ -285,6 +285,7 @@ build instructions.
   - [`C_Map.GetAreaTriggerInfo(triggerID)` / `C_Map.GetAreaTriggers([mapID])`](#c_mapgetareatriggerinfotriggerid--c_mapgetareatriggersmapid)
   - [`C_Map.GetBestMapForUnit(unitToken)`](#c_mapgetbestmapforunitunittoken)
   - [`C_Map.GetMapOverlays([areaID])`](#c_mapgetmapoverlaysareaid)
+  - [`C_Map.GetMapWorldSize([areaID])`](#c_mapgetmapworldsizeareaid)
 
 - [MerchantFrame](#merchantframe)
   - [`C_MerchantFrame.GetItemInfo(slot)`](#c_merchantframegetiteminfoslot)
@@ -6847,6 +6848,31 @@ end
 > correct. `textureWidth`/`textureHeight` remain the raw DBC rect —
 > reliable for placement; it's only the tile count they imply that
 > lies.
+
+### `C_Map.GetMapWorldSize([areaID])`
+
+Returns a zone's world size in yards as `width, height` — the physical extent the
+map represents, read straight from the `WorldMapArea.dbc` placement rect.
+Addons use it to turn map-relative percents into yard distances (range
+rings, "N yards away" readouts, proximity checks).
+
+Retail takes a `uiMapID`; here it's an `areaID` (`AreaTable.dbc` id — the
+same identity
+[`C_Map.GetBestMapForUnit`](#c_mapgetbestmapforunitunittoken) returns and
+[`C_Map.GetMapOverlays`](#c_mapgetmapoverlaysareaid) accepts), returns that
+zone's size; with no argument, the world map's currently **viewed** zone
+(same resolution `GetMapOverlays()` uses with no arg). Returns `nil, nil`
+when the zone can't be resolved.
+
+`width` is the east-west span (world Y), `height` the north-south span
+(world X) — the same denominators behind the
+[`C_Map.GetAreaTriggerInfo`](#c_mapgetareatriggerinfotriggerid--c_mapgetareatriggersmapid)
+map-percent transform, so `mapX/100 * width` and `mapY/100 * height` give a
+point's offset in yards within the zone.
+
+```lua
+local w, h = C_Map.GetMapWorldSize(85)   -- Tirisfal: ~4518.7, 3012.5
+```
 
 ### `C_Map.GetAreaTriggerInfo(triggerID)` / `C_Map.GetAreaTriggers([mapID])`
 
