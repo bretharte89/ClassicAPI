@@ -282,6 +282,8 @@ build instructions.
   - [`GetInboxItemLink(messageIndex[, attachmentIndex])`](#getinboxitemlinkmessageindex-attachmentindex)
 
 - [Map](#map)
+  - [`C_Map.GetAreaInfo(areaID)`](#c_mapgetareainfoareaid)
+  - [`C_Map.GetAreas()`](#c_mapgetareas)
   - [`C_Map.GetAreaTriggerInfo(triggerID)` / `C_Map.GetAreaTriggers([mapID])`](#c_mapgetareatriggerinfotriggerid--c_mapgetareatriggersmapid)
   - [`C_Map.GetBestMapForUnit(unitToken)`](#c_mapgetbestmapforunitunittoken)
   - [`C_Map.GetMapOverlays([areaID])`](#c_mapgetmapoverlaysareaid)
@@ -6750,6 +6752,51 @@ end
 ```
 
 ## Map
+
+### `C_Map.GetAreaInfo(areaID)`
+
+Backport of the retail `C_Map.GetAreaInfo`. Returns the localized
+`AreaTable.dbc` name for an area id — zones and subzones alike — or `nil`
+for non-numeric / non-positive input or an id with no row. `AreaTable.dbc`
+is a client DBC (always loaded, synchronous, localized), so the name is
+available for any id with no async/cache step — unlike creature/item names.
+
+```lua
+C_Map.GetAreaInfo(12)   -- "Elwynn Forest"
+C_Map.GetAreaInfo(9)    -- "Northshire Valley"
+```
+
+The name is in the client's active locale — the same source as
+`GetRealZoneText` and the paperdoll zone name — so it matches what the
+game displays everywhere.
+
+### `C_Map.GetAreas()`
+
+ClassicAPI extension. Returns `{ [areaID] = name, … }` — every
+`AreaTable.dbc` row with a non-empty localized name, as an id→name map.
+No retail equivalent (modern WoW enumerates the `uiMapID` tree, not raw
+`AreaTable`); same "surface the hidden DBC" pattern as
+[`C_Map.GetAreaTriggers`](#c_mapgetareatriggerinfotriggerid--c_mapgetareatriggersmapid).
+
+The enumeration — not the per-id `GetAreaInfo` — is what name databases
+need: name→id resolution, reverse search, and iterating the full id set.
+Every key round-trips with `GetAreaInfo`; empty-name rows are omitted. The
+map includes *every* named area (technical/internal ones too), so
+consumers wanting only "real" zones should filter.
+
+```lua
+local areas = C_Map.GetAreas()
+print(areas[12])                 -- "Elwynn Forest"
+
+-- build a name -> id index
+local byName = {}
+for id, name in pairs(areas) do byName[name] = id end
+```
+
+Lets a name-DB addon drop its shipped zone-name tables (pfQuest's
+`db/<locale>/zones.lua`): repoint `pfDB["zones"]["loc"] = C_Map.GetAreas()`
+(merging so the fork's overrides still apply). Live client data in the
+active locale — no locale/rename drift vs a scraped table.
 
 ### `C_Map.GetBestMapForUnit(unitToken)`
 
