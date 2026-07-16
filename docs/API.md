@@ -289,6 +289,10 @@ build instructions.
   - [`C_Map.GetMapOverlays([areaID])`](#c_mapgetmapoverlaysareaid)
   - [`C_Map.GetMapWorldSize([areaID])`](#c_mapgetmapworldsizeareaid)
 
+- [MapExplorationInfo](#mapexplorationinfo)
+  - [`C_MapExplorationInfo.GetExploredMapTextures([areaID])`](#c_mapexplorationinfogetexploredmaptexturesareaid)
+  - [`C_MapExplorationInfo.GetUnexploredMapTextures([areaID])`](#c_mapexplorationinfogetunexploredmaptexturesareaid)
+
 - [MerchantFrame](#merchantframe)
   - [`C_MerchantFrame.GetItemInfo(slot)`](#c_merchantframegetiteminfoslot)
   - [`C_MerchantFrame.GetBuybackItemID(slot)`](#c_merchantframegetbuybackitemidslot)
@@ -6863,6 +6867,7 @@ Each overlay table:
 | `hitRectTop` / `hitRectLeft` / `hitRectBottom` / `hitRectRight` | hit rectangle in world-map canvas px (≈1002×668); the tight clickable bounds of the landmass |
 | `tileCols` / `tileRows` / `upscaled` | the **resolved** tile grid |
 | `tiles` | ready-to-draw tile array (below) |
+| `fileDataIDs` | ordered tile texture paths (retail's field name; redundant with `tiles[].file`) |
 
 The `hitRect*` fields are the source addons use to place a **subzone
 center** (the texture rect includes transparent padding, so its center is
@@ -7160,6 +7165,50 @@ Always returns `true`. Retail exposes an optional client setting to
 disable the sell-all-junk button; vanilla has no such setting, so
 the feature is always on. Function exists so retail addons that
 gate `SellAllJunkItems` on this don't no-op silently.
+
+## MapExplorationInfo
+
+`C_MapExplorationInfo.GetExploredMapTextures` (retail backport) and
+`GetUnexploredMapTextures` (ClassicAPI extension) are the
+exploration-filtered views of a zone's `WorldMapOverlay.dbc` overlays.
+Together with [`C_Map.GetMapOverlays`](#c_mapgetmapoverlaysareaid) (which
+returns **all** overlays) they form the three-way split:
+
+| function | returns |
+|---|---|
+| `C_MapExplorationInfo.GetExploredMapTextures(areaID)` | only overlays the player has **discovered** |
+| `C_MapExplorationInfo.GetUnexploredMapTextures(areaID)` | only overlays **not** yet discovered |
+| `C_Map.GetMapOverlays(areaID)` | **all** overlays, explored or not |
+
+All three return the identical per-overlay table shape (see
+`GetMapOverlays`); these two just filter it. "Explored" is computed
+per-areaID from the player's explored-areas bitfield (the same source the
+engine's own `GetNumMapOverlays`/`GetMapOverlayInfo` gate on), so the
+`areaID` argument works for any zone — not only the one currently on the
+world map. With no argument, both default to the current map view.
+
+### `C_MapExplorationInfo.GetExploredMapTextures([areaID])`
+
+Backport of the retail call (retail added it in 8.0). Returns an array of
+the overlay tables for overlays the local player **has discovered** in the
+zone — same shape as [`C_Map.GetMapOverlays`](#c_mapgetmapoverlaysareaid),
+including `fileDataIDs` (retail's field name for the tile list; here it
+holds `SetTexture`-ready texture *paths*, since vanilla has no numeric
+fileDataIDs). Empty before the player is resident (character select).
+
+```lua
+for _, tex in ipairs(C_MapExplorationInfo.GetExploredMapTextures(12)) do
+    -- tex.fileDataIDs[i] -> SetTexture path; tex.offsetX/offsetY placement
+end
+```
+
+### `C_MapExplorationInfo.GetUnexploredMapTextures([areaID])`
+
+ClassicAPI extension — the complement: overlays the player has **not**
+discovered, the pieces a map-reveal addon draws over the fogged base map.
+No retail equivalent (retail ships only the explored getter; its inverse,
+`C_Map.GetMapOverlays`, returns *everything*). Same table shape and
+`areaID` semantics as the explored getter.
 
 ## NamePlate
 

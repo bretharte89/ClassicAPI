@@ -96,6 +96,9 @@
 //                     width, height        — draw size in map pixels
 //                     texCoordX, texCoordY — right/bottom texcoords
 //                     offsetX, offsetY }   — absolute canvas position
+//   fileDataIDs   — ordered tile texture paths (retail's field name; vanilla
+//                   has no numeric fileDataIDs, so these are paths). Redundant
+//                   with tiles[].file — for retail-ported exploration addons.
 //
 // Texture-less rows (a subzone hit region with no distinct art) still appear,
 // with textureName == "", zero size, and an empty `tiles` table — so
@@ -107,6 +110,7 @@
 #include "Offsets.h"
 #include "dbc/Lookup.h"
 #include "map/Area.h"
+#include "map/Overlays.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -373,20 +377,78 @@ void PushTiles(void *L, const ResolvedOverlay *r, const char *basePath,
     }
 }
 
-// `C_Map.GetMapOverlays([areaID])` — see the module comment.
-int __fastcall Script_GetMapOverlays(void *L) {
-    int wmaRow = -1;
-    if (Game::Lua::IsNumber(L, 1)) {
-        wmaRow = Map::Area::RowForAreaID(
-            static_cast<uint32_t>(Game::Lua::ToNumber(L, 1)));
-    } else {
-        wmaRow = Map::Area::CurrentViewRow();
-    }
+using ResolveUnitToken_t = void *(__fastcall *)(const char *token);
 
+// The local player's explored-areas bitfield (`[player+0xE68] + 0xE6C`), or
+// null before the player is resident. Bit `AreaBit` set == that AreaTable
+// area is explored. Same storage the engine's discovered-overlay rebuild
+// (FUN_004a67a0) reads.
+const uint8_t *ExplorationBits() {
+    auto fn = reinterpret_cast<ResolveUnitToken_t>(Offsets::FUN_RESOLVE_UNIT_TOKEN);
+    auto *player = static_cast<const uint8_t *>(fn("player"));
+    if (player == nullptr)
+        return nullptr;
+    auto *sub = *reinterpret_cast<const uint8_t *const *>(
+        player + Offsets::OFF_CGPLAYER_INFO);
+    if (sub == nullptr)
+        return nullptr;
+    return sub + Offsets::OFF_PLAYER_EXPLORED_BITS;
+}
+
+// True if the local player has discovered `overlayRec` — mirrors the
+// per-areaID test in FUN_004a67a0's discovered-overlay rebuild: an overlay
+// is explored if ANY of its (up to 4) AreaTable ids is explored. An area
+// with gate (+0x28) < 0 needs no exploration; otherwise its AreaBit (+0x0C)
+// is looked up in `bits`. `bits == null` (no player) → not explored.
+bool IsOverlayExplored(const uint8_t *overlayRec, const uint8_t *bits) {
+    if (bits == nullptr)
+        return false;
+    for (int k = 0; k < 4; ++k) {
+        const int areaID = *reinterpret_cast<const int *>(
+            overlayRec + Offsets::OFF_WMO_AREA_ID + k * 4);
+        if (areaID <= 0)
+            continue;
+        const uint8_t *areaRec =
+            DBC::Record(Offsets::VAR_AREATABLE_RECORDS,
+                        Offsets::VAR_AREATABLE_COUNT, static_cast<uint32_t>(areaID));
+        if (areaRec == nullptr)
+            continue;
+        if (*reinterpret_cast<const int *>(areaRec + Offsets::OFF_AREATABLE_EXPLORE_GATE) < 0)
+            return true; // area needs no exploration → always counts
+        const int areaBit = *reinterpret_cast<const int *>(
+            areaRec + Offsets::OFF_AREATABLE_AREA_BIT);
+        if (areaBit < 0)
+            continue;
+        const int byteIdx = areaBit >> 3;
+        if (byteIdx >= 0x100)
+            return true; // out of bitfield range → engine treats as explored
+        if ((bits[byteIdx] & (1u << (areaBit & 7))) != 0)
+            return true;
+    }
+    return false;
+}
+
+// `C_Map.GetMapOverlays([areaID])` — see the module comment. Thin wrapper
+// over the shared `PushZoneOverlays` with no exploration filter.
+int __fastcall Script_GetMapOverlays(void *L) {
+    const int wmaRow = Game::Lua::IsNumber(L, 1)
+                           ? Map::Area::RowForAreaID(static_cast<uint32_t>(
+                                 Game::Lua::ToNumber(L, 1)))
+                           : Map::Area::CurrentViewRow();
     Game::Lua::SetTop(L, 0);
+    Map::Overlays::PushZoneOverlays(L, wmaRow, Map::Overlays::Filter::All);
+    return 1;
+}
+
+} // namespace
+
+// Shared overlay walk — see Overlays.h. Filters by exploration and builds
+// the rich per-overlay table (texture + resolved tiles + hit rect + areaIDs
+// + fileDataIDs). Uses the anonymous-namespace helpers above (same TU).
+void PushZoneOverlays(void *L, int wmaRow, Filter filter) {
     Game::Lua::NewTable(L);
     if (wmaRow <= 0)
-        return 1;
+        return;
 
     const uint8_t *wmaRec = DBC::Record(Offsets::VAR_WORLDMAP_AREA_RECORDS,
                                         Offsets::VAR_WORLDMAP_AREA_COUNT,
@@ -396,6 +458,10 @@ int __fastcall Script_GetMapOverlays(void *L) {
             ? *reinterpret_cast<const char *const *>(wmaRec +
                                                      Offsets::OFF_WMA_NAME)
             : nullptr;
+
+    // Exploration bitfield only needed for the filtered variants.
+    const uint8_t *bits =
+        (filter == Filter::All) ? nullptr : ExplorationBits();
 
     const int count =
         *reinterpret_cast<const int *>(Offsets::VAR_WORLDMAP_OVERLAY_COUNT);
@@ -408,6 +474,15 @@ int __fastcall Script_GetMapOverlays(void *L) {
             *reinterpret_cast<const int *>(rec + Offsets::OFF_WMO_WORLDMAP_AREA) !=
                 wmaRow)
             continue;
+
+        if (filter != Filter::All) {
+            const bool explored = IsOverlayExplored(rec, bits);
+            if (filter == Filter::Explored && !explored)
+                continue;
+            if (filter == Filter::Unexplored && explored)
+                continue;
+        }
+
         const char *texName = *reinterpret_cast<const char *const *>(
             rec + Offsets::OFF_WMO_TEXTURE_NAME);
         const bool hasTexture = (texName != nullptr && texName[0] != '\0');
@@ -502,18 +577,34 @@ int __fastcall Script_GetMapOverlays(void *L) {
         PushTiles(L, r, basePath, dbcW, dbcH, offX, offY);
         Game::Lua::SetTable(L, -3);
 
+        // fileDataIDs — ordered tile texture paths (retail's field name for
+        // the tile list). Vanilla has no numeric fileDataIDs, so these are the
+        // SetTexture-ready paths; redundant with tiles[].file, provided so
+        // retail-ported exploration addons reading info.fileDataIDs work,
+        // while tiles[] carries the per-tile draw geometry Octo needs.
+        Game::Lua::PushString(L, "fileDataIDs");
+        Game::Lua::NewTable(L);
+        if (r != nullptr) {
+            char file[0x120];
+            for (int i = 0; i < r->count; ++i) {
+                std::snprintf(file, sizeof(file), "%s%d", basePath, i + 1);
+                Game::Lua::PushNumber(L, static_cast<double>(i + 1));
+                Game::Lua::PushString(L, file);
+                Game::Lua::SetTable(L, -3);
+            }
+        }
+        Game::Lua::SetTable(L, -3); // overlay.fileDataIDs = { ... }
+
         Game::Lua::SetTable(L, -3);
     }
-    return 1;
 }
 
+namespace {
 void RegisterLuaFunctions() {
     Game::Lua::RegisterTableFunction("C_Map", "GetMapOverlays",
                                      &Script_GetMapOverlays);
 }
-
 const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
-
 } // namespace
 
 } // namespace Map::Overlays

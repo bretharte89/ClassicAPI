@@ -1387,6 +1387,11 @@ enum Offsets {
     // (see OFF_UNIT_FIELD_CHANNEL_SPELL below); PLAYER_FLAGS only
     // exists on the +0xE68 sub-struct here.
     OFF_CGPLAYER_INFO = 0xE68,
+    // Explored-areas bitfield inside the CGPlayer info sub-struct
+    // (`[player+0xE68] + 0xE6C`): bit `AreaBit` set == that AreaTable area
+    // is explored. 0x100 bytes. Read by the discovered-overlay rebuild
+    // FUN_004a67a0 as `bits[AreaBit>>3] & (1 << (AreaBit&7))`.
+    OFF_PLAYER_EXPLORED_BITS = 0xE6C,
 
     // PvP rank fields within the CGPlayer +0xE68 sub-struct (siblings of
     // the combo-point byte at +0x1029). Read by the item tooltip's
@@ -2214,6 +2219,12 @@ enum Offsets {
     VAR_AREATABLE_RECORDS = 0x00C0E048,
     VAR_AREATABLE_COUNT = 0x00C0E04C,
     OFF_AREATABLE_NAMES = 0x2C,
+    // AreaBit @ +0x0C: index into the player's explored-areas bitfield
+    // (OFF_PLAYER_EXPLORED_BITS). Gate @ +0x28: when < 0 the area needs no
+    // exploration (always counts explored); when >= 0 the AreaBit check
+    // applies. Source: the discovered-overlay rebuild FUN_004a67a0.
+    OFF_AREATABLE_AREA_BIT = 0x0C,
+    OFF_AREATABLE_EXPLORE_GATE = 0x28,
 
     // Engine player-info cache — populated by the
     // SMSG_NAME_QUERY_RESPONSE handler (opcode 0x51) at 0x005551A0,
