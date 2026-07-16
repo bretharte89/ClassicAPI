@@ -56,6 +56,75 @@ int IntField(const uint8_t *rec, int off) {
     return *reinterpret_cast<const int *>(rec + off);
 }
 
+// --- name-based zone resolution -------------------------------------------
+//
+// A taxi node's name is "Location, Zone" (e.g. "Chillwind Camp, Western
+// Plaguelands"), so the zone is authoritative in the data itself — which
+// beats any geometric world->zone guess at genuine border interleaving that
+// the WorldMapArea/overlay boxes can't separate (Chillwind sits by Strahnbrad,
+// deep in Alterac's overlay box, but is a WPL node). We resolve the name
+// suffix against AreaTable and fall back to the geometric resolver only when a
+// node has no ", Zone" suffix or the zone name doesn't match.
+
+char AsciiLower(char c) { return (c >= 'A' && c <= 'Z') ? char(c - 'A' + 'a') : c; }
+
+bool IEqual(const char *a, const char *b) {
+    while (*a && *b) {
+        if (AsciiLower(*a) != AsciiLower(*b))
+            return false;
+        ++a;
+        ++b;
+    }
+    return *a == *b;
+}
+
+// True if `name` begins with `prefix` followed by a space — a word-prefix, so
+// the abbreviated taxi suffixes ("Redridge", "Arathi") match the full
+// AreaTable names ("Redridge Mountains", "Arathi Highlands").
+bool IStartsWord(const char *name, const char *prefix) {
+    while (*prefix) {
+        if (!*name || AsciiLower(*name) != AsciiLower(*prefix))
+            return false;
+        ++name;
+        ++prefix;
+    }
+    return *name == ' ';
+}
+
+// Pointer into `name` at the zone part (after the last ", "), or null when the
+// name has no ", " separator.
+const char *ZoneSuffix(const char *name) {
+    const char *best = nullptr;
+    if (name != nullptr)
+        for (const char *p = name; p[0] != '\0'; ++p)
+            if (p[0] == ',' && p[1] == ' ')
+                best = p + 2;
+    return best;
+}
+
+// AreaTable areaID for a zone name: exact (case-insensitive) match preferred,
+// else the first word-prefix match. 0 when nothing matches.
+int ResolveZoneByName(const char *zone) {
+    if (zone == nullptr || *zone == '\0')
+        return 0;
+    const int count =
+        *reinterpret_cast<const int *>(Offsets::VAR_AREATABLE_COUNT);
+    int prefixHit = 0;
+    for (int id = 1; id <= count; ++id) {
+        const char *nm = DBC::LocalizedField(Offsets::VAR_AREATABLE_RECORDS,
+                                             Offsets::VAR_AREATABLE_COUNT,
+                                             static_cast<uint32_t>(id),
+                                             Offsets::OFF_AREATABLE_NAMES);
+        if (nm == nullptr)
+            continue;
+        if (IEqual(nm, zone))
+            return id; // exact wins outright
+        if (prefixHit == 0 && IStartsWord(nm, zone))
+            prefixHit = id;
+    }
+    return prefixHit;
+}
+
 // Pushes { x = px, y = py } as a subtable field `key` of the table on top.
 void PushPosition(void *L, const char *key, double px, double py) {
     Game::Lua::PushString(L, key);
@@ -65,15 +134,19 @@ void PushPosition(void *L, const char *key, double px, double py) {
     Game::Lua::SetTable(L, -3);
 }
 
-// Builds the set of TaxiPath.dbc endpoint node ids — the nodes some flight
-// path connects to. A real flight master is always a path endpoint; the
-// fake rows (Northshire Abbey, spurious duplicate hub rows, standalone
-// markers like "Eastern Plaguelands"/"Naxxramas") connect to nothing. Node
-// ids are marked in `out[nodeID]`; ids >= `outSize` are ignored (the vanilla
-// table maxes ~122, so the fixed buffer is ample). Returns false when the
-// path table isn't loaded.
+// Walks TaxiPath.dbc into two per-node-id flags:
+//   endpoint[] — the node is either end of some flight path. A real flight
+//                master always is; the fake rows (Northshire Abbey, spurious
+//                duplicate hub rows, standalone markers like "Eastern
+//                Plaguelands"/"Naxxramas") connect to nothing.
+//   dest[]     — the node is a path DESTINATION (in-degree > 0), i.e. you can
+//                fly TO it. In-degree 0 marks a departure-only node reachable
+//                only by other means: druid Teleport (Nighthaven, Moonglade),
+//                a boat dock (Stormwind Harbor), etc.
+// ids >= `size` are ignored (the vanilla table maxes ~122, so the fixed buffer
+// is ample). Returns false when the path table isn't loaded.
 constexpr int kMaxTaxiNodeID = 2048;
-bool BuildEndpointSet(bool *out, int outSize) {
+bool BuildTaxiGraph(bool *endpoint, bool *dest, int size) {
     const int count = *reinterpret_cast<const int *>(Offsets::VAR_TAXIPATH_COUNT);
     if (count <= 0)
         return false;
@@ -85,10 +158,12 @@ bool BuildEndpointSet(bool *out, int outSize) {
             continue;
         const int from = IntField(rec, Offsets::OFF_TAXIPATH_FROM);
         const int to = IntField(rec, Offsets::OFF_TAXIPATH_TO);
-        if (from >= 0 && from < outSize)
-            out[from] = true;
-        if (to >= 0 && to < outSize)
-            out[to] = true;
+        if (from >= 0 && from < size)
+            endpoint[from] = true;
+        if (to >= 0 && to < size) {
+            endpoint[to] = true;
+            dest[to] = true;
+        }
     }
     return true;
 }
@@ -104,9 +179,11 @@ int __fastcall Script_GetTaxiNodesForMap(void *L) {
     Game::Lua::SetTop(L, 0);
     Game::Lua::NewTable(L);
 
-    // Real flight masters are TaxiPath endpoints (see BuildEndpointSet).
+    // Real flight masters are TaxiPath endpoints; `dest` marks the ones a
+    // path leads to (in-degree > 0) for the `reachable` field.
     bool endpoint[kMaxTaxiNodeID] = {};
-    BuildEndpointSet(endpoint, kMaxTaxiNodeID);
+    bool dest[kMaxTaxiNodeID] = {};
+    BuildTaxiGraph(endpoint, dest, kMaxTaxiNodeID);
 
     const int count =
         *reinterpret_cast<const int *>(Offsets::VAR_TAXINODES_COUNT);
@@ -157,6 +234,11 @@ int __fastcall Script_GetTaxiNodesForMap(void *L) {
         Game::Lua::SetFieldNumber(L, "nodeID", id);
         Game::Lua::SetFieldString(L, "name", name ? name : "");
         Game::Lua::SetFieldNumber(L, "faction", faction);
+        // reachable: a flight path leads to this node (in-degree > 0). False
+        // marks a departure-only node reachable only by other means — druid
+        // Teleport (Nighthaven, Moonglade) or a boat dock (Stormwind Harbor);
+        // hide those from a non-class-specific "where can I fly" map.
+        Game::Lua::SetFieldBool(L, "reachable", id < kMaxTaxiNodeID && dest[id]);
         Game::Lua::SetFieldNumber(L, "mapID", mapID);
         Game::Lua::SetFieldNumber(L, "x", x);
         Game::Lua::SetFieldNumber(L, "y", y);
@@ -169,12 +251,23 @@ int __fastcall Script_GetTaxiNodesForMap(void *L) {
         ::Map::Area::ContinentPercent(mapID, x, y, &px, &py);
         PushPosition(L, "position", px, py);
 
-        // Derived zone anchor: tightest AreaTable zone + 0-100 zone-relative
-        // percent (same transform as GetAreaTriggerInfo). Omitted when the
-        // point resolves to no zone.
+        // Derived zone anchor (areaID + 0-100 zone-relative percent). Prefer
+        // the zone named in the node itself ("…, Western Plaguelands"), which
+        // is authoritative; project the position into that zone's rect. Fall
+        // back to the geometric landmass resolver for a node with no ", Zone"
+        // suffix or an unrecognized zone name.
         int areaID = 0;
         double mapX = 0.0, mapY = 0.0;
-        if (::Map::Area::ZonePercent(mapID, x, y, &areaID, &mapX, &mapY)) {
+        bool haveZone = false;
+        const int namedArea = ResolveZoneByName(ZoneSuffix(name));
+        if (namedArea > 0 &&
+            ::Map::Area::PercentInZone(namedArea, x, y, &mapX, &mapY)) {
+            areaID = namedArea;
+            haveZone = true;
+        } else {
+            haveZone = ::Map::Area::ZonePercent(mapID, x, y, &areaID, &mapX, &mapY);
+        }
+        if (haveZone) {
             Game::Lua::SetFieldNumber(L, "areaID", areaID);
             Game::Lua::SetFieldNumber(L, "mapX", mapX);
             Game::Lua::SetFieldNumber(L, "mapY", mapY);

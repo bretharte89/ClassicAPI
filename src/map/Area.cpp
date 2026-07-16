@@ -56,14 +56,76 @@ namespace {
 double FloatField(const uint8_t *rec, int off) {
     return *reinterpret_cast<const float *>(rec + off);
 }
+
+// Vanilla zone world-map canvas size (WorldMapDetailFrame); WorldMapOverlay
+// hit rects live in this pixel space.
+constexpr double kZoneCanvasW = 1002.0;
+constexpr double kZoneCanvasH = 668.0;
+
+// How deep inside its containing WorldMapOverlay hit rect the map-percent point
+// (0..100) sits on WMA row `wmaRow` — the max, over that zone's overlays whose
+// hit rect encloses the point, of the normalized margin to the nearest overlay
+// edge (0 at the edge .. 0.5 at center). Returns -1 when the point is on none
+// of the zone's overlays.
+//
+// This is the runtime analog of an ADT area-grid lookup. WorldMapArea rects are
+// loose overlapping boxes; the overlay hit rects trace the real landmass, so
+// "which zone is the point drawn on" disambiguates them (Un'Goro's crater vs
+// Thousand Needles' empty overlap). But hit rects are themselves rectangles
+// that overlap at borders, so the DEPTH matters: a border node deep inside its
+// own zone's overlay beats one merely clipping a neighbor's overlay edge
+// (Nijel's Point is deep in Desolace's "Nijel's Point" overlay but only nicks
+// the edge of Stonetalon's Charred Vale box).
+double OverlayMargin(int wmaRow, double mapXpct, double mapYpct) {
+    const double cx = mapXpct / 100.0 * kZoneCanvasW;
+    const double cy = mapYpct / 100.0 * kZoneCanvasH;
+    const int count =
+        *reinterpret_cast<const int *>(Offsets::VAR_WORLDMAP_OVERLAY_COUNT);
+    double best = -1.0;
+    for (int id = 1; id <= count; ++id) {
+        const uint8_t *rec = DBC::Record(Offsets::VAR_WORLDMAP_OVERLAY_RECORDS,
+                                         Offsets::VAR_WORLDMAP_OVERLAY_COUNT,
+                                         static_cast<uint32_t>(id));
+        if (rec == nullptr ||
+            *reinterpret_cast<const int *>(rec + Offsets::OFF_WMO_WORLDMAP_AREA) !=
+                wmaRow)
+            continue;
+        const int hl = *reinterpret_cast<const int *>(rec + Offsets::OFF_WMO_HITRECT_LEFT);
+        const int hr = *reinterpret_cast<const int *>(rec + Offsets::OFF_WMO_HITRECT_RIGHT);
+        const int ht = *reinterpret_cast<const int *>(rec + Offsets::OFF_WMO_HITRECT_TOP);
+        const int hb = *reinterpret_cast<const int *>(rec + Offsets::OFF_WMO_HITRECT_BOTTOM);
+        const double sw = hr - hl, sh = hb - ht;
+        if (sw <= 0.0 || sh <= 0.0)
+            continue; // no / degenerate hit rect
+        if (cx < hl || cx > hr || cy < ht || cy > hb)
+            continue; // point outside this overlay
+        const double mX = (cx - hl < hr - cx ? cx - hl : hr - cx) / sw;
+        const double mY = (cy - ht < hb - cy ? cy - ht : hb - cy) / sh;
+        const double m = mX < mY ? mX : mY;
+        if (m > best)
+            best = m;
+    }
+    return best;
+}
 } // namespace
 
 bool ZonePercent(int mapID, float x, float y, int *outAreaID, double *outMapX,
                  double *outMapY) {
     const int count =
         *reinterpret_cast<const int *>(Offsets::VAR_WORLDMAP_AREA_COUNT);
-    bool found = false;
-    double bestArea = 0.0;
+    // Two candidate tracks over the zones whose rect contains the point:
+    //   land* — the point is on the zone's drawn landmass (an overlay hit rect
+    //           encloses it): authoritative, wins whenever any zone qualifies.
+    //           Scored by how DEEP inside the overlay the point sits, so a
+    //           border node deep in its own zone's overlay beats one nicking a
+    //           neighbor's overlay edge.
+    //   box*  — bounding-box only: the fallback when the point is on no zone's
+    //           overlay (map gaps / overlay-less custom zones), scored by the
+    //           most-interior zone-rect margin.
+    bool haveLand = false, haveBox = false;
+    double landScore = -1.0, boxMargin = 0.0;
+    int landArea = 0, boxArea = 0;
+    double landX = 0.0, landY = 0.0, boxX = 0.0, boxY = 0.0;
     for (int id = 1; id <= count; ++id) {
         const uint8_t *rec = DBC::Record(Offsets::VAR_WORLDMAP_AREA_RECORDS,
                                          Offsets::VAR_WORLDMAP_AREA_COUNT,
@@ -89,18 +151,69 @@ bool ZonePercent(int mapID, float x, float y, int *outAreaID, double *outMapX,
         if (x < bottom || x > top || y < right || y > left)
             continue; // point outside this zone's rect
 
-        const double area = spanX * spanY;
-        if (found && area >= bestArea)
-            continue; // a tighter zone already wins
-
-        found = true;
-        bestArea = area;
-        *outAreaID = areaID;
         // mapX = horizontal (world Y), mapY = vertical (world X).
-        *outMapX = (left - y) / spanY * 100.0;
-        *outMapY = (top - x) / spanX * 100.0;
+        const double mapX = (left - y) / spanY * 100.0;
+        const double mapY = (top - x) / spanX * 100.0;
+        const double marginX = (x - bottom < top - x ? x - bottom : top - x) / spanX;
+        const double marginY = (y - right < left - y ? y - right : left - y) / spanY;
+        const double margin = marginX < marginY ? marginX : marginY;
+
+        if (!haveBox || margin > boxMargin) {
+            haveBox = true;
+            boxMargin = margin;
+            boxArea = areaID;
+            boxX = mapX;
+            boxY = mapY;
+        }
+        const double overlayMargin = OverlayMargin(id, mapX, mapY);
+        if (overlayMargin >= 0.0 && (!haveLand || overlayMargin > landScore)) {
+            haveLand = true;
+            landScore = overlayMargin;
+            landArea = areaID;
+            landX = mapX;
+            landY = mapY;
+        }
     }
-    return found;
+
+    if (haveLand) {
+        *outAreaID = landArea;
+        *outMapX = landX;
+        *outMapY = landY;
+        return true;
+    }
+    if (haveBox) {
+        *outAreaID = boxArea;
+        *outMapX = boxX;
+        *outMapY = boxY;
+        return true;
+    }
+    return false;
+}
+
+bool PercentInZone(int areaID, float x, float y, double *outMapX, double *outMapY) {
+    const int count =
+        *reinterpret_cast<const int *>(Offsets::VAR_WORLDMAP_AREA_COUNT);
+    for (int id = 1; id <= count; ++id) {
+        const uint8_t *rec = DBC::Record(Offsets::VAR_WORLDMAP_AREA_RECORDS,
+                                         Offsets::VAR_WORLDMAP_AREA_COUNT,
+                                         static_cast<uint32_t>(id));
+        if (rec == nullptr)
+            continue;
+        if (*reinterpret_cast<const int *>(rec + Offsets::OFF_WMA_AREA_ID) != areaID)
+            continue;
+        const double left = FloatField(rec, Offsets::OFF_WMA_LOC_LEFT);
+        const double right = FloatField(rec, Offsets::OFF_WMA_LOC_RIGHT);
+        const double top = FloatField(rec, Offsets::OFF_WMA_LOC_TOP);
+        const double bottom = FloatField(rec, Offsets::OFF_WMA_LOC_BOTTOM);
+        const double spanX = top - bottom;
+        const double spanY = left - right;
+        if (spanX <= 0.0 || spanY <= 0.0)
+            continue; // degenerate row — keep scanning for a usable one
+        *outMapX = (left - y) / spanY * 100.0; // horizontal (world Y)
+        *outMapY = (top - x) / spanX * 100.0;  // vertical (world X)
+        return true;
+    }
+    return false;
 }
 
 bool ContinentPercent(int mapID, float x, float y, double *outPx, double *outPy) {

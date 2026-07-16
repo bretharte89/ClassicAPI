@@ -38,15 +38,32 @@ int RowForAreaID(uint32_t areaID);
 // the continent blob isn't resident.
 int CurrentViewRow();
 
-// Resolves world point (x, y) on continent `mapID` to the **tightest** zone
-// whose WorldMapArea rect contains it, filling the zone's AreaTable areaID
-// and a 0..100 zone-relative percent (`mapX` horizontal off world Y, `mapY`
-// vertical off world X — the WoW/pfQuest convention). Returns false when no
-// zone rect on that map encloses the point (open sea, degenerate rect, an
-// instance with no zone row). Shared by GetAreaTriggerInfo and the taxi-node
-// zone resolve.
+// Resolves world point (x, y) on continent `mapID` to a zone: its AreaTable
+// areaID and a 0..100 zone-relative percent (`mapX` horizontal off world Y,
+// `mapY` vertical off world X — the WoW/pfQuest convention).
+//
+// WorldMapArea rects are loose, overlapping bounding boxes, so a point near a
+// zone edge falls inside several. Resolution therefore prefers the zone whose
+// **drawn landmass** (WorldMapOverlay hit rect) the point actually sits on —
+// the runtime analog of an ADT area-grid lookup (Un'Goro's crater vs Thousand
+// Needles' empty overlap). Overlay hit rects are themselves rectangles that
+// overlap at borders, so among landmass matches the winner is the zone the
+// point is DEEPEST inside an overlay of (Nijel's Point is deep in Desolace's
+// own overlay but only clips the edge of Stonetalon's Charred Vale box). If the
+// point is on no zone's overlay, falls back to the most-interior containing
+// rect. Returns false when no zone rect encloses the point (open sea,
+// degenerate rect, an instance with no zone row). Shared by GetAreaTriggerInfo
+// and the taxi-node zone resolve.
 bool ZonePercent(int mapID, float x, float y, int *outAreaID, double *outMapX,
                  double *outMapY);
+
+// Projects world (x, y) into the WorldMapArea rect of a SPECIFIC AreaTable
+// zone (`areaID`), filling the 0..100 zone-relative percent (`mapX` horizontal
+// off world Y, `mapY` vertical off world X). Returns false when that zone has
+// no usable WorldMapArea row. Used when the zone is already known by other
+// means (a taxi node's name) and only the in-zone position is needed —
+// bypassing the containment / landmass search of ZonePercent.
+bool PercentInZone(int areaID, float x, float y, double *outMapX, double *outMapY);
 
 // Projects world (x, y) on `mapID` to 0..1 CONTINENT-map coordinates using
 // the continent's WorldMapArea row (the areaID == 0 row with a non-degenerate

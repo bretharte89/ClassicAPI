@@ -6999,11 +6999,15 @@ mapX% = (locLeft - y) / (locLeft - locRight)  * 100   -- horizontal
 mapY% = (locTop  - x) / (locTop  - locBottom) * 100   -- vertical
 ```
 
-The zone is chosen by containment — among the zone rects on the
-trigger's map that enclose the point, the smallest-area one wins (so a
-subzone beats its parent). When no zone rect contains the point (open
-sea, an instance with no `WorldMapArea` row, a degenerate rect), the
-three derived fields are simply omitted — the raw world coords are
+The zone is chosen by which one's **drawn landmass** the point sits on:
+`WorldMapArea` rects are loose overlapping boxes, so a point near a
+border falls in several; the `WorldMapOverlay` hit rects trace the real
+landmass, and the zone the point is deepest inside an overlay of wins
+(the runtime stand-in for an ADT area lookup). When the point is on no
+zone's overlay it falls back to the most-interior containing rect; when
+no rect contains it at all (open sea, an instance with no `WorldMapArea`
+row, a degenerate rect), the three derived fields are simply omitted —
+the raw world coords are
 always present.
 
 ```lua
@@ -7025,8 +7029,10 @@ end
 > `{21.89, 67.87, 85}` Tirisfal; id 45 → `{68, 17, 796}`). One
 > difference in kind: a scraped table may list a trigger under several
 > maps at once (a subzone *and* its parent continent); this resolves to
-> the single **tightest** zone whose rect contains the point. An addon
-> can drop `GetAreaTriggers()` straight in place of a shipped table.
+> the single zone whose **drawn landmass** the point sits on (via the
+> WorldMapOverlay hit rects — the runtime stand-in for an ADT area
+> lookup). An addon can drop `GetAreaTriggers()` straight in place of a
+> shipped table.
 
 Backports the six `C_MerchantFrame.*` calls retail addons use when
 interacting with a vendor. All entry points read the engine's
@@ -10028,18 +10034,23 @@ Each entry:
 | `nodeID` | `TaxiNodes.dbc` row id |
 | `name` | localized node name (`"Stormwind, Elwynn Forest"`) |
 | `faction` | `Enum.FlightPathFaction` — Alliance-mount-only → `Alliance`, Horde-only → `Horde`, both → `Neutral` |
+| `reachable` | *(ext)* a flight path leads *to* this node (in-degree > 0). `false` = departure-only, reachable only by other means (druid Teleport → "Nighthaven, Moonglade"; a boat dock → "Stormwind Harbor") |
 | `position` | `{x, y}` 0–1 on the continent map (retail-accurate) |
 | `mapID` | *(ext)* continent `Map.dbc` id |
 | `x` / `y` / `z` | *(ext)* raw continent world coords |
-| `areaID` | *(ext)* the `AreaTable` zone the point resolves to (absent if unresolved) |
-| `mapX` / `mapY` | *(ext)* 0–100 zone-relative %, alongside `areaID` (same transform as `C_Map.GetAreaTriggerInfo`) |
+| `areaID` | *(ext)* the `AreaTable` zone, resolved from the node's own name suffix ("…, Western Plaguelands" → WPL) — authoritative; absent if unresolved |
+| `mapX` / `mapY` | *(ext)* 0–100 position within that zone (`mapX` horizontal, `mapY` vertical) |
 
 `nodeID` / `name` / `faction` / `position` are the retail fields; the
-rest are ClassicAPI extensions (marked *(ext)*). The raw+derived split
-mirrors `GetAreaTriggerInfo`: `position` matches retail (continent),
-while `areaID` + `mapX`/`mapY` let a zone-map addon pin directly.
-`isUndiscovered` is not wired (the client's known-node bitfield isn't
-read) — every node is returned regardless of discovery.
+rest are ClassicAPI extensions (marked *(ext)*). `position` matches
+retail (continent 0–1), while `areaID` + `mapX`/`mapY` let a zone-map
+addon pin directly. `areaID` comes from the node's **name** (the zone
+after the last ", "), matched against `AreaTable` — authoritative, and
+unlike a purely geometric point→zone guess it's right at zone borders
+(Chillwind Camp → Western Plaguelands, not the Alterac box it sits in).
+Nodes with no ", Zone" suffix fall back to the geometric landmass
+resolver. `isUndiscovered` is not wired (the client's known-node
+bitfield isn't read) — every node is returned regardless of discovery.
 
 ```lua
 for _, n in ipairs(C_TaxiMap.GetTaxiNodesForMap(0)) do
