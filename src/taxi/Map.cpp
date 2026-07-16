@@ -1,0 +1,282 @@
+// This file is part of ClassicAPI.
+//
+// ClassicAPI is free software: you can redistribute it and/or modify it under the terms
+// of the GNU General Public License as published by the Free Software Foundation, either
+// version 3 of the License, or (at your option) any later version.
+//
+// ClassicAPI is distributed in the hope that it will be useful, but WITHOUT ANY
+// WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+// PURPOSE. See the GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along with
+// ClassicAPI. If not, see <https://www.gnu.org/licenses/>.
+
+// `C_TaxiMap.GetTaxiNodesForMap(mapID)` (static) and
+// `C_TaxiMap.GetAllTaxiNodes([uiMapID])` (live) — backports of the retail
+// taxi-map node enumerators, plus the `Enum.FlightPathFaction` /
+// `Enum.FlightPathState` tables so retail code ports unchanged.
+//
+// - **GetTaxiNodesForMap** reads `TaxiNodes.dbc` directly: every flight point
+//   on a continent, faction-tagged, regardless of discovery — the static DB
+//   a zone-map addon (pfQuest's `pfDB.meta.flight`) wants. No flight master
+//   needed. Non-flight rows are filtered out — the DBC also holds transports/
+//   boats/zeppelins (no flight mount) and non-selectable markers like
+//   Northshire Abbey (no connecting flight path); a real flight master has a
+//   mount AND is a TaxiPath endpoint.
+// - **GetAllTaxiNodes** wraps the open flight master's live reachable-node
+//   list (the legacy NumTaxiNodes/TaxiNode* globals' backing state): the
+//   nodes you can actually fly to right now, with per-node reachability and
+//   the slot index `TakeTaxiNode` takes. Empty when no taxi map is open.
+//
+// Ship both: static/DBC for databases + overlays, live/session for a custom
+// flight-map UI. See docs/API.md for the field-by-field contract and which
+// fields are retail vs ClassicAPI extensions.
+
+#include "Game.h"
+#include "Offsets.h"
+#include "dbc/Lookup.h"
+#include "map/Area.h"
+
+#include <cstdint>
+#include <cstring>
+
+namespace Taxi::Map {
+
+namespace {
+
+// Enum.FlightPathFaction (retail values).
+enum { FACTION_NEUTRAL = 0, FACTION_HORDE = 1, FACTION_ALLIANCE = 2 };
+// Enum.FlightPathState (retail values).
+enum { STATE_CURRENT = 0, STATE_REACHABLE = 1, STATE_UNREACHABLE = 2 };
+
+float FloatField(const uint8_t *rec, int off) {
+    return *reinterpret_cast<const float *>(rec + off);
+}
+int IntField(const uint8_t *rec, int off) {
+    return *reinterpret_cast<const int *>(rec + off);
+}
+
+// Pushes { x = px, y = py } as a subtable field `key` of the table on top.
+void PushPosition(void *L, const char *key, double px, double py) {
+    Game::Lua::PushString(L, key);
+    Game::Lua::NewTable(L);
+    Game::Lua::SetFieldNumber(L, "x", px);
+    Game::Lua::SetFieldNumber(L, "y", py);
+    Game::Lua::SetTable(L, -3);
+}
+
+// Builds the set of TaxiPath.dbc endpoint node ids — the nodes some flight
+// path connects to. A real flight master is always a path endpoint; the
+// fake rows (Northshire Abbey, spurious duplicate hub rows, standalone
+// markers like "Eastern Plaguelands"/"Naxxramas") connect to nothing. Node
+// ids are marked in `out[nodeID]`; ids >= `outSize` are ignored (the vanilla
+// table maxes ~122, so the fixed buffer is ample). Returns false when the
+// path table isn't loaded.
+constexpr int kMaxTaxiNodeID = 2048;
+bool BuildEndpointSet(bool *out, int outSize) {
+    const int count = *reinterpret_cast<const int *>(Offsets::VAR_TAXIPATH_COUNT);
+    if (count <= 0)
+        return false;
+    for (int i = 1; i <= count; ++i) {
+        const uint8_t *rec = DBC::Record(Offsets::VAR_TAXIPATH_RECORDS,
+                                         Offsets::VAR_TAXIPATH_COUNT,
+                                         static_cast<uint32_t>(i));
+        if (rec == nullptr)
+            continue;
+        const int from = IntField(rec, Offsets::OFF_TAXIPATH_FROM);
+        const int to = IntField(rec, Offsets::OFF_TAXIPATH_TO);
+        if (from >= 0 && from < outSize)
+            out[from] = true;
+        if (to >= 0 && to < outSize)
+            out[to] = true;
+    }
+    return true;
+}
+
+// The Map.dbc continent id of the currently viewed world map (for the
+// no-arg form) — the WorldMapArea current-view row's mapID column.
+int CurrentContinentMapID() {
+    const int row = ::Map::Area::CurrentViewRow();
+    if (row <= 0)
+        return -1;
+    const uint8_t *wma = DBC::Record(Offsets::VAR_WORLDMAP_AREA_RECORDS,
+                                     Offsets::VAR_WORLDMAP_AREA_COUNT,
+                                     static_cast<uint32_t>(row));
+    return wma ? IntField(wma, Offsets::OFF_WMA_MAP_ID) : -1;
+}
+
+// `C_TaxiMap.GetTaxiNodesForMap(mapID)` — see module comment.
+int __fastcall Script_GetTaxiNodesForMap(void *L) {
+    const int mapID = Game::Lua::IsNumber(L, 1)
+                          ? static_cast<int>(Game::Lua::ToNumber(L, 1))
+                          : CurrentContinentMapID();
+
+    Game::Lua::SetTop(L, 0);
+    Game::Lua::NewTable(L);
+    if (mapID < 0)
+        return 1;
+
+    // Real flight masters are TaxiPath endpoints (see BuildEndpointSet).
+    bool endpoint[kMaxTaxiNodeID] = {};
+    BuildEndpointSet(endpoint, kMaxTaxiNodeID);
+
+    const int count =
+        *reinterpret_cast<const int *>(Offsets::VAR_TAXINODES_COUNT);
+    int outIdx = 0;
+    for (int id = 1; id <= count; ++id) {
+        const uint8_t *rec = DBC::Record(Offsets::VAR_TAXINODES_RECORDS,
+                                         Offsets::VAR_TAXINODES_COUNT,
+                                         static_cast<uint32_t>(id));
+        if (rec == nullptr)
+            continue;
+        if (IntField(rec, Offsets::OFF_TAXINODE_MAP_ID) != mapID)
+            continue;
+
+        // Two filters isolate real flight masters from the DBC's non-flight
+        // rows: (1) at least one flight mount — drops transports/boats/
+        // zeppelins/instance markers (both mounts 0); (2) the node is a
+        // TaxiPath endpoint — drops Northshire Abbey, spurious duplicate hub
+        // rows, and standalone markers that connect to no flight path.
+        const int horde = IntField(rec, Offsets::OFF_TAXINODE_HORDE_MOUNT);
+        const int alliance = IntField(rec, Offsets::OFF_TAXINODE_ALLIANCE_MOUNT);
+        if (horde == 0 && alliance == 0)
+            continue;
+        if (id >= kMaxTaxiNodeID || !endpoint[id])
+            continue;
+
+        const char *name = DBC::LocalizedField(Offsets::VAR_TAXINODES_RECORDS,
+                                               Offsets::VAR_TAXINODES_COUNT,
+                                               static_cast<uint32_t>(id),
+                                               Offsets::OFF_TAXINODE_NAME);
+        // The one path-connected, mounted row that still isn't a flight
+        // master: Blizzard's internal "Generic, World target" zeppelin-route
+        // marker. It's the sole such placeholder across all continents.
+        if (name != nullptr && std::strncmp(name, "Generic", 7) == 0)
+            continue;
+
+        const int faction = (horde != 0 && alliance != 0) ? FACTION_NEUTRAL
+                            : (alliance != 0)              ? FACTION_ALLIANCE
+                                                           : FACTION_HORDE;
+
+        const float x = FloatField(rec, Offsets::OFF_TAXINODE_X);
+        const float y = FloatField(rec, Offsets::OFF_TAXINODE_Y);
+        const float z = FloatField(rec, Offsets::OFF_TAXINODE_Z);
+
+        outIdx += 1;
+        Game::Lua::PushNumber(L, static_cast<double>(outIdx));
+        Game::Lua::NewTable(L);
+        Game::Lua::SetFieldNumber(L, "nodeID", id);
+        Game::Lua::SetFieldString(L, "name", name ? name : "");
+        Game::Lua::SetFieldNumber(L, "faction", faction);
+        Game::Lua::SetFieldNumber(L, "mapID", mapID);
+        Game::Lua::SetFieldNumber(L, "x", x);
+        Game::Lua::SetFieldNumber(L, "y", y);
+        Game::Lua::SetFieldNumber(L, "z", z);
+
+        // position: 0-1 on the continent map (retail-accurate). Falls back to
+        // {0,0} when the continent has no usable WorldMapArea row (instance
+        // maps); zone-map addons use areaID + mapX/mapY below instead.
+        double px = 0.0, py = 0.0;
+        ::Map::Area::ContinentPercent(mapID, x, y, &px, &py);
+        PushPosition(L, "position", px, py);
+
+        // Derived zone anchor: tightest AreaTable zone + 0-100 zone-relative
+        // percent (same transform as GetAreaTriggerInfo). Omitted when the
+        // point resolves to no zone.
+        int areaID = 0;
+        double mapX = 0.0, mapY = 0.0;
+        if (::Map::Area::ZonePercent(mapID, x, y, &areaID, &mapX, &mapY)) {
+            Game::Lua::SetFieldNumber(L, "areaID", areaID);
+            Game::Lua::SetFieldNumber(L, "mapX", mapX);
+            Game::Lua::SetFieldNumber(L, "mapY", mapY);
+        }
+
+        Game::Lua::SetTable(L, -3);
+    }
+    return 1;
+}
+
+using TaxiNodeType_t = const char *(__fastcall *)(uint32_t slot0Based);
+
+int StateFromType(const char *type) {
+    if (type == nullptr)
+        return STATE_UNREACHABLE;
+    if (std::strcmp(type, "CURRENT") == 0)
+        return STATE_CURRENT;
+    if (std::strcmp(type, "REACHABLE") == 0)
+        return STATE_REACHABLE;
+    return STATE_UNREACHABLE; // DISTANT / NONE / other
+}
+
+// `C_TaxiMap.GetAllTaxiNodes([uiMapID])` — see module comment. The uiMapID
+// arg is accepted for retail signature parity but ignored (vanilla has a
+// single active taxi map — the open flight master's).
+int __fastcall Script_GetAllTaxiNodes(void *L) {
+    Game::Lua::SetTop(L, 0);
+    Game::Lua::NewTable(L);
+
+    const int count =
+        *reinterpret_cast<const int *>(Offsets::VAR_TAXI_NODE_COUNT);
+    if (count <= 0)
+        return 1; // no taxi map open
+
+    auto typeFn = reinterpret_cast<TaxiNodeType_t>(Offsets::FUN_TAXI_NODE_TYPE);
+    const auto *arrayBase =
+        reinterpret_cast<const uint8_t *>(Offsets::VAR_TAXI_NODE_ARRAY);
+
+    for (int slot = 0; slot < count; ++slot) {
+        const uint8_t *slotRec = arrayBase + slot * Offsets::TAXI_NODE_STRIDE;
+        const uint8_t *dbcRec = *reinterpret_cast<const uint8_t *const *>(
+            slotRec + Offsets::OFF_TAXI_SLOT_RECORD);
+        const float x = FloatField(slotRec, Offsets::OFF_TAXI_SLOT_X);
+        const float y = FloatField(slotRec, Offsets::OFF_TAXI_SLOT_Y);
+
+        int nodeID = 0;
+        const char *name = nullptr;
+        if (dbcRec != nullptr) {
+            nodeID = IntField(dbcRec, 0); // TaxiNodes.dbc id @ +0
+            name = DBC::LocalizedField(Offsets::VAR_TAXINODES_RECORDS,
+                                       Offsets::VAR_TAXINODES_COUNT,
+                                       static_cast<uint32_t>(nodeID),
+                                       Offsets::OFF_TAXINODE_NAME);
+        }
+        const int state = StateFromType(typeFn(static_cast<uint32_t>(slot)));
+
+        Game::Lua::PushNumber(L, static_cast<double>(slot + 1));
+        Game::Lua::NewTable(L);
+        Game::Lua::SetFieldNumber(L, "slotIndex", slot + 1); // TakeTaxiNode arg
+        Game::Lua::SetFieldString(L, "name", name ? name : "");
+        Game::Lua::SetFieldNumber(L, "nodeID", nodeID);
+        Game::Lua::SetFieldNumber(L, "state", state);
+        PushPosition(L, "position", x, y); // flight-map 0-1, matches retail
+        Game::Lua::SetTable(L, -3);
+    }
+    return 1;
+}
+
+void RegisterLuaFunctions() {
+    static const Game::Lua::EnumIntegerEntry kFaction[] = {
+        {"Neutral", FACTION_NEUTRAL},
+        {"Horde", FACTION_HORDE},
+        {"Alliance", FACTION_ALLIANCE},
+    };
+    Game::Lua::RegisterIntegerEnum("Enum", "FlightPathFaction", kFaction, 3);
+
+    static const Game::Lua::EnumIntegerEntry kState[] = {
+        {"Current", STATE_CURRENT},
+        {"Reachable", STATE_REACHABLE},
+        {"Unreachable", STATE_UNREACHABLE},
+    };
+    Game::Lua::RegisterIntegerEnum("Enum", "FlightPathState", kState, 3);
+
+    Game::Lua::RegisterTableFunction("C_TaxiMap", "GetTaxiNodesForMap",
+                                     &Script_GetTaxiNodesForMap);
+    Game::Lua::RegisterTableFunction("C_TaxiMap", "GetAllTaxiNodes",
+                                     &Script_GetAllTaxiNodes);
+}
+
+const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
+
+} // namespace
+
+} // namespace Taxi::Map

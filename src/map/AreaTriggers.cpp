@@ -55,6 +55,7 @@
 #include "Game.h"
 #include "Offsets.h"
 #include "dbc/Lookup.h"
+#include "map/Area.h"
 
 #include <cstdint>
 
@@ -66,54 +67,8 @@ float FloatField(const uint8_t *rec, int off) {
     return *reinterpret_cast<const float *>(rec + off);
 }
 
-// Finds the WorldMapArea zone that best contains world point (x, y) on
-// `mapID` and fills the map-relative percent. Returns false when no zone
-// rect on that map encloses the point (open sea, an instance with no
-// WorldMapArea row, a degenerate rect, …).
-bool ResolveZonePercent(int mapID, float x, float y, int *outAreaID,
-                        double *outMapX, double *outMapY) {
-    const int count =
-        *reinterpret_cast<const int *>(Offsets::VAR_WORLDMAP_AREA_COUNT);
-    bool found = false;
-    double bestArea = 0.0;
-    for (int id = 1; id <= count; ++id) {
-        const uint8_t *rec = DBC::Record(Offsets::VAR_WORLDMAP_AREA_RECORDS,
-                                         Offsets::VAR_WORLDMAP_AREA_COUNT,
-                                         static_cast<uint32_t>(id));
-        if (rec == nullptr)
-            continue;
-        if (*reinterpret_cast<const int *>(rec + Offsets::OFF_WMA_MAP_ID) != mapID)
-            continue;
-        const int areaID =
-            *reinterpret_cast<const int *>(rec + Offsets::OFF_WMA_AREA_ID);
-        if (areaID == 0)
-            continue; // continent-spanning row, not a zone
-
-        const double left = FloatField(rec, Offsets::OFF_WMA_LOC_LEFT);
-        const double right = FloatField(rec, Offsets::OFF_WMA_LOC_RIGHT);
-        const double top = FloatField(rec, Offsets::OFF_WMA_LOC_TOP);
-        const double bottom = FloatField(rec, Offsets::OFF_WMA_LOC_BOTTOM);
-        const double spanX = top - bottom;   // > 0
-        const double spanY = left - right;    // > 0
-        if (spanX <= 0.0 || spanY <= 0.0)
-            continue; // degenerate / unmapped zone
-
-        if (x < bottom || x > top || y < right || y > left)
-            continue; // point outside this zone's rect
-
-        const double area = spanX * spanY;
-        if (found && area >= bestArea)
-            continue; // a tighter zone already wins
-
-        found = true;
-        bestArea = area;
-        *outAreaID = areaID;
-        // mapX = horizontal (world Y), mapY = vertical (world X).
-        *outMapX = (left - y) / spanY * 100.0;
-        *outMapY = (top - x) / spanX * 100.0;
-    }
-    return found;
-}
+// Zone containment + map-percent projection lives in the shared
+// `Map::Area::ZonePercent` (taxi nodes use the same transform).
 
 // Builds one trigger's info table and leaves it on the Lua stack top.
 // Returns false (pushing nothing) when `id` is out of range or the slot
@@ -151,7 +106,7 @@ bool PushTriggerInfo(void *L, int id) {
 
     int areaID = 0;
     double mapX = 0.0, mapY = 0.0;
-    if (ResolveZonePercent(mapID, x, y, &areaID, &mapX, &mapY)) {
+    if (Map::Area::ZonePercent(mapID, x, y, &areaID, &mapX, &mapY)) {
         Game::Lua::SetFieldNumber(L, "areaID", areaID);
         Game::Lua::SetFieldNumber(L, "mapX", mapX);
         Game::Lua::SetFieldNumber(L, "mapY", mapY);

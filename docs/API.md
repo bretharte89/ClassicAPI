@@ -405,6 +405,10 @@ build instructions.
   - [`GetTalentSpellID(tabIndex, talentIndex, [rank])`](#gettalentspellidtabindex-talentindex-rank)
   - [`GetTalentIDByIndex(tabIndex, talentIndex)`](#gettalentidbyindextabindex-talentindex)
 
+- [TaxiMap](#taximap)
+  - [`C_TaxiMap.GetTaxiNodesForMap(mapID)`](#c_taximapgettaxinodesformapmapid)
+  - [`C_TaxiMap.GetAllTaxiNodes([uiMapID])`](#c_taximapgetalltaxinodesuimapid)
+
 - [Time](#time)
   - [`GetServerTime()`](#getservertime)
   - [`C_Timer.After(seconds, callback)`](#c_timeraftersseconds-callback)
@@ -9983,6 +9987,109 @@ a different field.
 
 Equivalent to the talentID return slot of `GetTalentInfo` in modern
 WoW (5.0+; not exposed at all in 1.12).
+
+## TaxiMap
+
+Backports of the retail taxi-map node enumerators, reading
+`TaxiNodes.dbc` (static) and the open flight master's live session. Both
+also register the `Enum.FlightPathFaction` (`Neutral=0`, `Horde=1`,
+`Alliance=2`) and `Enum.FlightPathState` (`Current=0`, `Reachable=1`,
+`Unreachable=2`) tables, so retail code comparing against those enums
+ports unchanged.
+
+Ship both because they answer different questions:
+
+| function | source | use |
+|---|---|---|
+| `C_TaxiMap.GetTaxiNodesForMap(mapID)` | `TaxiNodes.dbc` (static) | every flight point on a continent, faction-tagged, discovered or not — for a database / map overlay |
+| `C_TaxiMap.GetAllTaxiNodes([uiMapID])` | live taxi session | the nodes reachable from the **open** flight master, with per-node state + the slot index to fly — for a flight-map UI |
+
+### `C_TaxiMap.GetTaxiNodesForMap(mapID)`
+
+Returns an array of every `TaxiNodes.dbc` flight point on continent
+`mapID` (a `Map.dbc` id — `0` Eastern Kingdoms, `1` Kalimdor, `30`
+Alterac Valley, … — the same identity `C_Map.GetAreaTriggers([mapID])`
+uses; retail's `uiMapID` has no vanilla analog). Omit / non-number →
+the currently viewed continent.
+
+Only real flight masters are returned. `TaxiNodes.dbc` also contains
+non-flight rows — transports/boats/zeppelins (no flight mount) and
+non-selectable markers like Northshire Abbey or standalone instance
+entries (no connecting flight path) — which are filtered out: a node is
+included only if it has a flight mount **and** is a `TaxiPath.dbc`
+endpoint (some flight path connects to it).
+
+Each entry:
+
+| field | meaning |
+|---|---|
+| `nodeID` | `TaxiNodes.dbc` row id |
+| `name` | localized node name (`"Stormwind, Elwynn Forest"`) |
+| `faction` | `Enum.FlightPathFaction` — Alliance-mount-only → `Alliance`, Horde-only → `Horde`, both → `Neutral` |
+| `position` | `{x, y}` 0–1 on the continent map (retail-accurate) |
+| `mapID` | *(ext)* continent `Map.dbc` id |
+| `x` / `y` / `z` | *(ext)* raw continent world coords |
+| `areaID` | *(ext)* the `AreaTable` zone the point resolves to (absent if unresolved) |
+| `mapX` / `mapY` | *(ext)* 0–100 zone-relative %, alongside `areaID` (same transform as `C_Map.GetAreaTriggerInfo`) |
+
+`nodeID` / `name` / `faction` / `position` are the retail fields; the
+rest are ClassicAPI extensions (marked *(ext)*). The raw+derived split
+mirrors `GetAreaTriggerInfo`: `position` matches retail (continent),
+while `areaID` + `mapX`/`mapY` let a zone-map addon pin directly.
+`isUndiscovered` is not wired (the client's known-node bitfield isn't
+read) — every node is returned regardless of discovery.
+
+```lua
+for _, n in ipairs(C_TaxiMap.GetTaxiNodesForMap(0)) do
+    if n.faction == Enum.FlightPathFaction.Alliance and n.areaID then
+        Pin(n.areaID, n.mapX, n.mapY, n.name)   -- zone-map pin
+    end
+end
+```
+
+Replaces hand-scraped flight tables (pfQuest's `pfDB.meta.flight`):
+draw a node per entry (filtered by faction, using `areaID`+`mapX`/`mapY`)
+exactly like `SearchAreaTriggerID`. Auto-covers custom-server flight
+points — no NPC-id curation.
+
+### `C_TaxiMap.GetAllTaxiNodes([uiMapID])`
+
+Returns the live flight-master destination list — the nodes reachable
+from the **currently open** taxi map, with reachability state and the
+slot index needed to take the flight. **Only meaningful while the taxi
+map is open** (between `TAXIMAP_OPENED` and `TAXIMAP_CLOSED`); returns an
+empty table otherwise. `uiMapID` is accepted for retail signature parity
+but ignored (vanilla has a single active taxi map).
+
+Each entry:
+
+| field | meaning |
+|---|---|
+| `slotIndex` | the legacy `1..NumTaxiNodes()` index — pass to `TakeTaxiNode(slotIndex)` to fly |
+| `name` | node name |
+| `position` | `{x, y}` 0–1 on the flight-map image (matches retail) |
+| `state` | `Enum.FlightPathState` — `CURRENT`→`Current`, `REACHABLE`→`Reachable`, `DISTANT`/none→`Unreachable` |
+| `nodeID` | `TaxiNodes.dbc` id (resolved from the slot's node record; `0` if absent) |
+
+No `faction` / `isUndiscovered` here — retail's `GetAllTaxiNodes` doesn't
+carry them (reachability implies faction); that data lives on
+`GetTaxiNodesForMap`. `textureKit` / `useSpecialIcon` (retail cosmetic
+fields) have no vanilla equivalent and are omitted.
+
+```lua
+-- Fly to the first reachable destination:
+for _, n in ipairs(C_TaxiMap.GetAllTaxiNodes()) do
+    if n.state == Enum.FlightPathState.Reachable then
+        TakeTaxiNode(n.slotIndex)
+        break
+    end
+end
+```
+
+This is the interactive counterpart to `GetTaxiNodesForMap`: session-gated
+and player-relative (its whole point is the open master's reachable set),
+which is why a static database like pfQuest uses `GetTaxiNodesForMap`
+instead.
 
 ## Time
 

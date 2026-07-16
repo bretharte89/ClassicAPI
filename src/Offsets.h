@@ -2226,6 +2226,49 @@ enum Offsets {
     OFF_AREATABLE_AREA_BIT = 0x0C,
     OFF_AREATABLE_EXPLORE_GATE = 0x28,
 
+    // TaxiNodes.dbc (16 fields, 0x40 bytes) — flight points. records/count
+    // per docs/DBCs.md. mapID @ +0x04 is the Map.dbc continent; x/y/z floats;
+    // Name[8] localized @ +0x14; the two MountCreatureID columns are
+    // [Horde @ +0x38, Alliance @ +0x3C] (0 = that faction has no flight
+    // master at this node — both 0 = a transport/system waypoint).
+    VAR_TAXINODES_RECORDS = 0x00C0D6C0,
+    VAR_TAXINODES_COUNT = 0x00C0D6C4,
+    OFF_TAXINODE_MAP_ID = 0x04,
+    OFF_TAXINODE_X = 0x08,
+    OFF_TAXINODE_Y = 0x0C,
+    OFF_TAXINODE_Z = 0x10,
+    OFF_TAXINODE_NAME = 0x14,
+    OFF_TAXINODE_HORDE_MOUNT = 0x38,
+    OFF_TAXINODE_ALLIANCE_MOUNT = 0x3C,
+
+    // Live taxi session — the open flight master's reachable node list,
+    // populated between TAXIMAP_OPENED/CLOSED (count 0 otherwise). Backs the
+    // legacy NumTaxiNodes/TaxiNodeName/TaxiNodePosition/TaxiNodeGetType Lua
+    // globals. Node slots are 0x20-stride records at VAR_TAXI_NODE_ARRAY:
+    // +0x00 = pointer to the node's TaxiNodes.dbc record (id @ +0, name @
+    // +0x14), +0x04 = flight-map x (0-1 float), +0x08 = y. Count at
+    // VAR_TAXI_NODE_COUNT. Derived from Script_TaxiNode* (FUN_004dc380 name,
+    // FUN_004dc3b0 position); the reachability type comes from
+    // FUN_TAXI_NODE_TYPE.
+    VAR_TAXI_NODE_COUNT = 0x00BB4AA8,
+    VAR_TAXI_NODE_ARRAY = 0x00BB4F10,
+    TAXI_NODE_STRIDE = 0x20,
+    OFF_TAXI_SLOT_RECORD = 0x00,
+    OFF_TAXI_SLOT_X = 0x04,
+    OFF_TAXI_SLOT_Y = 0x08,
+    // __fastcall(uint slot0Based) -> const char* ("CURRENT" / "REACHABLE" /
+    // "DISTANT" / other) — the node's reachability for the open session.
+    FUN_TAXI_NODE_TYPE = 0x004DC4E0,
+
+    // TaxiPath.dbc (4 fields, 0x10 bytes): {id, fromNode@+0x04, toNode@+0x08,
+    // cost}. A real flight master is a node some flight path connects to;
+    // Northshire Abbey / spurious duplicate rows / standalone markers are not
+    // endpoints and so are filtered out of GetTaxiNodesForMap.
+    VAR_TAXIPATH_RECORDS = 0x00C0D698,
+    VAR_TAXIPATH_COUNT = 0x00C0D69C,
+    OFF_TAXIPATH_FROM = 0x04,
+    OFF_TAXIPATH_TO = 0x08,
+
     // Engine player-info cache — populated by the
     // SMSG_NAME_QUERY_RESPONSE handler (opcode 0x51) at 0x005551A0,
     // which reads (GUID, name[48], realm[256], race, sex, class) from

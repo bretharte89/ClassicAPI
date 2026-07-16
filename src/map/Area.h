@@ -38,4 +38,22 @@ int RowForAreaID(uint32_t areaID);
 // the continent blob isn't resident.
 int CurrentViewRow();
 
+// Resolves world point (x, y) on continent `mapID` to the **tightest** zone
+// whose WorldMapArea rect contains it, filling the zone's AreaTable areaID
+// and a 0..100 zone-relative percent (`mapX` horizontal off world Y, `mapY`
+// vertical off world X — the WoW/pfQuest convention). Returns false when no
+// zone rect on that map encloses the point (open sea, degenerate rect, an
+// instance with no zone row). Shared by GetAreaTriggerInfo and the taxi-node
+// zone resolve.
+bool ZonePercent(int mapID, float x, float y, int *outAreaID, double *outMapX,
+                 double *outMapY);
+
+// Projects world (x, y) on `mapID` to 0..1 CONTINENT-map coordinates using
+// the continent's WorldMapArea row (the areaID == 0 row with a non-degenerate
+// rect — some maps carry a stray zero-rect continent row that is skipped).
+// `outPx` is horizontal (off world Y), `outPy` vertical (off world X).
+// Returns false when the map has no usable continent row. This is the
+// projection retail's TaxiNodeInfo.position uses.
+bool ContinentPercent(int mapID, float x, float y, double *outPx, double *outPy);
+
 } // namespace Map::Area
