@@ -17,9 +17,9 @@
 // `Enum.FlightPathState` tables so retail code ports unchanged.
 //
 // - **GetTaxiNodesForMap** reads `TaxiNodes.dbc` directly: every flight point
-//   on a continent, faction-tagged, regardless of discovery — the static DB
-//   a zone-map addon (pfQuest's `pfDB.meta.flight`) wants. No flight master
-//   needed. Non-flight rows are filtered out — the DBC also holds transports/
+//   on a continent (or all continents with no arg), faction-tagged,
+//   regardless of discovery — the static DB a zone-map addon (pfQuest's
+//   `pfDB.meta.flight`) wants. No flight master needed. Non-flight rows are filtered out — the DBC also holds transports/
 //   boats/zeppelins (no flight mount) and non-selectable markers like
 //   Northshire Abbey (no connecting flight path); a real flight master has a
 //   mount AND is a TaxiPath endpoint.
@@ -93,28 +93,16 @@ bool BuildEndpointSet(bool *out, int outSize) {
     return true;
 }
 
-// The Map.dbc continent id of the currently viewed world map (for the
-// no-arg form) — the WorldMapArea current-view row's mapID column.
-int CurrentContinentMapID() {
-    const int row = ::Map::Area::CurrentViewRow();
-    if (row <= 0)
-        return -1;
-    const uint8_t *wma = DBC::Record(Offsets::VAR_WORLDMAP_AREA_RECORDS,
-                                     Offsets::VAR_WORLDMAP_AREA_COUNT,
-                                     static_cast<uint32_t>(row));
-    return wma ? IntField(wma, Offsets::OFF_WMA_MAP_ID) : -1;
-}
-
-// `C_TaxiMap.GetTaxiNodesForMap(mapID)` — see module comment.
+// `C_TaxiMap.GetTaxiNodesForMap([mapID])` — see module comment. A numeric
+// `mapID` filters to that continent; omitted / non-number returns every
+// flight master on every continent.
 int __fastcall Script_GetTaxiNodesForMap(void *L) {
-    const int mapID = Game::Lua::IsNumber(L, 1)
-                          ? static_cast<int>(Game::Lua::ToNumber(L, 1))
-                          : CurrentContinentMapID();
+    const bool filterMap = Game::Lua::IsNumber(L, 1);
+    const int wantMap =
+        filterMap ? static_cast<int>(Game::Lua::ToNumber(L, 1)) : -1;
 
     Game::Lua::SetTop(L, 0);
     Game::Lua::NewTable(L);
-    if (mapID < 0)
-        return 1;
 
     // Real flight masters are TaxiPath endpoints (see BuildEndpointSet).
     bool endpoint[kMaxTaxiNodeID] = {};
@@ -129,7 +117,8 @@ int __fastcall Script_GetTaxiNodesForMap(void *L) {
                                          static_cast<uint32_t>(id));
         if (rec == nullptr)
             continue;
-        if (IntField(rec, Offsets::OFF_TAXINODE_MAP_ID) != mapID)
+        const int mapID = IntField(rec, Offsets::OFF_TAXINODE_MAP_ID);
+        if (filterMap && mapID != wantMap)
             continue;
 
         // Two filters isolate real flight masters from the DBC's non-flight

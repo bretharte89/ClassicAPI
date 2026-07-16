@@ -406,7 +406,7 @@ build instructions.
   - [`GetTalentIDByIndex(tabIndex, talentIndex)`](#gettalentidbyindextabindex-talentindex)
 
 - [TaxiMap](#taximap)
-  - [`C_TaxiMap.GetTaxiNodesForMap(mapID)`](#c_taximapgettaxinodesformapmapid)
+  - [`C_TaxiMap.GetTaxiNodesForMap([mapID])`](#c_taximapgettaxinodesformapmapid)
   - [`C_TaxiMap.GetAllTaxiNodes([uiMapID])`](#c_taximapgetalltaxinodesuimapid)
 
 - [Time](#time)
@@ -10001,16 +10001,18 @@ Ship both because they answer different questions:
 
 | function | source | use |
 |---|---|---|
-| `C_TaxiMap.GetTaxiNodesForMap(mapID)` | `TaxiNodes.dbc` (static) | every flight point on a continent, faction-tagged, discovered or not — for a database / map overlay |
+| `C_TaxiMap.GetTaxiNodesForMap([mapID])` | `TaxiNodes.dbc` (static) | every flight point (one continent, or all with no arg), faction-tagged, discovered or not — for a database / map overlay |
 | `C_TaxiMap.GetAllTaxiNodes([uiMapID])` | live taxi session | the nodes reachable from the **open** flight master, with per-node state + the slot index to fly — for a flight-map UI |
 
-### `C_TaxiMap.GetTaxiNodesForMap(mapID)`
+### `C_TaxiMap.GetTaxiNodesForMap([mapID])`
 
-Returns an array of every `TaxiNodes.dbc` flight point on continent
-`mapID` (a `Map.dbc` id — `0` Eastern Kingdoms, `1` Kalimdor, `30`
-Alterac Valley, … — the same identity `C_Map.GetAreaTriggers([mapID])`
-uses; retail's `uiMapID` has no vanilla analog). Omit / non-number →
-the currently viewed continent.
+Returns an array of flight masters. A numeric `mapID` (a `Map.dbc` id —
+`0` Eastern Kingdoms, `1` Kalimdor, `30` Alterac Valley, … — the same
+identity `C_Map.GetAreaTriggers([mapID])` uses; retail's `uiMapID` has no
+vanilla analog) filters to that continent. **Omitted / non-number returns
+every flight master on every continent** — a one-call flight database
+(each entry carries its own `mapID`). This is a ClassicAPI extension to
+retail's required-argument signature.
 
 Only real flight masters are returned. `TaxiNodes.dbc` also contains
 non-flight rows — transports/boats/zeppelins (no flight mount) and
