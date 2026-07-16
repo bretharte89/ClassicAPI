@@ -373,6 +373,8 @@ build instructions.
   - [`FindSpellBookSlotByID(spellID)`](#findspellbookslotbyidspellid)
   - [`C_SpellBook.GetSpellLevelLearned(spellID)`](#c_spellbookgetspelllevellearnedspellid)
   - [`C_SpellBook.GetCurrentLevelSpells([level])`](#c_spellbookgetcurrentlevelspellslevel)
+  - [`C_SpellBook.GetSkillLineName(skillLineID)`](#c_spellbookgetskilllinenameskilllineid)
+  - [`C_SpellBook.GetSkillLineRank(skillLineID)`](#c_spellbookgetskilllinerankskilllineid)
   - [`C_SpellBook.GetSpellSkillLine(spellID)`](#c_spellbookgetspellskilllinespellid)
   - [`C_SpellBook.IsAutoAttackSpellBookItem(slot, bookType)`](#c_spellbookisautoattackspellbookitemslot-booktype)
   - [`C_SpellBook.IsRangedAutoAttackSpellBookItem(slot, bookType)`](#c_spellbookisrangedautoattackspellbookitemslot-booktype)
@@ -9377,6 +9379,51 @@ Class/race come from the local player — there's no
 clean class-string→classID lookup. Returns an empty table at
 character select / pre-login (no CGPlayer yet) and for levels
 where no class/race spells match.
+
+### `C_SpellBook.GetSkillLineName(skillLineID)`
+
+Returns the localized `SkillLine.dbc` name for a skill-line id — the
+id → name half of the bridge addons build by hand. A pure DBC read: it
+answers for any valid skill line (`182` = Herbalism, `186` = Mining, the
+weapon/defense lines, profession lines) whether or not the player has
+learned it. `nil` for non-numeric / non-positive input or an id with no
+`SkillLine.dbc` row.
+
+Pairs with [`GetSkillLineRank`](#c_spellbookgetskilllinerankskilllineid) —
+name from the DBC, rank from the player's live skills.
+
+```lua
+C_SpellBook.GetSkillLineName(182)   -- "Herbalism"
+C_SpellBook.GetSkillLineName(186)   -- "Mining"
+```
+
+### `C_SpellBook.GetSkillLineRank(skillLineID)`
+
+Returns `(curRank, maxRank, modifier)` — the local player's rank in a
+skill line by `SkillLine.dbc` id — or `nil` if the player hasn't learned
+it.
+
+- `curRank` — current skill value (base, no temp bonus)
+- `maxRank` — the line's cap at the player's level
+- `modifier` — temporary bonus (weapon oils, buffs; `0` if none)
+
+```lua
+local cur, max = C_SpellBook.GetSkillLineRank(182)  -- Herbalism: 285, 300 (nil if unlearned)
+if C_SpellBook.GetSkillLineRank(186) then           -- has Mining at all?
+    -- ...
+end
+```
+
+Vanilla's `GetSkillLineInfo(index)` only walks the skill window by
+position and returns skills by *name*, so an addon starting from a
+SkillLine.dbc id (a quest's `requiredSkill`) has to map id → localized
+name and then string-match every skill line to recover the rank. This
+reads the player's live skill list keyed by id directly — the returned
+ranks are the same values `GetSkillLineInfo` reports. Resolves the id to
+the player's skill slot via `FUN_SKILL_LINE_TO_SLOT`, then reads the
+CGPlayer skill table (the same storage `C_Item.IsEquippableItem`'s
+require-skill gate uses). `nil` when the line isn't learned, for bad
+input, or before the player object is resident (character select).
 
 ### `C_SpellBook.GetSpellSkillLine(spellID)`
 

@@ -22,6 +22,7 @@ namespace Spell::SkillLine {
 namespace {
 
 using ResolveUnitToken_t = void *(__fastcall *)(const char *token);
+using SkillLineToSlot_t = int(__thiscall *)(void *player, uint32_t skillLineID);
 
 // Reads UNIT_FIELD_BYTES_0 from the local player's descriptor. Same
 // pattern Spell::Level::PlayerDescriptor uses. Returns (0, 0) when the
@@ -171,9 +172,109 @@ int __fastcall Script_GetSpellSkillLine(void *L) {
     return 2;
 }
 
+// `C_SpellBook.GetSkillLineName(skillLineID) → name`
+//
+// Localized `SkillLine.dbc::Name` for a skill-line id — the id → name
+// half of the bridge addons build by hand. Pure DBC read: returns the
+// name for ANY valid skill line (Herbalism = 182, Mining = 186, Swords,
+// Defense, …) whether or not the player has learned it. `nil` for
+// non-numeric / non-positive input or an id with no SkillLine.dbc row.
+//
+// Pairs with `GetSkillLineRank` (the learned-rank lookup): name comes
+// from the DBC, rank from the player's live skill list.
+int __fastcall Script_GetSkillLineName(void *L) {
+    if (!Game::Lua::IsNumber(L, 1)) {
+        Game::Lua::PushNil(L);
+        return 1;
+    }
+    const int id = static_cast<int>(Game::Lua::ToNumber(L, 1));
+    const char *name =
+        (id > 0) ? DBC::LocalizedField(Offsets::VAR_SKILL_LINE_RECORDS,
+                                       Offsets::VAR_SKILL_LINE_COUNT,
+                                       static_cast<uint32_t>(id),
+                                       Offsets::OFF_SKILL_LINE_NAME)
+                 : nullptr;
+    if (name == nullptr) {
+        Game::Lua::PushNil(L);
+        return 1;
+    }
+    Game::Lua::PushString(L, name);
+    return 1;
+}
+
+// `C_SpellBook.GetSkillLineRank(skillLineID) → curRank, maxRank, modifier`
+//
+// The local player's rank in a skill line, keyed by `SkillLine.dbc` id.
+// Vanilla's `GetSkillLineInfo(index)` only walks the skill window by
+// position and returns skills by *name*, so an addon starting from a
+// SkillLine.dbc id (a quest's `requiredSkill`, "Herbalism" = 182, …) has
+// to map id → localized name and string-match every skill line to recover
+// the rank. This reads the player's live skill list keyed by id directly.
+//
+// Returns the same values `GetSkillLineInfo` reports for the line:
+//   curRank  — current skill value (base, no temp bonus)
+//   maxRank  — the line's cap at the player's level
+//   modifier — temporary bonus (weapon oils, buffs; 0 if none)
+//
+// Returns `nil` (nothing) when the player hasn't learned the line
+// (`FUN_SKILL_LINE_TO_SLOT` reports no slot), for bad input, or before
+// the player object / skill sub-struct is resident (character select).
+// Reads the same CGPlayer `+0xE68` skill table `Player::CanUseItem`'s
+// RequiredSkill gate uses; ranks verified there (Tailoring 261/300, …).
+int __fastcall Script_GetSkillLineRank(void *L) {
+    if (!Game::Lua::IsNumber(L, 1)) {
+        Game::Lua::PushNil(L);
+        return 1;
+    }
+    const int skillLineID = static_cast<int>(Game::Lua::ToNumber(L, 1));
+    if (skillLineID <= 0) {
+        Game::Lua::PushNil(L);
+        return 1;
+    }
+
+    auto resolve = reinterpret_cast<ResolveUnitToken_t>(Offsets::FUN_RESOLVE_UNIT_TOKEN);
+    auto *player = static_cast<uint8_t *>(resolve("player"));
+    if (player == nullptr) {
+        Game::Lua::PushNil(L);
+        return 1;
+    }
+
+    auto toSlot = reinterpret_cast<SkillLineToSlot_t>(Offsets::FUN_SKILL_LINE_TO_SLOT);
+    const int slot = toSlot(player, static_cast<uint32_t>(skillLineID));
+    if (slot < 0) { // player doesn't have the skill line
+        Game::Lua::PushNil(L);
+        return 1;
+    }
+
+    auto *sub = *reinterpret_cast<const uint8_t *const *>(
+        player + Offsets::OFF_CGPLAYER_INFO);
+    if (sub == nullptr) {
+        Game::Lua::PushNil(L);
+        return 1;
+    }
+
+    const uint8_t *rec = sub + Offsets::OFF_SKILL_INFO_TABLE +
+                         slot * Offsets::SKILL_INFO_STRIDE;
+    const uint32_t cur =
+        *reinterpret_cast<const uint16_t *>(rec + Offsets::OFF_SKILL_INFO_CUR);
+    const uint32_t max =
+        *reinterpret_cast<const uint16_t *>(rec + Offsets::OFF_SKILL_INFO_MAX);
+    const uint32_t modifier =
+        *reinterpret_cast<const uint16_t *>(rec + Offsets::OFF_SKILL_INFO_BONUS);
+
+    Game::Lua::PushNumber(L, static_cast<double>(cur));
+    Game::Lua::PushNumber(L, static_cast<double>(max));
+    Game::Lua::PushNumber(L, static_cast<double>(modifier));
+    return 3;
+}
+
 void RegisterLuaFunctions() {
     Game::Lua::RegisterTableFunction("C_SpellBook", "GetSpellSkillLine",
                                       &Script_GetSpellSkillLine);
+    Game::Lua::RegisterTableFunction("C_SpellBook", "GetSkillLineName",
+                                      &Script_GetSkillLineName);
+    Game::Lua::RegisterTableFunction("C_SpellBook", "GetSkillLineRank",
+                                      &Script_GetSkillLineRank);
 }
 
 const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
