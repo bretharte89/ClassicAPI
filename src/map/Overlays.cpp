@@ -87,6 +87,9 @@
 //                   placement; its IMPLIED tile count is what lies)
 //   offsetX / offsetY — placement on the zone canvas
 //   mapPointX / mapPointY
+//   hitRectTop/Left/Bottom/Right — hit rectangle in world-map canvas px
+//                   (~1002x668); the tight clickable bounds of the landmass,
+//                   the subzone-center source map addons scrape
 //   tileCols / tileRows / upscaled — the resolved grid
 //   tiles         — array of ready-to-draw tiles:
 //                   { file      — texture path incl. number (SetTexture-ready)
@@ -94,8 +97,11 @@
 //                     texCoordX, texCoordY — right/bottom texcoords
 //                     offsetX, offsetY }   — absolute canvas position
 //
-// A consumer draws an overlay with a dumb loop: per tile SetTexture,
-// SetWidth/Height, SetTexCoord(0, texCoordX, 0, texCoordY), SetPoint.
+// Texture-less rows (a subzone hit region with no distinct art) still appear,
+// with textureName == "", zero size, and an empty `tiles` table — so
+// geometry consumers see every subzone while `ipairs(ov.tiles)` draw loops
+// stay safe. A consumer draws a textured overlay with a dumb loop: per tile
+// SetTexture, SetWidth/Height, SetTexCoord(0, texCoordX, 0, texCoordY), SetPoint.
 
 #include "Game.h"
 #include "Offsets.h"
@@ -404,33 +410,45 @@ int __fastcall Script_GetMapOverlays(void *L) {
             continue;
         const char *texName = *reinterpret_cast<const char *const *>(
             rec + Offsets::OFF_WMO_TEXTURE_NAME);
-        if (texName == nullptr || texName[0] == '\0')
-            continue; // hit-rect-only rows have no drawable texture
-
-        // Full path, mirroring the engine's own GetMapOverlayInfo format
-        // (unresolvable map dir falls back to the "World" folder).
-        char basePath[0x104];
-        if (mapDir != nullptr && mapDir[0] != '\0')
-            std::snprintf(basePath, sizeof(basePath),
-                          "Interface\\WorldMap\\%s\\%s", mapDir, texName);
-        else
-            std::snprintf(basePath, sizeof(basePath),
-                          "Interface\\WorldMap\\World\\%s", texName);
+        const bool hasTexture = (texName != nullptr && texName[0] != '\0');
 
         const auto fieldInt = [rec](uintptr_t off) {
             return *reinterpret_cast<const int32_t *>(rec + off);
         };
-        const int dbcW = fieldInt(Offsets::OFF_WMO_TEXTURE_WIDTH);
-        const int dbcH = fieldInt(Offsets::OFF_WMO_TEXTURE_HEIGHT);
         const int offX = fieldInt(Offsets::OFF_WMO_OFFSET_X);
         const int offY = fieldInt(Offsets::OFF_WMO_OFFSET_Y);
 
-        const ResolvedOverlay *r = CachedResolve(id, basePath, dbcW, dbcH);
+        // Texture placement + tile grid only exist for rows that carry art.
+        // A hit-rect-only row (areaID + hit rect, no texture — a clickable
+        // subzone region with no distinct BLP) still gets a result row: empty
+        // textureName/path, zero size, and an empty `tiles` table (r == null →
+        // PushTiles emits `{}`), so geometry consumers see it while art-draw
+        // loops (`ipairs(ov.tiles)`) iterate zero times. Stock 1.12 and Octo
+        // both happen to give every overlay a texture, but the DBC schema
+        // allows texture-less rows, so we don't assume.
+        char basePath[0x104];
+        int dbcW = 0, dbcH = 0;
+        const ResolvedOverlay *r = nullptr;
+        if (hasTexture) {
+            // Full path, mirroring the engine's own GetMapOverlayInfo format
+            // (unresolvable map dir falls back to the "World" folder).
+            if (mapDir != nullptr && mapDir[0] != '\0')
+                std::snprintf(basePath, sizeof(basePath),
+                              "Interface\\WorldMap\\%s\\%s", mapDir, texName);
+            else
+                std::snprintf(basePath, sizeof(basePath),
+                              "Interface\\WorldMap\\World\\%s", texName);
+            dbcW = fieldInt(Offsets::OFF_WMO_TEXTURE_WIDTH);
+            dbcH = fieldInt(Offsets::OFF_WMO_TEXTURE_HEIGHT);
+            r = CachedResolve(id, basePath, dbcW, dbcH);
+        } else {
+            basePath[0] = '\0';
+        }
 
         outIdx += 1;
         Game::Lua::PushNumber(L, static_cast<double>(outIdx));
         Game::Lua::NewTable(L);
-        Game::Lua::SetFieldString(L, "textureName", texName);
+        Game::Lua::SetFieldString(L, "textureName", hasTexture ? texName : "");
         Game::Lua::SetFieldString(L, "texturePath", basePath);
         Game::Lua::SetFieldNumber(L, "textureWidth", dbcW);
         Game::Lua::SetFieldNumber(L, "textureHeight", dbcH);
@@ -440,6 +458,18 @@ int __fastcall Script_GetMapOverlays(void *L) {
             L, "mapPointX", fieldInt(Offsets::OFF_WMO_MAP_POINT_X));
         Game::Lua::SetFieldNumber(
             L, "mapPointY", fieldInt(Offsets::OFF_WMO_MAP_POINT_Y));
+
+        // Hit rectangle (world-map canvas px, ~1002x668) — the tight clickable
+        // bounds of the landmass, present for every row (texture or not). The
+        // subzone-center source: (left+right)/2 / 1002, (top+bottom)/2 / 668.
+        Game::Lua::SetFieldNumber(
+            L, "hitRectTop", fieldInt(Offsets::OFF_WMO_HITRECT_TOP));
+        Game::Lua::SetFieldNumber(
+            L, "hitRectLeft", fieldInt(Offsets::OFF_WMO_HITRECT_LEFT));
+        Game::Lua::SetFieldNumber(
+            L, "hitRectBottom", fieldInt(Offsets::OFF_WMO_HITRECT_BOTTOM));
+        Game::Lua::SetFieldNumber(
+            L, "hitRectRight", fieldInt(Offsets::OFF_WMO_HITRECT_RIGHT));
 
         // AreaTable ids this overlay reveals (WorldMapOverlay.dbc areaID[4]).
         // `areaID` is the primary (first nonzero — every overlay has one);

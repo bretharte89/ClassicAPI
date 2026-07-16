@@ -6811,8 +6811,33 @@ Each overlay table:
 | `textureWidth` / `textureHeight` | the DBC placement rect |
 | `offsetX` / `offsetY` | placement on the zone canvas |
 | `mapPointX` / `mapPointY` | DBC map-point fields |
+| `hitRectTop` / `hitRectLeft` / `hitRectBottom` / `hitRectRight` | hit rectangle in world-map canvas px (≈1002×668); the tight clickable bounds of the landmass |
 | `tileCols` / `tileRows` / `upscaled` | the **resolved** tile grid |
 | `tiles` | ready-to-draw tile array (below) |
+
+The `hitRect*` fields are the source addons use to place a **subzone
+center** (the texture rect includes transparent padding, so its center is
+off; the hit rect is the tight landmass bounds). Normalize against the
+≈1002×668 world-map canvas:
+
+```lua
+local cx = (ov.hitRectLeft + ov.hitRectRight) / 2 / 1002 * 100  -- center X %
+local cy = (ov.hitRectTop  + ov.hitRectBottom) / 2 /  668 * 100  -- center Y %
+local w  = (ov.hitRectRight  - ov.hitRectLeft) / 1002 * 100      -- width  %
+local h  = (ov.hitRectBottom - ov.hitRectTop)  /  668 * 100      -- height %
+```
+
+Overlays with `areaID > 0` cover the [subzone → parent-zone + center/size]
+mapping that map addons hand-scrape (pfQuest's `pfDB["zones"]["data"]`).
+Reading it live matches *this* client's maps — on a modified client
+(Turtle) those differ from the scraped vanilla numbers, which is the point.
+
+A row may be **texture-less** — a clickable subzone region with no distinct
+art. It still appears, with `textureName == ""`, zero `textureWidth`/
+`textureHeight`, and an empty `tiles` table (so `ipairs(ov.tiles)` iterates
+zero times), carrying its `areaID`/`areaIDs` + `hitRect*`. Filter art
+consumers on `ov.textureName ~= ""`. (Stock 1.12 and Octo happen to give
+every overlay a texture, but the schema permits texture-less rows.)
 
 Each `tiles` entry: `file` (texture path including the tile number,
 `SetTexture`-ready), `width` / `height` (draw size in map pixels),

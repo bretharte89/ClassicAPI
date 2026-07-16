@@ -1256,6 +1256,10 @@ enum Offsets {
     OFF_WMO_TEXTURE_HEIGHT = 0x28,
     OFF_WMO_OFFSET_X = 0x2C,
     OFF_WMO_OFFSET_Y = 0x30,
+    OFF_WMO_HITRECT_TOP = 0x34,    // hit rect in world-map canvas px (~1002x668):
+    OFF_WMO_HITRECT_LEFT = 0x38,   // the tight clickable bounds of the landmass,
+    OFF_WMO_HITRECT_BOTTOM = 0x3C, // used for subzone-center placement (pfQuest's
+    OFF_WMO_HITRECT_RIGHT = 0x40,  // pfDB["zones"] was scraped from these)
 
     // Current world-map view selection — the globals the engine's
     // current-map-name resolver (FUN_004a6cf0, behind GetMapInfo) reads:
