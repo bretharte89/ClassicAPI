@@ -209,6 +209,8 @@ bool PercentInZone(int areaID, float x, float y, double *outMapX, double *outMap
         const double spanY = left - right;
         if (spanX <= 0.0 || spanY <= 0.0)
             continue; // degenerate row — keep scanning for a usable one
+        if (x < bottom || x > top || y < right || y > left)
+            return false; // point outside this zone's rect — not in this zone
         *outMapX = (left - y) / spanY * 100.0; // horizontal (world Y)
         *outMapY = (top - x) / spanX * 100.0;  // vertical (world X)
         return true;

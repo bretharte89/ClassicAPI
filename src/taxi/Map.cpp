@@ -102,6 +102,25 @@ const char *ZoneSuffix(const char *name) {
     return best;
 }
 
+// Copies the location part (before the FIRST ", ") of `name` into `out`,
+// null-terminated. Returns `out`, or null when `name` has no ", " separator.
+// This is the "Orgrimmar" in "Orgrimmar, Durotar" — a capital's own city map
+// when it's a mapped area, distinct from its outdoor region.
+const char *LocationPrefix(const char *name, char *out, int outSize) {
+    if (name == nullptr)
+        return nullptr;
+    for (int i = 0; name[i] != '\0'; ++i) {
+        if (name[i] == ',' && name[i + 1] == ' ') {
+            int n = (i < outSize - 1) ? i : outSize - 1;
+            for (int j = 0; j < n; ++j)
+                out[j] = name[j];
+            out[n] = '\0';
+            return out;
+        }
+    }
+    return nullptr;
+}
+
 // AreaTable areaID for a zone name: exact (case-insensitive) match preferred,
 // else the first word-prefix match. 0 when nothing matches.
 int ResolveZoneByName(const char *zone) {
@@ -251,18 +270,29 @@ int __fastcall Script_GetTaxiNodesForMap(void *L) {
         ::Map::Area::ContinentPercent(mapID, x, y, &px, &py);
         PushPosition(L, "position", px, py);
 
-        // Derived zone anchor (areaID + 0-100 zone-relative percent). Prefer
-        // the zone named in the node itself ("…, Western Plaguelands"), which
-        // is authoritative; project the position into that zone's rect. Fall
-        // back to the geometric landmass resolver for a node with no ", Zone"
-        // suffix or an unrecognized zone name.
+        // Derived zone anchor (areaID + 0-100 zone-relative percent), from the
+        // node's own name — authoritative, and right at borders geometry can't
+        // separate. Two candidate zones from the name, each accepted only if
+        // its WorldMapArea rect actually contains the point:
+        //   1. the LOCATION ("Orgrimmar" in "Orgrimmar, Durotar") — a capital's
+        //      own city map, so the flight master pins on the city, not the
+        //      surrounding region;
+        //   2. else the ZONE suffix ("Western Plaguelands") — the outdoor zone
+        //      for a normal node (whose location is an unmapped subzone).
+        // Falls back to the geometric landmass resolver when neither name part
+        // resolves to a containing zone (no ", Zone" suffix, unknown name).
         int areaID = 0;
         double mapX = 0.0, mapY = 0.0;
         bool haveZone = false;
-        const int namedArea = ResolveZoneByName(ZoneSuffix(name));
-        if (namedArea > 0 &&
-            ::Map::Area::PercentInZone(namedArea, x, y, &mapX, &mapY)) {
-            areaID = namedArea;
+        char locBuf[128];
+        const int locArea = ResolveZoneByName(LocationPrefix(name, locBuf, sizeof(locBuf)));
+        const int zoneArea = ResolveZoneByName(ZoneSuffix(name));
+        if (locArea > 0 && ::Map::Area::PercentInZone(locArea, x, y, &mapX, &mapY)) {
+            areaID = locArea; // capital / mapped location -> its own city map
+            haveZone = true;
+        } else if (zoneArea > 0 &&
+                   ::Map::Area::PercentInZone(zoneArea, x, y, &mapX, &mapY)) {
+            areaID = zoneArea; // outdoor zone from the name suffix
             haveZone = true;
         } else {
             haveZone = ::Map::Area::ZonePercent(mapID, x, y, &areaID, &mapX, &mapY);

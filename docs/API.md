@@ -286,6 +286,7 @@ build instructions.
   - [`C_Map.GetAreas()`](#c_mapgetareas)
   - [`C_Map.GetAreaTriggerInfo(triggerID)` / `C_Map.GetAreaTriggers([mapID])`](#c_mapgetareatriggerinfotriggerid--c_mapgetareatriggersmapid)
   - [`C_Map.GetBestMapForUnit(unitToken)`](#c_mapgetbestmapforunitunittoken)
+  - [`C_Map.GetMapAreaIDs()`](#c_mapgetmapareaids)
   - [`C_Map.GetMapOverlays([areaID])`](#c_mapgetmapoverlaysareaid)
   - [`C_Map.GetMapWorldSize([areaID])`](#c_mapgetmapworldsizeareaid)
 
@@ -6840,6 +6841,33 @@ UI map ID.** Stormwind City in this backport is `1519`, not retail's
 `84`. Addons that hardcode modern UI map IDs need a translation table
 (or, simpler: compare against IDs this same function produces).
 
+### `C_Map.GetMapAreaIDs()`
+
+ClassicAPI extension. Returns `{ [mapName] = areaID, … }` — each
+`WorldMapArea.dbc` map's name (the dir the engine uses for its map
+textures) mapped to its `AreaTable` areaID.
+
+Vanilla has no `GetCurrentMapAreaID`, and `GetMapZones()` enumerates only a
+continent's *outdoor* zones — so a browsed **city or instance map**
+(Orgrimmar, Undercity, Alterac Valley) can't be resolved to a zone id, which
+means addons can't match zone-keyed content (a flight master, a POI) to it.
+This maps those names to their zone ids:
+
+```lua
+-- resolve a browsed map to an areaID, cities included
+local areaID = C_Map.GetMapAreaIDs()[GetMapInfo()]
+```
+
+> The key is the `WorldMapArea` name, which matches `GetMapInfo()`'s returned
+> dir for the vast majority of maps — but a few Blizzard map folders are
+> spelled differently from the area name (the Orgrimmar map's folder is
+> `"Ogrimmar"`), so `GetMapAreaIDs()[GetMapInfo()]` can miss for those. For
+> those, resolve by zone name instead (`GetMapZones` → name → areaID).
+
+Continent-spanning rows (areaID 0) and unnamed rows are omitted. Pairs with
+[`C_Map.GetAreas`](#c_mapgetareas) (areaID → name) and
+[`C_Map.GetMapWorldSize`](#c_mapgetmapworldsizeareaid) (areaID → yards).
+
 ### `C_Map.GetMapOverlays([areaID])`
 
 ClassicAPI extension. Returns every `WorldMapOverlay.dbc` entry for a
@@ -10038,19 +10066,23 @@ Each entry:
 | `position` | `{x, y}` 0–1 on the continent map (retail-accurate) |
 | `mapID` | *(ext)* continent `Map.dbc` id |
 | `x` / `y` / `z` | *(ext)* raw continent world coords |
-| `areaID` | *(ext)* the `AreaTable` zone, resolved from the node's own name suffix ("…, Western Plaguelands" → WPL) — authoritative; absent if unresolved |
+| `areaID` | *(ext)* the `AreaTable` zone, from the node's own name — its **location** if that's a mapped city ("Orgrimmar" → Orgrimmar city), else the **zone** suffix ("…, Western Plaguelands" → WPL). Authoritative; absent if unresolved |
 | `mapX` / `mapY` | *(ext)* 0–100 position within that zone (`mapX` horizontal, `mapY` vertical) |
 
 `nodeID` / `name` / `faction` / `position` are the retail fields; the
 rest are ClassicAPI extensions (marked *(ext)*). `position` matches
 retail (continent 0–1), while `areaID` + `mapX`/`mapY` let a zone-map
-addon pin directly. `areaID` comes from the node's **name** (the zone
-after the last ", "), matched against `AreaTable` — authoritative, and
-unlike a purely geometric point→zone guess it's right at zone borders
-(Chillwind Camp → Western Plaguelands, not the Alterac box it sits in).
-Nodes with no ", Zone" suffix fall back to the geometric landmass
-resolver. `isUndiscovered` is not wired (the client's known-node
-bitfield isn't read) — every node is returned regardless of discovery.
+addon pin directly. `areaID` comes from the node's **name**, matched
+against `AreaTable` — the location part when it's a mapped city
+("Orgrimmar, Durotar" → Orgrimmar city, so a capital's master pins on
+the city map), otherwise the zone suffix ("Chillwind Camp, Western
+Plaguelands" → WPL). Each candidate is accepted only if its map rect
+contains the node, so this is right at borders a purely geometric guess
+gets wrong (Chillwind → WPL, not the Alterac box it sits in). Nodes
+whose name resolves to no containing zone fall back to the geometric
+landmass resolver. `isUndiscovered` is not wired (the client's
+known-node bitfield isn't read) — every node is returned regardless of
+discovery.
 
 ```lua
 for _, n in ipairs(C_TaxiMap.GetTaxiNodesForMap(0)) do

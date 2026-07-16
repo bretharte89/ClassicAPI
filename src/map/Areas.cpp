@@ -84,9 +84,46 @@ int __fastcall Script_GetAreas(void *L) {
     return 1;
 }
 
+// `C_Map.GetMapAreaIDs()` — { [mapName] = areaID } for every
+// `WorldMapArea.dbc` row: the map's name (the dir the engine uses for its map
+// textures) → its `AreaTable` areaID. Vanilla has no `GetCurrentMapAreaID`;
+// this lets an addon resolve a *browsed* map to a zone id — including the
+// city / instance maps `GetMapZones()` doesn't enumerate (Orgrimmar,
+// Undercity, Alterac Valley), which otherwise can't be matched to zone content
+// (e.g. a flight master pinned by areaID). Continent-spanning rows (areaID 0)
+// and unnamed rows are omitted.
+//
+// Note: this is the WorldMapArea NAME, which matches `GetMapInfo()`'s returned
+// dir for almost all maps but not a few misspelled Blizzard folders (the
+// Orgrimmar map's texture folder is "Ogrimmar"), so `[GetMapInfo()]` can miss
+// for those — resolve them by zone name instead.
+int __fastcall Script_GetMapAreaIDs(void *L) {
+    Game::Lua::SetTop(L, 0);
+    Game::Lua::NewTable(L);
+
+    const int count =
+        *reinterpret_cast<const int *>(Offsets::VAR_WORLDMAP_AREA_COUNT);
+    for (int id = 1; id <= count; ++id) {
+        const uint8_t *rec = DBC::Record(Offsets::VAR_WORLDMAP_AREA_RECORDS,
+                                         Offsets::VAR_WORLDMAP_AREA_COUNT,
+                                         static_cast<uint32_t>(id));
+        if (rec == nullptr)
+            continue;
+        const int areaID = *reinterpret_cast<const int *>(rec + Offsets::OFF_WMA_AREA_ID);
+        if (areaID == 0)
+            continue; // continent-spanning row, no zone id
+        const char *dir = *reinterpret_cast<const char *const *>(rec + Offsets::OFF_WMA_NAME);
+        if (dir == nullptr || dir[0] == '\0')
+            continue;
+        Game::Lua::SetFieldNumber(L, dir, static_cast<double>(areaID));
+    }
+    return 1;
+}
+
 void RegisterLuaFunctions() {
     Game::Lua::RegisterTableFunction("C_Map", "GetAreaInfo", &Script_GetAreaInfo);
     Game::Lua::RegisterTableFunction("C_Map", "GetAreas", &Script_GetAreas);
+    Game::Lua::RegisterTableFunction("C_Map", "GetMapAreaIDs", &Script_GetMapAreaIDs);
 }
 
 const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};

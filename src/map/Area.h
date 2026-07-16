@@ -60,9 +60,12 @@ bool ZonePercent(int mapID, float x, float y, int *outAreaID, double *outMapX,
 // Projects world (x, y) into the WorldMapArea rect of a SPECIFIC AreaTable
 // zone (`areaID`), filling the 0..100 zone-relative percent (`mapX` horizontal
 // off world Y, `mapY` vertical off world X). Returns false when that zone has
-// no usable WorldMapArea row. Used when the zone is already known by other
-// means (a taxi node's name) and only the in-zone position is needed —
-// bypassing the containment / landmass search of ZonePercent.
+// no usable WorldMapArea row OR the point lies outside its rect. Used when the
+// zone is already known by other means (a taxi node's name) and only the
+// in-zone position is needed — bypassing the containment / landmass search of
+// ZonePercent. The containment check lets a caller test candidate zones (a
+// node's city vs its outdoor region) and take the first that actually holds
+// the point.
 bool PercentInZone(int areaID, float x, float y, double *outMapX, double *outMapY);
 
 // Projects world (x, y) on `mapID` to 0..1 CONTINENT-map coordinates using
