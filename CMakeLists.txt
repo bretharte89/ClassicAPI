@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 
-project(ClassicAPI LANGUAGES CXX)
+project(ClassicAPI LANGUAGES CXX RC)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -77,17 +77,20 @@ add_library(${PROJECT_NAME} SHARED
 # `CLASSIC_API_VERSION >= X` always pass during local development;
 # CI release builds overwrite it via `-DCLASSICAPI_TAG=vX.Y.Z`.
 set(CLASSICAPI_VERSION_VALUE 99999999)
+set(CLASSICAPI_VER_MAJOR 9999)
+set(CLASSICAPI_VER_MINOR 99)
+set(CLASSICAPI_VER_PATCH 99)
 
 set(CLASSICAPI_TAG
     ""
     CACHE STRING "Release tag like v1.2.3")
 
 if(CLASSICAPI_TAG MATCHES "^v([0-9]+)\\.([0-9]+)\\.([0-9]+)$")
-  set(_MAJOR "${CMAKE_MATCH_1}")
-  set(_MINOR "${CMAKE_MATCH_2}")
-  set(_PATCH "${CMAKE_MATCH_3}")
+  set(CLASSICAPI_VER_MAJOR "${CMAKE_MATCH_1}")
+  set(CLASSICAPI_VER_MINOR "${CMAKE_MATCH_2}")
+  set(CLASSICAPI_VER_PATCH "${CMAKE_MATCH_3}")
   math(EXPR CLASSICAPI_VERSION_VALUE
-       "${_MAJOR} * 10000 + ${_MINOR} * 100 + ${_PATCH}")
+       "${CLASSICAPI_VER_MAJOR} * 10000 + ${CLASSICAPI_VER_MINOR} * 100 + ${CLASSICAPI_VER_PATCH}")
 elseif(CLASSICAPI_TAG)
   message(
     FATAL_ERROR
@@ -98,6 +101,19 @@ endif()
 target_compile_definitions(
   ${PROJECT_NAME}
   PRIVATE CLASSICAPI_VERSION_VALUE=${CLASSICAPI_VERSION_VALUE})
+
+# Stamp the PE VERSIONINFO resource from the same version components, so the
+# DLL's file/product version (Explorer -> Properties -> Details) matches the
+# CLASSIC_API_VERSION Lua global. The .rsrc section the resource lands in is
+# untouched by the .rdata/.pdata section merges below.
+set(CLASSICAPI_VER_STRING
+    "${CLASSICAPI_VER_MAJOR}.${CLASSICAPI_VER_MINOR}.${CLASSICAPI_VER_PATCH}.0")
+set(CLASSICAPI_VERSION_RC "${CMAKE_BINARY_DIR}/generated/version.rc")
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/version.rc.in"
+    "${CLASSICAPI_VERSION_RC}"
+    @ONLY)
+target_sources(${PROJECT_NAME} PRIVATE "${CLASSICAPI_VERSION_RC}")
 
 # ole32: COM (CoInitializeEx / CoCreateInstance / CoTaskMemFree) for the
 # SAPI text-to-speech backend in src/voicechat/Tts.cpp. The SAPI GUIDs are
