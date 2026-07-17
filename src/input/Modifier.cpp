@@ -63,6 +63,14 @@ const char *const kKeyName[6] = {
     "LSHIFT", "RSHIFT", "LCTRL", "RCTRL", "LALT", "RALT",
 };
 
+// L/R-specific virtual keys, one per bit, for the focus-regain resync.
+// `GetAsyncKeyState` accepts the L/R-distinguishing VKs directly (unlike
+// the keyboard-message path, where `VK_SHIFT` arrives merged and has to be
+// disambiguated via the scancode).
+const int kBitVk[6] = {
+    VK_LSHIFT, VK_RSHIFT, VK_LCONTROL, VK_RCONTROL, VK_LMENU, VK_RMENU,
+};
+
 constexpr const char *kModifierStateChanged = "MODIFIER_STATE_CHANGED";
 
 // Static-init reservation — runs before DllMain. The
@@ -72,12 +80,35 @@ const Event::Custom::AutoReserve _reserveModifierStateChanged{kModifierStateChan
 
 uint32_t g_modifierMask = 0;
 HHOOK g_msgHook = nullptr;
+HHOOK g_wndProcHook = nullptr;
 
 void PushDown(void *L, bool down) {
     if (down)
         Game::Lua::PushNumber(L, 1.0);
     else
         Game::Lua::PushNil(L);
+}
+
+// Apply a single modifier bit transition: update the cached mask and, on a
+// genuine change, fire `MODIFIER_STATE_CHANGED`. Both the keyboard-message
+// path and the focus-regain resync funnel through here so the "only
+// transitions fire" invariant holds regardless of source.
+void SetBit(int bitIdx, bool down) {
+    const uint32_t bit = 1u << bitIdx;
+    const bool wasDown = (g_modifierMask & bit) != 0;
+    if (down == wasDown)
+        return;
+
+    if (down) g_modifierMask |= bit;
+    else      g_modifierMask &= ~bit;
+
+    // Slot was assigned when the engine populated its event table; our
+    // hook on `RebuildEventTable` recorded the index. Lookup at fire
+    // time rather than caching because `/reload` re-runs the rebuild
+    // and the index may shift.
+    const int slot = Event::Custom::Lookup(kModifierStateChanged);
+    if (slot >= 0)
+        Event::Custom::Fire(slot, "%s%d", kKeyName[bitIdx], static_cast<int>(down));
 }
 
 template <int BitIdx>
@@ -131,23 +162,22 @@ void ProcessKeyMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
     const int bitIdx = VkToBitIdx(wParam, lParam);
     if (bitIdx < 0)
         return;
-
-    const uint32_t bit = 1u << bitIdx;
-    const bool wasDown = (g_modifierMask & bit) != 0;
     const bool nowDown = (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN);
-    if (nowDown == wasDown)
-        return;
+    SetBit(bitIdx, nowDown);
+}
 
-    if (nowDown) g_modifierMask |= bit;
-    else         g_modifierMask &= ~bit;
-
-    // Slot was assigned when the engine populated its event table; our
-    // hook on `RebuildEventTable` recorded the index. Lookup at fire
-    // time rather than caching because `/reload` re-runs the rebuild
-    // and the index may shift.
-    const int slot = Event::Custom::Lookup(kModifierStateChanged);
-    if (slot >= 0)
-        Event::Custom::Fire(slot, "%s%d", kKeyName[bitIdx], static_cast<int>(nowDown));
+// Reconcile the cached mask with the true physical key state. Needed on
+// focus regain: keyboard messages only arrive while WoW has focus, so a
+// modifier released while WoW was in the background is never seen by the
+// `WH_GETMESSAGE` hook and the bit stays stuck down (and the release event
+// never fires). `GetAsyncKeyState` reads global async keyboard state
+// regardless of focus, so polling it on activation recovers the missed
+// transitions — `SetBit` fires `MODIFIER_STATE_CHANGED` for each drift.
+void ResyncFromPhysicalState() {
+    for (int b = 0; b < 6; ++b) {
+        const bool down = (GetAsyncKeyState(kBitVk[b]) & 0x8000) != 0;
+        SetBit(b, down);
+    }
 }
 
 LRESULT CALLBACK GetMsgHook(int code, WPARAM wParam, LPARAM lParam) {
@@ -164,11 +194,30 @@ LRESULT CALLBACK GetMsgHook(int code, WPARAM wParam, LPARAM lParam) {
     return CallNextHookEx(nullptr, code, wParam, lParam);
 }
 
+// `WM_ACTIVATEAPP` is *sent* (via the window manager), not *posted* to the
+// queue, so `WH_GETMESSAGE` never sees it — a `WH_CALLWNDPROC` hook catches
+// sent messages before the target WNDPROC runs. On app activation
+// (`wParam != FALSE`) we resync from physical key state to recover any
+// modifier released while WoW was in the background. Like the message hook,
+// this is thread-level (not per-`HWND`), so it survives window recreation.
+LRESULT CALLBACK CallWndProcHook(int code, WPARAM wParam, LPARAM lParam) {
+    if (code == HC_ACTION) {
+        const CWPSTRUCT *cwp = reinterpret_cast<const CWPSTRUCT *>(lParam);
+        if (cwp->message == WM_ACTIVATEAPP && cwp->wParam != FALSE)
+            ResyncFromPhysicalState();
+    }
+    return CallNextHookEx(nullptr, code, wParam, lParam);
+}
+
 void InstallHook() {
-    if (g_msgHook != nullptr)
-        return;
-    g_msgHook = SetWindowsHookExA(WH_GETMESSAGE, &GetMsgHook, nullptr,
-                                   GetCurrentThreadId());
+    if (g_msgHook == nullptr) {
+        g_msgHook = SetWindowsHookExA(WH_GETMESSAGE, &GetMsgHook, nullptr,
+                                       GetCurrentThreadId());
+    }
+    if (g_wndProcHook == nullptr) {
+        g_wndProcHook = SetWindowsHookExA(WH_CALLWNDPROC, &CallWndProcHook,
+                                          nullptr, GetCurrentThreadId());
+    }
 }
 
 void RegisterLuaFunctions() {

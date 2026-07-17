@@ -2456,6 +2456,12 @@ Fires on every modifier-key press and release with `(key, down)`:
 Only transitions fire — key autorepeat does not. Matches 2.4.3+
 semantics.
 
+Releases that happen while WoW is **not the focused window** are also
+handled: keyboard messages only reach WoW while it has focus, so a
+modifier let go in the background is never seen live. On regaining focus
+the cached state is reconciled against the true physical key state and
+any missed transition fires then (see the focus-regain note below).
+
 ```lua
 local f = CreateFrame("Frame")
 f:RegisterEvent("MODIFIER_STATE_CHANGED")
@@ -2485,6 +2491,25 @@ The thread-message hook is per-thread, not per-`HWND` — it survives
 renderer-state changes that recreate WoW's main window (e.g. toggling
 vertical sync), where an `SetWindowLongPtr`-style `WNDPROC` subclass
 would be left dangling.
+
+**Focus-regain reconciliation.** `WM_KEY*` messages are only delivered
+while WoW is the foreground window, so a modifier released while WoW is
+in the background (alt-tabbed away) produces no message — the cached bit
+would stay stuck down and the release event would never fire. A second
+thread hook (`WH_CALLWNDPROC`, needed because `WM_ACTIVATEAPP` is *sent*
+rather than *posted* and so is invisible to `WH_GETMESSAGE`) watches for
+app activation; on regaining focus it polls `GetAsyncKeyState` for each
+L/R modifier — which reads global physical key state regardless of focus
+— and fires `MODIFIER_STATE_CHANGED` for any bit that changed while WoW
+was away. So the release surfaces the moment you tab back, and
+`IsLeft/RightShiftKeyDown` etc. read correct state immediately.
+
+> Note: the engine's own `IsShiftKeyDown` / `IsControlKeyDown` /
+> `IsAltKeyDown` bottom out at the synchronous `GetKeyState`, which has
+> the same background-release blind spot and is *not* reconciled by this
+> hook — only ClassicAPI's L/R query functions and the event reflect the
+> corrected state. Prefer `IsModifierKeyDown` / the L/R functions if you
+> need the un-stuck value.
 
 ### `NAME_PLATE_CREATED` / `NAME_PLATE_UNIT_ADDED` / `NAME_PLATE_UNIT_REMOVED` events
 
