@@ -3596,6 +3596,15 @@ enum Offsets {
     // shape from SMSG_PARTY_MEMBER_STATS_FULL).
     FUN_GROUP_MEMBER_STATS_LOOKUP = 0x00496400,
     OFF_GROUP_MEMBER_AREA_ID = 0x14,
+    // `+0x08` status-flags byte of the stats block (see field map above);
+    // bit 0 is the online flag `Script_UnitIsConnected` tests. Sibling
+    // `FUN_GROUP_MEMBER_SLOT_LOOKUP` (`0x00496420`, `__fastcall(u64 *guid)
+    // → member slot*`) is the presence fallback UnitIsConnected consults
+    // when no stats block exists — a non-null slot means the member is
+    // present (and thus connected). Both take a pointer to the 64-bit GUID.
+    OFF_GROUP_MEMBER_STATUS_FLAGS = 0x08,
+    GROUP_MEMBER_STATUS_ONLINE = 0x1,
+    FUN_GROUP_MEMBER_SLOT_LOOKUP = 0x00496420,
 
     // Per-slot GUID tables — used to map party/raid token strings
     // ("party1", "raid17") to GUIDs without going through

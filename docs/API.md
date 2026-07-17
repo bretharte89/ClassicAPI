@@ -336,6 +336,7 @@ build instructions.
 - [PlayerInfo](#playerinfo)
   - [`C_PlayerInfo.CanUseItem(itemID)`](#c_playerinfocanuseitemitemid)
   - [`C_PlayerInfo.GUIDIsPlayer(guid)` / `GUIDIsCreature` / `GUIDIsPet` / `GUIDIsGameObject`](#c_playerinfoguidisplayerguid--guidiscreature--guidispet--guidisgameobject)
+  - [`C_PlayerInfo.GetName / GetClass / GetRace / GetSex / IsConnected(playerLocation)`](#c_playerinfogetname--getclass--getrace--getsex--isconnectedplayerlocation)
 - [Quest](#quest)
   - [`C_QuestLog.GetQuestIDForLogIndex(index)`](#c_questlogGetQuestIDForLogIndexindex)
   - [`C_QuestLog.RequestLoadQuestByID(questID)`](#c_questlogrequestloadquestbyidquestid)
@@ -8089,6 +8090,50 @@ Accepts either the 16-digit `"0xHHHHHHHHLLLLLLLL"` form or the
 8-digit `"0xLLLLLLLL"` shortcut (high dword implicitly zero).
 Malformed input returns `false` rather than raising — matching
 modern's tolerance for stale GUIDs from addon-side caches.
+
+### `C_PlayerInfo.GetName / GetClass / GetRace / GetSex / IsConnected(playerLocation)`
+
+The `PlayerLocation`-taking player accessors. A `PlayerLocation` (see
+`PlayerLocation` / `PlayerLocationMixin`) wraps one way to identify a player;
+these resolve it to a unit and return the requested attribute.
+
+| Function | Returns |
+|----------|---------|
+| `C_PlayerInfo.GetName(playerLocation)` | `name` |
+| `C_PlayerInfo.GetClass(playerLocation)` | `className, classFilename, classID` |
+| `C_PlayerInfo.GetRace(playerLocation)` | `raceID` |
+| `C_PlayerInfo.GetSex(playerLocation)` | `sex` (1 neutral / 2 male / 3 female) |
+| `C_PlayerInfo.IsConnected([playerLocation])` | `isConnected` |
+
+```lua
+local loc = PlayerLocation:CreateFromUnit("target")
+local className, classFile, classID = C_PlayerInfo.GetClass(loc)
+local name = C_PlayerInfo.GetName(loc)
+local raceID = C_PlayerInfo.GetRace(loc)          -- feed into C_CreatureInfo.GetRaceInfo
+local sex = C_PlayerInfo.GetSex(loc)
+```
+
+- **Supported location kinds: `unit` and `guid`.** Unit locations use their
+  token directly; GUID locations resolve only while the GUID maps to a
+  currently-visible unit (target, party/raid member, someone in range). The
+  chat-line / who / battlefield-score / community / voice kinds have no
+  client-side unit resolution in 1.12 and return nil.
+- Everything is read straight from the engine's own data — no `Unit*` Lua
+  wrappers are called. `GetName` uses the polymorphic object name getter (the
+  same path as `UnitNameFromGUID`); `GetSex` reads the `UNIT_FIELD_BYTES_0`
+  gender byte and reports it as `UnitSex`'s 2/3; `IsConnected` treats a
+  currently-synced object as online and otherwise consults the group-member
+  roster's online bit, exactly as `UnitIsConnected` does. `IsConnected` with
+  no argument defaults to the local player.
+- **`GetRace` / `GetClass`** return the numeric ids that vanilla's
+  `UnitRace` / `UnitClass` don't (those give only names). `classID` round-trips
+  with [`C_CreatureInfo.GetClassInfo`](#c_creatureinfogetclassinfoclassid) and
+  `raceID` with [`C_CreatureInfo.GetRaceInfo`](#c_creatureinfogetraceinforaceid);
+  `GetClass`'s `className` / `classFilename` are the same localized name +
+  non-localized token (`"WARRIOR"`) those return.
+- An unresolvable or unsupported location returns nil. A malformed unit token
+  raises (the engine's token→GUID resolver rejects it), same as passing it to
+  `UnitName`/`UnitClass` directly.
 
 ## Quest
 
