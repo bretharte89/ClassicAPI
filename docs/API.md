@@ -437,6 +437,7 @@ build instructions.
   - [`UnitGUID(unit)`](#unitguidunit)
   - [`UnitTokenFromGUID(guid)`](#unittokenfromguidguid)
   - [`UnitSubName(unit)`](#unitsubnameunit)
+  - [`UnitCreatureFamilyID(unit)`](#unitcreaturefamilyidunit)
   - [`GetUnitSpeed(unit)`](#getunitspeedunit)
   - [`UnitClassBase(unit)`](#unitclassbaseunit)
   - [`UnitRaceBase(unit)`](#unitracebaseunit)
@@ -10624,6 +10625,28 @@ becomes visible to the client AND the server has sent its
 `CMSG_CREATURE_QUERY_RESPONSE`. The first time a fresh NPC appears
 the row may be briefly NULL — usually only one or two frames.
 Subsequent calls succeed once the response lands.
+
+### `UnitCreatureFamilyID(unit)`
+
+Returns the numeric **CreatureFamily** id (the `CreatureFamily.dbc`
+row — `1` = Wolf, `2` = Cat, `3` = Spider, …) for a unit, or `nil`
+when it has no family (players, non-beast NPCs, unsynced NPCs).
+
+```lua
+/dump UnitCreatureFamilyID("pet")     -- e.g. 1 for a wolf pet
+/dump UnitCreatureFamilyID("target")  -- 2 for a cat, nil for a humanoid
+```
+
+Stock `UnitCreatureFamily(unit)` returns only the *localized name*
+(`"Wolf"`, `"Chat"`) — awkward to compare and locale-dependent. This
+extension exposes the raw id addons actually want for stable checks
+(tameable-pet filtering, family-specific ability tables). It's the same
+id the engine's `UnitCreatureFamily` resolves internally
+(`[unit + 0xB30] → [+0x1C]`) before mapping it through
+`CreatureFamily.dbc` for the display name — this just stops at the id.
+`nil` semantics match `UnitCreatureFamily` (both return nothing for a
+family of 0), and it shares `UnitSubName`'s creature-cache coverage
+caveat (a fresh NPC's row may be briefly NULL for a frame or two).
 
 ### `GetUnitSpeed(unit)`
 
