@@ -2220,6 +2220,19 @@ enum Offsets {
     OFF_CHRRACES_FILENAME = 0x3C,
     OFF_CHRRACES_NAMES = 0x44,
 
+    // CreatureFamily.dbc — pet/beast family metadata. Standard 5-DWORD
+    // class shape (instance 0x00C0DE74; records 0x00C0DE7C, count
+    // 0x00C0DE80 — the same globals `Script_UnitCreatureFamily`
+    // (`0x0051A310`) bounds-checks/indexes). 72-byte stride, familyID-keyed
+    // and sparse (10/13/14/22/… are unused). Localized `Name[]` at +0x20
+    // (the engine reads `record + 0x20 + locale*4`), `IconFile` texture-path
+    // string at +0x44 (last field; empty for warlock-pet families). Backs
+    // `C_CreatureInfo.GetCreatureFamilyInfo` / `GetCreatureFamilyIDs`.
+    VAR_CREATUREFAMILY_RECORDS = 0x00C0DE7C,
+    VAR_CREATUREFAMILY_COUNT = 0x00C0DE80,
+    OFF_CREATUREFAMILY_NAMES = 0x20,
+    OFF_CREATUREFAMILY_ICON = 0x44,
+
     // AreaTable.dbc — used by `Script_GetCharacterInfo` to resolve
     // each character's last-known-area to a localized zone name.
     // Same shape as the other DBCs (records pointer + count globals,

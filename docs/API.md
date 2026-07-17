@@ -65,6 +65,8 @@ build instructions.
   - [`C_CreatureInfo.RequestLoadCreatureByID(creatureID)`](#c_creatureinforequestloadcreaturebyidcreatureid)
   - [`C_CreatureInfo.GetRaceInfo(raceID)`](#c_creatureinfogetraceinforaceid)
   - [`C_CreatureInfo.GetClassInfo(classID)`](#c_creatureinfogetclassinfoclassid)
+  - [`C_CreatureInfo.GetCreatureFamilyInfo(creatureFamilyID)`](#c_creatureinfogetcreaturefamilyinfocreaturefamilyid)
+  - [`C_CreatureInfo.GetCreatureFamilyIDs()`](#c_creatureinfogetcreaturefamilyids)
 
 - [CVar](#cvar)
   - [`C_CVar.GetCVarBool(cvar)`](#c_cvargetcvarboolcvar)
@@ -1718,6 +1720,41 @@ local info = C_CreatureInfo.GetClassInfo(1)
 | `className` | string | Localized display name (client's active locale). |
 | `classFile` | string | Locale-independent token (`"WARRIOR"`, `"MAGE"`) — the same string `UnitClass` returns as its 2nd value, and the key used for class colors / icon coords. |
 | `classID` | number | Echo of the input id. |
+
+### `C_CreatureInfo.GetCreatureFamilyInfo(creatureFamilyID)`
+
+Info for a pet/beast family (`CreatureFamily.dbc` row), read from the
+always-loaded client DBC. Returns a `CreatureFamilyInfo` table, or `nil`
+for a non-numeric / non-positive / unused id.
+
+```lua
+local info = C_CreatureInfo.GetCreatureFamilyInfo(27)
+-- { id = 27, name = "Wind Serpent",
+--   iconFile = "Interface\\Icons\\Ability_Hunter_Pet_WindSerpent" }
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `id` | number | Echo of the input id. |
+| `name` | string | Localized family name (client's active locale). |
+| `iconFile` | string | Icon **texture path**. Retail returns a numeric fileID here; vanilla's DBC stores the path, so this is a string usable directly with `texture:SetTexture(...)`. `""` for families with no icon (warlock pets: Imp, Voidwalker, Succubus, Felhunter, …). |
+
+### `C_CreatureInfo.GetCreatureFamilyIDs()`
+
+Array of every populated `CreatureFamily.dbc` id, in ascending order.
+The id space is sparse (unused rows like 10, 13, 14, 22 are skipped), so
+this is the load-bearing piece for iterating families — each element
+round-trips with
+[`GetCreatureFamilyInfo`](#c_creatureinfogetcreaturefamilyinfocreaturefamilyid).
+
+```lua
+local ids = C_CreatureInfo.GetCreatureFamilyIDs()
+-- { 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 15, 16, ... }
+for _, id in ipairs(ids) do
+    local fam = C_CreatureInfo.GetCreatureFamilyInfo(id)
+    -- fam.name, fam.iconFile
+end
+```
 
 ## CVar
 

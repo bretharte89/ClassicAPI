@@ -188,6 +188,60 @@ int __fastcall Script_GetClassInfo(void *L) {
     return 1;
 }
 
+// `C_CreatureInfo.GetCreatureFamilyInfo(creatureFamilyID)` — CreatureFamilyInfo
+// table for a `CreatureFamily.dbc` row (1 = Wolf, 27 = Wind Serpent, …), or
+// nil for a non-numeric / non-positive / unused id. `iconFile` is a texture
+// path string here (retail exposes a numeric fileID; vanilla's DBC stores the
+// path) — empty "" for families with no icon (e.g. warlock pets).
+int __fastcall Script_GetCreatureFamilyInfo(void *L) {
+    if (!Game::Lua::IsNumber(L, 1))
+        return 0; // nil
+    const int familyID = static_cast<int>(Game::Lua::ToNumber(L, 1));
+    const char *name =
+        (familyID > 0) ? DBC::LocalizedField(Offsets::VAR_CREATUREFAMILY_RECORDS,
+                                             Offsets::VAR_CREATUREFAMILY_COUNT,
+                                             static_cast<uint32_t>(familyID),
+                                             Offsets::OFF_CREATUREFAMILY_NAMES)
+                       : nullptr;
+    if (name == nullptr)
+        return 0; // unused / OOR id -> nil
+    const char *icon = DBC::StringField(Offsets::VAR_CREATUREFAMILY_RECORDS,
+                                        Offsets::VAR_CREATUREFAMILY_COUNT,
+                                        static_cast<uint32_t>(familyID),
+                                        Offsets::OFF_CREATUREFAMILY_ICON);
+
+    Game::Lua::NewTable(L);
+    Game::Lua::SetFieldNumber(L, "id", familyID);
+    Game::Lua::SetFieldString(L, "name", name);
+    Game::Lua::SetFieldString(L, "iconFile", icon); // NULL/empty coerced to ""
+    return 1;
+}
+
+// `C_CreatureInfo.GetCreatureFamilyIDs()` — array of every populated
+// `CreatureFamily.dbc` id (sparse: skips the unused rows). Round-trips with
+// GetCreatureFamilyInfo for each element.
+int __fastcall Script_GetCreatureFamilyIDs(void *L) {
+    Game::Lua::SetTop(L, 0);
+    Game::Lua::NewTable(L);
+
+    const int count =
+        *reinterpret_cast<const int *>(Offsets::VAR_CREATUREFAMILY_COUNT);
+    int n = 0;
+    for (int id = 1; id <= count; ++id) {
+        const char *name = DBC::LocalizedField(Offsets::VAR_CREATUREFAMILY_RECORDS,
+                                               Offsets::VAR_CREATUREFAMILY_COUNT,
+                                               static_cast<uint32_t>(id),
+                                               Offsets::OFF_CREATUREFAMILY_NAMES);
+        if (name == nullptr)
+            continue; // unused row
+        ++n;
+        Game::Lua::PushNumber(L, static_cast<double>(n));
+        Game::Lua::PushNumber(L, static_cast<double>(id));
+        Game::Lua::SetTable(L, -3);
+    }
+    return 1;
+}
+
 void RegisterLuaFunctions() {
     Game::Lua::RegisterTableFunction("C_CreatureInfo", "GetCreatureInfoByID",
                                      &Script_GetCreatureInfoByID);
@@ -197,6 +251,10 @@ void RegisterLuaFunctions() {
                                      &Script_GetRaceInfo);
     Game::Lua::RegisterTableFunction("C_CreatureInfo", "GetClassInfo",
                                      &Script_GetClassInfo);
+    Game::Lua::RegisterTableFunction("C_CreatureInfo", "GetCreatureFamilyInfo",
+                                     &Script_GetCreatureFamilyInfo);
+    Game::Lua::RegisterTableFunction("C_CreatureInfo", "GetCreatureFamilyIDs",
+                                     &Script_GetCreatureFamilyIDs);
     Cache::QueryLoad::Register(reinterpret_cast<void *>(Offsets::VAR_CREATURE_CACHE),
                                kCreatureDataLoadResult, Offsets::FUN_CREATURE_GET_RECORD);
 }
