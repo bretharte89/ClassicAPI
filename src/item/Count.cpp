@@ -164,19 +164,14 @@ int CountInBankBags(int targetItemID, bool includeUses) {
         return 0;
 
     int total = 0;
-    using GetBagInvMgr_t = void *(__thiscall *)(void *bag);
     for (int slot = Offsets::INVMGR_BANK_BAG_FIRST_SLOT;
          slot <= Offsets::INVMGR_BANK_BAG_LAST_SLOT; slot++) {
         const uint8_t *bag = ResolveByGuid(Offsets::OBJ_TYPE_CONTAINER,
                                            playerGuidArray[slot]);
         if (bag == nullptr)
             continue;
-        // vtable +0x10 returns the bag's own invMgr pointer
-        auto *vtable = *reinterpret_cast<const uint8_t *const *>(bag);
-        auto getInvMgr = reinterpret_cast<GetBagInvMgr_t>(
-            *reinterpret_cast<const uintptr_t *>(vtable + 0x10));
-        auto *bagInvMgr = static_cast<const uint8_t *>(
-            getInvMgr(const_cast<uint8_t *>(bag)));
+        auto *bagInvMgr =
+            static_cast<const uint8_t *>(Item::Location::ContainerInventory(bag));
         if (bagInvMgr == nullptr)
             continue;
         const int bagSlots = static_cast<int>(*reinterpret_cast<const uint32_t *>(bagInvMgr));

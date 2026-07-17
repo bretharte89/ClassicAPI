@@ -79,20 +79,6 @@ uint8_t *ResolveByGUID(int type, uint64_t guid) {
                                      0x172));
 }
 
-// CGContainer exposes its own `CContainerInventory *` via vtable
-// `+0x10` — same dispatch `GetItemCount`'s bank walk uses. The
-// returned invMgr has the standard shape: slot count at +0x00,
-// flat GUID array at +0x04.
-uint8_t *BagInvMgr(uint8_t *bag) {
-    if (bag == nullptr)
-        return nullptr;
-    auto *vtable = *reinterpret_cast<uint8_t **>(bag);
-    using GetInvMgr_t = void *(__thiscall *)(void *);
-    auto getInvMgr = reinterpret_cast<GetInvMgr_t>(
-        *reinterpret_cast<uintptr_t *>(vtable + 0x10));
-    return static_cast<uint8_t *>(getInvMgr(bag));
-}
-
 // Walks one bag's contents for a matching GUID. Returns the 1-based
 // slot index of the match, or 0 if not found / bag unresolvable.
 // Works for both player bags (linear 19..22 of player invMgr) and
@@ -102,7 +88,8 @@ int WalkBagContents(uint64_t bagGuid, uint64_t targetGuid) {
     auto *bag = ResolveByGUID(Offsets::OBJ_TYPE_CONTAINER, bagGuid);
     if (bag == nullptr)
         return 0;
-    auto *bagInvMgr = BagInvMgr(bag);
+    auto *bagInvMgr =
+        static_cast<const uint8_t *>(Item::Location::ContainerInventory(bag));
     if (bagInvMgr == nullptr)
         return 0;
     const int count = InvMgrSlotCount(bagInvMgr);

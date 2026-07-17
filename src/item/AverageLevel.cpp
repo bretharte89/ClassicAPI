@@ -159,7 +159,6 @@ using ResolveObjectByGuid_t = void *(__fastcall *)(int type,
                                                     uint32_t guidLo,
                                                     uint32_t guidHi,
                                                     int priority);
-using GetBagInvMgr_t = void *(__thiscall *)(void *bag);
 
 const uint8_t *PlayerInvMgr() {
     auto resolveUnit = reinterpret_cast<ResolveUnitToken_t>(Offsets::FUN_RESOLVE_UNIT_TOKEN);
@@ -242,11 +241,8 @@ void WalkBankBags(std::vector<Candidate> &candidates) {
                                             playerGuidArray[slot]);
         if (bag == nullptr)
             continue;
-        auto *vtable = *reinterpret_cast<const uint8_t *const *>(bag);
-        auto getInvMgr = reinterpret_cast<GetBagInvMgr_t>(
-            *reinterpret_cast<const uintptr_t *>(vtable + 0x10));
-        auto *bagInvMgr = static_cast<const uint8_t *>(
-            getInvMgr(const_cast<uint8_t *>(bag)));
+        auto *bagInvMgr =
+            static_cast<const uint8_t *>(Item::Location::ContainerInventory(bag));
         if (bagInvMgr == nullptr)
             continue;
         const int bagSlots =

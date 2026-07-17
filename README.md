@@ -52,6 +52,7 @@ Full per-function reference: **[docs/API.md](docs/API.md)**.
 | [MerchantFrame](docs/API.md#merchantframe) | `C_MerchantFrame.GetBuybackItemID`, `C_MerchantFrame.GetItemInfo`, `C_MerchantFrame.GetNumJunkItems`, `C_MerchantFrame.IsMerchantItemRefundable`, `C_MerchantFrame.IsSellAllJunkEnabled`, `C_MerchantFrame.SellAllJunkItems` |
 | [NamePlate](docs/API.md#nameplate) | `C_NamePlate.GetNamePlateForGUID`, `C_NamePlate.GetNamePlateForUnit`, `C_NamePlate.GetNamePlateGUIDs`, `C_NamePlate.GetNamePlates` |
 | [NameCache](docs/API.md#namecache) | `C_PlayerCache.GetPlayerInfoByName`, `C_PlayerCache.IsEnabled`, `C_PlayerCache.IsScanEnabled`, `C_PlayerCache.RememberPlayer`, `C_PlayerCache.SetEnabled`, `C_PlayerCache.SetScanEnabled`, `GetPlayerInfoByGUID`, `UnitNameFromGUID` |
+| [NewItems](docs/API.md#newitems) | `C_NewItems.ClearAll`, `C_NewItems.IsNewItem`, `C_NewItems.RemoveNewItem` |
 | [PlayerInfo](docs/API.md#playerinfo) | `C_PlayerInfo.CanUseItem`, `C_PlayerInfo.GUIDIsCreature`, `C_PlayerInfo.GUIDIsGameObject`, `C_PlayerInfo.GUIDIsPet`, `C_PlayerInfo.GUIDIsPlayer` |
 | [Quest](docs/API.md#quest) | `C_QuestLog.GetNumQuestObjectives`, `C_QuestLog.GetQuestDetails`, `C_QuestLog.GetQuestIDForLogIndex`, `C_QuestLog.GetTitleForQuestID`, `C_QuestLog.IsOnQuest`, `C_QuestLog.IsQuestDataCachedByID`, `C_QuestLog.IsUnitOnQuest`, `C_QuestLog.RequestLoadQuestByID`, `GetQuestLogLeaderBoardID` |
 | [Screen](docs/API.md#screen) | `GetPhysicalScreenSize` |
@@ -116,6 +117,7 @@ when launching with `-console`), not as Lua functions. See the
 
 | Event | Payload |
 |-------|---------|
+| `BAG_NEW_ITEMS_UPDATED` | *(none)* |
 | `BAG_UPDATE_DELAYED` | *(none)* |
 | `EQUIPMENT_SETS_CHANGED` | *(none)* |
 | `EQUIPMENT_SWAP_PENDING` | `setID` |

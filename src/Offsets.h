@@ -1539,6 +1539,25 @@ enum Offsets {
     // Reads bagID at Lua stack[1] and slot at stack[2], validates them, and
     // returns the inventory manager + linear slot ready to feed into GetItemBySlot.
     FUN_PACK_BAG_SLOT = 0x004F9820,
+    // Equipped-bag container-GUID getter — `uint64 __fastcall(uint bagIndex0)`
+    // where `bagIndex0` is 0-based (Lua bagID 1..4 → 0..3; 4..9 are bank bags,
+    // gated on the bank-open globals). Returns the CGContainer GUID of the bag
+    // equipped in that slot, or 0 if none. This is the internal PackBagSlot
+    // uses to resolve bags 1..4: get the bag GUID here, resolve the container
+    // via FUN_OBJECT_RESOLVE_BY_GUID(OBJ_TYPE_CONTAINER, guid), then call the
+    // container's vtable[+OFF_CONTAINER_GET_INVENTORY] to get the inventory
+    // object GetItemBySlot indexes. Lets us enumerate bag contents in pure C++
+    // without PackBagSlot's Lua-stack coupling. (Reads GUID arrays at
+    // 0x00BDD060 lo / 0x00BDD064 hi, stride 8.)
+    FUN_GET_EQUIPPED_BAG_GUID = 0x004F93E0,
+    // CGContainer vtable slot (byte offset into the vtable) whose method
+    // returns the container's inventory object — `void* __thiscall(container)`.
+    // The inventory object's slot count lives at its +0x00 (OFF_INVMGR_SLOT_COUNT).
+    OFF_CONTAINER_GET_INVENTORY = 0x10,
+    // Backpack (bagID 0) linear-slot base in the player invMgr GUID/item
+    // arrays: a 1-based backpack slot S maps to linear (S - 1) + 23. Matches
+    // PackBagSlot's `*param_3 += 0x17` for the backpack branch.
+    BACKPACK_LINEAR_BASE = 23,
     // Player inventory manager layout — used for direct GUID-array reads
     // that bypass `GetItemBySlot`'s bank gate at `0x006228C1`.
     //   +0x00  uint32  max slot count

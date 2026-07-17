@@ -326,6 +326,11 @@ build instructions.
   - [`C_PlayerCache.SetScanEnabled(enabled)`](#c_playercachesetscanenabledenabled)
   - [`C_PlayerCache.IsScanEnabled()`](#c_playercacheisscanenabled)
 
+- [NewItems](#newitems)
+  - [`C_NewItems.IsNewItem(bagID, slotIndex)`](#c_newitemsisnewitembagid-slotindex)
+  - [`C_NewItems.RemoveNewItem(bagID, slotIndex)`](#c_newitemsremovenewitembagid-slotindex)
+  - [`C_NewItems.ClearAll()`](#c_newitemsclearall)
+
 - [PlayerInfo](#playerinfo)
   - [`C_PlayerInfo.CanUseItem(itemID)`](#c_playerinfocanuseitemitemid)
   - [`C_PlayerInfo.GUIDIsPlayer(guid)` / `GUIDIsCreature` / `GUIDIsPet` / `GUIDIsGameObject`](#c_playerinfoguidisplayerguid--guidiscreature--guidispet--guidisgameobject)
@@ -7907,6 +7912,55 @@ if C_PlayerCache.IsScanEnabled()
     -- visible-object sweeps are running every ~10s
 end
 ```
+
+## NewItems
+
+Backports the modern "new item glow" bookkeeping — the sparkle the retail
+bag UI shows on items you've just picked up but haven't looked at yet.
+Vanilla 1.12 never had this feature (no DBC, no server data, no engine
+bit); it's pure client-side tracking over your bag contents, so ClassicAPI
+adds it.
+
+Newness is keyed on each item's **instance GUID** (read off the CGItem),
+not on `(bagID, slotIndex)`. A flag therefore survives the player
+rearranging a bag — exactly like retail, and impossible for a pure-Lua
+addon (vanilla exposes no per-instance GUID to Lua). Only **bag** items are
+tracked (bags 0–4); equipment and bank are out of scope, matching retail.
+
+The feed is entirely client-side C++, the same as retail (no addon Lua), and
+event-driven rather than polled: it hangs off the engine's own `BAG_UPDATE`
+fire sites, so a bag rescan runs only on frames where a bag actually
+changed. Each rescan diffs the resident item GUIDs against the previous one,
+flags anything newly acquired, and prunes flags for items that leave.
+`BAG_NEW_ITEMS_UPDATED` (no payload) fires whenever the new-item set
+changes. A one-time baseline taken ~1.5s after login (re-armed on character
+switch) means items already owned at login aren't flagged.
+
+### `C_NewItems.IsNewItem(bagID, slotIndex)`
+
+Returns `true` if the item currently in bag `bagID` slot `slotIndex` is
+flagged new, `false` otherwise (empty slot, unflagged item, or non-numeric
+args). `bagID` 0 is the backpack; 1–4 are the equipped bags. Slot indices
+are 1-based, matching `GetContainerItemInfo`.
+
+```lua
+if C_NewItems.IsNewItem(0, 3) then
+    -- show the "new" glow on backpack slot 3
+end
+```
+
+### `C_NewItems.RemoveNewItem(bagID, slotIndex)`
+
+Clears the new flag for the item in that slot (e.g. once the player has
+seen it). No-op if the slot is empty or the item wasn't flagged. Fires
+`BAG_NEW_ITEMS_UPDATED` when it actually removes a flag. Because the flag is
+GUID-keyed, the item stays un-flagged even if it's later moved to another
+slot.
+
+### `C_NewItems.ClearAll()`
+
+Clears every new flag at once. Fires `BAG_NEW_ITEMS_UPDATED` if anything was
+flagged.
 
 ## PlayerInfo
 

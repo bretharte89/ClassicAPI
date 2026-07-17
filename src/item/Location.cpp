@@ -95,6 +95,34 @@ const uint8_t *ResolveEquipmentSlot(int slot1Based) {
     return static_cast<const uint8_t *>(GetItemBySlot(invMgr, slot1Based - 1));
 }
 
+void *ContainerInventory(const uint8_t *container) {
+    if (container == nullptr)
+        return nullptr;
+    auto *vtable = *reinterpret_cast<const uint8_t *const *>(container);
+    using GetInventory_t = void *(__thiscall *)(void *container);
+    auto getInventory = *reinterpret_cast<const GetInventory_t *>(
+        vtable + Offsets::OFF_CONTAINER_GET_INVENTORY);
+    return getInventory(const_cast<uint8_t *>(container));
+}
+
+void *EquippedBagInventory(int bagID) {
+    if (bagID < 1 || bagID > 4)
+        return nullptr;
+    using GetBagGuid_t = uint64_t(__fastcall *)(uint32_t bagIndex0);
+    auto getBagGuid =
+        reinterpret_cast<GetBagGuid_t>(Offsets::FUN_GET_EQUIPPED_BAG_GUID);
+    const uint64_t bagGuid = getBagGuid(static_cast<uint32_t>(bagID - 1));
+    if (bagGuid == 0)
+        return nullptr; // no bag equipped in that slot
+    using ResolveByGUID_t = void *(__fastcall *)(int, const char *, uint32_t,
+                                                  uint32_t, int);
+    auto resolve = reinterpret_cast<ResolveByGUID_t>(Offsets::FUN_OBJECT_RESOLVE_BY_GUID);
+    auto *container = static_cast<const uint8_t *>(
+        resolve(Offsets::OBJ_TYPE_CONTAINER, "ItemMgr", static_cast<uint32_t>(bagGuid),
+                static_cast<uint32_t>(bagGuid >> 32), 0x172));
+    return ContainerInventory(container);
+}
+
 // Mirrors `Item::Bag::ResolveBagInfo`'s slot-count derivation: backpack
 // is fixed at 16, equipped bags read `m_containerSlots` off the cache
 // record. Returns 0 for empty bag slots or out-of-range bagIDs.

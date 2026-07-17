@@ -69,6 +69,28 @@ const uint8_t *ResolveEquipmentSlot(int slot1Based);
 // guaranteed cached by the engine's bag-sync flow at login.
 int GetBagSlotCount(int bagID);
 
+// Given a `CGContainer*` (an equipped bag or bank bag, resolved by GUID via
+// `FUN_OBJECT_RESOLVE_BY_GUID` with `OBJ_TYPE_CONTAINER`), returns its own
+// inventory-manager object via the container's vtable method at
+// `+OFF_CONTAINER_GET_INVENTORY`. The returned object has the same layout as
+// the player inventory manager: slot count at `+0x00`, flat GUID array at
+// `+OFF_INVMGR_GUID_ARRAY`. Null-safe (null container → null). Pure C — no
+// Lua stack, safe from any context. Consolidates the vtable dispatch that was
+// hand-rolled across the bag/bank walks in `item/Count`, `item/AverageLevel`,
+// `equipmentset/Locations`, and `item/NewItems`.
+void *ContainerInventory(const uint8_t *container);
+
+// Returns the inventory object of the equipped bag in player bag slot `bagID`
+// (1..4): its container GUID via `FUN_GET_EQUIPPED_BAG_GUID`, resolved to the
+// CGContainer, then its inventory via `ContainerInventory`. The result has the
+// player-invMgr shape (slot count at `+0x00`, GUID array at
+// `+OFF_INVMGR_GUID_ARRAY`) and is what `GetItemBySlot` indexes with a 0-based
+// slot. Returns null for `bagID` outside 1..4 or when no bag is equipped
+// there. Pure C — no Lua stack. (The backpack, `bagID` 0, has no container
+// object; index it directly off the player inventory manager at
+// `BACKPACK_LINEAR_BASE + slot - 1`.)
+void *EquippedBagInventory(int bagID);
+
 // GUID-walk result. `equipmentSlotIndex != 0` means the item was
 // found in a character-pane equipment slot; otherwise it's in
 // `bagID`/`slotIndex`. `item` always points to the found CGItem
