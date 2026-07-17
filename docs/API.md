@@ -67,6 +67,7 @@ build instructions.
   - [`C_CreatureInfo.GetClassInfo(classID)`](#c_creatureinfogetclassinfoclassid)
   - [`C_CreatureInfo.GetCreatureFamilyInfo(creatureFamilyID)`](#c_creatureinfogetcreaturefamilyinfocreaturefamilyid)
   - [`C_CreatureInfo.GetCreatureFamilyIDs()`](#c_creatureinfogetcreaturefamilyids)
+  - [`C_CreatureInfo.GetFactionInfo(raceID)`](#c_creatureinfogetfactioninforaceid)
 
 - [CVar](#cvar)
   - [`C_CVar.GetCVarBool(cvar)`](#c_cvargetcvarboolcvar)
@@ -1755,6 +1756,31 @@ for _, id in ipairs(ids) do
     -- fam.name, fam.iconFile
 end
 ```
+
+### `C_CreatureInfo.GetFactionInfo(raceID)`
+
+Faction-group info for a **race** (Alliance or Horde), read from the
+client DBCs. Returns a `FactionInfo` table, or `nil` for a non-numeric /
+non-positive / unknown race, or a race with no named group.
+
+```lua
+local info = C_CreatureInfo.GetFactionInfo(1)   -- Human
+-- { name = "Alliance", groupTag = "Alliance" }
+C_CreatureInfo.GetFactionInfo(2)   -- Orc  → { name = "Horde", groupTag = "Horde" }
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `name` | string | Localized faction-group name (`"Alliance"`, `"Horde"`, or the locale's translation). |
+| `groupTag` | string | Locale-independent tag: `"Alliance"` or `"Horde"`. |
+
+This is the by-`raceID` form of vanilla's existing `UnitFactionGroup(unit)`
+(which returns `groupTag, name` for a live unit) — same resolution, no unit
+required. It mirrors that engine function's chain exactly: race →
+`FactionTemplate` group mask → `FactionGroup.dbc`, selecting the row whose
+bit the mask sets and whose localized name is non-empty (that non-empty test
+is how the engine skips the always-present `"Player"` bit and the nameless
+`"Monster"` row to land on Alliance / Horde).
 
 ## CVar
 

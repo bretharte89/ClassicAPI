@@ -2233,6 +2233,33 @@ enum Offsets {
     OFF_CREATUREFAMILY_NAMES = 0x20,
     OFF_CREATUREFAMILY_ICON = 0x44,
 
+    // Race → faction group, mirroring the player branch of
+    // `Script_UnitFactionGroup` (`0x00516630`) — backs
+    // `C_CreatureInfo.GetFactionInfo(raceID)`. Chain:
+    //   ChrRaces[race] + 0x08          → FactionTemplate id
+    //   FactionTemplate[id] + 0x0C     → group mask (ourMask)
+    //   scan FactionGroup for the row whose bit is set (and whose
+    //     localized name is non-empty — that non-empty test is what
+    //     skips the always-set "Player" bit and lands on Alliance/Horde)
+    //   push { groupTag = row+0x08 (english), name = row+0x0C+locale*4 }
+    // FactionTemplate is a pointer-array DBC (records[id]); FactionGroup
+    // is stored CONTIGUOUSLY (records-base + i*stride, direct field reads,
+    // NOT a pointer array), so iterate it by hand rather than via DBC::Record.
+    // FactionTemplate globals match docs/DBCs.md; the FactionGroup
+    // records-base/count globals are the ones the engine actually
+    // dereferences per the disassembly (0x00C0DD5C / 0x00C0DD60), which
+    // differ from DBCs.md's standard-shape tabulation for this table.
+    OFF_CHRRACES_FACTION_TEMPLATE = 0x08,
+    VAR_FACTIONTEMPLATE_RECORDS = 0x00C0DD3C,
+    VAR_FACTIONTEMPLATE_COUNT = 0x00C0DD40,
+    OFF_FACTIONTEMPLATE_GROUP_MASK = 0x0C,
+    VAR_FACTIONGROUP_RECORDS = 0x00C0DD5C,
+    VAR_FACTIONGROUP_COUNT = 0x00C0DD60,
+    FACTIONGROUP_STRIDE = 0x30,
+    OFF_FACTIONGROUP_BIT = 0x04,
+    OFF_FACTIONGROUP_ENGLISH = 0x08,
+    OFF_FACTIONGROUP_NAMES = 0x0C,
+
     // AreaTable.dbc — used by `Script_GetCharacterInfo` to resolve
     // each character's last-known-area to a localized zone name.
     // Same shape as the other DBCs (records pointer + count globals,
