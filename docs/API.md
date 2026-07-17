@@ -45,6 +45,7 @@ build instructions.
   - [`C_Container.GetContainerItemRepairCost(containerIndex, slotIndex)`](#c_containergetcontaineritemrepaircostcontainerindex-slotindex)
   - [`C_Container.GetContainerItemCharges(containerIndex, slotIndex)`](#c_containergetcontaineritemchargescontainerindex-slotindex)
   - [`C_Container.GetContainerNumFreeSlots(bagID)`](#c_containergetcontainernumfreeslotsbagid)
+  - [`C_Container.CalculateTotalNumberOfFreeBagSlots()`](#c_containercalculatetotalnumberoffreebagslots)
   - [`C_Container.IsContainerItemOpenable(containerIndex, slotIndex)`](#c_containeriscontaineritemopenablecontainerindex-slotindex)
   - [`C_Container.PlayerHasHearthstone()`](#c_containerplayerhashearthstone)
   - [`C_Container.UseHearthstone()`](#c_containerusehearthstone)
@@ -1263,6 +1264,31 @@ Implementation walks the bag using
 internally and counts slots that resolve to a null `CGItem *` (i.e.,
 empty). Cross-checked in-game against a manual
 `C_Container.GetContainerItemID` walk; counts match.
+
+### `C_Container.CalculateTotalNumberOfFreeBagSlots()`
+
+Returns the total number of free slots across the player's
+**general-purpose** bags — backpack plus any equipped bags 0..4 whose
+`BagFamily` is 0. Specialty bags (quivers, soul bags, herb bags, …) are
+excluded, matching FrameXML's implementation:
+
+```lua
+local total = 0
+for bag = 0, 4 do
+    local free, family = C_Container.GetContainerNumFreeSlots(bag)
+    if family == 0 then total = total + free end
+end
+-- total == C_Container.CalculateTotalNumberOfFreeBagSlots()
+```
+
+Takes no arguments.
+
+> **Same sparse-`BagFamily` caveat** as
+> [`GetContainerNumFreeSlots`](#c_containergetcontainernumfreeslotsbagid):
+> because vanilla server data leaves most bags' family field at 0,
+> specialty bags that retail would exclude are counted here. The result
+> stays consistent with the per-bag `GetContainerNumFreeSlots` values it
+> sums.
 
 ### `C_Container.IsContainerItemOpenable(containerIndex, slotIndex)`
 

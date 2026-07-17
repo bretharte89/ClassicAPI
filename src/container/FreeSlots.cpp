@@ -130,11 +130,39 @@ int __fastcall Script_C_Container_GetContainerNumFreeSlots(void *L) {
     return 2;
 }
 
+// `C_Container.CalculateTotalNumberOfFreeBagSlots()` — the total number of
+// free slots across the player's *general-purpose* bags (backpack + equipped
+// bags 0..4 whose BagFamily is 0). Specialty bags (quivers, soul bags, herb
+// bags, …) are excluded, mirroring FrameXML's implementation exactly:
+//
+//   for bag = BACKPACK .. lastBag:
+//       free, family = C_Container.GetContainerNumFreeSlots(bag)
+//       if family == 0 then total = total + free end
+//
+// Takes no arguments. Caveat inherited from `GetContainerNumFreeSlots`:
+// vanilla-era server data leaves most bags' BagFamily at 0, so specialty
+// bags that retail *would* exclude (Soul Pouch, Enchanting Bag, …) get
+// counted here — the client just doesn't carry the family bit for them. The
+// result stays consistent with what `GetContainerNumFreeSlots` reports for
+// those same bags.
+int __fastcall Script_C_Container_CalculateTotalNumberOfFreeBagSlots(void *L) {
+    int total = 0;
+    for (int bagID = 0; bagID <= 4; bagID++) {
+        const BagInfo info = ResolveBagInfo(bagID);
+        if (info.slotCount > 0 && info.bagType == 0)
+            total += CountFreeSlotsInBag(L, bagID, info.slotCount);
+    }
+    Game::Lua::PushNumber(L, static_cast<double>(total));
+    return 1;
+}
+
 } // namespace
 
 static void RegisterLuaFunctions() {
     Game::Lua::RegisterTableFunction("C_Container", "GetContainerNumFreeSlots",
                                      &Script_C_Container_GetContainerNumFreeSlots);
+    Game::Lua::RegisterTableFunction("C_Container", "CalculateTotalNumberOfFreeBagSlots",
+                                     &Script_C_Container_CalculateTotalNumberOfFreeBagSlots);
 }
 
 static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
