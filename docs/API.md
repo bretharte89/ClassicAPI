@@ -68,6 +68,8 @@ build instructions.
   - [`C_CreatureInfo.GetCreatureFamilyInfo(creatureFamilyID)`](#c_creatureinfogetcreaturefamilyinfocreaturefamilyid)
   - [`C_CreatureInfo.GetCreatureFamilyIDs()`](#c_creatureinfogetcreaturefamilyids)
   - [`C_CreatureInfo.GetFactionInfo(raceID)`](#c_creatureinfogetfactioninforaceid)
+  - [`C_CreatureInfo.GetCreatureTypeInfo(creatureTypeID)`](#c_creatureinfogetcreaturetypeinfocreaturetypeid)
+  - [`C_CreatureInfo.GetCreatureTypeIDs()`](#c_creatureinfogetcreaturetypeids)
 
 - [CVar](#cvar)
   - [`C_CVar.GetCVarBool(cvar)`](#c_cvargetcvarboolcvar)
@@ -441,6 +443,7 @@ build instructions.
   - [`UnitTokenFromGUID(guid)`](#unittokenfromguidguid)
   - [`UnitSubName(unit)`](#unitsubnameunit)
   - [`UnitCreatureFamilyID(unit)`](#unitcreaturefamilyidunit)
+  - [`UnitCreatureTypeID(unit)`](#unitcreaturetypeidunit)
   - [`GetUnitSpeed(unit)`](#getunitspeedunit)
   - [`UnitClassBase(unit)`](#unitclassbaseunit)
   - [`UnitRaceBase(unit)`](#unitracebaseunit)
@@ -1781,6 +1784,39 @@ required. It mirrors that engine function's chain exactly: race →
 bit the mask sets and whose localized name is non-empty (that non-empty test
 is how the engine skips the always-present `"Player"` bit and the nameless
 `"Monster"` row to land on Alliance / Horde).
+
+### `C_CreatureInfo.GetCreatureTypeInfo(creatureTypeID)`
+
+Info for a creature type (`CreatureType.dbc` row), read from the
+always-loaded client DBC. Returns a `CreatureTypeInfo` table, or `nil`
+for a non-numeric / non-positive / unused id.
+
+```lua
+local info = C_CreatureInfo.GetCreatureTypeInfo(7)
+-- { id = 7, name = "Humanoid" }
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `id` | number | Echo of the input id. |
+| `name` | string | Localized type name (client's active locale). |
+
+The type ids: `1` Beast, `2` Dragonkin, `3` Demon, `4` Elemental, `5`
+Giant, `6` Undead, `7` Humanoid, `8` Critter, `9` Mechanical, `10` Not
+specified, `11` Totem. Pairs with
+[`UnitCreatureTypeID`](#unitcreaturetypeidunit) (id → name) and
+[`GetCreatureTypeIDs`](#c_creatureinfogetcreaturetypeids).
+
+### `C_CreatureInfo.GetCreatureTypeIDs()`
+
+Array of every `CreatureType.dbc` id (contiguous `1`..`11` in vanilla),
+each round-tripping with
+[`GetCreatureTypeInfo`](#c_creatureinfogetcreaturetypeinfocreaturetypeid).
+
+```lua
+local ids = C_CreatureInfo.GetCreatureTypeIDs()
+-- { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 }
+```
 
 ## CVar
 
@@ -10710,6 +10746,25 @@ id the engine's `UnitCreatureFamily` resolves internally
 `nil` semantics match `UnitCreatureFamily` (both return nothing for a
 family of 0), and it shares `UnitSubName`'s creature-cache coverage
 caveat (a fresh NPC's row may be briefly NULL for a frame or two).
+
+### `UnitCreatureTypeID(unit)`
+
+Returns the numeric **CreatureType** id (the `CreatureType.dbc` row —
+`1` = Beast, `3` = Demon, `7` = Humanoid, …) for a unit, or `nil` when
+it has no resolvable type. The raw-id twin of `UnitCreatureFamilyID`.
+
+```lua
+/dump UnitCreatureTypeID("target")   -- 7 for a humanoid, 1 for a beast
+/dump UnitCreatureTypeID("player")   -- 7 (Humanoid, via the player's race)
+```
+
+Stock `UnitCreatureType(unit)` returns only the *localized name*
+(`"Humanoid"`, `"Humanoïde"`) — awkward to compare and locale-dependent.
+This exposes the id addons want for stable checks. It calls the same inner
+resolver the engine's `UnitCreatureType` uses, which handles every unit kind
+(NPCs via the creature cache, players via their race → Humanoid). Pair with
+[`C_CreatureInfo.GetCreatureTypeInfo`](#c_creatureinfogetcreaturetypeinfocreaturetypeid)
+to get the localized name back from the id.
 
 ### `GetUnitSpeed(unit)`
 

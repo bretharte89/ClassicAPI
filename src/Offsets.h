@@ -530,14 +530,23 @@ enum Offsets {
     OFF_UNIT_FIELD_CREATEDBY = 0x20,
 
     // Pet-vs-minion discriminator for an owned unit: `int __fastcall(unit)`.
-    // Returns 1 for a controllable **pet** (classified by creature family
-    // at descriptor +0x212 → family DBC, with a ChrRaces fallback), a
-    // non-1 value otherwise. The engine's unit-title builder `FUN_0052FD30`
-    // uses it as `(fn(unit) != 1) + 1` → 1 = "X's Pet" title, 2 = "X's
-    // Minion" — so it's the exact signal separating pet from minion, which
-    // neither the GUID (pets and guardians share the 0xF14… prefix) nor
-    // UNIT_FLAG_PLAYER_CONTROLLED reliably does.
+    // `0x00605570` is really the engine's **creature-type resolver** — it's
+    // `Script_UnitCreatureType`'s (`0x0051A280`) inner helper and returns the
+    // `CreatureType.dbc` id (1=Beast, 3=Demon, 7=Humanoid, …), via three
+    // paths in order: a display-override at descriptor `+0x212`, then the
+    // creature-cache type at `[unit+0xB30]+0x18`, then the player-race type
+    // at `ChrRaces[[unit+0x110]+0x78]+0x24`. `FUN_UNIT_CREATURE_TYPE` is the
+    // canonical name; `FUN_UNIT_PET_MINION_CLASS` is a historical alias for
+    // the same address.
+    //
+    // The pet/minion use: the unit-title builder `FUN_0052FD30` calls it as
+    // `(fn(unit) != 1) + 1` → 1 = "X's Pet" title, 2 = "X's Minion". That
+    // works because it's really testing "is this a Beast (type 1)": hunter
+    // pets are Beasts, warlock minions are Demons (type 3) — so `!= 1`
+    // cleanly separates them, which neither the GUID (pets and guardians
+    // share the 0xF14… prefix) nor UNIT_FLAG_PLAYER_CONTROLLED reliably does.
     FUN_UNIT_PET_MINION_CLASS = 0x00605570,
+    FUN_UNIT_CREATURE_TYPE = 0x00605570,
 
     // Party / raid roster counts and the party GUID array referenced
     // in the `FUN_TOKEN_TO_GUID` dispatch comment above. Used by
@@ -2232,6 +2241,16 @@ enum Offsets {
     VAR_CREATUREFAMILY_COUNT = 0x00C0DE80,
     OFF_CREATUREFAMILY_NAMES = 0x20,
     OFF_CREATUREFAMILY_ICON = 0x44,
+
+    // CreatureType.dbc — pet/NPC classification (1=Beast … 11=Totem;
+    // contiguous ids, 11 rows). Records 0x00C0DE2C, count 0x00C0DE30 (the
+    // globals `Script_UnitCreatureType` (`0x0051A280`) bounds-checks/indexes),
+    // localized `Name[]` at +0x04 (engine reads `record + 0x04 + locale*4`).
+    // Backs `C_CreatureInfo.GetCreatureTypeInfo` / `GetCreatureTypeIDs`;
+    // `UnitCreatureTypeID` returns the id `FUN_UNIT_CREATURE_TYPE` resolves.
+    VAR_CREATURETYPE_RECORDS = 0x00C0DE2C,
+    VAR_CREATURETYPE_COUNT = 0x00C0DE30,
+    OFF_CREATURETYPE_NAMES = 0x04,
 
     // Race → faction group, mirroring the player branch of
     // `Script_UnitFactionGroup` (`0x00516630`) — backs

@@ -306,6 +306,53 @@ int __fastcall Script_GetFactionInfo(void *L) {
     return 0; // no named group -> nil
 }
 
+// `C_CreatureInfo.GetCreatureTypeInfo(creatureTypeID)` — CreatureTypeInfo
+// table for a `CreatureType.dbc` row (1 = Beast … 11 = Totem), or nil for a
+// non-numeric / non-positive / unused id.
+int __fastcall Script_GetCreatureTypeInfo(void *L) {
+    if (!Game::Lua::IsNumber(L, 1))
+        return 0; // nil
+    const int typeID = static_cast<int>(Game::Lua::ToNumber(L, 1));
+    const char *name =
+        (typeID > 0) ? DBC::LocalizedField(Offsets::VAR_CREATURETYPE_RECORDS,
+                                           Offsets::VAR_CREATURETYPE_COUNT,
+                                           static_cast<uint32_t>(typeID),
+                                           Offsets::OFF_CREATURETYPE_NAMES)
+                     : nullptr;
+    if (name == nullptr)
+        return 0; // unused / OOR id -> nil
+
+    Game::Lua::NewTable(L);
+    Game::Lua::SetFieldNumber(L, "id", typeID);
+    Game::Lua::SetFieldString(L, "name", name);
+    return 1;
+}
+
+// `C_CreatureInfo.GetCreatureTypeIDs()` — array of every populated
+// `CreatureType.dbc` id (contiguous 1..N in vanilla). Round-trips with
+// GetCreatureTypeInfo for each element.
+int __fastcall Script_GetCreatureTypeIDs(void *L) {
+    Game::Lua::SetTop(L, 0);
+    Game::Lua::NewTable(L);
+
+    const int count =
+        *reinterpret_cast<const int *>(Offsets::VAR_CREATURETYPE_COUNT);
+    int n = 0;
+    for (int id = 1; id <= count; ++id) {
+        const char *name = DBC::LocalizedField(Offsets::VAR_CREATURETYPE_RECORDS,
+                                               Offsets::VAR_CREATURETYPE_COUNT,
+                                               static_cast<uint32_t>(id),
+                                               Offsets::OFF_CREATURETYPE_NAMES);
+        if (name == nullptr)
+            continue;
+        ++n;
+        Game::Lua::PushNumber(L, static_cast<double>(n));
+        Game::Lua::PushNumber(L, static_cast<double>(id));
+        Game::Lua::SetTable(L, -3);
+    }
+    return 1;
+}
+
 void RegisterLuaFunctions() {
     Game::Lua::RegisterTableFunction("C_CreatureInfo", "GetCreatureInfoByID",
                                      &Script_GetCreatureInfoByID);
@@ -321,6 +368,10 @@ void RegisterLuaFunctions() {
                                      &Script_GetCreatureFamilyIDs);
     Game::Lua::RegisterTableFunction("C_CreatureInfo", "GetFactionInfo",
                                      &Script_GetFactionInfo);
+    Game::Lua::RegisterTableFunction("C_CreatureInfo", "GetCreatureTypeInfo",
+                                     &Script_GetCreatureTypeInfo);
+    Game::Lua::RegisterTableFunction("C_CreatureInfo", "GetCreatureTypeIDs",
+                                     &Script_GetCreatureTypeIDs);
     Cache::QueryLoad::Register(reinterpret_cast<void *>(Offsets::VAR_CREATURE_CACHE),
                                kCreatureDataLoadResult, Offsets::FUN_CREATURE_GET_RECORD);
 }
