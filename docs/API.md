@@ -40,6 +40,7 @@ build instructions.
 
 - [Container](#container)
   - [`C_Container.GetContainerItemID(bagIndex, slotIndex)`](#c_containergetcontaineritemidbagindex-slotindex)
+  - [`C_Container.HasContainerItem(bagIndex, slotIndex)`](#c_containerhascontaineritembagindex-slotindex)
   - [`GetItemCooldown(itemInfo)` / `C_Container.GetItemCooldown(itemID)`](#getitemcooldowniteminfo--c_containergetitemcooldownitemid)
   - [`C_Container.GetContainerItemDurability(containerIndex, slotIndex)`](#c_containergetcontaineritemdurabilitycontainerindex-slotindex)
   - [`C_Container.GetContainerItemRepairCost(containerIndex, slotIndex)`](#c_containergetcontaineritemrepaircostcontainerindex-slotindex)
@@ -1058,6 +1059,25 @@ for slot = 1, 16 do
         local _, type, subtype = C_Item.GetItemInfoInstant(id)
         -- ...
     end
+end
+```
+
+### `C_Container.HasContainerItem(bagIndex, slotIndex)`
+
+Returns `true` if the given bag slot currently holds an item, `false`
+otherwise (empty slot or out-of-range indices). The occupancy sibling of
+`GetContainerItemID` — same slot resolution, but a plain presence check.
+
+- `bagIndex = 0` — the player's main backpack; `1..4` — equipped bag slots.
+- `slotIndex` — 1-based.
+
+Presence only: it does **not** require the item's static data to be cached,
+so it returns `true` for a just-looted item even before `GetContainerItemID`
+/ `GetItemInfo` resolve for it.
+
+```lua
+if C_Container.HasContainerItem(0, 1) then
+    -- backpack slot 1 is occupied
 end
 ```
 
