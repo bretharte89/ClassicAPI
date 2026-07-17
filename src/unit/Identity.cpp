@@ -119,6 +119,13 @@ const uint8_t *PlayerObject() {
                 /*line*/ 0));
 }
 
+const uint8_t *PlayerInventoryManager() {
+    const uint8_t *player = PlayerObject();
+    if (player == nullptr)
+        return nullptr;
+    return player + Offsets::OFF_PLAYER_INVENTORY_MANAGER;
+}
+
 const uint8_t *PlayerDescriptor() {
     const uint8_t *player = PlayerObject();
     if (player == nullptr)

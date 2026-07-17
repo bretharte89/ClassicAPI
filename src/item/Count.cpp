@@ -16,6 +16,7 @@
 #include "item/Arg.h"
 #include "item/ID.h"
 #include "item/Location.h"
+#include "unit/Identity.h"
 
 #include <cstdint>
 
@@ -94,21 +95,11 @@ int CountInBag(void *L, int bagID, int targetItemID, bool includeUses) {
 // object resolver `FUN_OBJECT_RESOLVE_BY_GUID` (the same function
 // `GetItemBySlot` would call internally if the gate let us through).
 
-using ResolveUnitToken_t = void *(__fastcall *)(const char *token);
 using ResolveObjectByGuid_t = void *(__fastcall *)(int type,
                                                     const char *debugName,
                                                     uint32_t guidLo,
                                                     uint32_t guidHi,
                                                     int priority);
-
-const uint8_t *PlayerInvMgr() {
-    auto ResolveUnitToken =
-        reinterpret_cast<ResolveUnitToken_t>(Offsets::FUN_RESOLVE_UNIT_TOKEN);
-    auto *player = static_cast<uint8_t *>(ResolveUnitToken("player"));
-    if (player == nullptr)
-        return nullptr;
-    return player + Offsets::OFF_PLAYER_INVENTORY_MANAGER;
-}
 
 const uint8_t *ResolveByGuid(int type, uint64_t guid) {
     if (guid == 0)
@@ -155,7 +146,7 @@ int CountInGuidArray(const uint8_t *invMgr, int firstSlot, int lastSlot,
 // Layout: bag invMgr+0x00 = max slot count (the bag's size); bag
 // invMgr+0x04 = its GUID array. Same shape as the player invMgr.
 int CountInBankBags(int targetItemID, bool includeUses) {
-    auto *playerInvMgr = PlayerInvMgr();
+    auto *playerInvMgr = Unit::Identity::PlayerInventoryManager();
     if (playerInvMgr == nullptr)
         return 0;
     auto *playerGuidArray = *reinterpret_cast<const uint64_t *const *>(
@@ -246,7 +237,7 @@ int __fastcall Script_C_Item_GetItemCount(void *L) {
         // Direct GUID-array reads — bypass the bank gate so this works
         // without the bank window having ever been opened in the
         // session.
-        total += CountInGuidArray(PlayerInvMgr(),
+        total += CountInGuidArray(Unit::Identity::PlayerInventoryManager(),
                                    Offsets::INVMGR_BANK_MAIN_FIRST_SLOT,
                                    Offsets::INVMGR_BANK_MAIN_LAST_SLOT,
                                    itemID, includeUses);

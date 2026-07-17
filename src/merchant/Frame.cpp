@@ -33,6 +33,7 @@
 #include "Game.h"
 #include "Offsets.h"
 #include "item/Location.h"
+#include "unit/Identity.h"
 #include "tick/WorldTick.h"
 
 #include <cstdint>
@@ -42,7 +43,6 @@ namespace Merchant::Frame {
 
 namespace {
 
-using ResolveUnitToken_t = void *(__fastcall *)(const char *token);
 using GetItemRecord_t = const uint8_t *(__thiscall *)(
     void *cache, uint32_t itemID, const uint64_t *guid,
     void *callback, void *userData, bool requestIfMissing);
@@ -108,15 +108,6 @@ int ItemQuality(uint32_t itemID) {
 
 // Player invMgr lives inline at player + 0x1D38. First uint32 is the
 // max slot count; +0x04 is the GUID array pointer.
-const uint8_t *PlayerInvMgr() {
-    auto resolve = reinterpret_cast<ResolveUnitToken_t>(
-        Offsets::FUN_RESOLVE_UNIT_TOKEN);
-    auto *player = static_cast<uint8_t *>(resolve("player"));
-    if (player == nullptr)
-        return nullptr;
-    return player + Offsets::OFF_PLAYER_INVENTORY_MANAGER;
-}
-
 // Walk a single bag, invoking `cb(cgItem)` for each non-empty slot.
 // `cb` returns true to continue, false to stop iteration. Stomps
 // the Lua stack — caller must own it (`ResolveBag` does the stomping).
@@ -161,7 +152,7 @@ int __fastcall Script_GetBuybackItemID(void *L) {
     if (invSlot == 0)
         return 0;
 
-    auto *invMgr = PlayerInvMgr();
+    auto *invMgr = Unit::Identity::PlayerInventoryManager();
     if (invMgr == nullptr)
         return 0;
     // First u32 of the invMgr struct is the max slot count.

@@ -15,6 +15,7 @@
 
 #include "Offsets.h"
 #include "item/Location.h"
+#include "unit/Identity.h"
 
 #include <cstdint>
 
@@ -40,19 +41,6 @@ namespace {
 constexpr int LINEAR_BAG_SLOT_FIRST = 19; // bag1 → linear 19
 constexpr int LINEAR_BACKPACK_FIRST = 23;
 constexpr int LINEAR_BACKPACK_LAST = 38;
-
-void *ResolvePlayer() {
-    using ResolveUnitToken_t = void *(__fastcall *)(const char *);
-    auto fn = reinterpret_cast<ResolveUnitToken_t>(Offsets::FUN_RESOLVE_UNIT_TOKEN);
-    return fn("player");
-}
-
-uint8_t *ResolvePlayerInvMgr() {
-    auto *player = static_cast<uint8_t *>(ResolvePlayer());
-    if (player == nullptr)
-        return nullptr;
-    return player + Offsets::OFF_PLAYER_INVENTORY_MANAGER;
-}
 
 uint64_t *InvMgrGuidArray(const uint8_t *invMgr) {
     if (invMgr == nullptr)
@@ -109,7 +97,7 @@ int FindGUID(uint64_t targetGuid) {
     if (targetGuid == GUID_EMPTY || targetGuid == GUID_IGNORED)
         return 0;
 
-    auto *invMgr = ResolvePlayerInvMgr();
+    auto *invMgr = Unit::Identity::PlayerInventoryManager();
     auto *guids = InvMgrGuidArray(invMgr);
     if (guids == nullptr)
         return 0;
@@ -167,7 +155,7 @@ const uint8_t *ResolveItemByGUID(uint64_t guid) {
 void SnapshotPaperdoll(uint64_t *out) {
     for (int i = 0; i < SLOT_COUNT; ++i)
         out[i] = 0;
-    auto *invMgr = ResolvePlayerInvMgr();
+    auto *invMgr = Unit::Identity::PlayerInventoryManager();
     auto *guids = InvMgrGuidArray(invMgr);
     if (guids == nullptr)
         return;

@@ -16,6 +16,7 @@
 #include "Game.h"
 #include "Offsets.h"
 #include "item/Location.h"
+#include "unit/Identity.h"
 
 #include <cstdint>
 
@@ -23,7 +24,6 @@ namespace Item::Swap {
 
 namespace {
 
-using ResolveUnitToken_t = void *(__fastcall *)(const char *token);
 using SwapFn_t = void(__thiscall *)(
     void *player,
     uint32_t srcItemLo, uint32_t srcItemHi,
@@ -32,11 +32,6 @@ using SwapFn_t = void(__thiscall *)(
     uint32_t dstContainerLo, uint32_t dstContainerHi,
     uint32_t dstLinearSlot,
     int flag);
-
-void *ResolvePlayer() {
-    auto fn = reinterpret_cast<ResolveUnitToken_t>(Offsets::FUN_RESOLVE_UNIT_TOKEN);
-    return fn("player");
-}
 
 // Reads the 64-bit GUID stored at instance-block offset 0 of any
 // CGObject-derived pointer (CGItem, CGPlayer, CGContainer all use
@@ -98,7 +93,7 @@ bool EncodeBagSlot(int bagID, int slotInBag,
     if (slotInBag < 1)
         return false;
     if (bagID == 0) {
-        void *player = ResolvePlayer();
+        void *player = const_cast<uint8_t *>(Unit::Identity::PlayerObject());
         if (player == nullptr)
             return false;
         if (!ReadGuid(player, containerLo, containerHi))
@@ -119,7 +114,7 @@ bool EncodeBagSlot(int bagID, int slotInBag,
     if (bagID == -1) {
         if (slotInBag > BANK_MAIN_NUM_SLOTS)
             return false;
-        void *player = ResolvePlayer();
+        void *player = const_cast<uint8_t *>(Unit::Identity::PlayerObject());
         if (player == nullptr)
             return false;
         if (!ReadGuid(player, containerLo, containerHi))
@@ -152,7 +147,7 @@ bool SendSwap(const void *srcItem,
     if (srcItem == nullptr)
         return false;
 
-    void *player = ResolvePlayer();
+    void *player = const_cast<uint8_t *>(Unit::Identity::PlayerObject());
     if (player == nullptr)
         return false;
 
@@ -187,7 +182,7 @@ bool FromPaperdoll(const void *cgItem, int srcPaperdollSlot, int dstPaperdollSlo
     if (srcPaperdollSlot < 1 || srcPaperdollSlot > 19)
         return false;
 
-    void *player = ResolvePlayer();
+    void *player = const_cast<uint8_t *>(Unit::Identity::PlayerObject());
     if (player == nullptr)
         return false;
     uint32_t playerLo = 0, playerHi = 0;
@@ -205,7 +200,7 @@ bool ToBag(const void *cgItem, int srcPaperdollSlot, int dstBagID, int dstSlotIn
     if (cgItem == nullptr)
         return false;
 
-    void *player = ResolvePlayer();
+    void *player = const_cast<uint8_t *>(Unit::Identity::PlayerObject());
     if (player == nullptr)
         return false;
     uint32_t playerLo = 0, playerHi = 0;
@@ -272,7 +267,7 @@ bool MoveCount(void *L, int srcBag, int srcSlot, int dstBag, int dstSlot, int co
     if (count == srcStack)
         return Containers(L, srcBag, srcSlot, dstBag, dstSlot);
 
-    void *player = ResolvePlayer();
+    void *player = const_cast<uint8_t *>(Unit::Identity::PlayerObject());
     if (player == nullptr)
         return false;
 
@@ -308,7 +303,7 @@ bool Containers(void *L, int srcBag, int srcSlot, int dstBag, int dstSlot) {
     if (srcItem == nullptr)
         return false; // empty source slot
 
-    void *player = ResolvePlayer();
+    void *player = const_cast<uint8_t *>(Unit::Identity::PlayerObject());
     if (player == nullptr)
         return false;
 

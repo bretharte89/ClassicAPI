@@ -16,6 +16,7 @@
 #include "../Game.h"
 #include "../Offsets.h"
 #include "../guid/Guid.h"
+#include "../unit/Identity.h"
 #include "Arg.h"
 #include "ID.h"
 #include "Link.h"
@@ -29,19 +30,9 @@ namespace {
 using GetItemBySlot_t = void *(__thiscall *)(void *thisInvMgr, int slot);
 using PackBagSlot_t = int(__fastcall *)(void *L, void **outInvMgr, int *outLinearSlot,
                                          int *outUnused);
-using ResolveUnitToken_t = void *(__fastcall *)(const char *token);
 using GetItemRecord_t = const uint8_t *(__thiscall *)(void *cache, uint32_t itemID,
                                                       const uint64_t *guid, void *callback,
                                                       void *userData, int unused);
-
-void *ResolveActivePlayerInvMgr() {
-    auto ResolveUnitToken =
-        reinterpret_cast<ResolveUnitToken_t>(Offsets::FUN_RESOLVE_UNIT_TOKEN);
-    auto *player = static_cast<uint8_t *>(ResolveUnitToken("player"));
-    if (player == nullptr)
-        return nullptr;
-    return player + Offsets::OFF_PLAYER_INVENTORY_MANAGER;
-}
 
 // Reads `loc.fieldName` and returns it as an int. Returns false via the
 // boolean result if the field is missing or non-numeric. Always leaves the
@@ -84,7 +75,7 @@ uint64_t ReadCGItemGUID(const uint8_t *item) {
 } // namespace
 
 const uint8_t *ResolveEquipmentSlot(int slot1Based) {
-    void *invMgr = ResolveActivePlayerInvMgr();
+    void *invMgr = const_cast<uint8_t *>(Unit::Identity::PlayerInventoryManager());
     if (invMgr == nullptr)
         return nullptr;
     // GetItemBySlot expects 0-based linearized slot indices. The built-in

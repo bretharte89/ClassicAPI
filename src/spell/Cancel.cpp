@@ -29,6 +29,7 @@
 #include "Offsets.h"
 #include "aura/Data.h"
 #include "dbc/Lookup.h"
+#include "unit/Identity.h"
 
 #include <cstdint>
 #include <cstring>
@@ -37,14 +38,7 @@ namespace Spell::Cancel {
 
 namespace {
 
-using ResolveUnitToken_t = void *(__fastcall *)(const char *token);
 using CancelAuraSend_t = void(__fastcall *)(int spellID);
-
-const uint8_t *ResolvePlayer() {
-    auto fn = reinterpret_cast<ResolveUnitToken_t>(
-        static_cast<uintptr_t>(Offsets::FUN_RESOLVE_UNIT_TOKEN));
-    return static_cast<const uint8_t *>(fn("player"));
-}
 
 // Pre-validates `spellID` against Spell.dbc and ships the cancel
 // packet. The engine's sender unconditionally derefs `[record+0x1C]`
@@ -71,7 +65,7 @@ int __fastcall Script_CancelSpellByName(void *L) {
     const char *targetName = Game::Lua::ToString(L, 1);
     if (targetName == nullptr || *targetName == '\0')
         return 0;
-    const uint8_t *player = ResolvePlayer();
+    const uint8_t *player = Unit::Identity::PlayerObject();
     if (player == nullptr)
         return 0;
     // Walk the player's buff range only (slots 0..31). Modern

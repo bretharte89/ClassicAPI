@@ -55,6 +55,7 @@
 #include "item/Data.h"
 #include "item/ID.h"
 #include "item/Location.h"
+#include "unit/Identity.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -153,20 +154,11 @@ ItemInfo ReadItemInfo(const uint8_t *cgItem) {
 // Bank-walk helpers — bypass the bank-window gate on `GetItemBySlot`
 // by reading the player's invMgr GUID array directly. Same shape as
 // `C_Item.GetItemCount`'s bank path.
-using ResolveUnitToken_t = void *(__fastcall *)(const char *token);
 using ResolveObjectByGuid_t = void *(__fastcall *)(int type,
                                                     const char *debugName,
                                                     uint32_t guidLo,
                                                     uint32_t guidHi,
                                                     int priority);
-
-const uint8_t *PlayerInvMgr() {
-    auto resolveUnit = reinterpret_cast<ResolveUnitToken_t>(Offsets::FUN_RESOLVE_UNIT_TOKEN);
-    auto *player = static_cast<uint8_t *>(resolveUnit("player"));
-    if (player == nullptr)
-        return nullptr;
-    return player + Offsets::OFF_PLAYER_INVENTORY_MANAGER;
-}
 
 const uint8_t *ResolveByGuid(int type, uint64_t guid) {
     if (guid == 0)
@@ -228,7 +220,7 @@ void WalkGuidArrayRange(const uint8_t *invMgr, int firstSlot, int lastSlot,
 // player invMgr hold the bank bags themselves; each bag has its own
 // invMgr accessed via the bag CGContainer's vtable+0x10 method).
 void WalkBankBags(std::vector<Candidate> &candidates) {
-    auto *playerInvMgr = PlayerInvMgr();
+    auto *playerInvMgr = Unit::Identity::PlayerInventoryManager();
     if (playerInvMgr == nullptr)
         return;
     auto *playerGuidArray = *reinterpret_cast<const uint64_t *const *>(
@@ -291,7 +283,7 @@ static int __fastcall Script_GetAverageItemLevel(void *L) {
     // session — GUIDs are populated from server data at login. Main
     // bank first (linear slots 39..62 in the player invMgr), then
     // each equipped bank bag's contents via the per-bag CGContainer.
-    const uint8_t *playerInvMgr = PlayerInvMgr();
+    const uint8_t *playerInvMgr = Unit::Identity::PlayerInventoryManager();
     WalkGuidArrayRange(playerInvMgr,
                        Offsets::INVMGR_BANK_MAIN_FIRST_SLOT,
                        Offsets::INVMGR_BANK_MAIN_LAST_SLOT,

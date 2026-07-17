@@ -18,6 +18,7 @@
 #include "event/Custom.h"
 #include "item/ID.h"
 #include "item/Location.h"
+#include "unit/Identity.h"
 
 #include <cstdint>
 #include <cstring>
@@ -31,24 +32,15 @@ std::string g_path;
 bool g_loaded = false;
 bool g_ignoredForSave[SLOT_COUNT] = {};
 
-void *ResolvePlayerInvMgr() {
-    using ResolveUnitToken_t = void *(__fastcall *)(const char *);
-    auto fn = reinterpret_cast<ResolveUnitToken_t>(Offsets::FUN_RESOLVE_UNIT_TOKEN);
-    auto *player = static_cast<uint8_t *>(fn("player"));
-    if (player == nullptr)
-        return nullptr;
-    return player + Offsets::OFF_PLAYER_INVENTORY_MANAGER;
-}
-
 // Reads the GUID currently in paperdoll slot `slot1Based` (1..19) by
 // indexing the player invMgr's flat GUID array. Slot 1 (HEAD) lives
 // at linear index 0; the equipment paperdoll occupies indices 0..18.
 // Returns 0 for empty slots or unresolved player.
 uint64_t ReadEquippedGUID(int slot1Based) {
-    auto *invMgr = static_cast<uint8_t *>(ResolvePlayerInvMgr());
+    const uint8_t *invMgr = Unit::Identity::PlayerInventoryManager();
     if (invMgr == nullptr)
         return 0;
-    auto *guids = *reinterpret_cast<uint64_t **>(
+    auto *guids = *reinterpret_cast<uint64_t *const *>(
         invMgr + Offsets::OFF_INVMGR_GUID_ARRAY);
     if (guids == nullptr)
         return 0;

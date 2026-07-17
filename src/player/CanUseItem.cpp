@@ -55,6 +55,7 @@
 #include "Offsets.h"
 #include "item/Arg.h"
 #include "spell/Lookup.h"
+#include "unit/Identity.h"
 
 #include <cstdint>
 
@@ -65,7 +66,6 @@ namespace {
 using GetItemRecord_t = const uint8_t *(__thiscall *)(void *cache, uint32_t itemID,
                                                       const uint64_t *guid, void *callback,
                                                       void *userData, int unused);
-using ResolveUnitToken_t = void *(__fastcall *)(const char *token);
 // `__thiscall(player /*ecx*/, skillLineID) -> slot` (-1 if the player
 // doesn't have the skill line). See VAR docs on FUN_SKILL_LINE_TO_SLOT.
 using SkillLineToSlot_t = int(__thiscall *)(void *player, uint32_t skillLineID);
@@ -81,13 +81,6 @@ const uint8_t *PeekItemRecord(uint32_t itemID) {
     auto *cache = reinterpret_cast<void *>(Offsets::VAR_ITEMDB_CACHE);
     const uint64_t zeroGuid = 0;
     return fn(cache, itemID, &zeroGuid, nullptr, nullptr, 0);
-}
-
-// The local player's CGUnit/CGPlayer object (holds the descriptor at
-// +OFF_UNIT_DESCRIPTOR and the CGPlayer sub-struct at +OFF_CGPLAYER_INFO).
-const uint8_t *ResolvePlayer() {
-    auto resolve = reinterpret_cast<ResolveUnitToken_t>(Offsets::FUN_RESOLVE_UNIT_TOKEN);
-    return static_cast<const uint8_t *>(resolve("player"));
 }
 
 // True iff `mask` restricts a 1-based `index` (class/race) the player
@@ -246,7 +239,7 @@ bool ComputeCanUse(int itemID) {
     auto *record = PeekItemRecord(static_cast<uint32_t>(itemID));
     if (record == nullptr)
         return false; // not cached → sync false, no load fired
-    auto *player = ResolvePlayer();
+    auto *player = Unit::Identity::PlayerObject();
     if (player == nullptr)
         return false; // pre-login / no player
     auto *desc = *reinterpret_cast<const uint8_t *const *>(

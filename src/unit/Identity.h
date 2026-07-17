@@ -44,6 +44,17 @@ const uint8_t *PlayerObject();
 // re-deriving the player object + descriptor offset in each module.
 const uint8_t *PlayerDescriptor();
 
+// The local player's inventory manager (`PlayerObject() +
+// OFF_PLAYER_INVENTORY_MANAGER`), or null. Layout: slot count at `+0x00`,
+// flat GUID array at `+OFF_INVMGR_GUID_ARRAY`; it's the `this` that
+// `GetItemBySlot` expects. This is the SAME pointer the throwing token
+// resolver (`FUN_RESOLVE_UNIT_TOKEN("player")`) yields — both resolve the
+// local player's GUID through the object manager (verified: the token
+// resolver is `TokenToGUID → FUN_OBJECT_RESOLVE_BY_GUID`, differing only in
+// the type-mask, which both the player object passes) — but non-throwing
+// (null pre-world). Prefer this over re-deriving `player + 0x1D38` per module.
+const uint8_t *PlayerInventoryManager();
+
 // The 64-bit GUID of a resolved CGUnit/CGObject pointer, read through the
 // pointer at `+0x08` to an instance block whose first 8 bytes are the GUID
 // (verified in `Script_GetInventoryItemLink`; see `OFF_UNIT_GUID_PTR`).
