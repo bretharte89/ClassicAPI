@@ -279,6 +279,15 @@ void AddByKey(Accum *acc, const char *key, long delta) {
         }
 }
 
+long Value(const Accum *acc, const char *key) {
+    if (acc == nullptr || key == nullptr)
+        return 0;
+    for (int i = 0; i < kCount; ++i)
+        if (std::strcmp(acc[i].key, key) == 0)
+            return acc[i].value;
+    return 0;
+}
+
 const uint8_t *FetchRecord(uint32_t itemID) {
     auto fn = reinterpret_cast<GetItemRecord_t>(Offsets::FUN_DBCACHE_ITEMSTATS_GET_RECORD);
     auto *cache = reinterpret_cast<void *>(Offsets::VAR_ITEMDB_CACHE);
@@ -306,6 +315,34 @@ double ComputeDPS(const uint8_t *record) {
     return avgTotal / (static_cast<double>(delayMs) / 1000.0);
 }
 
+void ApplyEnchant(Accum *acc, uint32_t enchantID, long sign) {
+    if (enchantID == 0)
+        return;
+    const uint8_t *en = DBC::Record(Offsets::VAR_SPELLITEMENCHANT_RECORDS,
+                                    Offsets::VAR_SPELLITEMENCHANT_COUNT, enchantID);
+    if (en == nullptr)
+        return;
+    auto type = reinterpret_cast<const int32_t *>(en + Offsets::OFF_SPELLITEMENCHANT_TYPE);
+    auto amount = reinterpret_cast<const int32_t *>(en + Offsets::OFF_SPELLITEMENCHANT_AMOUNT);
+    auto arg = reinterpret_cast<const int32_t *>(en + Offsets::OFF_SPELLITEMENCHANT_ARG);
+    for (int i = 0; i < 3; ++i) { // SpellItemEnchantment has 3 effect slots
+        switch (type[i]) {
+        case 3: // equip spell — stat/resist value lives in the spell
+            AddSpellStatAuras(acc, arg[i], sign);
+            break;
+        case 4: // resistance — arg = school index (0 = armor)
+            AddByKey(acc, ResistKey(arg[i]), sign * static_cast<long>(amount[i]));
+            break;
+        case 5: // direct stat — arg = ItemModType, amount = value
+            AddByKey(acc, StatKeyForItemModType(static_cast<uint32_t>(arg[i])),
+                     sign * static_cast<long>(amount[i]));
+            break;
+        default: // 1 proc / 2 weapon-damage / 6 totem / 7 use spell
+            break;
+        }
+    }
+}
+
 void ApplyRandomSuffix(Accum *acc, int suffixID, long sign) {
     if (suffixID <= 0)
         return;
@@ -316,34 +353,8 @@ void ApplyRandomSuffix(Accum *acc, int suffixID, long sign) {
         return;
     auto enchants = reinterpret_cast<const uint32_t *>(
         rp + Offsets::OFF_ITEMRANDOMPROP_ENCHANT);
-    for (int s = 0; s < Offsets::ITEMRANDOMPROP_ENCHANT_SLOT_COUNT; ++s) {
-        const uint32_t enchantID = enchants[s];
-        if (enchantID == 0)
-            continue;
-        const uint8_t *en = DBC::Record(Offsets::VAR_SPELLITEMENCHANT_RECORDS,
-                                        Offsets::VAR_SPELLITEMENCHANT_COUNT, enchantID);
-        if (en == nullptr)
-            continue;
-        auto type = reinterpret_cast<const int32_t *>(en + Offsets::OFF_SPELLITEMENCHANT_TYPE);
-        auto amount = reinterpret_cast<const int32_t *>(en + Offsets::OFF_SPELLITEMENCHANT_AMOUNT);
-        auto arg = reinterpret_cast<const int32_t *>(en + Offsets::OFF_SPELLITEMENCHANT_ARG);
-        for (int i = 0; i < 3; ++i) { // SpellItemEnchantment has 3 effect slots
-            switch (type[i]) {
-            case 3: // equip spell — stat/resist value lives in the spell
-                AddSpellStatAuras(acc, arg[i], sign);
-                break;
-            case 4: // resistance — arg = school index (0 = armor)
-                AddByKey(acc, ResistKey(arg[i]), sign * static_cast<long>(amount[i]));
-                break;
-            case 5: // direct stat — arg = ItemModType, amount = value
-                AddByKey(acc, StatKeyForItemModType(static_cast<uint32_t>(arg[i])),
-                         sign * static_cast<long>(amount[i]));
-                break;
-            default: // 1 proc / 2 weapon-damage / 6 totem / 7 use spell
-                break;
-            }
-        }
-    }
+    for (int s = 0; s < Offsets::ITEMRANDOMPROP_ENCHANT_SLOT_COUNT; ++s)
+        ApplyEnchant(acc, enchants[s], sign);
 }
 
 void AccumulateRecord(Accum *acc, const uint8_t *record, long sign) {

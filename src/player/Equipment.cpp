@@ -52,6 +52,7 @@
 #include "Offsets.h"
 #include "equipmentset/Locations.h"
 #include "event/Custom.h"
+#include "player/StatSignal.h"
 #include "unit/Identity.h"
 
 #include <cstdint>
@@ -112,6 +113,9 @@ int __fastcall EquipSlotChanged_cb(uint32_t fieldOffset, uint32_t /*size*/,
         Event::Custom::FireIdSuccess(Event::Custom::Lookup(kEvtEquipmentChanged),
                                      slot0 + 1,
                                      SlotHasItem(guidLo, guidHi, slot0));
+        // Gear swap changes item +healing and Spirit/Armor — invalidate the
+        // GetSpellBonusHealing cache.
+        Player::StatSignal::Notify();
     }
     return 1;
 }

@@ -370,6 +370,8 @@ build instructions.
   - [`C_Spell.IsSpellPassive(spellID)`](#c_spellisspellpassivespellid)
   - [`IsPlayerSpell(spellID)`](#isplayerspellspellid)
   - [`IsSpellKnown(spellID, [isPet])`](#isspellknownspellid-ispet)
+  - [`GetSpellBonusDamage(school)`](#getspellbonusdamageschool)
+  - [`GetSpellBonusHealing()`](#getspellbonushealing)
   - [`IsUsableSpell(spell)` / `IsUsableSpell(slot, bookType)`](#isusablespellspell--isusablespellslot-booktype)
   - [`C_Spell.IsSpellUsable(spellID)`](#c_spellisspellusablespellid)
   - [`C_Spell.GetSpellCooldown(spellIdentifier)`](#c_spellgetspellcooldownspellidentifier)
@@ -8996,6 +8998,54 @@ Verified to match 3.3.5's `Script_IsSpellKnown` semantics — that
 function does the same spellbook walk in its inner helper at
 `0x0053B4E0` (player array `[0x00BE6D88]`, pet array `[0x00BE7D98]`,
 same shape just different addresses).
+
+### `GetSpellBonusDamage(school)`
+
+Returns the local player's flat spell-damage bonus (spell power) for a
+given magic school, as a number. `school` is **1-based**: `1` Physical,
+`2` Holy, `3` Fire, `4` Nature, `5` Frost, `6` Shadow, `7` Arcane. Raises
+a usage error for a missing / out-of-range school; returns `0` before
+you're in the world.
+
+```lua
+GetSpellBonusDamage(3)   -- your +Fire spell damage
+GetSpellBonusDamage(6)   -- your +Shadow spell damage
+```
+
+### `GetSpellBonusHealing()`
+
+Returns the local player's flat healing bonus, as a number.
+
+```lua
+GetSpellBonusHealing()   -- your +Healing
+```
+
+> **Damage is an exact field read; healing is derived.**
+>
+> `GetSpellBonusDamage` reads the client's fully-computed value directly
+> from the CGPlayer sub-struct (`PLAYER_FIELD_MOD_DAMAGE_DONE_POS − _NEG`
+> per school). That field isn't in the *broadcast* descriptor — the
+> vanilla server never sends it there, which is why it looks absent — but
+> the client keeps a computed copy for its own use, with gear, enchants,
+> buffs, talents, and set bonuses all baked in. So the value is exact and
+> complete. (Same source nampower's `GetSpellPower` reads.)
+>
+> `GetSpellBonusHealing` has no such field — vanilla 1.12 never had a
+> healing-done field at all (confirmed in-game: toggling a pure +healing
+> item moved no field in the player struct) — so it's **derived** in two
+> parts, both from `Spell.dbc`: (1) flat healing = the sum of every
+> `SPELL_AURA_MOD_HEALING_DONE` off gear equip-effects, item enchants
+> (permanent + weapon oils), random suffixes, and active buffs; plus (2)
+> talent/buff stat-conversions, mirroring the server's own
+> `SpellBaseHealingBonusDone` — the sum of `SPELL_AURA_MOD_SPELL_HEALING_OF`
+> `_STAT_PERCENT` (aura 175) × total Spirit / 100 over your passive talents
+> (Priest *Spiritual Guidance*) and active buffs. Part 2 reads the talent
+> percent directly, so it's **generic** (any aura-175 talent/buff, including
+> Turtle customs) and exact — e.g. Spiritual Guidance 5/5 with 182 Spirit
+> adds `int(182 × 25 / 100) = 45`.
+>
+> Residual: assumes talent ranks supersede (only the learned rank is known)
+> and misses set-bonus healing granted via a set-completion spell.
 
 ### `IsUsableSpell(spell)` / `IsUsableSpell(slot, bookType)`
 

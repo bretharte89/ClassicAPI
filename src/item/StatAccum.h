@@ -51,6 +51,9 @@ void Init(Accum *acc);
 // a zero delta). Linear scan — the table is small and fixed.
 void AddByKey(Accum *acc, const char *key, long delta);
 
+// Read the accumulated value for `key` (0 for an unknown key). Linear scan.
+long Value(const Accum *acc, const char *key);
+
 // Passive cache peek for an item's `ItemStats_C` record. Does NOT warm
 // the cache (returns nullptr for an uncached item) — see the item-cache
 // race note in CLAUDE.md.
@@ -65,6 +68,13 @@ void AccumulateRecord(Accum *acc, const uint8_t *record, long sign);
 // SpellItemEnchantment.dbc) into `acc`, scaled by `sign`. No-op for
 // suffixID <= 0.
 void ApplyRandomSuffix(Accum *acc, int suffixID, long sign);
+
+// Fold a single SpellItemEnchantment record (by enchant ID) into `acc`,
+// scaled by `sign`. Handles equip-spell (type 3), resistance (4), and
+// direct-stat (5) enchant effects. Shared by `ApplyRandomSuffix` (a suffix's
+// enchant slots) and callers reading an item's *applied* permanent/temporary
+// enchants off its CGItem descriptor. No-op for enchantID 0.
+void ApplyEnchant(Accum *acc, uint32_t enchantID, long sign);
 
 // Weapon DPS = average damage / swing time, or 0 for non-weapons.
 double ComputeDPS(const uint8_t *record);

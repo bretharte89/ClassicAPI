@@ -20,6 +20,7 @@
 #include "Game.h"
 #include "Offsets.h"
 #include "net/PacketReader.h"
+#include "player/StatSignal.h"
 #include "spell/Lookup.h"
 #include "tick/WorldTick.h"
 #include "unit/Identity.h"
@@ -288,6 +289,15 @@ int8_t KindForSlot(int slot) {
     return slot >= Offsets::UNIT_AURA_BUFF_COUNT ? KIND_HARMFUL : KIND_HELPFUL;
 }
 
+// Bump the player-stat-inputs signal when an aura change hits the LOCAL
+// player — buffs/debuffs move GetSpellBonusHealing's flat and Spirit/Armor
+// terms, so its lazy cache must invalidate. Guarded on the player object so
+// other units' aura churn (combat) doesn't needlessly invalidate it.
+void NotifyIfPlayer(void *unit) {
+    if (static_cast<const uint8_t *>(unit) == Unit::Identity::PlayerObject())
+        Player::StatSignal::Notify();
+}
+
 // OnAuraAdded — a new aura occupies a slot (gives the spellId directly).
 using OnAuraAdded_t = void(__fastcall *)(void *unit, void *edx, uint32_t slot,
                                          uint32_t spellId);
@@ -297,6 +307,7 @@ void __fastcall OnAuraAdded_h(void *unit, void *edx, uint32_t slot,
                               uint32_t spellId) {
     g_origOnAuraAdded(unit, edx, slot, spellId);
     StampApplication(unit, spellId, KindForSlot(static_cast<int>(slot)));
+    NotifyIfPlayer(unit);
 }
 
 const Game::HookAutoRegister _hookAuraAdded{
@@ -317,6 +328,7 @@ void __fastcall OnAuraStacksChanged_h(void *unit, void *edx, int slot,
         unit,
         Aura::Data::ReadSpellID(static_cast<const uint8_t *>(unit), slot),
         KindForSlot(slot));
+    NotifyIfPlayer(unit);
 }
 
 const Game::HookAutoRegister _hookAuraStacks{
@@ -346,6 +358,7 @@ void __fastcall OnAuraRemoved_h(void *unit, void *edx, uint32_t slot,
     g_origOnAuraRemoved(unit, edx, slot, spellId);
     (void)slot;
     Evict(Unit::Identity::GuidForObject(unit), spellId);
+    NotifyIfPlayer(unit);
 }
 
 const Game::HookAutoRegister _hookAuraRemoved{

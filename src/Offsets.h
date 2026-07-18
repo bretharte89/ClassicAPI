@@ -798,6 +798,19 @@ enum Offsets {
     //   mov edx, [eax + 0x110]
     //   movzx eax, byte ptr [edx + 0x7B]
     OFF_UNIT_DESCRIPTOR_POWER_TYPE_BYTE = 0x7B,
+    // UNIT_FIELD_STAT0..4 — the fully-computed (base+item+buff) primary
+    // stats, broadcast in the descriptor. Order Str/Agi/Sta/Int/Spirit;
+    // STAT4 (Spirit) = fieldIndex 0x94 → +0x250 (from the UpdateField name
+    // table; cross-checked in-game: descriptor +0x250 read 173→182 when a
+    // +9-Spirit item was equipped). What GetStat(STAT_SPIRIT) returns
+    // server-side; used by GetSpellBonusHealing for the Spiritual-Guidance
+    // (aura 175) spirit→healing conversion.
+    OFF_UNIT_FIELD_STAT_SPIRIT = 0x250,
+    // UNIT_FIELD_RESISTANCES[0] = armor (the fully-computed total), fieldIndex
+    // 0x95 → +0x254 (7 resistances: armor, then the 6 magic schools). What
+    // GetArmor() / GetResistance(SPELL_SCHOOL_NORMAL) returns; used by
+    // GetSpellBonusHealing for Turtle's Ironclad (aura 199) armor→healing.
+    OFF_UNIT_FIELD_RESISTANCE_ARMOR = 0x254,
     OFF_UNIT_FIELD_FLAGS = 0xA0,
     UNIT_FLAG_PLAYER_CONTROLLED = 0x08,
     // Bit 19 of UNIT_FIELD_FLAGS — `Script_UnitAffectingCombat` at
@@ -867,6 +880,27 @@ enum Offsets {
     UNIT_AURA_DEBUFF_COUNT = 16,               // slot range 32..47 (harmful)
     UNIT_AURA_TOTAL = 48,
     UNIT_AURA_VISIBLE_MASK = 0x0E,             // nibble mask used by the engine's visibility gate
+
+    // PLAYER_FIELD_MOD_DAMAGE_DONE_POS/NEG — the player's per-school spell
+    // damage bonus. Offsets from the engine's own UpdateField name/index
+    // table in `.rdata` (20-byte entries `{char* name, u32 fieldIndex, u32
+    // count, ...}` at VA 0x83B6C8): POS = fieldIndex 0x3F5 count 7 → byte
+    // offset fieldIndex*4 = 0xFD4; NEG = 0x3FC → 0xFF0. Seven int32 each,
+    // one per school (0 physical .. 6 arcane); net bonus = POS − NEG.
+    //
+    // **Read these off `[player + OFF_CGPLAYER_INFO]` (the +0xE68 CGPlayer
+    // sub-struct), NOT the broadcast descriptor at +0x110.** The descriptor
+    // copy is never sent to the client and reads zero (verified in-game: the
+    // whole post-skills PLAYER descriptor region is zero on a geared L60 —
+    // vanilla never displayed spell power, so the server doesn't broadcast
+    // it). The +0xE68 struct holds the client's fully-computed value
+    // (gear + enchants + buffs + talents + sets baked in). Same base +
+    // offsets nampower's GetSpellPower uses; verified 613 generic / 647 Fire
+    // on a geared mage. Read by GetSpellBonusDamage in [src/spell/BonusDamage.cpp].
+    // (No MOD_HEALING_DONE equivalent — vanilla lacks the field entirely;
+    // GetSpellBonusHealing is derived instead.)
+    OFF_PLAYER_FIELD_MOD_DAMAGE_DONE_POS = 0xFD4,
+    OFF_PLAYER_FIELD_MOD_DAMAGE_DONE_NEG = 0xFF0,
 
     // Reusable "is this spell record a user-visible aura" predicate.
     // `__fastcall(spellRecord*) -> bool`. Checks Spell.dbc Attributes
@@ -1804,6 +1838,16 @@ enum Offsets {
     // last use"). Negative = single-use, destroyed when count hits 0.
     // `GetItemCount(includeUses=true)` uses abs() for the multiplier.
     OFF_DESCRIPTOR_SPELL_CHARGES_0 = 0x28,
+    // ITEM_FIELD_ENCHANTMENT block (fields 16..36, per the +0x48
+    // enchant-charges note above) — 7 enchant slots, 3 dwords each
+    // `{enchantID, duration, charges}`. Slot 0 = permanent enchant,
+    // slot 1 = temporary (weapon oils / sharpening stones). The
+    // enchant ID indexes SpellItemEnchantment.dbc. Block base = field
+    // 16 = +0x40 (field 15 FLAGS at +0x3C precedes it); slot stride
+    // 0x0C, enchant ID at slot+0x00. Used by spell/BonusDamage.cpp to
+    // fold enchant-granted spell power into GetSpellBonusDamage.
+    OFF_DESCRIPTOR_ENCHANTMENT_ID = 0x40,
+    DESCRIPTOR_ENCHANTMENT_SLOT_STRIDE = 0x0C,
     // ITEM_FIELD_DURABILITY (current) and ITEM_FIELD_MAXDURABILITY (max) live
     // adjacent to each other in the descriptor as plain dwords. Verified in
     // `Script_GetInventoryItemBroken` (`0x004C8590`): after resolving the
@@ -3129,6 +3173,18 @@ enum Offsets {
     // Bitmap covers spellIDs 0..VAR_SPELL_RECORD_COUNT inclusive — the
     // size matches Spell.dbc's row count. Pre-login the slot is NULL.
     VAR_PLAYER_SPELL_BITMAP = 0x00B710FC,
+
+    // Player spell-knowledge writers — the two functions that mutate the
+    // bitmap above. Learn (`FUN_004b25b0`) sets the bit, rebuilds the
+    // spellbook arrays, and fires SPELLS_CHANGED; unlearn (`FUN_004b2c50`)
+    // clears the bit and removes the spell. Both `__fastcall`: learn is
+    // (uint spellID, int notify, uint replacedSpellID), unlearn is
+    // (uint spellID, int). Co-hooked (spell/Info.cpp) to bump
+    // Player::StatSignal so a talent respec invalidates GetSpellBonusHealing's
+    // talent-conversion cache. They fire at login (SMSG_INITIAL_SPELLS) and on
+    // each learn/unlearn — never per-frame, so cool hook targets.
+    FUN_LEARN_SPELL = 0x004B25B0,
+    FUN_UNLEARN_SPELL = 0x004B2C50,
 
     // Spell-rank-chain knowledge check — `char __thiscall(player /*ecx*/,
     // spellID)`. Walks `spellID`'s forward rank chain (the class/race-
@@ -5039,6 +5095,8 @@ enum Offsets {
     // sum). AttributesEx2 (+0x24) bit 0x20000000 disables spell mods.
     OFF_SPELL_RECORD_FAMILY_NAME = 0x280,             // u32
     OFF_SPELL_RECORD_FAMILY_FLAGS = 0x284,            // u64
+    OFF_SPELL_RECORD_ATTRIBUTES = 0x18,               // u32 (base Attributes)
+    SPELL_ATTR_PASSIVE = 0x40,                        // bit 6 — always-on aura
     OFF_SPELL_RECORD_ATTRIBUTES_EX2 = 0x24,           // u32
     SPELL_ATTR_EX2_NO_SPELL_MODS = 0x20000000,
 

@@ -13,6 +13,7 @@
 
 #include "Game.h"
 #include "Offsets.h"
+#include "player/StatSignal.h"
 #include "spell/Arg.h"
 #include "spell/Lookup.h"
 
@@ -585,6 +586,35 @@ static int __fastcall Script_C_Spell_IsSpellHelpful(void *L) {
     Game::Lua::PushBool(L, ComputeIsHelpful(Spell::Arg::ResolveSpellID(L, 1)));
     return 1;
 }
+
+// --- Known-spell-bitmap change signal ------------------------------------
+// Learning/unlearning a spell rewrites the bitmap GetSpellBonusHealing scans
+// for talent conversions (Spiritual Guidance / Ironclad). Co-hook the engine's
+// learn + unlearn writers and bump Player::StatSignal, so a talent respec
+// invalidates the healing cache immediately — the same event-driven path as
+// aura/equipment changes, no polling. Both fire only at login and on
+// learn/unlearn (never per-frame), so they're safe co-hook targets.
+using LearnSpell_t = void(__fastcall *)(uint32_t spellID, int notify,
+                                        uint32_t replacedSpellID);
+static LearnSpell_t g_origLearnSpell = nullptr;
+static void __fastcall LearnSpell_h(uint32_t spellID, int notify,
+                                    uint32_t replacedSpellID) {
+    g_origLearnSpell(spellID, notify, replacedSpellID);
+    Player::StatSignal::Notify();
+}
+static const Game::HookAutoRegister _hookLearnSpell{
+    Offsets::FUN_LEARN_SPELL, reinterpret_cast<void *>(&LearnSpell_h),
+    reinterpret_cast<void **>(&g_origLearnSpell)};
+
+using UnlearnSpell_t = void(__fastcall *)(uint32_t spellID, int param2);
+static UnlearnSpell_t g_origUnlearnSpell = nullptr;
+static void __fastcall UnlearnSpell_h(uint32_t spellID, int param2) {
+    g_origUnlearnSpell(spellID, param2);
+    Player::StatSignal::Notify();
+}
+static const Game::HookAutoRegister _hookUnlearnSpell{
+    Offsets::FUN_UNLEARN_SPELL, reinterpret_cast<void *>(&UnlearnSpell_h),
+    reinterpret_cast<void **>(&g_origUnlearnSpell)};
 
 static void RegisterLuaFunctions() {
     Game::Lua::RegisterGlobalFunction("GetSpellInfo", &Script_GetSpellInfo);
