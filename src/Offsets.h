@@ -1856,6 +1856,12 @@ enum Offsets {
     // no durability concept (consumables, materials) have both fields 0.
     OFF_DESCRIPTOR_DURABILITY = 0xA0,
     OFF_DESCRIPTOR_MAX_DURABILITY = 0xA4,
+    // Per-instance "readable text" id (letters / mail-scroll items carry a
+    // server-assigned text id here). Drives the `readable` return of
+    // `Script_GetContainerItemInfo` (`0x004F9670`): at `0x004F97C1` it reads
+    // `[descriptor+0x9C]` and, when non-zero, reports the slot as readable
+    // even when the static ItemStats page-text is 0. Field index 0x27.
+    OFF_DESCRIPTOR_READABLE_TEXT_ID = 0x9C,
 
     // Per-item repair-cost helper used by Script_GameTooltip_SetInventoryItem
     // (3rd return value). __fastcall(ecx = CGItem *) -> int copperCost.

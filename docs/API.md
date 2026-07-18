@@ -40,6 +40,7 @@ build instructions.
 
 - [Container](#container)
   - [`C_Container.GetContainerItemID(bagIndex, slotIndex)`](#c_containergetcontaineritemidbagindex-slotindex)
+  - [`C_Container.GetContainerItemInfo(containerIndex, slotIndex)`](#c_containergetcontaineriteminfocontainerindex-slotindex)
   - [`C_Container.HasContainerItem(bagIndex, slotIndex)`](#c_containerhascontaineritembagindex-slotindex)
   - [`GetItemCooldown(itemInfo)` / `C_Container.GetItemCooldown(itemID)`](#getitemcooldowniteminfo--c_containergetitemcooldownitemid)
   - [`C_Container.GetContainerItemDurability(containerIndex, slotIndex)`](#c_containergetcontaineritemdurabilitycontainerindex-slotindex)
@@ -1062,6 +1063,47 @@ for slot = 1, 16 do
         local _, type, subtype = C_Item.GetItemInfoInstant(id)
         -- ...
     end
+end
+```
+
+### `C_Container.GetContainerItemInfo(containerIndex, slotIndex)`
+
+Returns a `ContainerItemInfo` table for the item in the given bag slot, or
+`nil` if the slot is empty / the indices are out of range. The modern
+structured-table form (namespaced + table-returning since Patch 10.0.2) of
+vanilla's flat global `GetContainerItemInfo`, which only returned
+`texture, itemCount, locked, quality, readable`.
+
+- `containerIndex = 0` — main backpack; `1..4` — equipped bag slots.
+- `slotIndex` — 1-based.
+
+Table fields:
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `iconFileID` | string | Icon **path** (1.12 has no fileID system, same as `GetItemIcon`). Absent if the item's static data isn't cached yet. |
+| `stackCount` | number | Current stack size. |
+| `isLocked` | boolean | Item is in a pending transaction (pickup/trade/mail in flight). |
+| `quality` | number\|nil | `Enum.ItemQuality` (0=Poor … 5=Legendary); `nil` until the item is cached. |
+| `isReadable` | boolean | Has readable page text (books/letters). |
+| `hasLoot` | boolean | Static LOOTABLE flag (best-effort — vanilla can't track post-loot emptiness client-side). |
+| `hyperlink` | string | Fully-decorated per-instance item link (enchant + random suffix), same as `GetContainerItemLink`. |
+| `isFiltered` | boolean | Always `false` — vanilla has no bag search-filter system. |
+| `hasNoValue` | boolean | `true` when the item's vendor sell price is 0. |
+| `itemID` | number | Item ID. |
+| `isBound` | boolean | Soulbound. |
+| `itemName` | string | Per-instance decorated display name (falls back to the base name). |
+
+Live per-instance fields (`stackCount`, `isLocked`, `isBound`, `itemID`,
+`hyperlink`) are always present; cache-derived fields (`iconFileID`,
+`quality`, `hasLoot`, `hasNoValue`, `itemName`) are omitted/`nil` until the
+item's static data arrives (listen for `GET_ITEM_INFO_RECEIVED`). Passive —
+does not warm the item cache.
+
+```lua
+local info = C_Container.GetContainerItemInfo(0, 1)
+if info then
+    print(info.itemName, info.stackCount, info.quality, info.hyperlink)
 end
 ```
 
