@@ -22,6 +22,9 @@ build instructions.
   - [`C_AddOns.DoesAddOnExist(indexOrName)`](#c_addonsdoesaddonexistindexorname)
   - [`C_AddOns.GetAddOnOptionalDependencies(indexOrName)`](#c_addonsgetaddonoptionaldependenciesindexorname)
 
+- [AuctionHouse](#auctionhouse)
+  - [`C_AuctionHouse.PostItem(itemLocation, duration, quantity, numStacks, bid, buyout)`](#c_auctionhousepostitemitemlocation-duration-quantity-numstacks-bid-buyout)
+
 - [CharacterList](#characterlist)
   - [`GetSavedCharacterOrder(realm)` / `SetSavedCharacterOrder(realm, order)` — GlueXML only](#getsavedcharacterorderrealm--setsavedcharacterorderrealm-order--gluexml-only)
 
@@ -98,6 +101,7 @@ build instructions.
   - [`HEARTHSTONE_BOUND` event](#hearthstone_bound-event)
   - [Player input-state events (`PLAYER_STARTED_MOVING` / `LOOKING` / `TURNING` + `STOPPED_*`)](#player-input-state-events)
   - [`GLOBAL_MOUSE_DOWN` / `GLOBAL_MOUSE_UP` events](#global_mouse_down--global_mouse_up-events)
+  - [`AUCTION_MULTISELL_START` / `AUCTION_MULTISELL_UPDATE` / `AUCTION_MULTISELL_FAILURE` events](#c_auctionhousepostitemitemlocation-duration-quantity-numstacks-bid-buyout)
   - [`EQUIPMENT_SETS_CHANGED` event](#equipment_sets_changed-event)
   - [`EQUIPMENT_SWAP_PENDING` event](#equipment_swap_pending-event)
   - [`EQUIPMENT_SWAP_FINISHED` event](#equipment_swap_finished-event)
@@ -803,6 +807,66 @@ without erroring.
 C_AddOns.GetAddOnOptionalDependencies("MyAddon")  -- "Atlas", "pfQuest"
 C_AddOns.GetAddOnOptionalDependencies("Atlas")    -- (nothing — no OptionalDeps)
 ```
+
+## AuctionHouse
+
+### `C_AuctionHouse.PostItem(itemLocation, duration, quantity, numStacks, bid, buyout)`
+
+Posts `numStacks` auctions of `quantity` each, from a single source stack,
+in one call — a ClassicAPI extension modelled on the retail multi-sell flow.
+Vanilla's `StartAuction` only ever posts one whole item object, so this
+handles the splitting and the sequence of posts for you.
+
+- `itemLocation` — a `{ bagID = B, slotIndex = S }` table identifying the
+  source stack (0 = backpack, 1–4 = equipped bags; `slotIndex` 1-based).
+- `duration` — `1`/`2`/`3` for 2h/8h/24h (vanilla's three durations); the raw
+  minute values `120`/`480`/`1440` are also accepted.
+- `quantity` — items per auction (1–255).
+- `numStacks` — number of auctions to post.
+- `bid` — minimum bid **per stack**, in copper (≥ 1).
+- `buyout` — buyout **per stack**, in copper (`0` / omitted = no buyout).
+
+Returns `true` when the job is accepted and posting has started, or
+`false, reason` on immediate rejection (AH not open, source empty, not enough
+items for `numStacks × quantity`, no free general bag slot to split into, a
+job already in progress, or bad arguments).
+
+**It's asynchronous.** Vanilla's `CMSG_AUCTION_SELL_ITEM` has no count field
+(unlike WotLK, where the server splits) — the server posts the *entire* item
+object a GUID points at. So to post a partial `quantity` the DLL first splits
+that amount into a bag slot (a server round-trip), then posts the resulting
+stack (another round-trip), repeating for each stack. Progress is reported
+through events rather than the return value:
+
+| Event | Payload | When |
+|-------|---------|------|
+| `AUCTION_MULTISELL_START` | — | job accepted, posting begins |
+| `AUCTION_MULTISELL_UPDATE` | `postedCount, totalCount` | after each stack lands (final one has `postedCount == totalCount`) |
+| `AUCTION_MULTISELL_FAILURE` | — | aborted (source changed under it, no free slot, AH closed, or a step timed out ~10s) |
+
+Splitting reuses **one** general-purpose bag slot (each post empties it for
+the next split); the final stack posts the source object directly with no
+split. Posting a whole existing stack (`quantity` == the source count,
+`numStacks` 1) needs no free slot at all. Every individual post goes through
+the engine's own `StartAuction`, so its validation (damaged-item reject,
+buyout normalization, duration check) applies to each stack.
+
+```lua
+-- Watch progress
+local f = CreateFrame("Frame")
+for _, e in ipairs({"AUCTION_MULTISELL_START", "AUCTION_MULTISELL_UPDATE",
+                    "AUCTION_MULTISELL_FAILURE"}) do f:RegisterEvent(e) end
+f:SetScript("OnEvent", function(_, e, a, b) print(e, a, b) end)
+
+-- At an open auction house: post 3 stacks of 5, 2h, 100 bid / 200 buyout each
+C_AuctionHouse.PostItem({ bagID = 0, slotIndex = 1 }, 1, 5, 3, 100, 200)
+```
+
+Limitations (v1): the source is the single stack at `itemLocation` (stacks
+aren't aggregated across bags — `quantity × numStacks` must fit in that one
+stack); temp splits use general-purpose bags only, so family-restricted items
+(arrows/shards that live in specialty bags) aren't supported; one job runs at
+a time.
 
 ## CharacterList
 

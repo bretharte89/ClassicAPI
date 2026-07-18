@@ -4979,8 +4979,27 @@ enum Offsets {
     // Auction sell slot — holds a single CGItem GUID for the item
     // currently sitting in the "sell" frame. Engine resolves it via
     // a typed object lookup; pass `OBJECT_TYPE_ITEM` and the GUID.
+    // `Script_StartAuction` posts whatever GUID is here, so writing an
+    // arbitrary bag item's GUID + calling it posts that item — no cursor,
+    // no ClickAuctionSellItemButton. Used by `AuctionHouse::PostItem`.
     VAR_AUCTION_SELL_GUID_LO = 0x00B72608,
     VAR_AUCTION_SELL_GUID_HI = 0x00B7260C,
+    // Auctioneer NPC GUID — set while an auction house window is open;
+    // `Script_StartAuction` writes it as the packet target and bails if
+    // it's zero (so this doubles as an "AH is open" probe).
+    VAR_AUCTION_AUCTIONEER_GUID_LO = 0x00B725F8,
+    VAR_AUCTION_AUCTIONEER_GUID_HI = 0x00B725FC,
+    // `Script_StartAuction` (`0x004CE770`) — `int __fastcall(void *L)`;
+    // reads (minBid, buyout, runTime) from L[1..3], validates the sell
+    // slot + auctioneer + runTime, and sends CMSG_AUCTION_SELL_ITEM
+    // (opcode 0x256 = { auctioneerGuid, sellItemGuid, bid, buyout,
+    // runTime }). Reused verbatim by `AuctionHouse::PostItem` per stack.
+    FUN_SCRIPT_START_AUCTION = 0x004CE770,
+    // Valid `runTime` values `Script_StartAuction` accepts, in minutes:
+    // {120, 480, 1440} = 2h / 8h / 24h (vanilla's three durations). The
+    // modern `duration` arg (1/2/3) indexes this table.
+    VAR_AUCTION_DURATION_TABLE = 0x00807028,
+    AUCTION_DURATION_TABLE_COUNT = 3,
     // `__fastcall(ECX = typeCode, EDX = unused, [stack] = guidLo,
     //             [stack] = guidHi, [stack] = anyInt) → CGObject *`.
     // Returns NULL when no object matches or the type doesn't match.
