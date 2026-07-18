@@ -276,6 +276,7 @@ build instructions.
 - [Lua](#lua)
   - [`select(index, ...)`](#selectindex-)
   - [`table.wipe(t)`](#tablewipet)
+  - [`string.match` / `string.gmatch`](#stringmatch--stringgmatch)
   - [`coroutine.create(fn)`](#coroutinecreatefn)
   - [`coroutine.resume(co, ...)`](#coroutineresumeco-)
   - [`coroutine.yield(...)`](#coroutineyield)
@@ -6695,6 +6696,35 @@ removal" pattern works in practice even though it's technically
 undefined per the Lua reference manual.
 
 Errors on non-table input.
+
+### `string.match` / `string.gmatch`
+
+The Lua 5.1 pattern helpers, backported to 1.12's Lua 5.0 (which ships only
+`find` / `gfind` / `gsub`).
+
+- **`string.match(s, pattern [, init])`** — returns the captures of the
+  first match, the whole match when the pattern has no captures, or `nil`
+  when it doesn't match. Same pattern engine as `string.find` — it's `find`
+  returning the captures instead of the `start, end` indices, so it reuses
+  the engine's own matcher rather than reimplementing it.
+- **`string.gmatch(s, pattern)`** — the match iterator, for
+  `for x in string.gmatch(s, pat) do ... end`. This is exactly Lua 5.0's
+  `string.gfind` (renamed in 5.1); it's registered as a direct alias.
+
+```lua
+local y, m, d = string.match("2024-01-15", "(%d+)-(%d+)-(%d+)")  -- "2024","01","15"
+string.match("no digits", "%d+")                                  -- nil
+
+for word in string.gmatch("a,bb,ccc", "[^,]+") do print(word) end -- a / bb / ccc
+```
+
+> **Only the `string.foo(s, ...)` call form works — not the `("x"):foo(...)`
+> method sugar.** WoW's Lua VM strips type-metatables for every value except
+> tables and userdata (both `lua_setmetatable` and the VM's own
+> `luaT_gettmbyobj` hard-return "no metamethod" for strings), so string values
+> have no `__index` and there's no client-side way to add one short of hooking
+> a hot VM-core function. This is the long-standing vanilla 1.12 constraint —
+> always write `string.match(s, p)`, never `s:match(p)`.
 
 ### `coroutine.*`
 

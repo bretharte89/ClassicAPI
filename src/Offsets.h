@@ -3796,6 +3796,21 @@ enum Offsets {
     // `rawset(nil)` clear leaves it stale and subsequent `table.insert`
     // appends past the wiped slots.
     LUAL_SETN = 0x6F4EA0,
+    // `str_find` — the Lua 5.0 string-library `string.find` C function
+    // (`int __fastcall(void *L)`), entry in the strlib luaL_reg table at
+    // `0x00822dd0`. Returns `1` (nil pushed, no match), `2` (start, end),
+    // or `2 + ncaptures`. `string.match` (a Lua 5.1 addition, missing here)
+    // shares the exact same pattern engine — it's `find` that yields the
+    // captures / whole match instead of the indices — so `BaseLib::StringLib`
+    // calls this and transforms the result rather than reimplementing the
+    // matcher. Verified by decoding the function at this address.
+    FUN_LUA_STR_FIND = 0x007FC3B0,
+    // `str_gfind` — the Lua 5.0 `string.gfind` C function (strlib entry at
+    // `0x00822dd8`). 5.1 renamed it to `string.gmatch` with identical
+    // behaviour (returns a stateful iterator closure over the matches), so
+    // `BaseLib::StringLib` registers `string.gmatch` as a direct alias of
+    // this function pointer — no wrapper.
+    FUN_LUA_STR_GFIND = 0x007FCFA0,
     // `lua_iscfunction(L, idx)` — returns 1 if value is a function
     // closure with the `isC` byte set (`Closure.c.isC == 1`), 0
     // otherwise. Used by `coroutine.create` to reject C functions

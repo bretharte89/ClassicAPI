@@ -12,7 +12,6 @@ Util\Print.lua
 Util\Mixin.lua
 Util\Color.lua
 Util\Constants.lua
-Util\String.lua
 Util\TableUtil.lua
 Util\MathUtil.lua
 Util\PixelUtil.lua
