@@ -54,14 +54,6 @@ build instructions.
   - [`C_Container.SwapItems(srcBag, srcSlot, dstBag, dstSlot)`](#c_containerswapitemssrcbag-srcslot-dstbag-dstslot)
   - [`C_Container.MoveItem(srcBag, srcSlot, dstBag, dstSlot, count)`](#c_containermoveitemsrcbag-srcslot-dstbag-dstslot-count)
 
-- [Coroutine](#coroutine)
-  - [`coroutine.create(fn)`](#coroutinecreatefn)
-  - [`coroutine.resume(co, ...)`](#coroutineresumeco-)
-  - [`coroutine.yield(...)`](#coroutineyield)
-  - [`coroutine.status(co)`](#coroutinestatusco)
-  - [`coroutine.wrap(fn)`](#coroutinewrapfn)
-  - [Async pattern (RunAsync + C_Timer.After)](#async-pattern-runasync--c_timerafter)
-
 - [Creature](#creature)
   - [`C_CreatureInfo.GetCreatureID(guid)`](#c_creatureinfogetcreatureidguid)
   - [`C_CreatureInfo.GetCreatureInfoByID(creatureID)`](#c_creatureinfogetcreatureinfobyidcreatureid)
@@ -281,6 +273,16 @@ build instructions.
   - [`C_LossOfControl.GetActiveLossOfControlDataCount()`](#c_lossofcontrolgetactivelossofcontroldatacount)
   - [`C_LossOfControl.GetActiveLossOfControlData(index)`](#c_lossofcontrolgetactivelossofcontroldataindex)
 
+- [Lua](#lua)
+  - [`select(index, ...)`](#selectindex-)
+  - [`table.wipe(t)`](#tablewipet)
+  - [`coroutine.create(fn)`](#coroutinecreatefn)
+  - [`coroutine.resume(co, ...)`](#coroutineresumeco-)
+  - [`coroutine.yield(...)`](#coroutineyield)
+  - [`coroutine.status(co)`](#coroutinestatusco)
+  - [`coroutine.wrap(fn)`](#coroutinewrapfn)
+  - [Async pattern (RunAsync + C_Timer.After)](#async-pattern-runasync--c_timerafter)
+
 - [Macros](#macros)
   - [Numeric spellIDs in `/cast` and `CastSpellByName`](#numeric-spellids-in-cast-and-castspellbyname)
   - [`CastSpellNoToggle` as a macro cast line](#castspellnotoggle-as-a-macro-cast-line)
@@ -416,9 +418,6 @@ build instructions.
   - [`GetMirrorTimerInfo(index)` / `GetMirrorTimerProgress(label)`](#getmirrortimerinfoindex--getmirrortimerprogresslabel)
   - [`GetShapeshiftFormID()`](#getshapeshiftformid)
   - [`CancelShapeshiftForm()`](#cancelshapeshiftform)
-
-- [Table](#table)
-  - [`table.wipe(t)`](#tablewipet)
 
 - [Talent](#talent)
   - [`GetTalentSpellID(tabIndex, talentIndex, [rank])`](#gettalentspellidtabindex-talentindex-rank)
@@ -1537,146 +1536,6 @@ constraint as `SwapItems`.
 > (`CMSG_SPLIT_ITEM`, opcode 0x10E), so the cursor is never touched.
 
 Send is fire-and-forget (same as `SwapItems`).
-
-## Coroutine
-
-Restores Lua 5.0's stripped `coroutine.*` library. The C-level
-coroutine machinery (`lua_resume`, `lua_yield`, `lua_newthread`,
-and the `thread` type at tag 8) is linked into the engine, but
-the script-facing library was never registered as a global table.
-ClassicAPI rewires the standard five entries on `coroutine`,
-matching Lua 5.0 semantics with two WoW-specific quirks called
-out below.
-
-### `coroutine.create(fn)`
-
-Creates a new coroutine with `fn` as its body and returns the
-resulting `thread`. `fn` must be a **Lua** function — passing a
-C function (any engine global like `GetTime` or `UnitName`)
-raises `bad argument #1 to 'create' (Lua function expected)`.
-
-The new coroutine starts suspended; nothing runs until
-`coroutine.resume` is called on it. The args passed to the first
-resume become the body's arguments.
-
-### `coroutine.resume(co, ...)`
-
-Resumes a suspended coroutine, passing the trailing args to either
-the body (first resume) or back as the return values of the
-`coroutine.yield` that paused the coroutine.
-
-Returns:
-
-- `true, ...values` on success, where `values` are whatever the
-  coroutine yielded (mid-execution) or returned (on completion).
-- `false, errMsg` on error. Two error sources:
-  - Coroutine isn't suspended — e.g. resuming a dead one;
-    `errMsg` is a fixed string like `"cannot resume dead coroutine"`.
-  - The body hit a Lua VM error; `errMsg` is the formatted error
-    string with file:line prefix.
-
-**Caveat — `error()` doesn't propagate.** WoW replaces Lua's
-`error()` global with a soft handler that calls
-`geterrorhandler()(msg)` and returns normally instead of
-longjmp'ing. So `error("msg")` inside a coroutine body looks like
-a clean return to `resume` — the message gets printed to chat as
-a side effect and `resume` returns `true` with no values. Real VM
-errors (calling `nil`, indexing `nil`, etc.) still propagate
-through the standard `false, msg` path.
-
-### `coroutine.yield(...)`
-
-Suspends the current coroutine. Whatever's passed to `yield`
-becomes the return values of the matching `coroutine.resume`
-call. When the coroutine is next resumed, the args passed to
-`resume` become the return values of `yield`.
-
-Raises an error if called outside a coroutine
-(`attempt to yield across metamethod/C-call boundary`) or from
-a C function (`cannot yield a C function`).
-
-### `coroutine.status(co)`
-
-Returns the coroutine's state as a string:
-
-| Value | Meaning |
-|-------|---------|
-| `"running"` | `co` is the currently-running coroutine (i.e. the same thread that called `status`). |
-| `"suspended"` | `co` is paused — either initial (never resumed) or mid-yield. |
-| `"dead"` | `co`'s body has returned or errored. |
-
-The standard Lua `"normal"` state — a coroutine that resumed a
-deeper coroutine and is now an ancestor on the call chain — is
-collapsed into `"suspended"`. Detecting it cleanly requires
-walking the global thread list, and the case is near-useless for
-addon-level logic.
-
-### `coroutine.wrap(fn)`
-
-Equivalent to `coroutine.create(fn)` followed by returning a
-closure that calls `coroutine.resume(co, ...)` on each invocation
-— but propagates errors as raised exceptions (via `lua_error`)
-instead of returning `false, msg`. Lets you use a coroutine as
-if it were an ordinary function:
-
-```lua
-local gen = coroutine.wrap(function()
-    for i = 1, 5 do coroutine.yield(i) end
-end)
-print(gen())  -- 1
-print(gen())  -- 2
-print(gen())  -- 3
-```
-
-Calling the wrapped function after the body has completed raises
-`cannot resume dead coroutine`. The canonical "iterator that
-terminates cleanly through `for ... in`" idiom is to yield an
-explicit `nil` at the end so the for-loop's nil sentinel fires:
-
-```lua
-local function range(from, to)
-    return coroutine.wrap(function()
-        for i = from, to do coroutine.yield(i) end
-        coroutine.yield(nil)
-    end)
-end
-
-for n in range(1, 5) do print(n) end
-```
-
-### Async pattern (`RunAsync` + `C_Timer.After`)
-
-Coroutines pair naturally with `C_Timer.After` for chunked
-"do some work, wait a frame, do more" loops. The canonical
-scheduler:
-
-```lua
-local function RunAsync(fn)
-    local co = coroutine.create(fn)
-    local function step()
-        local ok, delay = coroutine.resume(co)
-        if not ok or coroutine.status(co) == "dead" then return end
-        C_Timer.After(delay or 0, step)
-    end
-    step()
-end
-
-RunAsync(function()
-    for i = 1, 100 do
-        DoExpensiveWork(i)
-        coroutine.yield(0)     -- next frame
-    end
-    coroutine.yield(0.5)        -- pause half a second
-    DoFinalWork()
-end)
-```
-
-`coroutine.yield(n)` returns `n` to the scheduler, which schedules
-the next `step` after that many seconds. `yield(0)` is the
-"resume on the next frame" form (since `C_Timer.After(0, ...)`
-fires on the next OnUpdate tick). `RunNextFrame(cb)` in
-[`AddOns/!!!ClassicAPI/Util/FunctionUtil.lua`](../AddOns/!!!ClassicAPI/Util/FunctionUtil.lua)
-wraps the same primitive for the non-coroutine case.
 
 ## Creature
 
@@ -6778,6 +6637,205 @@ Fidelity vs. retail:
 The `LOSS_OF_CONTROL_ADDED` / `LOSS_OF_CONTROL_UPDATE` events fire as these
 effects change — see [Events](#loss_of_control_added--loss_of_control_update-events).
 
+## Lua
+
+Standard-library functions that later Lua versions (or Blizzard's FrameXML)
+added and that 1.12's Lua 5.0 is missing — restored by ClassicAPI so
+backported addons find them. `select` and `table.wipe` are single-function
+additions; `coroutine.*` restores the stripped coroutine library.
+
+### `select(index, ...)`
+
+The Lua 5.1 vararg helper, backported to 1.12's Lua 5.0. Two forms:
+
+- `select('#', ...)` → the number of extra arguments passed after the
+  index.
+- `select(n, ...)` → all arguments from position `n` onward. `n` may be
+  negative to count back from the end (`-1` is the last argument).
+
+Errors on a non-numeric, non-`'#'` first argument or an index of 0 /
+below the negative range (matching Lua 5.1's `luaL_checkint` +
+`index out of range` behavior). Registered on **both** Lua states, so it's
+available to in-game addons and glue-screen (login/char-select) code alike.
+
+```lua
+select('#', 'a', 'b', 'c')   -- 3
+select(2, 'a', 'b', 'c')     -- 'b', 'c'
+select(-1, 'a', 'b', 'c')    -- 'c'
+
+-- Idiomatic vararg count inside a function:
+local function log(...)
+    for i = 1, select('#', ...) do
+        print(i, (select(i, ...)))
+    end
+end
+```
+
+Ported from Lua 5.1's `luaB_select` (lbaselib.c). The numeric form pushes
+nothing — the varargs are already on the stack, so it just returns the
+count of the slice from `n+1` onward.
+
+### `table.wipe(t)`
+
+Removes every key from `t`, leaving it empty but preserving its
+internal hash and array capacity. Returns `t` for chaining.
+
+```lua
+local cache = {}
+-- ... fill it up ...
+table.wipe(cache)              -- cache is now {}
+local also_t = table.wipe(t2)  -- also_t === t2 after wipe
+```
+
+Port of Blizzard's 3.3.5 implementation at VA `0x00852180` — same
+pattern, just using 1.12's Lua 5.0 entry points instead of 5.1's.
+Both Lua versions' `lua_next` walks the hash node array linearly,
+so the canonical `lua_next` + `rawset(k, nil)` "during-iteration
+removal" pattern works in practice even though it's technically
+undefined per the Lua reference manual.
+
+Errors on non-table input.
+
+### `coroutine.*`
+
+Restores Lua 5.0's stripped `coroutine.*` library. The C-level
+coroutine machinery (`lua_resume`, `lua_yield`, `lua_newthread`,
+and the `thread` type at tag 8) is linked into the engine, but
+the script-facing library was never registered as a global table.
+ClassicAPI rewires the standard five entries on `coroutine`,
+matching Lua 5.0 semantics with two WoW-specific quirks called
+out below.
+
+#### `coroutine.create(fn)`
+
+Creates a new coroutine with `fn` as its body and returns the
+resulting `thread`. `fn` must be a **Lua** function — passing a
+C function (any engine global like `GetTime` or `UnitName`)
+raises `bad argument #1 to 'create' (Lua function expected)`.
+
+The new coroutine starts suspended; nothing runs until
+`coroutine.resume` is called on it. The args passed to the first
+resume become the body's arguments.
+
+#### `coroutine.resume(co, ...)`
+
+Resumes a suspended coroutine, passing the trailing args to either
+the body (first resume) or back as the return values of the
+`coroutine.yield` that paused the coroutine.
+
+Returns:
+
+- `true, ...values` on success, where `values` are whatever the
+  coroutine yielded (mid-execution) or returned (on completion).
+- `false, errMsg` on error. Two error sources:
+  - Coroutine isn't suspended — e.g. resuming a dead one;
+    `errMsg` is a fixed string like `"cannot resume dead coroutine"`.
+  - The body hit a Lua VM error; `errMsg` is the formatted error
+    string with file:line prefix.
+
+**Caveat — `error()` doesn't propagate.** WoW replaces Lua's
+`error()` global with a soft handler that calls
+`geterrorhandler()(msg)` and returns normally instead of
+longjmp'ing. So `error("msg")` inside a coroutine body looks like
+a clean return to `resume` — the message gets printed to chat as
+a side effect and `resume` returns `true` with no values. Real VM
+errors (calling `nil`, indexing `nil`, etc.) still propagate
+through the standard `false, msg` path.
+
+#### `coroutine.yield(...)`
+
+Suspends the current coroutine. Whatever's passed to `yield`
+becomes the return values of the matching `coroutine.resume`
+call. When the coroutine is next resumed, the args passed to
+`resume` become the return values of `yield`.
+
+Raises an error if called outside a coroutine
+(`attempt to yield across metamethod/C-call boundary`) or from
+a C function (`cannot yield a C function`).
+
+#### `coroutine.status(co)`
+
+Returns the coroutine's state as a string:
+
+| Value | Meaning |
+|-------|---------|
+| `"running"` | `co` is the currently-running coroutine (i.e. the same thread that called `status`). |
+| `"suspended"` | `co` is paused — either initial (never resumed) or mid-yield. |
+| `"dead"` | `co`'s body has returned or errored. |
+
+The standard Lua `"normal"` state — a coroutine that resumed a
+deeper coroutine and is now an ancestor on the call chain — is
+collapsed into `"suspended"`. Detecting it cleanly requires
+walking the global thread list, and the case is near-useless for
+addon-level logic.
+
+#### `coroutine.wrap(fn)`
+
+Equivalent to `coroutine.create(fn)` followed by returning a
+closure that calls `coroutine.resume(co, ...)` on each invocation
+— but propagates errors as raised exceptions (via `lua_error`)
+instead of returning `false, msg`. Lets you use a coroutine as
+if it were an ordinary function:
+
+```lua
+local gen = coroutine.wrap(function()
+    for i = 1, 5 do coroutine.yield(i) end
+end)
+print(gen())  -- 1
+print(gen())  -- 2
+print(gen())  -- 3
+```
+
+Calling the wrapped function after the body has completed raises
+`cannot resume dead coroutine`. The canonical "iterator that
+terminates cleanly through `for ... in`" idiom is to yield an
+explicit `nil` at the end so the for-loop's nil sentinel fires:
+
+```lua
+local function range(from, to)
+    return coroutine.wrap(function()
+        for i = from, to do coroutine.yield(i) end
+        coroutine.yield(nil)
+    end)
+end
+
+for n in range(1, 5) do print(n) end
+```
+
+#### Async pattern (`RunAsync` + `C_Timer.After`)
+
+Coroutines pair naturally with `C_Timer.After` for chunked
+"do some work, wait a frame, do more" loops. The canonical
+scheduler:
+
+```lua
+local function RunAsync(fn)
+    local co = coroutine.create(fn)
+    local function step()
+        local ok, delay = coroutine.resume(co)
+        if not ok or coroutine.status(co) == "dead" then return end
+        C_Timer.After(delay or 0, step)
+    end
+    step()
+end
+
+RunAsync(function()
+    for i = 1, 100 do
+        DoExpensiveWork(i)
+        coroutine.yield(0)     -- next frame
+    end
+    coroutine.yield(0.5)        -- pause half a second
+    DoFinalWork()
+end)
+```
+
+`coroutine.yield(n)` returns `n` to the scheduler, which schedules
+the next `step` after that many seconds. `yield(0)` is the
+"resume on the next frame" form (since `C_Timer.After(0, ...)`
+fires on the next OnUpdate tick). `RunNextFrame(cb)` in
+[`AddOns/!!!ClassicAPI/Util/FunctionUtil.lua`](../AddOns/!!!ClassicAPI/Util/FunctionUtil.lua)
+wraps the same primitive for the non-coroutine case.
+
 ## Macros
 
 Engine-level extensions to how macros are parsed and dispatched. These
@@ -10320,29 +10378,6 @@ via the engine's direct sender at [`FUN_006E7040`](../src/Offsets.h#L428).
 Mirrors 3.3.5a's `Script_CancelShapeshiftForm` inner (`FUN_00726CE0`),
 which does the same effect-array scan + form-id match before issuing
 its cancel packet. Vanilla just lacks the public Lua surface.
-
-## Table
-
-### `table.wipe(t)`
-
-Removes every key from `t`, leaving it empty but preserving its
-internal hash and array capacity. Returns `t` for chaining.
-
-```lua
-local cache = {}
--- ... fill it up ...
-table.wipe(cache)              -- cache is now {}
-local also_t = table.wipe(t2)  -- also_t === t2 after wipe
-```
-
-Port of Blizzard's 3.3.5 implementation at VA `0x00852180` — same
-pattern, just using 1.12's Lua 5.0 entry points instead of 5.1's.
-Both Lua versions' `lua_next` walks the hash node array linearly,
-so the canonical `lua_next` + `rawset(k, nil)` "during-iteration
-removal" pattern works in practice even though it's technically
-undefined per the Lua reference manual.
-
-Errors on non-table input.
 
 ## Talent
 
