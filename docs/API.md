@@ -856,7 +856,7 @@ buyout normalization, duration check) applies to each stack.
 local f = CreateFrame("Frame")
 for _, e in ipairs({"AUCTION_MULTISELL_START", "AUCTION_MULTISELL_UPDATE",
                     "AUCTION_MULTISELL_FAILURE"}) do f:RegisterEvent(e) end
-f:SetScript("OnEvent", function(_, e, a, b) print(e, a, b) end)
+f:SetScript("OnEvent", function() print(event, arg1, arg2) end)
 
 -- At an open auction house: post 3 stacks of 5, 2h, 100 bid / 200 buyout each
 C_AuctionHouse.PostItem({ bagID = 0, slotIndex = 1 }, 1, 5, 3, 100, 200)
