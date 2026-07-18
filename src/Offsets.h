@@ -3811,6 +3811,12 @@ enum Offsets {
     // `BaseLib::StringLib` registers `string.gmatch` as a direct alias of
     // this function pointer — no wrapper.
     FUN_LUA_STR_GFIND = 0x007FCFA0,
+    // `math_fmod` — the Lua 5.0 `math.mod` C function (mathlib entry at
+    // `0x00822cb0`): `luaL_checknumber(1/2)` → `fmod(x, y)` → `lua_pushnumber`.
+    // 5.1 renamed the Lua-facing name to `math.fmod` with the identical C
+    // implementation, so `BaseLib::MathLib` registers `math.fmod` as a direct
+    // alias of this function pointer — no wrapper. Verified by decode.
+    FUN_LUA_MATH_FMOD = 0x007FAFD0,
     // `lua_iscfunction(L, idx)` — returns 1 if value is a function
     // closure with the `isC` byte set (`Closure.c.isC == 1`), 0
     // otherwise. Used by `coroutine.create` to reject C functions

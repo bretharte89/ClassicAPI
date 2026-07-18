@@ -277,6 +277,7 @@ build instructions.
   - [`select(index, ...)`](#selectindex-)
   - [`table.wipe(t)`](#tablewipet)
   - [`string.match` / `string.gmatch`](#stringmatch--stringgmatch)
+  - [`math.fmod(x, y)`](#mathfmodx-y)
   - [`coroutine.create(fn)`](#coroutinecreatefn)
   - [`coroutine.resume(co, ...)`](#coroutineresumeco-)
   - [`coroutine.yield(...)`](#coroutineyield)
@@ -6642,8 +6643,9 @@ effects change — see [Events](#loss_of_control_added--loss_of_control_update-e
 
 Standard-library functions that later Lua versions (or Blizzard's FrameXML)
 added and that 1.12's Lua 5.0 is missing — restored by ClassicAPI so
-backported addons find them. `select` and `table.wipe` are single-function
-additions; `coroutine.*` restores the stripped coroutine library.
+backported addons find them. Most are single-function additions (several are
+just the 5.0→5.1 renames — `string.gmatch`←`gfind`, `math.fmod`←`math.mod`);
+`coroutine.*` restores the whole stripped coroutine library.
 
 ### `select(index, ...)`
 
@@ -6725,6 +6727,20 @@ for word in string.gmatch("a,bb,ccc", "[^,]+") do print(word) end -- a / bb / cc
 > have no `__index` and there's no client-side way to add one short of hooking
 > a hot VM-core function. This is the long-standing vanilla 1.12 constraint —
 > always write `string.match(s, p)`, never `s:match(p)`.
+
+### `math.fmod(x, y)`
+
+The floating-point remainder of `x / y` (the quotient truncated toward zero),
+same as C's `fmod`. A pure 5.0→5.1 rename: Lua 5.0 ships the identical C
+function as `math.mod`, and 5.1 renamed the Lua-facing name to `math.fmod`.
+Registered as a direct alias — `math.mod` remains available too, so code
+written for either name works.
+
+```lua
+math.fmod(7, 3)     -- 1
+math.fmod(-7, 3)    -- -1   (result takes the sign of the dividend)
+math.fmod(5.5, 2)   -- 1.5
+```
 
 ### `coroutine.*`
 
