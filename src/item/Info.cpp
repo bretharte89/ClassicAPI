@@ -17,6 +17,7 @@
 #include "item/Arg.h"
 #include "item/Data.h"
 #include "item/ID.h"
+#include "item/Link.h"
 #include "item/Location.h"
 
 #include <cstdint>
@@ -245,7 +246,89 @@ static int __fastcall Script_C_Item_GetItemFamily(void *L) {
     return 1;
 }
 
+// `C_Item.GetItemInfo(itemInfo)` — the full modern info tuple, sourced
+// entirely from the cached `ItemStats_C` record (+ the class/subclass/invtype
+// DBC name lookups this file already does for `GetItemInfoInstant`). Accepts
+// a numeric itemID, an `"item:NNN"` string, or a full chat link — same parser
+// as `GetItemInfoInstant`.
+//
+// Returns (18 values):
+//   itemName, itemLink, itemQuality, itemLevel, itemMinLevel, itemType,
+//   itemSubType, itemStackCount, itemEquipLoc, itemTexture, sellPrice,
+//   classID, subclassID, bindType, expansionID, setID, isCraftingReagent,
+//   itemDescription
+//
+// `expansionID` is always 0 (vanilla) and `isCraftingReagent` always false
+// (no such flag in 1.12's item data); `setID` is nil when the item has no
+// set. On a cache miss it warms the cache and returns nothing (nil) —
+// the value lands on a retry after `GET_ITEM_INFO_RECEIVED`,
+// matching the modern async contract.
+static int __fastcall Script_C_Item_GetItemInfo(void *L) {
+    const int itemID = Item::Arg::ResolveItemID(L, 1);
+    if (itemID <= 0)
+        return 0;
+
+    const uint8_t *record = FetchItemRecord(static_cast<uint32_t>(itemID));
+    if (record == nullptr) {
+        Item::Data::WarmCache(static_cast<uint32_t>(itemID));
+        return 0; // nil this call; GET_ITEM_INFO_RECEIVED fires when ready
+    }
+
+    auto u32 = [record](int off) {
+        return *reinterpret_cast<const uint32_t *>(record + off);
+    };
+    const uint32_t quality = u32(Offsets::OFF_ITEMSTATS_QUALITY);
+    const uint32_t itemLevel = u32(Offsets::OFF_ITEMSTATS_ITEM_LEVEL);
+    const uint32_t reqLevel = u32(Offsets::OFF_ITEMSTATS_REQUIRED_LEVEL);
+    const uint32_t classID = u32(Offsets::OFF_ITEMSTATS_CLASS);
+    const uint32_t subClassID = u32(Offsets::OFF_ITEMSTATS_SUBCLASS);
+    const uint32_t stackCount = u32(Offsets::OFF_ITEMSTATS_STACKABLE);
+    const uint32_t invType = u32(Offsets::OFF_ITEMSTATS_INVENTORY_TYPE);
+    const uint32_t displayInfoID = u32(Offsets::OFF_ITEMSTATS_DISPLAY_INFO_ID);
+    const uint32_t sellPrice = u32(Offsets::OFF_ITEMSTATS_SELL_PRICE);
+    const uint32_t bindType = u32(Offsets::OFF_ITEMSTATS_BONDING);
+    const uint32_t setID = u32(Offsets::OFF_ITEMSTATS_ITEM_SET);
+    const char *name = *reinterpret_cast<const char *const *>(
+        record + Offsets::OFF_ITEMSTATS_NAME);
+    const char *description = *reinterpret_cast<const char *const *>(
+        record + Offsets::OFF_ITEMSTATS_DESCRIPTION);
+
+    char iconPath[260];
+    if (!BuildIconPath(displayInfoID, iconPath, sizeof(iconPath)))
+        iconPath[0] = 0;
+    char link[256];
+    const bool haveLink = Item::Link::BasicFromItemID(static_cast<uint32_t>(itemID),
+                                                      link, sizeof(link));
+
+    Game::Lua::PushString(L, PushedOrEmpty(name));                    // 1  itemName
+    if (haveLink)
+        Game::Lua::PushString(L, link);                              // 2  itemLink
+    else
+        Game::Lua::PushNil(L);
+    Game::Lua::PushNumber(L, static_cast<double>(quality));           // 3  itemQuality
+    Game::Lua::PushNumber(L, static_cast<double>(itemLevel));         // 4  itemLevel
+    Game::Lua::PushNumber(L, static_cast<double>(reqLevel));          // 5  itemMinLevel
+    Game::Lua::PushString(L, LookupItemClassName(classID));           // 6  itemType
+    Game::Lua::PushString(L, LookupItemSubClassName(classID, subClassID)); // 7 itemSubType
+    Game::Lua::PushNumber(L, static_cast<double>(stackCount));        // 8  itemStackCount
+    Game::Lua::PushString(L, LookupInvType(invType));                 // 9  itemEquipLoc
+    Game::Lua::PushString(L, iconPath);                               // 10 itemTexture
+    Game::Lua::PushNumber(L, static_cast<double>(sellPrice));         // 11 sellPrice
+    Game::Lua::PushNumber(L, static_cast<double>(classID));           // 12 classID
+    Game::Lua::PushNumber(L, static_cast<double>(subClassID));        // 13 subclassID
+    Game::Lua::PushNumber(L, static_cast<double>(bindType));          // 14 bindType
+    Game::Lua::PushNumber(L, 0.0);                                    // 15 expansionID (classic)
+    if (setID != 0)
+        Game::Lua::PushNumber(L, static_cast<double>(setID));        // 16 setID
+    else
+        Game::Lua::PushNil(L);
+    Game::Lua::PushBool(L, false);                                   // 17 isCraftingReagent
+    Game::Lua::PushString(L, PushedOrEmpty(description));            // 18 itemDescription
+    return 18;
+}
+
 static void RegisterLuaFunctions() {
+    Game::Lua::RegisterTableFunction("C_Item", "GetItemInfo", &Script_C_Item_GetItemInfo);
     Game::Lua::RegisterTableFunction("C_Item", "GetItemInfoInstant", &Script_GetItemInfoInstant);
     Game::Lua::RegisterGlobalFunction("GetItemIcon", &Script_GetItemIcon);
     Game::Lua::RegisterTableFunction("C_Item", "GetItemIcon", &Script_C_Item_GetItemIcon);

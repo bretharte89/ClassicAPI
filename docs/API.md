@@ -214,6 +214,7 @@ build instructions.
   - [`C_Item.GetItemFamily(item)`](#c_itemgetitemfamilyitem)
   - [`C_Item.GetItemGUID(itemLocation)`](#c_itemgetitemguiditemlocation)
   - [`C_Item.GetItemID(itemLocation)`](#c_itemgetitemiditemlocation)
+  - [`C_Item.GetItemInfo(itemInfo)`](#c_itemgetiteminfoiteminfo)
   - [`C_Item.GetItemInfoInstant(item)`](#c_itemgetiteminfoinstantitem)
   - [`C_Item.GetItemInventorySlotInfo(inventorySlot)`](#c_itemgetiteminventoryslotinfoinventoryslot)
   - [`C_Item.GetItemInventorySlotKey(inventorySlot)`](#c_itemgetiteminventoryslotkeyinventoryslot)
@@ -4982,6 +4983,50 @@ if id then
     local _, type, subtype = C_Item.GetItemInfoInstant(id)
     -- ...
 end
+```
+
+### `C_Item.GetItemInfo(itemInfo)`
+
+The full modern `GetItemInfo` tuple, sourced from the client-side item cache
+plus the class/subclass/inventory-type DBC name lookups. The namespaced
+counterpart to the stock global `GetItemInfo` (which returns only vanilla's
+short tuple); this returns the wide modern set backported addons expect.
+
+Accepts a numeric `itemID`, an `"item:NNN"` string, or a full chat link.
+
+Returns 18 values:
+
+| # | Return | Notes |
+|---|--------|-------|
+| 1 | `itemName` | |
+| 2 | `itemLink` | basic `item:ID` hyperlink (colored, bracketed name) |
+| 3 | `itemQuality` | 0–5 |
+| 4 | `itemLevel` | |
+| 5 | `itemMinLevel` | required level |
+| 6 | `itemType` | localized class name (e.g. "Weapon") |
+| 7 | `itemSubType` | localized subclass name (e.g. "Sword") |
+| 8 | `itemStackCount` | max stack size |
+| 9 | `itemEquipLoc` | `INVTYPE_*` token, `""` for non-equippable |
+| 10 | `itemTexture` | icon **path** (1.12 has no fileID system) |
+| 11 | `sellPrice` | vendor sell price in copper |
+| 12 | `classID` | |
+| 13 | `subclassID` | |
+| 14 | `bindType` | 0 none / 1 BoP / 2 BoE / 3 BoU / 4 quest |
+| 15 | `expansionID` | always `0` (classic) |
+| 16 | `setID` | item-set ID, `nil` if none |
+| 17 | `isCraftingReagent` | always `false` (no such flag in 1.12 data) |
+| 18 | `itemDescription` | item flavor/description text (`""` if none) |
+
+**Asynchronous on a cache miss:** if the item isn't cached yet it returns
+nothing (nil) and warms the cache; the value lands on a retry after
+`GET_ITEM_INFO_RECEIVED` fires — same contract as the stock `GetItemInfo`
+and modern clients. Fields 4–18 are the ones the vanilla global never
+returned.
+
+```lua
+local name, link, quality, ilvl, minLevel, itype, isub, stack, equipLoc,
+      tex, sell, classID, subID, bind, expac, setID, reagent, desc
+    = C_Item.GetItemInfo(6948)   -- Hearthstone
 ```
 
 ### `C_Item.GetItemInfoInstant(item)`

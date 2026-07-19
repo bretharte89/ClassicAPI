@@ -15,8 +15,6 @@
 --   - 1.12 has no concept of an item GUID and no public item-lock API,
 --     so those return nil / no-op.
 
-C_Item.GetItemInfo = GetItemInfo
-
 ----------------------------------------------------------------------
 
 Item = {}
