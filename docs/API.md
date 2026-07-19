@@ -349,6 +349,7 @@ build instructions.
   - [`C_PlayerInfo.GetName / GetClass / GetRace / GetSex / IsConnected(playerLocation)`](#c_playerinfogetname--getclass--getrace--getsex--isconnectedplayerlocation)
 - [Quest](#quest)
   - [`C_QuestLog.GetQuestIDForLogIndex(index)`](#c_questlogGetQuestIDForLogIndexindex)
+  - [`C_QuestLog.GetLogIndexForQuestID(questID)`](#c_questloggetlogindexforquestidquestid)
   - [`C_QuestLog.RequestLoadQuestByID(questID)`](#c_questlogrequestloadquestbyidquestid)
   - [`C_QuestLog.IsOnQuest(questID)`](#c_questlogisonquestquestid)
   - [`C_QuestLog.IsUnitOnQuest(unit, questID)`](#c_questlogisunitonquestunit-questid)
@@ -8409,6 +8410,22 @@ for i = 1, GetNumQuestLogEntries() do
     local title, level, questTag, isHeader, isCollapsed, isComplete
         = GetQuestLogTitle(i)
     local questID = C_QuestLog.GetQuestIDForLogIndex(i)  -- 0 for headers
+    -- ...
+end
+```
+
+### `C_QuestLog.GetLogIndexForQuestID(questID)`
+
+The inverse of `GetQuestIDForLogIndex`: returns the 1-based quest log index
+of `questID`, or `nil` if the quest isn't in the log. The index spans the
+full entry list (headers included), so it can be passed straight to
+`GetQuestLogTitle(index)` / `GetQuestLogLeaderBoardID(...)` and the other
+index-based quest-log accessors.
+
+```lua
+local index = C_QuestLog.GetLogIndexForQuestID(questID)
+if index then
+    local title = GetQuestLogTitle(index)
     -- ...
 end
 ```

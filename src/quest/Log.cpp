@@ -76,6 +76,40 @@ static int __fastcall Script_GetQuestIDForLogIndex(void *L) {
     return 1;
 }
 
+// `C_QuestLog.GetLogIndexForQuestID(questID)` — the inverse of
+// `GetQuestIDForLogIndex`: the 1-based quest-log index of `questID`, or nil
+// if the quest isn't in the log. The index spans the full entry array
+// (headers included), matching `GetQuestIDForLogIndex` /
+// `GetQuestLogTitle`. Walks `VAR_QUEST_LOG_ENTRIES`, skipping header rows via
+// the `+8` header-pointer gate, and returns the first matching entry's index.
+static int __fastcall Script_GetLogIndexForQuestID(void *L) {
+    if (!Game::Lua::IsNumber(L, 1)) {
+        Game::Lua::Error(L, "Usage: GetLogIndexForQuestID(questID)");
+        return 0;
+    }
+    const int target = static_cast<int>(Game::Lua::ToNumber(L, 1));
+    if (target <= 0)
+        return 0; // nil — no such quest
+
+    const int total = *reinterpret_cast<const int *>(
+        static_cast<uintptr_t>(Offsets::VAR_QUEST_LOG_ENTRY_COUNT));
+    auto *base = reinterpret_cast<const uint8_t *>(
+        static_cast<uintptr_t>(Offsets::VAR_QUEST_LOG_ENTRIES));
+    for (int i = 0; i < total; ++i) {
+        auto *entry = base + i * Offsets::OFF_QUEST_LOG_ENTRY_STRIDE;
+        if (*reinterpret_cast<const void *const *>(
+                entry + Offsets::OFF_QUEST_LOG_ENTRY_HEADER_PTR) != nullptr)
+            continue; // header row
+        const int questID = *reinterpret_cast<const int *>(
+            entry + Offsets::OFF_QUEST_LOG_ENTRY_QUEST_ID);
+        if (questID == target) {
+            Game::Lua::PushNumber(L, static_cast<double>(i + 1)); // 1-based
+            return 1;
+        }
+    }
+    return 0; // nil — quest not in the log
+}
+
 // `C_QuestLog.IsOnQuest(questID)` — true iff `questID` is currently
 // in the player's quest log (incomplete OR ready-to-turn-in; the log
 // holds both). Walks `VAR_QUEST_LOG_ENTRIES` and matches against each
@@ -148,6 +182,8 @@ static int __fastcall Script_IsUnitOnQuest(void *L) {
 static void RegisterLuaFunctions() {
     Game::Lua::RegisterTableFunction("C_QuestLog", "GetQuestIDForLogIndex",
                                      &Script_GetQuestIDForLogIndex);
+    Game::Lua::RegisterTableFunction("C_QuestLog", "GetLogIndexForQuestID",
+                                     &Script_GetLogIndexForQuestID);
     Game::Lua::RegisterTableFunction("C_QuestLog", "IsOnQuest",
                                      &Script_IsOnQuest);
     Game::Lua::RegisterTableFunction("C_QuestLog", "IsUnitOnQuest",
