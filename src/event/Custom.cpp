@@ -28,7 +28,17 @@ namespace {
 // any engine code runs. `RetryClaims` (triggered by the
 // `Frame::RegisterEvent` hook) walks this list and claims a NULL slot
 // for each unclaimed entry.
-constexpr int MAX_RESERVED = 32;
+//
+// MUST stay comfortably above the total number of `AutoReserve` instances
+// across the codebase (file-scope + the lazily-registered TTS ones) — the
+// constructor SILENTLY drops any reservation past the cap, and which ones
+// overflow depends on unspecified cross-TU static-init order, so exceeding
+// it makes an arbitrary subset of custom events quietly stop firing (their
+// `Lookup` returns -1 and `Fire` no-ops). We hit exactly that at 32: ~40
+// reservations meant a shifting handful (e.g. ITEM_DATA_LOAD_RESULT /
+// GET_ITEM_INFO_RECEIVED) never claimed a slot. Grep `AutoReserve` before
+// bumping the reservation count near this ceiling.
+constexpr int MAX_RESERVED = 64;
 struct ReservedName {
     const char *name;
     int slot;  // -1 until claimed

@@ -37,8 +37,9 @@ namespace Event::Custom {
 // DLL operate on the table independently of the others.
 //
 // The name pointer must outlive the engine (a string literal does).
-// Same name reserved twice is deduped; reserving more than 32 names
-// total silently drops the overflow.
+// Same name reserved twice is deduped; reserving more than `MAX_RESERVED`
+// names total (see Custom.cpp) silently drops the overflow — keep that cap
+// above the codebase-wide `AutoReserve` count.
 struct AutoReserve {
     explicit AutoReserve(const char *name);
 };
