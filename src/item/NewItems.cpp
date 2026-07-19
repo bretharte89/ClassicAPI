@@ -41,7 +41,16 @@
 // enough for the initial bag population to finish), takes a single scan as the
 // baseline, and then goes idle — items already owned at login are therefore
 // never flagged. It re-arms on player-GUID change (relog / character switch).
-// Bank and equipment are out of scope, matching retail.
+//
+// The "already owned" baseline spans **everything the player owns** — bags,
+// worn equipment (paperdoll + equipped bags), AND the bank (main + bank bags)
+// — even though only *bag* items are ever flagged new. That's what stops a
+// move INTO a bag from any of those (unequip, or a pull from the bank) from
+// looking like a fresh loot: the item's GUID was already in the owned set, so
+// the bag diff treats it as a move. The bank is reachable without the bank
+// window open because its GUIDs are read straight from the invMgr array (the
+// same gate-bypass `C_Item.GetItemCount` uses; the array is server-populated
+// at login).
 //
 // Bag enumeration is pure C++: it replicates what `PackBagSlot` does
 // internally (see Offsets.h). The backpack is indexed straight off the
@@ -67,17 +76,19 @@ namespace {
 constexpr const char *kEvtNewItems = "BAG_NEW_ITEMS_UPDATED";
 const Event::Custom::AutoReserve _r{kEvtNewItems};
 
-// Bags cap at backpack (16) + four equipped bags; even the largest Turtle
-// bags stay well under this. Overflow silently drops — a flagged-new item
-// past the cap just won't glow, never a crash.
-constexpr int kMaxItems = 256;
+// Sized for the whole owned universe the baseline tracks — backpack + four
+// bags + 19 worn slots + 4 equipped bags + main bank (24) + six bank bags.
+// A full inventory-and-bank can push ~300, so 512 leaves generous headroom.
+// Overflow silently drops (AddUnique bails at the cap) — a dropped GUID just
+// can't be flagged/recognized, never a crash.
+constexpr int kMaxItems = 512;
 
 // Delay after the player is first resolvable before the baseline is taken,
 // giving the initial bag population time to finish. Wall-clock (via the
 // engine ms counter) so it's independent of frame rate.
 constexpr uint32_t kSettleMs = 1500;
 
-uint64_t g_seen[kMaxItems]; // all bag-resident GUIDs at the last scan
+uint64_t g_seen[kMaxItems]; // all owned GUIDs (bags + equipment + bank) at the last scan
 int g_seenCount = 0;
 uint64_t g_new[kMaxItems]; // subset currently flagged "new"
 int g_newCount = 0;
@@ -167,6 +178,81 @@ int ScanBags(const uint8_t *player, uint64_t *out) {
     return count;
 }
 
+// Appends GUIDs from an invMgr's GUID array (the flat `+OFF_INVMGR_GUID_ARRAY`
+// list `GetItemBySlot` indexes) over linear slots [first, last]. Reading the
+// array directly is how we reach BANK slots without the bank window open —
+// `GetItemBySlot` gates slots 39..68 on a live banker GUID, but the array
+// itself is server-populated at login (same bypass `C_Item.GetItemCount`
+// uses). We only need the GUID here, not the resolved object.
+void AppendGuidArray(const uint8_t *invMgr, int first, int last, uint64_t *out,
+                     int *count) {
+    if (invMgr == nullptr)
+        return;
+    auto *arr = *reinterpret_cast<const uint64_t *const *>(
+        invMgr + Offsets::OFF_INVMGR_GUID_ARRAY);
+    if (arr == nullptr)
+        return;
+    for (int slot = first; slot <= last; ++slot)
+        if (arr[slot] != 0)
+            AddUnique(out, count, arr[slot]);
+}
+
+using ResolveByGuid_t = void *(__fastcall *)(int type, const char *debugName,
+                                             uint32_t guidLo, uint32_t guidHi,
+                                             int priority);
+const uint8_t *ResolveByGuid(int type, uint64_t guid) {
+    if (guid == 0)
+        return nullptr;
+    auto fn = reinterpret_cast<ResolveByGuid_t>(Offsets::FUN_OBJECT_RESOLVE_BY_GUID);
+    return static_cast<const uint8_t *>(
+        fn(type, "ItemMgr", static_cast<uint32_t>(guid),
+           static_cast<uint32_t>(guid >> 32), 0x172));
+}
+
+// Appends every item the player owns that ISN'T in bags 0..4 — worn
+// equipment (paperdoll 1..19 + the four equipped-bag containers 20..23),
+// the main bank (24 slots), and each bank bag's contents. Used only to widen
+// the "already owned" baseline so a move INTO a bag from any of these
+// (unequip, or a pull from the bank) reads as a move, not a fresh loot. We
+// never *flag* these as new — this only feeds the seen-set. Pure C++ (no Lua
+// stack) — safe off the frame tick.
+void AppendNonBagOwned(uint64_t *out, int *count) {
+    // Worn equipment + equipped bags: GetItemBySlot works for these (no
+    // banker gate), so go through the normal per-slot resolver.
+    for (int slot = Offsets::EQUIPMENT_SLOT_FIRST; slot <= Offsets::INVSLOT_BAG1 + 3;
+         ++slot) {
+        const uint64_t guid = ItemGUID(Item::Location::ResolveEquipmentSlot(slot));
+        if (guid != 0)
+            AddUnique(out, count, guid);
+    }
+
+    const uint8_t *playerInvMgr = Unit::Identity::PlayerInventoryManager();
+    if (playerInvMgr == nullptr)
+        return;
+    // Main bank slots 39..62 live in the player invMgr's own GUID array.
+    AppendGuidArray(playerInvMgr, Offsets::INVMGR_BANK_MAIN_FIRST_SLOT,
+                    Offsets::INVMGR_BANK_MAIN_LAST_SLOT, out, count);
+    // Bank bags (containers at player slots 63..68) each carry their own
+    // invMgr; resolve the container, then walk its GUID array.
+    auto *playerArr = *reinterpret_cast<const uint64_t *const *>(
+        playerInvMgr + Offsets::OFF_INVMGR_GUID_ARRAY);
+    if (playerArr == nullptr)
+        return;
+    for (int slot = Offsets::INVMGR_BANK_BAG_FIRST_SLOT;
+         slot <= Offsets::INVMGR_BANK_BAG_LAST_SLOT; ++slot) {
+        const uint8_t *bag = ResolveByGuid(Offsets::OBJ_TYPE_CONTAINER, playerArr[slot]);
+        if (bag == nullptr)
+            continue;
+        auto *bagInvMgr =
+            static_cast<const uint8_t *>(Item::Location::ContainerInventory(bag));
+        if (bagInvMgr == nullptr)
+            continue;
+        const int bagSlots = static_cast<int>(*reinterpret_cast<const uint32_t *>(bagInvMgr));
+        if (bagSlots > 0)
+            AppendGuidArray(bagInvMgr, 0, bagSlots - 1, out, count);
+    }
+}
+
 void FireChanged() {
     Event::Custom::Fire(Event::Custom::Lookup(kEvtNewItems), "");
 }
@@ -204,9 +290,11 @@ void OnTick() {
     if (player == nullptr)
         return; // not resolvable yet — retry next tick
 
-    // Everything currently in the bags becomes the baseline; nothing owned at
-    // login is "new". Any change up to this point is intentionally absorbed.
+    // Everything currently owned — bags AND worn equipment — becomes the
+    // baseline; nothing owned at login is "new". Including equipment means a
+    // later unequip (paperdoll → bag) is recognized as a move, not a loot.
     g_seenCount = ScanBags(player, g_seen);
+    AppendNonBagOwned(g_seen, &g_seenCount);
     g_newCount = 0;
     g_seeded = true;
 }
@@ -224,25 +312,25 @@ void OnBagChanged() {
     if (player == nullptr)
         return;
 
-    uint64_t current[kMaxItems];
-    const int currentCount = ScanBags(player, current);
+    uint64_t currentBags[kMaxItems];
+    const int bagCount = ScanBags(player, currentBags);
 
     bool changed = false;
-    // Drop flags for items no longer in the bags (used, sold, banked).
+    // Drop flags for items no longer in the bags (used, sold, equipped, banked).
     for (int i = 0; i < g_newCount;) {
-        if (!Contains(current, currentCount, g_new[i])) {
+        if (!Contains(currentBags, bagCount, g_new[i])) {
             g_new[i] = g_new[--g_newCount];
             changed = true;
         } else {
             ++i;
         }
     }
-    // Flag anything not present at the previous scan.
-    for (int i = 0; i < currentCount; ++i) {
-        if (!Contains(g_seen, g_seenCount, current[i]))
-            changed |= AddUnique(g_new, &g_newCount, current[i]);
+    for (int i = 0; i < bagCount; ++i) {
+        if (!Contains(g_seen, g_seenCount, currentBags[i]))
+            changed |= AddUnique(g_new, &g_newCount, currentBags[i]);
     }
-    CopyToSeen(current, currentCount);
+    CopyToSeen(currentBags, bagCount);
+    AppendNonBagOwned(g_seen, &g_seenCount);
 
     if (changed)
         FireChanged();
