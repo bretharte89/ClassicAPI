@@ -350,6 +350,7 @@ build instructions.
 - [Quest](#quest)
   - [`C_QuestLog.GetQuestIDForLogIndex(index)`](#c_questlogGetQuestIDForLogIndexindex)
   - [`C_QuestLog.GetLogIndexForQuestID(questID)`](#c_questloggetlogindexforquestidquestid)
+  - [`C_QuestLog.GetHeaderIndexForQuest(questID)`](#c_questloggetheaderindexforquestquestid)
   - [`C_QuestLog.RequestLoadQuestByID(questID)`](#c_questlogrequestloadquestbyidquestid)
   - [`C_QuestLog.IsOnQuest(questID)`](#c_questlogisonquestquestid)
   - [`C_QuestLog.IsUnitOnQuest(unit, questID)`](#c_questlogisunitonquestunit-questid)
@@ -8427,6 +8428,21 @@ local index = C_QuestLog.GetLogIndexForQuestID(questID)
 if index then
     local title = GetQuestLogTitle(index)
     -- ...
+end
+```
+
+### `C_QuestLog.GetHeaderIndexForQuest(questID)`
+
+Returns the 1-based log index of the collapsible **header** (zone /
+`"Dungeon"` / class-sort category, …) that `questID` sits under, or `nil` if
+the quest isn't in the log. The quest log is laid out header-then-its-quests,
+so this locates the quest and walks back to the nearest preceding header row.
+Pass the result to `GetQuestLogTitle(headerIndex)` for the category name.
+
+```lua
+local headerIndex = C_QuestLog.GetHeaderIndexForQuest(questID)
+if headerIndex then
+    local zone = GetQuestLogTitle(headerIndex)  -- e.g. "Westfall"
 end
 ```
 
