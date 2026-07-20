@@ -489,6 +489,7 @@ build instructions.
   - [`UnitInRange(unit)`](#unitinrangeunit)
   - [`UnitDistanceSquared(unit)`](#unitdistancesquaredunit)
   - [`UnitInLineOfSight(unit)`](#unitinlineofsightunit)
+  - [`ClosestUnitPosition(creatureID)`](#closestunitpositioncreatureid)
   - [`UnitPower(unit [, powerType])` / `UnitPowerMax(unit [, powerType])`](#unitpowerunit--powertype--unitpowermaxunit--powertype)
   - [`UnitPowerType(unit)`](#unitpowertypeunit)
 
@@ -11865,6 +11866,36 @@ from the DBC). Reads byte 0 of `UNIT_FIELD_BYTES_0` (descriptor
 
 Returns `(nil, nil)` for unresolvable units and non-player units
 (creature race bytes don't index `ChrRaces.dbc`).
+
+### `ClosestUnitPosition(creatureID)`
+
+Returns `xPos, yPos, distance` — the world position of the nearest
+creature with the given NPC (creature-template) ID, and its distance from
+the player in yards. Returns nothing (nil) when no matching creature is in
+range.
+
+```lua
+local x, y, dist = ClosestUnitPosition(3098)   -- nearest Kobold Vermin
+if x then
+    -- x, y = world coords; dist = yards from the player
+end
+```
+
+- `creatureID` (number) — the NPC ID (the value
+  [`C_CreatureInfo.GetCreatureID(guid)`](#c_creatureinfogetcreatureidguid)
+  returns, and the entry packed into a creature's GUID).
+
+Walks the client's visible-object manager, matches creatures whose GUID
+encodes `creatureID` (bits 24–47), and returns the closest one's position
++ center-to-center distance.
+
+> **Differs from retail.** Modern WoW's `ClosestUnitPosition` reads a
+> static client-side spawn database and only works for starting-zone mobs.
+> Vanilla 1.12 ships no such database, so this returns the nearest
+> **currently-visible** creature of that entry (anywhere, not just
+> starting zones). It can't point at un-synced spawns elsewhere in the
+> zone the way retail's database can — but for "where's the nearest `<mob>`
+> I can see" it's more general than retail.
 
 ### `UnitPower(unit [, powerType])` / `UnitPowerMax(unit [, powerType])`
 
