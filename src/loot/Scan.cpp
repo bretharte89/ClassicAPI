@@ -27,6 +27,7 @@
 #include "../Game.h"
 #include "../Offsets.h"
 #include "../event/Custom.h"
+#include "../event/SignalHook.h"
 #include "../guid/Guid.h"
 #include "../tick/WorldTick.h"
 
@@ -115,9 +116,6 @@ using LootSlotLinkBuilder_t = const char *(__fastcall *)(uint32_t userFacingSlot
 using LootController_t = void(__fastcall *)(int lootStructPtr,
                                              int coin,
                                              int unk);
-using FireEventNoArgs_t = void(__fastcall *)(int eventID,
-                                              int /*edx unused*/);
-
 struct C3Vector {
     float x, y, z;
 };
@@ -256,7 +254,6 @@ void StartLoot(uint64_t guid) {
 // === Hooks ===
 
 LootController_t s_lootController_o = nullptr;
-FireEventNoArgs_t s_fireEventNoArgs_o = nullptr;
 
 // `LOOT_OPENED` / `LOOT_CLOSED` get suppressed only while a scan is
 // actively interleaving open/close cycles, signaled by
@@ -265,12 +262,14 @@ FireEventNoArgs_t s_fireEventNoArgs_o = nullptr;
 // `SendCloseLoot` that follows, then dropped before
 // `TryStartNext`-initiated CMSG_LOOTs go out. Every other engine
 // event fire — and normal play's loot events — pass through.
-void __fastcall FireEventNoArgs_h(int eventID, int /*unusedEdx*/) {
-    if (s_scan.suppressEvents &&
-        (eventID == EVENT_LOOT_OPENED || eventID == EVENT_LOOT_CLOSED)) {
-        return;
-    }
-    s_fireEventNoArgs_o(eventID, 0);
+//
+// Runs as an interceptor on the shared no-arg event hook
+// (`Event::SignalHook`) rather than owning the hook directly, so it can
+// coexist with other features that intercept the same dispatcher (e.g. the
+// PLAYER_ENTERING_WORLD payload). Return true to swallow.
+bool SuppressLootEvents(int eventID) {
+    return s_scan.suppressEvents &&
+           (eventID == EVENT_LOOT_OPENED || eventID == EVENT_LOOT_CLOSED);
 }
 
 // Intercepts the engine's loot-window state controller. Two paths:
@@ -336,10 +335,7 @@ const Game::HookAutoRegister _hookController{
     reinterpret_cast<void *>(&LootController_h),
     reinterpret_cast<void **>(&s_lootController_o)};
 
-const Game::HookAutoRegister _hookFireEvent{
-    Offsets::FUN_FIRE_EVENT_NO_ARGS,
-    reinterpret_cast<void *>(&FireEventNoArgs_h),
-    reinterpret_cast<void **>(&s_fireEventNoArgs_o)};
+const Event::SignalHook::AutoSubscribe _lootIntercept{&SuppressLootEvents};
 
 // === Tick (timeout only) ===
 

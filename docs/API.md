@@ -95,6 +95,7 @@ build instructions.
 
 - [Events](#events)
   - [`C_EventUtils.IsEventValid(eventName)`](#c_eventutilsiseventvalideventname)
+  - [`PLAYER_ENTERING_WORLD` payload (`isInitialLogin`, `isReloadingUi`)](#player_entering_world-payload-isinitiallogin-isreloadingui)
   - [`BAG_UPDATE_DELAYED` event](#bag_update_delayed-event)
   - [`PLAYER_EQUIPMENT_CHANGED` event](#player_equipment_changed-event)
   - [`UPDATE_INVENTORY_DURABILITY` event](#update_inventory_durability-event)
@@ -2219,6 +2220,41 @@ SuperWoWhook, `IsEventValid("UNIT_CASTEVENT")` returns `true` because
 SuperWoWhook patches the binary's event names with its own. This matches
 what `frame:RegisterEvent` will actually accept, which is what addon code
 needs to know.
+
+### `PLAYER_ENTERING_WORLD` payload (`isInitialLogin`, `isReloadingUi`)
+
+Backports the 8.0.1 payload onto vanilla's (natively arg-less)
+`PLAYER_ENTERING_WORLD`:
+
+```lua
+local f = CreateFrame("Frame")
+f:RegisterEvent("PLAYER_ENTERING_WORLD")
+f:SetScript("OnEvent", function()
+    local isInitialLogin, isReloadingUi = arg1, arg2
+    if isInitialLogin then       -- fresh character login (from char-select)
+    elseif isReloadingUi then    -- /reload
+    else                          -- zone / instance transition
+    end
+end)
+```
+
+- `isInitialLogin` — `true` on a fresh login (including logging out to
+  char-select and back in), `nil` otherwise.
+- `isReloadingUi` — `true` when the fire is caused by a `/reload`, `nil`
+  otherwise.
+- Both `nil` on an instance/zone transition — matching retail.
+
+Delivered as real event args (`arg1`/`arg2`), so retail-style handlers work
+unchanged. Values are `true`→`1` / false→`nil` (the engine dispatcher has no
+boolean), so `if isInitialLogin then …` reads naturally. Existing handlers
+that ignore the args are unaffected.
+
+PEW is a no-arg event, so the engine broadcasts it through the
+`FUN_FIRE_EVENT_NO_ARGS` dispatcher; we intercept that (via the shared
+`Event::SignalHook`) and re-broadcast through the variadic dispatcher with
+the payload. The flags are derived from whether the in-game Lua state was
+just (re)built (login/`reload`) and whether we just came through the
+glue/login screen — no `PLAYER_ENTERING_WORLD`-specific engine hook.
 
 ### `BAG_UPDATE_DELAYED` event
 
