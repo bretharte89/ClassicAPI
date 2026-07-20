@@ -47,4 +47,22 @@ namespace Aura::ComboDuration {
 // duration path".
 uint32_t TryComboScaledMs(const uint8_t *spellRecord, uint32_t spellId);
 
+// Extension point for finishers whose SpellDuration row DANGLES — a
+// non-zero DurationIndex pointing at a row the client DBC doesn't have.
+// A resolver returns true and fills *baseMs/*maxMs if it knows the spell,
+// false otherwise. Consulted by `TryComboScaledMs` ONLY in that dangling
+// condition (after any Lua-registered override), so the activation gate is
+// the client-data bug itself, not a server fingerprint — the deliberate
+// design choice (a realm-sniffing approach was rejected). Server-custom
+// data (e.g. Turtle's reworked Rip) registers its values here instead of
+// living in this stock module: declare a file-scope
+// `static const Aura::ComboDuration::AutoDanglingResolver`.
+using DanglingResolver = bool (*)(uint32_t spellId, int32_t *baseMs,
+                                  int32_t *maxMs);
+struct AutoDanglingResolver {
+    explicit AutoDanglingResolver(DanglingResolver fn);
+    DanglingResolver fn;
+    AutoDanglingResolver *next;
+};
+
 } // namespace Aura::ComboDuration

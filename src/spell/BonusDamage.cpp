@@ -63,6 +63,7 @@
 #include "item/Location.h"
 #include "item/StatAccum.h"
 #include "player/StatSignal.h"
+#include "spell/HealingAura.h"
 #include "tick/WorldTick.h"
 #include "unit/Identity.h"
 
@@ -139,18 +140,19 @@ long ItemFlatHealing(const uint8_t *cgItem) {
 
 // --- Buff / talent healing auras (flat + Spirit/Armor conversions) ---
 // One decoder for every healing aura a buff or passive talent can carry,
-// mirroring the server's SpellBaseHealingBonusDone:
+// mirroring the server's SpellBaseHealingBonusDone. Stock vanilla auras are
+// handled inline:
 //   135  MOD_HEALING_DONE                   → flat  += amount
 //   175  MOD_SPELL_HEALING_OF_STAT_PERCENT  → += Spirit × amount / 100  (Spiritual Guidance)
-//   199  MOD_SPELL_HEALING_OF_ARMOR_PERCENT → += Armor  × amount / 100  (Turtle Ironclad)
-// Amounts/percents are read straight from Spell.dbc — generic (any talent/buff
-// using these auras, incl. Turtle customs) and robust (no client-vs-server
-// value delta). `requirePassive` gates the bitmap walk to always-on talents,
-// so a *known but not-currently-cast* buff (Divine Spirit) isn't counted as
-// on; active buffs pass `requirePassive == false`.
+// Any other aura index is deferred to `Spell::HealingAura::Resolve`, the
+// extension point where server-custom healing auras live (e.g. Turtle's
+// Ironclad, aura 199 = × Armor — see src/turtle/HealingAura.cpp). Amounts/
+// percents are read straight from Spell.dbc — generic and robust (no
+// client-vs-server value delta). `requirePassive` gates the bitmap walk to
+// always-on talents, so a *known but not-currently-cast* buff (Divine
+// Spirit) isn't counted as on; active buffs pass `requirePassive == false`.
 constexpr int kAuraModHealingDone = 135;
 constexpr int kAuraModHealingOfStatPercent = 175;  // × Spirit
-constexpr int kAuraModHealingOfArmorPercent = 199; // × Armor (Turtle Ironclad)
 
 void AddSpellHealingAuras(long &total, int spellID, int32_t spirit,
                           int32_t armor, bool requirePassive) {
@@ -177,8 +179,8 @@ void AddSpellHealingAuras(long &total, int spellID, int32_t spirit,
             total += amount;
         else if (aura[i] == kAuraModHealingOfStatPercent)
             total += static_cast<long>(spirit) * amount / 100;
-        else if (aura[i] == kAuraModHealingOfArmorPercent)
-            total += static_cast<long>(armor) * amount / 100;
+        else
+            total += Spell::HealingAura::Resolve(aura[i], amount, spirit, armor);
     }
 }
 

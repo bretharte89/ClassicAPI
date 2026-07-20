@@ -132,30 +132,19 @@ const Override *FindOverride(uint32_t spellId) {
     return nullptr;
 }
 
-// Known values for spells whose duration row DANGLES — a non-zero
-// DurationIndex pointing at a SpellDuration row the client doesn't have.
-// Consulted ONLY when that exact condition holds, so the gate is the bug
-// itself, not a server fingerprint: on a stock client every one of these
-// resolves to a valid row and this table is never reached, and if the
-// broken client data is ever fixed the DBC row takes over automatically.
-//
-// Turtle's reworked Rip is the known case: all six ranks point at
-// SpellDuration row 87, which Turtle added on the SERVER only
-// ({8000, 0, 18000} — live server data shows 10/12/14/16/18s at 1..5 CP,
-// i.e. 8s + 2s per combo point); their client patch never shipped the
-// row (the client table jumps 86 -> 105). Verified the only dangling
-// duration index in the entire client Spell.dbc.
-constexpr Override kDanglingRowKnown[] = {
-    {1079, 8000, 18000}, {9492, 8000, 18000}, {9493, 8000, 18000},
-    {9752, 8000, 18000}, {9894, 8000, 18000}, {9896, 8000, 18000},
-};
+// Resolver chain for dangling-duration-row spells (client DBC missing the
+// row). The KNOWN VALUES themselves are server-custom data and live in
+// their own module (e.g. `src/turtle/ComboDuration.cpp` for Turtle's
+// reworked Rip); this stock module only owns the mechanism and the
+// dangling-condition gate. Chained at static-init by `AutoDanglingResolver`.
+AutoDanglingResolver *g_danglingResolvers = nullptr;
 
-const Override *FindDanglingRowKnown(uint32_t spellId) {
-    for (const auto &k : kDanglingRowKnown) {
-        if (k.spellId == spellId)
-            return &k;
-    }
-    return nullptr;
+bool ResolveDangling(uint32_t spellId, int32_t *baseMs, int32_t *maxMs) {
+    for (AutoDanglingResolver *r = g_danglingResolvers; r != nullptr;
+         r = r->next)
+        if (r->fn(spellId, baseMs, maxMs))
+            return true;
+    return false;
 }
 
 // `C_UnitAuras.RegisterComboDuration(spellID, baseSeconds, maxSeconds)`
@@ -203,6 +192,11 @@ const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
 
 } // namespace
 
+AutoDanglingResolver::AutoDanglingResolver(DanglingResolver f)
+    : fn(f), next(g_danglingResolvers) {
+    g_danglingResolvers = this;
+}
+
 uint32_t TryComboScaledMs(const uint8_t *spellRecord, uint32_t spellId) {
     if (spellRecord == nullptr || spellId == 0)
         return 0;
@@ -227,12 +221,11 @@ uint32_t TryComboScaledMs(const uint8_t *spellRecord, uint32_t spellId) {
             maxMs = *reinterpret_cast<const int32_t *>(row + 0xC);
         } else if (idx != 0) {
             // Dangling duration index — the client data is broken for this
-            // spell. Fall back to the built-in known values (Turtle Rip).
-            const Override *k = FindDanglingRowKnown(spellId);
-            if (k == nullptr)
+            // spell. Defer to a registered resolver (the known values are
+            // server-custom data owned by a platform module, e.g.
+            // src/turtle for Turtle's reworked Rip).
+            if (!ResolveDangling(spellId, &baseMs, &maxMs))
                 return 0;
-            baseMs = k->baseMs;
-            maxMs = k->maxMs;
         } else {
             return 0; // no duration row at all
         }
