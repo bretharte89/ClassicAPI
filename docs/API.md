@@ -179,6 +179,7 @@ build instructions.
   - [`LE_UNIT_STAT_*`](#le_unit_stat_)
   - [`Enum.AddOnSecurityStatus`](#enumaddonsecuritystatus)
   - [`Enum.InventoryType`](#enuminventorytype)
+  - [`Enum.ItemClass`](#enumitemclass)
   - [`Enum.PowerType`](#enumpowertype)
 
 - [Gossip](#gossip)
@@ -231,7 +232,8 @@ build instructions.
   - [`C_Item.GetItemSpell(item)`](#c_itemgetitemspellitem)
   - [`C_Item.GetItemStatDelta(itemLink1, itemLink2)`](#c_itemgetitemstatdeltaitemlink1-itemlink2)
   - [`C_Item.GetItemStats(itemLink)`](#c_itemgetitemstatsitemlink)
-  - [`C_Item.GetItemSubClassInfo(classID, subClassID)`](#c_itemgetitemsubclassinfoclassid-subclassid)
+  - [`GetItemClassInfo(classID)`](#getitemclassinfoclassid)
+  - [`GetItemSubClassInfo(classID, subClassID)` / `C_Item.GetItemSubClassInfo(classID, subClassID)`](#getitemsubclassinfoclassid-subclassid--c_itemgetitemsubclassinfoclassid-subclassid)
   - [`C_Item.GetItemUniqueness(itemLocation)` / `C_Item.GetItemUniquenessByID(item)`](#c_itemgetitemuniquenessitemlocation--c_itemgetitemuniquenessbyiditem)
   - [`C_Item.GetStackCount(itemLocation)`](#c_itemgetstackcountitemlocation)
   - [`C_Item.IsBound(itemLocation)`](#c_itemisbounditemlocation)
@@ -4300,6 +4302,33 @@ post-vanilla and included for parity — vanilla items never report them.
 if C_Item.GetItemInventoryType(loc) == Enum.InventoryType.IndexHeadType then ...
 ```
 
+### `Enum.ItemClass`
+
+The item-class enum — the numeric `classID` reported as the 12th return
+of [`GetItemInfo`](#c_itemgetiteminfoiteminfo) and taken by
+[`GetItemClassInfo`](#getitemclassinfoclassid) /
+[`GetItemSubClassInfo`](#getitemsubclassinfoclassid-subclassid). The
+numeric values match retail; the obsolete slots keep their modern key
+names even though `ItemClass.dbc` labels them `"…(OBSOLETE)"`.
+
+| Value | Field | Value | Field |
+|------:|-------|------:|-------|
+| 0 | `Consumable` | 8 | `ItemEnhancement` |
+| 1 | `Container` | 9 | `Recipe` |
+| 2 | `Weapon` | 10 | `CurrencyTokenObsolete` |
+| 3 | `Gem` | 11 | `Quiver` |
+| 4 | `Armor` | 12 | `Questitem` |
+| 5 | `Reagent` | 13 | `Key` |
+| 6 | `Projectile` | 14 | `PermanentObsolete` |
+| 7 | `Tradegoods` | 15 | `Miscellaneous` |
+
+Values `16..19` (`Glyph`, `Battlepet`, `WoWToken`, `Profession`) are
+post-vanilla and included for parity — vanilla items never report them.
+
+```lua
+if select(12, GetItemInfo(id)) == Enum.ItemClass.Weapon then ...
+```
+
 ### `Enum.PowerType`
 
 The integer enum `UnitPowerType` returns and `UnitPower` /
@@ -5540,13 +5569,31 @@ what the item actually grants — not just its stored stat slots:
 bare itemID (a superset of retail, which is link-only). Returns `nil` if
 the item isn't cached yet — warm it via `GetItemInfo` and retry.
 
-### `C_Item.GetItemSubClassInfo(classID, subClassID)`
+### `GetItemClassInfo(classID)`
 
-Returns `subClassName, subClassUsesInvType` for an item class/subclass pair.
+Returns `className` — the localized `ItemClass.dbc` name for an item
+class ID (the `classID` from `Enum.ItemClass` / the 12th `GetItemInfo`
+return). Also available as `C_Item.GetItemClassInfo(classID)`.
 
 ```lua
-C_Item.GetItemSubClassInfo(2, 7)   -- "One-Handed Swords", false
-C_Item.GetItemSubClassInfo(4, 1)   -- "Cloth", true
+GetItemClassInfo(2)   -- "Weapon"
+GetItemClassInfo(4)   -- "Armor"
+GetItemClassInfo(1)   -- "Container"
+```
+
+Returns `nil` for an unknown class. Obsolete slots return the client's
+literal string (`GetItemClassInfo(3)` → `"Jewelry(OBSOLETE)"`), which is
+the real vanilla data — use [`Enum.ItemClass`](#enumitemclass) for the
+modern key names.
+
+### `GetItemSubClassInfo(classID, subClassID)` / `C_Item.GetItemSubClassInfo(classID, subClassID)`
+
+Returns `subClassName, subClassUsesInvType` for an item class/subclass pair
+(the global form documents the second value as `isArmorType` — same value).
+
+```lua
+GetItemSubClassInfo(2, 7)   -- "One-Handed Swords", false
+GetItemSubClassInfo(4, 1)   -- "Cloth", true
 ```
 
 - `subClassName` (string) — the localized `ItemSubClass.dbc` name (verbose

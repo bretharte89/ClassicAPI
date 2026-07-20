@@ -13,6 +13,7 @@
 
 #include "Game.h"
 #include "Offsets.h"
+#include "dbc/Lookup.h"
 
 #include <cstdint>
 
@@ -23,6 +24,18 @@ namespace {
 int LocaleIndex() {
     return *reinterpret_cast<const int *>(
         static_cast<uintptr_t>(Offsets::VAR_LOCALE_INDEX));
+}
+
+// Localized ItemClass.dbc name for a class ID (records indexed by ID, the
+// standard DBC shape — same lookup `Script_GetItemInfo` uses). Returns ""
+// for an unknown class. Obsolete slots keep the client's literal string
+// (classID 3 → "Jewelry(OBSOLETE)", 8 → "Generic(OBSOLETE)", …) — that's
+// the real vanilla data; Enum.ItemClass supplies the modern key names.
+const char *ClassName(uint32_t classID) {
+    const char *s = DBC::LocalizedField(Offsets::VAR_ITEMCLASS_RECORDS,
+                                        Offsets::VAR_ITEMCLASS_COUNT, classID,
+                                        Offsets::OFF_ITEMCLASS_NAMES);
+    return (s != nullptr && s[0] != '\0') ? s : "";
 }
 
 // Linear-scan ItemSubClass.dbc for the (classID, subClassID) compound-key
@@ -72,8 +85,27 @@ const char *InvTypeKey(int invType) {
     return (s != nullptr && s[0] != '\0') ? s : "";
 }
 
+// `GetItemClassInfo(classID)` → `className` (localized). `nil` for an
+// unknown class. Backport of the modern global (also exposed as
+// `C_Item.GetItemClassInfo`).
+int __fastcall Script_GetItemClassInfo(void *L) {
+    if (!Game::Lua::IsNumber(L, 1)) {
+        Game::Lua::Error(L, "Usage: GetItemClassInfo(classID)");
+        return 0;
+    }
+    const char *name = ClassName(static_cast<uint32_t>(Game::Lua::ToNumber(L, 1)));
+    if (name[0] == '\0') {
+        Game::Lua::PushNil(L);
+        return 1;
+    }
+    Game::Lua::PushString(L, name);
+    return 1;
+}
+
 // `C_Item.GetItemSubClassInfo(classID, subClassID)` →
-// `subClassName, subClassUsesInvType`.
+// `subClassName, subClassUsesInvType`. Also exposed as the global
+// `GetItemSubClassInfo(classID, subClassID)` → `name, isArmorType`, the
+// same two values (the second is true for the armor material subclasses).
 //
 // `subClassName` is the localized ItemSubClass.dbc name (verbose form, e.g.
 // "One-Handed Swords"; falls back to the short form for subclasses that
@@ -184,7 +216,43 @@ constexpr Game::Lua::EnumIntegerEntry kInventoryTypeEntries[] = {
     {"IndexEquipablespellWeaponType", 34},
 };
 
+// `Enum.ItemClass` — the modern item-class enum. Values 0..15 are the
+// classes vanilla items actually report (the numeric IDs match retail; the
+// obsolete slots 3/8/10/14 keep their modern key names — Gem /
+// ItemEnhancement / CurrencyTokenObsolete / PermanentObsolete — even
+// though ItemClass.dbc labels them "…(OBSOLETE)"). 16..19 are post-vanilla
+// and never appear in 1.12 item data, included so backport code that
+// references those keys resolves (comparisons just never match).
+constexpr Game::Lua::EnumIntegerEntry kItemClassEntries[] = {
+    {"Consumable", 0},
+    {"Container", 1},
+    {"Weapon", 2},
+    {"Gem", 3},
+    {"Armor", 4},
+    {"Reagent", 5},
+    {"Projectile", 6},
+    {"Tradegoods", 7},
+    {"ItemEnhancement", 8},
+    {"Recipe", 9},
+    {"CurrencyTokenObsolete", 10},
+    {"Quiver", 11},
+    {"Questitem", 12},
+    {"Key", 13},
+    {"PermanentObsolete", 14},
+    {"Miscellaneous", 15},
+    {"Glyph", 16},
+    {"Battlepet", 17},
+    {"WoWToken", 18},
+    {"Profession", 19},
+};
+
 void RegisterLuaFunctions() {
+    Game::Lua::RegisterGlobalFunction("GetItemClassInfo",
+                                      &Script_GetItemClassInfo);
+    Game::Lua::RegisterGlobalFunction("GetItemSubClassInfo",
+                                      &Script_GetItemSubClassInfo);
+    Game::Lua::RegisterTableFunction("C_Item", "GetItemClassInfo",
+                                     &Script_GetItemClassInfo);
     Game::Lua::RegisterTableFunction("C_Item", "GetItemSubClassInfo",
                                      &Script_GetItemSubClassInfo);
     Game::Lua::RegisterTableFunction("C_Item", "GetItemInventorySlotKey",
@@ -194,6 +262,9 @@ void RegisterLuaFunctions() {
     Game::Lua::RegisterIntegerEnum(
         "Enum", "InventoryType", kInventoryTypeEntries,
         sizeof(kInventoryTypeEntries) / sizeof(kInventoryTypeEntries[0]));
+    Game::Lua::RegisterIntegerEnum(
+        "Enum", "ItemClass", kItemClassEntries,
+        sizeof(kItemClassEntries) / sizeof(kItemClassEntries[0]));
 }
 
 const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
