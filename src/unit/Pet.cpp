@@ -163,6 +163,27 @@ int __fastcall Script_UnitIsOtherPlayersPet(void *L) {
     return 1;
 }
 
+// `UnitOwnerGUID(unit)` — the GUID string of the unit's owner (the
+// summoner of a pet/guardian/totem, or the charmer of a charmed unit),
+// formatted `"0x…"`. Reuses the same owner field the pet predicates use
+// (CharmedBy, else CreatedBy). Returns `nil` for an unresolved unit and
+// for anything with no owner (players, world creatures).
+int __fastcall Script_UnitOwnerGUID(void *L) {
+    const uint8_t *unit = ResolveUnit(L);
+    if (unit == nullptr) {
+        Game::Lua::PushNil(L);
+        return 1;
+    }
+    const uint64_t owner = OwnerGuid(unit);
+    if (owner == 0) {
+        Game::Lua::PushNil(L);
+        return 1;
+    }
+    char buf[Guid::STRING_SIZE];
+    Game::Lua::PushString(L, Guid::FormatAsString(owner, buf, sizeof buf));
+    return 1;
+}
+
 } // namespace
 
 static void RegisterLuaFunctions() {
@@ -170,6 +191,7 @@ static void RegisterLuaFunctions() {
     Game::Lua::RegisterGlobalFunction("UnitIsPet", &Script_UnitIsPet);
     Game::Lua::RegisterGlobalFunction("UnitIsOtherPlayersPet",
                                       &Script_UnitIsOtherPlayersPet);
+    Game::Lua::RegisterGlobalFunction("UnitOwnerGUID", &Script_UnitOwnerGUID);
 }
 
 static const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};

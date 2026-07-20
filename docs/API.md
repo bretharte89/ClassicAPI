@@ -486,6 +486,7 @@ build instructions.
   - [`UnitIsMinion(unit)`](#unitisminionunit)
   - [`UnitIsPet(unit)`](#unitispetunit)
   - [`UnitIsOtherPlayersPet(unit)`](#unitisotherplayerspetunit)
+  - [`UnitOwnerGUID(unit)`](#unitownerguidunit)
   - [`UnitStandState(unit)`](#unitstandstateunit)
   - [`UnitInRange(unit)`](#unitinrangeunit)
   - [`UnitDistanceSquared(unit)`](#unitdistancesquaredunit)
@@ -11677,6 +11678,20 @@ players (no owner) return `false`; your own minions (owner is you) return
 ```lua
 UnitIsOtherPlayersPet("target")  -- a party member's pet → true; your own pet → false
 ```
+
+### `UnitOwnerGUID(unit)`
+
+Returns the GUID string (`"0x…"`) of the unit's owner — the summoner of a
+pet/guardian/totem, or the charmer of a charmed unit. `nil` for an
+unresolved unit and for anything with no owner (players, world creatures).
+
+```lua
+local owner = UnitOwnerGUID("pettarget")   -- e.g. the enemy hunter's GUID
+if owner == UnitGUID("player") then ... end  -- is it my minion?
+```
+
+Reads the same owner field the pet predicates use (`CharmedBy`, else
+`CreatedBy` in the unit's `m_objectFields`).
 
 ### `UnitStandState(unit)`
 
