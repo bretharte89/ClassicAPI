@@ -107,11 +107,19 @@ static int AuxResume(void *L, void *co, int nargs) {
                                      : "cannot resume non-suspended coroutine");
         return -1;
     }
+    if (Game::Lua::CheckStack(co, nargs) == 0) {
+        Game::Lua::PushString(L, "too many arguments to resume coroutine");
+        return -1;
+    }
     Game::Lua::XMove(L, co, nargs);
     const int s = Game::Lua::Resume(co, nargs);
     const bool yielded = LuaCI(co) > LuaBaseCI(co);
     if (s == LUA_OK || yielded) {
         const int nres = Game::Lua::GetTop(co);
+        if (Game::Lua::CheckStack(L, nres) == 0) {
+            Game::Lua::PushString(L, "too many results to resume coroutine");
+            return -1;
+        }
         Game::Lua::XMove(co, L, nres);
         return nres;
     }
