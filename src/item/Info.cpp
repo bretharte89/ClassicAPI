@@ -15,6 +15,7 @@
 #include "Offsets.h"
 #include "dbc/Lookup.h"
 #include "item/Arg.h"
+#include "item/BagFamily.h"
 #include "item/Data.h"
 #include "item/ID.h"
 #include "item/Link.h"
@@ -192,17 +193,6 @@ static int __fastcall Script_C_Item_GetItemIconByID(void *L) {
     return PushIconForItemID(L, Item::Arg::ResolveItemID(L, 1));
 }
 
-// Convert 1.12's raw `BagFamily` ID to the modern bitmask encoding.
-// Vanilla stores `arrow=1, bullet=2, soul shard=3, herb=6, ...`; Wrath
-// flipped to `1 << (ID-1)` (`arrow=0x1, bullet=0x2, soul shard=0x4,
-// herb=0x20, ...`) and addons backported from Wrath+ expect the
-// bitmask. We always surface the modern shape so callers don't have to
-// branch on client version. See `Offsets::OFF_ITEMSTATS_BAG_FAMILY`
-// for the empirical verification.
-uint32_t BagFamilyIdToBitmask(uint32_t rawId) {
-    return (rawId == 0) ? 0 : (1u << (rawId - 1));
-}
-
 // `C_Item.GetItemFamily(item)` — returns the BagFamily bitmask for an
 // item (modern encoding: `1 << (ID-1)`), or `nil` if the item isn't
 // in the cache. Used by auto-routing addons that decide which
@@ -227,10 +217,14 @@ uint32_t BagFamilyIdToBitmask(uint32_t rawId) {
 // but has family 0 (general-purpose)". Both are safe to treat as "no
 // preference" but keeping them distinct helps debugging.
 //
-// 1.12 vanilla server data sparsely populates the field for **bags**
-// themselves (only quivers seem to carry it on Turtle WoW). Individual
-// loot items do carry the field reliably (arrows, bullets, shards,
-// herbs all return their proper raw IDs).
+// 1.12 vanilla server data leaves the `m_bagFamily` field empty on the
+// **bags/quivers** themselves — Soul/Herb/Enchanting/Engineering bags AND
+// quivers/ammo pouches all read 0. Individual loot items do carry the
+// field reliably (arrows, bullets, shards, herbs return their proper raw
+// IDs). For a bag whose field is empty we recover the family from its
+// class + subclass (the same signal the "Soul Bag" tooltip line uses), so
+// a Felcloth Bag reports the Soul Shard family (0x4), a quiver 0x1, an
+// ammo pouch 0x2 — see `Item::BagFamily`.
 static int __fastcall Script_C_Item_GetItemFamily(void *L) {
     const int itemID = Item::Arg::ResolveItemID(L, 1);
     if (itemID <= 0)
@@ -240,9 +234,10 @@ static int __fastcall Script_C_Item_GetItemFamily(void *L) {
         Item::Data::WarmCache(static_cast<uint32_t>(itemID));
         return 0;
     }
-    const uint32_t rawId = *reinterpret_cast<const uint32_t *>(
-        record + Offsets::OFF_ITEMSTATS_BAG_FAMILY);
-    Game::Lua::PushNumber(L, static_cast<double>(BagFamilyIdToBitmask(rawId)));
+    // Family field if populated, else derived from the container subclass
+    // (Turtle leaves bags' m_bagFamily at 0 — see Item::BagFamily).
+    Game::Lua::PushNumber(
+        L, static_cast<double>(Item::BagFamily::BitmaskForRecord(record)));
     return 1;
 }
 

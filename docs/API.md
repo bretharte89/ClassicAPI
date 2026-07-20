@@ -1381,17 +1381,18 @@ for bag = 0, 4 do
 end
 ```
 
-> **Vanilla `bagType` is sparse.** On Turtle WoW (1.12.1), only Light
-> Quiver actually carries a populated BagFamily field among the bags
-> we tested. Soul Pouch, Enchanting Bag, Herb Pouch, etc. all return
-> 0 here even though their classification clearly implies a family —
-> the vanilla server data simply doesn't fill the field for those.
-> For bag-category discrimination, prefer reading `(class, subClass)`
-> from [`C_Item.GetItemInfoInstant`](#c_itemgetiteminfoinstantitem).
-> The same field on **individual loot items** (arrows, bullets,
-> shards, herbs) IS populated reliably — use
-> [`C_Item.GetItemFamily`](#c_itemgetitemfamilyitem) for routing
-> decisions.
+> **`bagType` is derived for specialty bags.** Bags leave the raw
+> BagFamily field empty in Turtle's data (Soul Bag, Herb Bag, quiver,
+> ammo pouch, … all read 0). We fall back to deriving the family from the
+> bag's class + subclass, so a Soul Bag reports `0x4` here, a quiver
+> `0x1`, an ammo pouch `0x2` — the same values
+> [`C_Item.GetItemFamily`](#c_itemgetitemfamilyitem) reports for both
+> the bag and the items it holds. This also means
+> `CalculateTotalNumberOfFreeBagSlots` now correctly excludes specialty
+> bags from the general-purpose free-slot total (it previously counted
+> them, since the raw field was 0). Note the Turtle custom families
+> (Meat/Fish/Leather/Mining, `0x200`–`0x1000`) collide with retail's
+> bit meanings — see the `GetItemFamily` family table for the caveat.
 
 > **The bitmask encoding matches modern.** `bagType` is the bit
 > position (`1 << (familyID - 1)`), not the raw 1.12-stored familyID,
@@ -4946,15 +4947,37 @@ C_Item.GetItemFamily(2447)   -- 32  (Peacebloom → herb bag-family)
 C_Item.GetItemFamily(6948)   -- 0   (Hearthstone → general-purpose)
 ```
 
-Bitmask values match modern WoW's encoding (`1 << (familyID - 1)`):
+Bitmask values follow the vanilla `ItemBagFamily.dbc` IDs converted to
+the modern bitmask form (`1 << (familyID - 1)`). The IDs 1–9 match
+retail exactly; **10–13 are Turtle WoW custom families** (retail vanilla
+1.12 stops at Keys):
 
-| Bit | Value | Family |
-|-----|-------|--------|
-| 0   | 1     | Quiver (arrows) |
-| 1   | 2     | Ammo Pouch (bullets) |
-| 2   | 4     | Soul Shard Bag |
-| 5   | 32    | Herb Bag |
-| 6   | 64    | Enchanting Bag (modern) |
+| Bit | Value  | Raw ID | Family                | Notes |
+|-----|--------|--------|-----------------------|-------|
+| 0   | 1      | 1      | Quiver (arrows)       | |
+| 1   | 2      | 2      | Ammo Pouch (bullets)  | |
+| 2   | 4      | 3      | Soul Bag              | |
+| 5   | 32     | 6      | Herb Bag              | |
+| 6   | 64     | 7      | Enchanting Bag        | |
+| 7   | 128    | 8      | Engineering Bag       | |
+| 8   | 256    | 9      | Keyring               | |
+| 9   | 512    | 10     | **Meat Bag** (Turtle) | ⚠ collides with retail's Gem Bag (`0x200`) |
+| 10  | 1024   | 11     | **Fish Bag** (Turtle) | ⚠ collides with retail's Mining Bag (`0x400`) |
+| 11  | 2048   | 12     | **Leather Bag** (Turtle) | no retail equivalent bit |
+| 12  | 4096   | 13     | **Mining Bag** (Turtle)  | ⚠ not retail's Mining Bag bit (`0x400`) |
+
+> **Turtle custom families & the retail collision.** Turtle added four
+> cooking/gathering bag families (Meat, Fish, Leather, Mining) as
+> `ItemBagFamily.dbc` rows 10–13, rather than reusing retail's later
+> IDs 4 (Leatherworking) / 5 (Inscription), which vanilla left unused.
+> Because we convert the raw ID straight through `1 << (rawID - 1)`,
+> these land on bits 9–12 — the same numeric values retail assigned to
+> **Gem Bag** (`0x200`) and **Mining Bag** (`0x400`). So an addon
+> backported from retail that hard-codes `family == 0x200` to mean "Gem
+> Bag" will misread a Turtle Meat Bag. The values are self-consistent
+> *within* Turtle (a Meat Bag and the meat items it holds both report
+> `0x200`, which is all the "does this item fit this bag" test needs) —
+> just don't assume retail's bit meanings for anything above `0x100`.
 
 > **Encoding deviation under the hood.** 1.12 actually stores the raw
 > 1-based BagFamily ID (`arrow=1, bullet=2, soul shard=3, herb=6, …`).
@@ -4963,16 +4986,20 @@ Bitmask values match modern WoW's encoding (`1 << (familyID - 1)`):
 > callers backporting from modern see the encoding they expect — addons
 > can `band(family, FAMILY_BAG_HERB_BAG)` directly.
 
-> **Item-level data is reliable; bag-level is sparse.** Individual
-> loot items (arrows, bullets, shards, herbs) carry the field
-> reliably, so `C_Item.GetItemFamily` works for the auto-routing use
-> case. **Bag containers** themselves (Soul Pouch, Enchanting Bag,
-> Herb Pouch, etc.) leave the field at 0 in vanilla server data — at
-> least on Turtle WoW. If you need to know "is this bag specialty",
-> read the bag's `subClass` via
-> [`C_Item.GetItemInfoInstant`](#c_itemgetiteminfoinstantitem)
-> instead. The Quiver class is fully populated; everything else needs
-> the subClass fallback.
+> **Legacy Blizzard bags derive from `(class, subClass)`.** The stock
+> vanilla bags shipped with an empty `m_bagFamily` field — the four
+> profession bags (Soul Bag, Herb Bag, Enchanting Bag, Engineering Bag,
+> all Container class) *and* quivers/ammo pouches (Quiver class). For a
+> bag whose field is `0` we recover the family from its class + subclass
+> — the same signal the `"24 Slot Soul Bag"` tooltip line is built from.
+> A Felcloth Bag reports `0x4` (Soul Shards), a quiver `0x1` (arrows), an
+> ammo pouch `0x2` (bullets) — each matching the items it holds. Keyed on
+> class because subclass numbers repeat across classes (Container
+> subclass 2 = Herb Bag, Quiver subclass 2 = Quiver). This is automatic;
+> you no longer need to read `subClass` yourself. (Turtle's own custom
+> bags — Meat/Fish/Leather/Mining — populate the field directly; a
+> Turtle-specific resolver module supplies their mapping as a safety net,
+> kept separate from the stock table.)
 
 > **`nil` vs `0`.** Modern WoW returns `0` for items the cache lookup
 > fails on; we return `nil` so callers can distinguish "item not

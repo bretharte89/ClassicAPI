@@ -13,6 +13,7 @@
 
 #include "Game.h"
 #include "Offsets.h"
+#include "item/BagFamily.h"
 #include "item/ID.h"
 #include "item/Location.h"
 
@@ -73,15 +74,14 @@ BagInfo ResolveBagInfo(int bagID) {
 
     const int slots = static_cast<int>(*reinterpret_cast<const uint32_t *>(
         record + Offsets::OFF_ITEMSTATS_CONTAINER_SLOTS));
-    // Convert 1.12's raw BagFamily ID to the modern bitmask. See
-    // `Offsets::OFF_ITEMSTATS_BAG_FAMILY` for the encoding-shift story
-    // and `Item::Info::BagFamilyIdToBitmask` for the canonical helper —
-    // we inline the one-liner here to avoid a header dance for a
-    // single-instruction conversion.
-    const uint32_t rawFamily = *reinterpret_cast<const uint32_t *>(
-        record + Offsets::OFF_ITEMSTATS_BAG_FAMILY);
+    // BagFamily bitmask: the item's field if populated, else derived from
+    // the container subclass — Turtle leaves bags' m_bagFamily at 0, so a
+    // Soul Bag would otherwise report family 0 and get miscounted as a
+    // general-purpose bag by CalculateTotalNumberOfFreeBagSlots. Shared
+    // with C_Item.GetItemFamily so a bag and its contents agree. See
+    // `Item::BagFamily`.
     const int family =
-        (rawFamily == 0) ? 0 : static_cast<int>(1u << (rawFamily - 1));
+        static_cast<int>(Item::BagFamily::BitmaskForRecord(record));
     return {slots, family};
 }
 
@@ -106,14 +106,13 @@ int CountFreeSlotsInBag(void *L, int bagID, int slotCount) {
 // `(0, 0)` — matching 3.3.5's behavior of always pushing two values
 // rather than nil/nothing.
 //
-// `bagType` is the `BagFamily` bitmask in modern encoding (raw 1.12
-// ID converted via `1 << (ID-1)`). Empirically on Turtle WoW, only
-// Light Quiver actually carries a non-zero family for bags themselves
-// — Soul Pouch, Enchanting Bag, etc. all return 0 because the
-// vanilla-era server data doesn't populate the field. **Individual
-// items** (arrows, bullets, shards, herbs) reliably return their
-// family, so addons that auto-route loot work correctly via
-// `C_Item.GetItemFamily(itemID)` even though `bagType` is sparse.
+// `bagType` is the `BagFamily` bitmask in modern encoding. Bags leave the
+// raw family field empty in Turtle's data (Soul/Herb/quiver/ammo pouch/…
+// all read 0), so it's derived from the bag's class + subclass via
+// `Item::BagFamily`: a Soul Bag reports `0x4`, a quiver `0x1`, an ammo
+// pouch `0x2` — matching what `C_Item.GetItemFamily` reports for both the
+// bag and the items it holds. See that helper for the Turtle custom-family
+// caveat (Meat/Fish/Leather/Mining, IDs 10–13).
 int __fastcall Script_C_Container_GetContainerNumFreeSlots(void *L) {
     if (!Game::Lua::IsNumber(L, 1)) {
         Game::Lua::Error(L,
@@ -139,12 +138,12 @@ int __fastcall Script_C_Container_GetContainerNumFreeSlots(void *L) {
 //       free, family = C_Container.GetContainerNumFreeSlots(bag)
 //       if family == 0 then total = total + free end
 //
-// Takes no arguments. Caveat inherited from `GetContainerNumFreeSlots`:
-// vanilla-era server data leaves most bags' BagFamily at 0, so specialty
-// bags that retail *would* exclude (Soul Pouch, Enchanting Bag, …) get
-// counted here — the client just doesn't carry the family bit for them. The
-// result stays consistent with what `GetContainerNumFreeSlots` reports for
-// those same bags.
+// Takes no arguments. Specialty bags are correctly excluded: their family
+// comes from `Item::BagFamily` (container-subclass fallback), so a Soul
+// Bag / Herb Bag / Meat Bag reports a non-zero family and its slots are
+// left out of the general-purpose total — matching retail's FrameXML
+// behavior. (An earlier version miscounted them because Turtle leaves the
+// raw family field at 0 for bags.)
 int __fastcall Script_C_Container_CalculateTotalNumberOfFreeBagSlots(void *L) {
     int total = 0;
     for (int bagID = 0; bagID <= 4; bagID++) {
