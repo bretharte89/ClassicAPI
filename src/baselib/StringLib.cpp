@@ -16,6 +16,9 @@
 //   - `string.match(s, pattern [, init])` — first-match extraction (5.1).
 //   - `string.gmatch(s, pattern)`         — match iterator (5.1).
 //   - `strsplit(sep, str [, pieces])`     — WoW global; split on any char.
+//   - `strjoin(delimiter, ...)`           — WoW global; join varargs.
+//   - `strtrim(str [, chars])`            — WoW global; trim a char set.
+//   - `strreplace(str, find, replace)`    — plain-text replace (see below).
 //
 // The two `string.*` ones reuse pattern machinery 5.0 already ships:
 //   - `match` is `find` returning captures / the whole match instead of the
@@ -35,6 +38,8 @@
 #include "Offsets.h"
 
 #include <cstddef>
+#include <cstring>
+#include <string>
 
 namespace BaseLib::StringLib {
 
@@ -143,10 +148,107 @@ int __fastcall Script_strsplit(void *L) {
     return count + 1;
 }
 
+// `strjoin(delimiter, ...)` — the inverse of `strsplit`: concatenate the
+// vararg pieces with `delimiter` between each. Standard WoW global (FrameXML
+// defines it in Lua; there's no C original to mirror). A nil / non-coercible
+// piece is treated as an empty string rather than erroring, so the delimiter
+// placement stays predictable. `strjoin(",")` with no pieces returns "".
+int __fastcall Script_strjoin(void *L) {
+    const char *delim = Game::Lua::ToString(L, 1);
+    if (delim == nullptr) {
+        Game::Lua::Error(L, "Usage: strjoin(delimiter, ...)");
+        return 0; // unreachable
+    }
+    const unsigned delimLen = Game::Lua::StrLen(L, 1);
+    const int top = Game::Lua::GetTop(L);
+
+    std::string out; // no Error() past this point — a longjmp would leak it
+    for (int i = 2; i <= top; ++i) {
+        if (i > 2)
+            out.append(delim, delimLen);
+        const char *piece = Game::Lua::ToString(L, i);
+        if (piece != nullptr)
+            out.append(piece, Game::Lua::StrLen(L, i));
+    }
+    Game::Lua::PushLString(L, out.data(), static_cast<unsigned int>(out.size()));
+    return 1;
+}
+
+// `strtrim(str [, chars])` — remove any of the characters in `chars` from
+// both ends of `str` (default: whitespace). `chars` is a literal set of
+// characters, not a pattern. Standard WoW global. Two-ended scan — no
+// allocation, embedded NULs preserved (bounds come from the Lua length).
+int __fastcall Script_strtrim(void *L) {
+    const char *str = Game::Lua::ToString(L, 1);
+    if (str == nullptr) {
+        Game::Lua::Error(L, "Usage: strtrim(str [, chars])");
+        return 0; // unreachable
+    }
+    const unsigned len = Game::Lua::StrLen(L, 1);
+    const char *chars = Game::Lua::IsString(L, 2) ? Game::Lua::ToString(L, 2)
+                                                  : " \t\n\v\f\r";
+
+    bool trim[256] = {false};
+    for (const char *c = chars; *c != '\0'; ++c)
+        trim[static_cast<unsigned char>(*c)] = true;
+
+    unsigned start = 0, end = len;
+    while (start < end && trim[static_cast<unsigned char>(str[start])])
+        ++start;
+    while (end > start && trim[static_cast<unsigned char>(str[end - 1])])
+        --end;
+    Game::Lua::PushLString(L, str + start, end - start);
+    return 1;
+}
+
+// `strreplace(str, find, replace)` — replace every occurrence of the literal
+// substring `find` with `replace`; returns `(result, count)`. NOT a stock WoW
+// global and NOT pattern-based (that's `gsub`) — a plain-text replace that
+// needs no magic-character escaping. Empty `find` returns `str` unchanged
+// (count 0) rather than looping forever.
+int __fastcall Script_strreplace(void *L) {
+    const char *str = Game::Lua::ToString(L, 1);
+    const char *find = Game::Lua::ToString(L, 2);
+    const char *repl = Game::Lua::ToString(L, 3);
+    if (str == nullptr || find == nullptr || repl == nullptr) {
+        Game::Lua::Error(L, "Usage: strreplace(str, find, replace)");
+        return 0; // unreachable
+    }
+    const unsigned strLen = Game::Lua::StrLen(L, 1);
+    const unsigned findLen = Game::Lua::StrLen(L, 2);
+    const unsigned replLen = Game::Lua::StrLen(L, 3);
+
+    if (findLen == 0) { // nothing to match — return input unchanged
+        Game::Lua::PushLString(L, str, strLen);
+        Game::Lua::PushNumber(L, 0.0);
+        return 2;
+    }
+
+    std::string out; // no Error() past this point
+    int count = 0;
+    unsigned i = 0;
+    while (i < strLen) {
+        if (i + findLen <= strLen && std::memcmp(str + i, find, findLen) == 0) {
+            out.append(repl, replLen);
+            i += findLen;
+            ++count;
+        } else {
+            out.push_back(str[i]);
+            ++i;
+        }
+    }
+    Game::Lua::PushLString(L, out.data(), static_cast<unsigned int>(out.size()));
+    Game::Lua::PushNumber(L, static_cast<double>(count));
+    return 2;
+}
+
 void RegisterFns() {
     Game::Lua::RegisterTableFunction("string", "match", &Script_string_match);
     Game::Lua::RegisterTableFunction("string", "gmatch", Script_string_gmatch);
     Game::Lua::RegisterGlobalFunction("strsplit", &Script_strsplit);
+    Game::Lua::RegisterGlobalFunction("strjoin", &Script_strjoin);
+    Game::Lua::RegisterGlobalFunction("strtrim", &Script_strtrim);
+    Game::Lua::RegisterGlobalFunction("strreplace", &Script_strreplace);
 }
 
 // Both states are Lua 5.0 and equally missing these; RegisterTableFunction

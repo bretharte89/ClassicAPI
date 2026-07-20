@@ -283,6 +283,9 @@ build instructions.
   - [`table.wipe(t)`](#tablewipet)
   - [`string.match` / `string.gmatch`](#stringmatch--stringgmatch)
   - [`strsplit(sep, str [, pieces])`](#strsplitsep-str--pieces)
+  - [`strjoin(delimiter, ...)`](#strjoindelimiter-)
+  - [`strtrim(str [, chars])`](#strtrimstr--chars)
+  - [`strreplace(str, find, replace)`](#strreplacestr-find-replace)
   - [`math.fmod(x, y)`](#mathfmodx-y)
   - [`coroutine.create(fn)`](#coroutinecreatefn)
   - [`coroutine.resume(co, ...)`](#coroutineresumeco-)
@@ -6864,6 +6867,47 @@ local zone, x, y = strsplit(":", "Durotar:52:38")
 Errors `strsplit(): Stack overflow` if a string splits into more pieces than
 the Lua stack can grow to hold (`lua_checkstack` guards every push) — the
 same guard and message 3.3.5 uses.
+
+### `strjoin(delimiter, ...)`
+
+The inverse of `strsplit`: concatenate the vararg pieces with `delimiter`
+between each.
+
+```lua
+strjoin(",", "a", "b", "c")   -- "a,b,c"
+strjoin("", "a", "b", "c")    -- "abc"
+strjoin(",")                  -- ""   (no pieces)
+```
+
+A `nil` / non-string-coercible piece is treated as an empty string (so the
+delimiters still line up) rather than erroring.
+
+### `strtrim(str [, chars])`
+
+Remove any of the characters in `chars` from both ends of `str`. `chars` is a
+literal **set of characters** (not a Lua pattern); it defaults to whitespace
+(space, tab, `\n`, `\v`, `\f`, `\r`).
+
+```lua
+strtrim("  hello  ")        -- "hello"
+strtrim("xxhelloxx", "x")   -- "hello"
+strtrim("[a]", "[]")        -- "a"
+```
+
+### `strreplace(str, find, replace)`
+
+Replace every occurrence of the literal substring `find` with `replace`,
+returning `(result, count)`. This is a **plain-text** replace — no pattern
+magic-character escaping, unlike `string.gsub`. An empty `find` returns `str`
+unchanged with count `0`.
+
+```lua
+strreplace("a.b.c", ".", "-")        -- "a-b-c", 2   (no pattern escaping)
+strreplace("hello world", "o", "0")  -- "hell0 w0rld", 2
+```
+
+> Not a stock WoW global — a ClassicAPI convenience. For pattern-based
+> replacement use `string.gsub`.
 
 ### `math.fmod(x, y)`
 
