@@ -35,7 +35,7 @@ Full per-function reference: **[docs/API.md](docs/API.md)**.
 | [Focus](docs/API.md#focus) | `ClearFocus`, `FocusUnit` |
 | [Frame](docs/API.md#frame) | `region:SetPoint("point")` (one-arg form), `region:SetSize`, `region:GetSize`, `frame:SetShown`, `frame:SetResizeBounds`, `frame:HookScript`, `frame:IsEventRegistered` |
 | [FriendList](docs/API.md#friendlist) | `C_FriendList.IsWhoQueryPending`, `C_FriendList.SendWhoQueryByName` |
-| [GameObject](docs/API.md#gameobject) | `C_GameObjectInfo.GetGameObjectInfoByID`, `C_GameObjectInfo.RequestLoadGameObjectByID` |
+| [GameObject](docs/API.md#gameobject) | `C_GameObjectInfo.GetGameObjectInfoByID`, `C_GameObjectInfo.RequestLoadGameObjectByID`, `ClosestGameObjectPosition` |
 | [Gossip](docs/API.md#gossip) | `C_GossipInfo.CloseGossip`, `C_GossipInfo.GetActiveQuests`, `C_GossipInfo.GetAvailableQuests`, `C_GossipInfo.GetNumActiveQuests`, `C_GossipInfo.GetNumAvailableQuests`, `C_GossipInfo.GetNumOptions`, `C_GossipInfo.GetOptions`, `C_GossipInfo.GetText`, `C_GossipInfo.SelectActiveQuest`, `C_GossipInfo.SelectAvailableQuest`, `C_GossipInfo.SelectOption`, `C_GossipInfo.SelectOptionByIndex` |
 | [GameTooltip](docs/API.md#gametooltip) | `GameTooltip:GetGameObject`, `GameTooltip:GetItem`, `GameTooltip:GetOwner`, `GameTooltip:GetSpell`, `GameTooltip:GetUnitGUID`, `GameTooltip:HasGameObject`, `GameTooltip:HasItem`, `GameTooltip:HasSpell`, `GameTooltip:HasUnit`, `GameTooltip:IsEquippedItem`, `GameTooltip:SetEquipmentSet`, `GameTooltip:SetHyperlinkCompareItem`, `GameTooltip:SetInventoryItemByID`, `GameTooltip:SetItemByGUID`, `GameTooltip:SetItemByID`, `GameTooltip:SetSpellByID`, `GameTooltip:SetTalentByID`, `GameTooltip:SetUnitAura`, `OnTooltipSetItem` (script) |
 | [Hooks](docs/API.md#hooks) | `hooksecurefunc` |

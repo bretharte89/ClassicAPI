@@ -155,6 +155,7 @@ build instructions.
 - [GameObject](#gameobject)
   - [`C_GameObjectInfo.GetGameObjectInfoByID(gameObjectID)`](#c_gameobjectinfogetgameobjectinfobyidgameobjectid)
   - [`C_GameObjectInfo.RequestLoadGameObjectByID(gameObjectID)`](#c_gameobjectinforequestloadgameobjectbyidgameobjectid)
+  - [`ClosestGameObjectPosition(gameObjectID)`](#closestgameobjectpositiongameobjectid)
 
 - [GameTooltip](#gametooltip)
   - [`GameTooltip:SetSpellByID(spellID)`](#gametooltipsetspellbyidspellid)
@@ -3592,6 +3593,26 @@ f:SetScript("OnEvent", function()  -- arg1 = gameObjectID, arg2 = success
 end)
 C_GameObjectInfo.RequestLoadGameObjectByID(7000032)
 ```
+
+### `ClosestGameObjectPosition(gameObjectID)`
+
+Returns `xPos, yPos, distance` — the world position of the nearest game
+object with the given GO-template ID, and its distance from the player in
+yards. Returns nothing (nil) when no matching object is in range.
+
+```lua
+local x, y, dist = ClosestGameObjectPosition(1617)   -- nearest Herb Bush, etc.
+if x then
+    -- x, y = world coords; dist = yards from the player
+end
+```
+
+The game-object counterpart of
+[`ClosestUnitPosition`](#closestunitpositioncreatureid) — same visible-
+object-manager scan, filtered to game objects (GUID prefix `0xF110`).
+Same retail-vs-vanilla caveat: this finds the nearest **currently-visible**
+object of that entry rather than reading retail's static starting-zone
+database (which vanilla ships no equivalent of).
 
 ## GameTooltip
 

@@ -11,17 +11,17 @@
 // You should have received a copy of the GNU General Public License along with
 // ClassicAPI. If not, see <https://www.gnu.org/licenses/>.
 
-// `ClosestUnitPosition(creatureID)` → `xPos, yPos, distance` — the world
-// position of the nearest creature with the given NPC (creature-template)
-// ID, and its distance from the player in yards. Returns nothing when no
-// matching creature is found (the modern `MayReturnNothing` contract).
+// `ClosestGameObjectPosition(gameObjectID)` → `xPos, yPos, distance` — the
+// world position of the nearest game object with the given
+// game-object-template ID, and its distance from the player in yards.
+// Returns nothing when none is found (the `MayReturnNothing` contract).
 //
-// Semantic note vs. retail: modern WoW's `ClosestUnitPosition` reads a
-// static client-side spawn database and only works for starting-zone mobs
-// (a tutorial/help helper). Vanilla 1.12 has no such database, so we
-// implement the useful, 1.12-native reading: the closest creature of that
-// entry that is CURRENTLY VISIBLE (in the client's object manager /
-// broadcast window). The shared scan lives in Object::ClosestByEntry.
+// The game-object analog of `ClosestUnitPosition`; same shared scan
+// (Object::ClosestByEntry), just filtering on the GameObject GUID type
+// (`0xF110`) and `TYPEMASK_GAMEOBJECT`. Same retail-vs-vanilla caveat:
+// this returns the nearest CURRENTLY-VISIBLE object of that entry rather
+// than reading retail's static starting-zone database (which vanilla
+// doesn't have).
 
 #include "Game.h"
 #include "Offsets.h"
@@ -31,18 +31,18 @@
 #include <cmath>
 #include <cstdint>
 
-namespace Unit::ClosestPosition {
+namespace GameObject::ClosestPosition {
 
 namespace {
 
-int __fastcall Script_ClosestUnitPosition(void *L) {
+int __fastcall Script_ClosestGameObjectPosition(void *L) {
     if (!Game::Lua::IsNumber(L, 1)) {
-        Game::Lua::Error(L, "Usage: ClosestUnitPosition(creatureID)");
+        Game::Lua::Error(L, "Usage: ClosestGameObjectPosition(gameObjectID)");
         return 0;
     }
     const auto entry = static_cast<uint32_t>(Game::Lua::ToNumber(L, 1));
     const Object::ClosestByEntry::Result r = Object::ClosestByEntry::Find(
-        Offsets::TYPEMASK_UNIT, Guid::Type::Creature, entry);
+        Offsets::TYPEMASK_GAMEOBJECT, Guid::Type::GameObject, entry);
     if (!r.found)
         return 0;
 
@@ -53,12 +53,12 @@ int __fastcall Script_ClosestUnitPosition(void *L) {
 }
 
 void RegisterLuaFunctions() {
-    Game::Lua::RegisterGlobalFunction("ClosestUnitPosition",
-                                      &Script_ClosestUnitPosition);
+    Game::Lua::RegisterGlobalFunction("ClosestGameObjectPosition",
+                                      &Script_ClosestGameObjectPosition);
 }
 
 const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
 
 } // namespace
 
-} // namespace Unit::ClosestPosition
+} // namespace GameObject::ClosestPosition
