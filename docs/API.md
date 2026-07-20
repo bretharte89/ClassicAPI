@@ -11609,13 +11609,25 @@ end
 
 | Return | Meaning |
 |--------|---------|
-| `inRange` | `true` if the unit's world position is within 40 yards of the player's. `false` if out of range OR if `checkedRange` is `false`. |
+| `inRange` | `true` if the unit is within a 40-yard heal's reach of the player. `false` if out of range OR if `checkedRange` is `false`. |
 | `checkedRange` | `true` when a position-based range check was performed. `false` when the unit's position isn't available — either the token didn't resolve (empty `partyN` slot, no target, raid member in a different zone, etc.) or `unit == "player"` (see below). |
 
 Reads the world position via the `CGObject::GetPosition` vtable
 virtual (slot 5, offset `+0x14`) — same path
-`CheckInteractDistance` uses. Squared-distance compare against
-`40 * 40 = 1600`.
+`CheckInteractDistance` uses.
+
+**Reach-aware.** The threshold is not a flat 40 yards on the raw
+center-to-center distance — it's `40 + playerReach + targetReach`,
+mirroring the engine's own spell-range formula (`FUN_006e3480`), where
+each unit's reach is the bounding-radius float at `[m_objectFields +
+0x1F0]` (the same size factor the interact-distance and loot-range
+checks add). A 40-yard heal lands on a target whose *center* is up to
+`40 + reach` yards away, so a bare center-distance cap of 40 wrongly
+reports out-of-range for a target the client can actually heal (on a
+large target the reach gap is 2–3 yards). If a unit's descriptor isn't
+populated yet the reach term is 0 and the check degrades to a plain
+40-yard cap. Note this is the one difference from `UnitDistanceSquared`,
+which stays raw center-to-center (matching retail).
 
 > **`UnitInRange("player")` returns `(false, false)`** by design,
 > matching modern WoW's behavior. The function is meant for healing-

@@ -13,20 +13,33 @@
 // `GetPosition` virtual (vtable slot 5) `CheckInteractDistance` uses:
 //
 //   `UnitInRange(unit) → (inRange, checkedRange)` — 40-yard healing-
-//     range check (fixed threshold on the squared distance).
+//     range check. Reach-aware: matches the engine's own spell-range
+//     formula (see below), so a 40-yard heal registers in-range against
+//     a target whose *center* is slightly past 40 yards but whose body
+//     is within reach.
 //   `UnitDistanceSquared(unit) → (distanceSquared, checkedPosition)` —
 //     the raw squared world distance player→unit. Squared because
 //     nearly every consumer compares against a threshold (`distSq <=
 //     range*range`) or ranks by nearest, neither of which needs the
 //     sqrt; that's why retail exposes only the squared form (added
-//     5.0.4). Center-to-center — NOT reach-aware (that's UnitXP_SP3's
-//     niche); equivalent to computing it from SuperWoW `UnitPosition`,
-//     but self-contained (reads the position in C, no sibling-DLL
-//     dependency, no clash with SuperWoW's own `UnitPosition`).
+//     5.0.4). Center-to-center — this one is NOT reach-adjusted (retail's
+//     `UnitDistanceSquared` is also raw center distance); the reach
+//     correction lives only in `UnitInRange`.
+//
+// Reach-awareness: the engine's spell-range helper `FUN_006e3480` compares
+// center distance against `baseRange + reachCaster + reachTarget`, where
+// each unit's reach is the bounding-radius float at `[m_objectFields +
+// 0x1F0]` (the same size factor the interact-distance and loot-range
+// checks add). So the effective in-range distance for a 40-yard heal is
+// `40 + playerReach + targetReach`. On big targets that's easily 2–3
+// yards past the raw 40, which is why a pure center-to-center 40-yard cap
+// reported out-of-range for a target the client could actually heal.
 
 #include "Game.h"
 #include "unit/Position.h"
+#include "Offsets.h"
 
+#include <cstdint>
 #include <cstring>
 
 namespace Unit::Range {
@@ -34,18 +47,44 @@ namespace Unit::Range {
 namespace {
 
 constexpr float kRangeYards = 40.0f;
-constexpr float kRangeYardsSq = kRangeYards * kRangeYards;
 
-// Squared world distance from the player to `token`'s unit. Returns true
-// and writes *outSq on success; false when either position is unavailable
-// (unresolved / absent token, or an object with no known position yet —
-// e.g. a party member outside the client's sync range). This false is
-// exactly the `checkedPosition = false` case retail flags.
+// Reads a unit's bounding radius (the engine's per-unit range "size
+// factor") from `[m_objectFields + 0x1F0]`. Returns 0 for a null object
+// or a unit whose descriptor isn't populated yet — a safe fallback that
+// degrades to the plain base-range check. Same field the loot/interact
+// range checks (loot/Nearby.cpp) read.
+float BoundingRadius(void *obj) {
+    if (obj == nullptr)
+        return 0.0f;
+    auto *fields = *reinterpret_cast<const uint8_t *const *>(
+        static_cast<const uint8_t *>(obj) + Offsets::OFF_UNIT_DESCRIPTOR);
+    if (fields == nullptr)
+        return 0.0f;
+    return *reinterpret_cast<const float *>(
+        fields + Offsets::OFF_UNIT_FIELD_BOUNDING_RADIUS);
+}
+
+// Resolves `token` once and reads both its world position and bounding
+// radius. Returns false when the position is unavailable (unresolved /
+// absent token, or an object with no known position yet — e.g. a party
+// member outside the client's sync range). This false is exactly the
+// `checkedPosition = false` case retail flags.
+bool ReadPosAndReach(const char *token, float pos[3], float *reach) {
+    void *obj = Unit::Position::ResolveToken(token);
+    if (!Unit::Position::Read(obj, pos))
+        return false;
+    *reach = BoundingRadius(obj);
+    return true;
+}
+
+// Squared world distance from the player to `token`'s unit (raw,
+// center-to-center; reach is applied by the caller when needed).
 bool PlayerToUnitDistSq(const char *token, float *outSq) {
     float unitPos[3] = {};
     float playerPos[3] = {};
-    if (!Unit::Position::ReadToken(token, unitPos) ||
-        !Unit::Position::ReadToken("player", playerPos))
+    float reach = 0.0f;
+    if (!ReadPosAndReach(token, unitPos, &reach) ||
+        !ReadPosAndReach("player", playerPos, &reach))
         return false;
     const float dx = unitPos[0] - playerPos[0];
     const float dy = unitPos[1] - playerPos[1];
@@ -72,14 +111,28 @@ int __fastcall Script_UnitInRange(void *L) {
         return 2;
     }
 
-    float distSq = 0.0f;
-    if (!PlayerToUnitDistSq(token, &distSq)) {
+    float unitPos[3] = {};
+    float playerPos[3] = {};
+    float unitReach = 0.0f;
+    float playerReach = 0.0f;
+    if (!ReadPosAndReach(token, unitPos, &unitReach) ||
+        !ReadPosAndReach("player", playerPos, &playerReach)) {
         Game::Lua::PushBool(L, false);
         Game::Lua::PushBool(L, false);
         return 2;
     }
 
-    Game::Lua::PushBool(L, distSq <= kRangeYardsSq);
+    const float dx = unitPos[0] - playerPos[0];
+    const float dy = unitPos[1] - playerPos[1];
+    const float dz = unitPos[2] - playerPos[2];
+    const float distSq = dx * dx + dy * dy + dz * dz;
+
+    // Effective range = base + both units' reach, mirroring the engine's
+    // spell-range formula (FUN_006e3480). Without the reach terms a target
+    // whose center sits just past 40 yards but whose body is within reach
+    // reports out-of-range even though a 40-yard heal would land.
+    const float effRange = kRangeYards + playerReach + unitReach;
+    Game::Lua::PushBool(L, distSq <= effRange * effRange);
     Game::Lua::PushBool(L, true);
     return 2;
 }
