@@ -167,6 +167,7 @@ when launching with `-console`), not as Lua functions. See the
 | Power type | `Enum.PowerType.{HealthCost,None,Mana,Rage,Focus,Energy,Happiness}` |
 | Inventory type | `Enum.InventoryType.Index*Type` (0–34, e.g. `IndexHeadType`=1 … `IndexRelicType`=28) |
 | Item class | `Enum.ItemClass.{Consumable,Container,Weapon,Gem,Armor,Reagent,Projectile,Tradegoods,ItemEnhancement,Recipe,Quiver,Questitem,Key,Miscellaneous,…}` (0–19) |
+| Item quality | `Enum.ItemQuality.{Poor,Common,Uncommon,Rare,Epic,Legendary,Artifact}` (0–6) |
 
 ### Unit tokens
 

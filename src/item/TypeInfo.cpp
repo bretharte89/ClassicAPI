@@ -246,6 +246,20 @@ constexpr Game::Lua::EnumIntegerEntry kItemClassEntries[] = {
     {"Profession", 19},
 };
 
+// `Enum.ItemQuality` — the numeric `quality` reported by `GetItemInfo` /
+// `C_Item.GetItemQuality`. Values 0..6 are all vanilla ever uses; the
+// post-vanilla Heirloom (7) and WoWToken (8) tiers are omitted (no such
+// items exist on 1.12).
+constexpr Game::Lua::EnumIntegerEntry kItemQualityEntries[] = {
+    {"Poor", 0},
+    {"Common", 1},
+    {"Uncommon", 2},
+    {"Rare", 3},
+    {"Epic", 4},
+    {"Legendary", 5},
+    {"Artifact", 6},
+};
+
 void RegisterLuaFunctions() {
     Game::Lua::RegisterGlobalFunction("GetItemClassInfo",
                                       &Script_GetItemClassInfo);
@@ -265,6 +279,9 @@ void RegisterLuaFunctions() {
     Game::Lua::RegisterIntegerEnum(
         "Enum", "ItemClass", kItemClassEntries,
         sizeof(kItemClassEntries) / sizeof(kItemClassEntries[0]));
+    Game::Lua::RegisterIntegerEnum(
+        "Enum", "ItemQuality", kItemQualityEntries,
+        sizeof(kItemQualityEntries) / sizeof(kItemQualityEntries[0]));
 }
 
 const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};

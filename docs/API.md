@@ -180,6 +180,7 @@ build instructions.
   - [`Enum.AddOnSecurityStatus`](#enumaddonsecuritystatus)
   - [`Enum.InventoryType`](#enuminventorytype)
   - [`Enum.ItemClass`](#enumitemclass)
+  - [`Enum.ItemQuality`](#enumitemquality)
   - [`Enum.PowerType`](#enumpowertype)
 
 - [Gossip](#gossip)
@@ -4327,6 +4328,26 @@ post-vanilla and included for parity — vanilla items never report them.
 
 ```lua
 if select(12, GetItemInfo(id)) == Enum.ItemClass.Weapon then ...
+```
+
+### `Enum.ItemQuality`
+
+The item-quality enum — the numeric `quality` reported by
+[`GetItemInfo`](#c_itemgetiteminfoiteminfo) /
+[`C_Item.GetItemQuality`](#c_itemgetitemqualityitemlocation--c_itemgetitemqualitybyiditem).
+
+| Value | Field | Value | Field |
+|------:|-------|------:|-------|
+| 0 | `Poor` | 4 | `Epic` |
+| 1 | `Common` | 5 | `Legendary` |
+| 2 | `Uncommon` | 6 | `Artifact` |
+| 3 | `Rare` | | |
+
+The post-vanilla `Heirloom` (7) and `WoWToken` (8) tiers are omitted —
+no such items exist on 1.12.
+
+```lua
+if select(3, GetItemInfo(id)) == Enum.ItemQuality.Epic then ...
 ```
 
 ### `Enum.PowerType`
