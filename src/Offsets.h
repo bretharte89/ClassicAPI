@@ -3796,6 +3796,14 @@ enum Offsets {
     // `rawset(nil)` clear leaves it stale and subsequent `table.insert`
     // appends past the wiped slots.
     LUAL_SETN = 0x6F4EA0,
+    // `lua_checkstack(L, n)` — `int __fastcall(L /*ecx*/, n /*edx*/)`.
+    // Ensures room for `n` more stack values, growing if needed; returns 0
+    // (without growing) when `(top-base)/16 + n` would exceed LUA_MAXCSTACK
+    // (0x800 = 2048), 1 otherwise. Verified by the `cmp reg, 0x800` overflow
+    // test at 0x006F2F43. Needed by any C function that pushes an unbounded
+    // number of results (e.g. `strsplit`) — pushing past the ~20-slot
+    // C-call guarantee without growing corrupts the stack.
+    LUA_CHECK_STACK = 0x006F2F30,
     // `str_find` — the Lua 5.0 string-library `string.find` C function
     // (`int __fastcall(void *L)`), entry in the strlib luaL_reg table at
     // `0x00822dd0`. Returns `1` (nil pushed, no match), `2` (start, end),

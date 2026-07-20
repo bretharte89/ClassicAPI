@@ -282,6 +282,7 @@ build instructions.
   - [`select(index, ...)`](#selectindex-)
   - [`table.wipe(t)`](#tablewipet)
   - [`string.match` / `string.gmatch`](#stringmatch--stringgmatch)
+  - [`strsplit(sep, str [, pieces])`](#strsplitsep-str--pieces)
   - [`math.fmod(x, y)`](#mathfmodx-y)
   - [`coroutine.create(fn)`](#coroutinecreatefn)
   - [`coroutine.resume(co, ...)`](#coroutineresumeco-)
@@ -6838,6 +6839,31 @@ for word in string.gmatch("a,bb,ccc", "[^,]+") do print(word) end -- a / bb / cc
 > have no `__index` and there's no client-side way to add one short of hooking
 > a hot VM-core function. This is the long-standing vanilla 1.12 constraint —
 > always write `string.match(s, p)`, never `s:match(p)`.
+
+### `strsplit(sep, str [, pieces])`
+
+The WoW global (backported from 3.3.5), splits `str` on **any** character in
+`sep` and returns the pieces as multiple values.
+
+- `sep` — a set of delimiter *characters* (not a pattern); each character is
+  a delimiter. `","` splits on commas; `" -"` splits on spaces and dashes.
+- `pieces` (optional) — caps the number of results. After `pieces - 1`
+  splits the rest of the string (delimiters and all) is returned as the final
+  piece. `0` or omitted = unlimited. `1` returns the whole string unsplit.
+
+Consecutive/trailing delimiters produce empty pieces, matching retail.
+
+```lua
+strsplit(",", "a,b,c")        -- "a", "b", "c"
+strsplit(",", "a,b,c,d", 2)   -- "a", "b,c,d"     (capped at 2)
+strsplit(" -", "a b-c")       -- "a", "b", "c"     (space OR dash)
+strsplit(",", "a,,b")         -- "a", "", "b"      (empty middle piece)
+local zone, x, y = strsplit(":", "Durotar:52:38")
+```
+
+Errors `strsplit(): Stack overflow` if a string splits into more pieces than
+the Lua stack can grow to hold (`lua_checkstack` guards every push) — the
+same guard and message 3.3.5 uses.
 
 ### `math.fmod(x, y)`
 

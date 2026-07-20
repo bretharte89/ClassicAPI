@@ -11,16 +11,18 @@
 // You should have received a copy of the GNU General Public License along with
 // ClassicAPI. If not, see <https://www.gnu.org/licenses/>.
 
-// Lua 5.1 string-library additions that 1.12's Lua 5.0 is missing:
+// String helpers that 1.12's Lua 5.0 is missing:
 //
-//   - `string.match(s, pattern [, init])` — first-match extraction.
-//   - `string.gmatch(s, pattern)`         — match iterator.
+//   - `string.match(s, pattern [, init])` — first-match extraction (5.1).
+//   - `string.gmatch(s, pattern)`         — match iterator (5.1).
+//   - `strsplit(sep, str [, pieces])`     — WoW global; split on any char.
 //
-// Both are the same underlying pattern engine as functions 5.0 already ships:
+// The two `string.*` ones reuse pattern machinery 5.0 already ships:
 //   - `match` is `find` returning captures / the whole match instead of the
 //     start/end indices — so we call the engine's `str_find` and transform.
 //   - `gmatch` is exactly 5.0's `string.gfind` (renamed in 5.1); we register
 //     it as a direct alias of the engine's `gfind` C function.
+// `strsplit` is a hand-rolled port of 3.3.5's `strsplit` (see below).
 //
 // NOTE: only the `string.foo(s, ...)` call form works — NOT the
 // `("x"):foo(...)` method sugar. WoW's Lua VM strips type-metatables for
@@ -83,9 +85,68 @@ int __fastcall Script_string_match(void *L) {
 const auto Script_string_gmatch =
     reinterpret_cast<Game::Lua::CFunction>(Offsets::FUN_LUA_STR_GFIND);
 
+// `strsplit(sep, str [, pieces])` — the WoW global (also aliased as
+// `string.split`), split `str` on ANY character in `sep` and return the
+// pieces as multiple values. `pieces > 0` caps the result count, with the
+// unsplit remainder as the final piece; `0` / omitted = unlimited. Ported
+// from 3.3.5's `strsplit` (FUN_00816a60) with one deliberate change: we do
+// NOT `lua_settop(L, 0)` up front. Popping the args would leave the source
+// string unreferenced, so a GC step triggered by a `pushlstring` could free
+// the very buffer we're still scanning. Keeping the args on the stack keeps
+// the source GC-rooted; Lua returns the top N values (our pieces) regardless
+// of the args sitting below them. Each push is guarded by `lua_checkstack`
+// (this pushes an unbounded number of results), erroring like 3.3.5 on
+// genuine stack exhaustion.
+int __fastcall Script_strsplit(void *L) {
+    const char *sep = Game::Lua::ToString(L, 1);
+    const char *str = Game::Lua::ToString(L, 2);
+    if (sep == nullptr || str == nullptr) {
+        Game::Lua::Error(L, "Usage: strsplit(\"separators\", str [, pieces])");
+        return 0; // unreachable
+    }
+    const int pieces =
+        Game::Lua::IsNumber(L, 3) ? static_cast<int>(Game::Lua::ToNumber(L, 3)) : 0;
+
+    const char *segStart = str;
+    int count = 0;
+    // Only scan for separators while unlimited (pieces == 0) or the cap
+    // hasn't been reached (pieces > 1). pieces == 1 (or <= 0 but non-zero)
+    // yields the whole string as a single piece — matches 3.3.5.
+    if (pieces == 0 || pieces > 1) {
+        for (const char *p = str; *p != '\0'; ++p) {
+            bool isSep = false;
+            for (const char *s = sep; *s != '\0'; ++s) {
+                if (*p == *s) {
+                    isSep = true;
+                    break;
+                }
+            }
+            if (!isSep)
+                continue;
+            ++count;
+            if (Game::Lua::CheckStack(L, count) == 0) {
+                Game::Lua::Error(L, "strsplit(): Stack overflow");
+                return 0; // unreachable
+            }
+            Game::Lua::PushLString(L, segStart,
+                                   static_cast<unsigned int>(p - segStart));
+            segStart = p + 1;
+            if (count == pieces - 1)
+                break; // cap hit; remainder becomes the final piece
+        }
+    }
+    if (Game::Lua::CheckStack(L, count + 1) == 0) {
+        Game::Lua::Error(L, "strsplit(): Stack overflow");
+        return 0; // unreachable
+    }
+    Game::Lua::PushString(L, segStart); // final piece (remainder to end)
+    return count + 1;
+}
+
 void RegisterFns() {
     Game::Lua::RegisterTableFunction("string", "match", &Script_string_match);
     Game::Lua::RegisterTableFunction("string", "gmatch", Script_string_gmatch);
+    Game::Lua::RegisterGlobalFunction("strsplit", &Script_strsplit);
 }
 
 // Both states are Lua 5.0 and equally missing these; RegisterTableFunction

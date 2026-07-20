@@ -100,6 +100,7 @@ using lua_resume_t = int(__fastcall *)(void *L, int nargs);
 using lua_yield_t = int(__fastcall *)(void *L, int nresults);
 using luaL_argerror_t = void(__fastcall *)(void *L, int narg, const char *msg);
 using luaL_setn_t = void(__fastcall *)(void *L, int t, int n);
+using lua_checkstack_t = int(__fastcall *)(void *L, int size);
 
 extern const lua_isnumber_t IsNumber;
 extern const lua_isstring_t IsString;
@@ -142,6 +143,7 @@ extern const lua_resume_t Resume;
 extern const lua_yield_t Yield;
 extern const luaL_argerror_t ArgError;
 extern const luaL_setn_t SetN;
+extern const lua_checkstack_t CheckStack;
 
 // Returns the global `lua_State *` (read on demand from the engine's global).
 // Callable outside a Lua callback, e.g. during LoadScriptFunctions setup.
