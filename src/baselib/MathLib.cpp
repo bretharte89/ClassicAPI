@@ -14,15 +14,20 @@
 // Lua 5.1 math-library additions that 1.12's Lua 5.0 is missing:
 //
 //   - `math.fmod(x, y)` — floating-point remainder of `x / y`.
+//   - `math.modf(x)`    — split into integral + fractional parts.
+//   - `math.huge`       — positive infinity constant.
 //
-// This is a pure rename: Lua 5.0 ships the exact same C function under the
-// name `math.mod`; 5.1 renamed the Lua-facing entry to `math.fmod`. We
-// register `math.fmod` as a direct alias of the engine's `math.mod` C
-// function (`FUN_LUA_MATH_FMOD`) — no wrapper. `math.mod` stays available too
-// (we don't touch it), so code written for either name works.
+// `math.fmod` is a pure rename: Lua 5.0 ships the exact same C function under
+// the name `math.mod`; 5.1 renamed the Lua-facing entry to `math.fmod`. We
+// register it as a direct alias of the engine's `math.mod` C function
+// (`FUN_LUA_MATH_FMOD`) — no wrapper. `math.mod` stays available too, so code
+// written for either name works. `modf` and `huge` are genuinely new in 5.1
+// (not in 1.12's mathlib table), so we implement/define them here.
 
 #include "Game.h"
 #include "Offsets.h"
+
+#include <cmath>
 
 namespace BaseLib::MathLib {
 
@@ -33,8 +38,38 @@ namespace {
 const auto Script_math_fmod =
     reinterpret_cast<Game::Lua::CFunction>(Offsets::FUN_LUA_MATH_FMOD);
 
+// `math.modf(x)` — returns `(integral, fractional)`, the integral part
+// truncated toward zero and the fractional part carrying `x`'s sign
+// (`modf(3.7) → 3, 0.7`; `modf(-3.7) → -3, -0.7`). Matches C `modf` / Lua 5.1.
+int __fastcall Script_math_modf(void *L) {
+    if (!Game::Lua::IsNumber(L, 1)) {
+        Game::Lua::Error(L, "Usage: math.modf(x)");
+        return 0; // unreachable
+    }
+    double integral = 0.0;
+    const double fractional = std::modf(Game::Lua::ToNumber(L, 1), &integral);
+    Game::Lua::PushNumber(L, integral);
+    Game::Lua::PushNumber(L, fractional);
+    return 2;
+}
+
 void RegisterFns() {
     Game::Lua::RegisterTableFunction("math", "fmod", Script_math_fmod);
+    Game::Lua::RegisterTableFunction("math", "modf", &Script_math_modf);
+
+    // `math.huge` — a numeric constant, not a function. Fetch the (now
+    // guaranteed-present) `math` table and set the field directly.
+    void *L = Game::Lua::State();
+    if (L != nullptr) {
+        Game::Lua::PushString(L, "math");
+        Game::Lua::GetTable(L, Game::Lua::GLOBALS_INDEX); // [math]
+        if (Game::Lua::Type(L, -1) == 5 /* LUA_TTABLE */) {
+            Game::Lua::SetFieldNumber(L, "huge", HUGE_VAL); // math.huge = inf; [math]
+            Game::Lua::SetTop(L, -2);                        // pop [math]
+        } else {
+            Game::Lua::SetTop(L, -2); // pop whatever GetTable returned
+        }
+    }
 }
 
 // Both states are Lua 5.0 and equally missing this; RegisterTableFunction

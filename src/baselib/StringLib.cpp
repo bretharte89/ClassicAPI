@@ -19,8 +19,9 @@
 //   - `strjoin(delimiter, ...)`           — WoW global; join varargs.
 //   - `strtrim(str [, chars])`            — WoW global; trim a char set.
 //   - `strreplace(str, find, replace)`    — plain-text replace (see below).
+//   - `string.reverse(s)` / `strrev(s)`   — 5.1 string function, missing in 5.0.
 //
-// The two `string.*` ones reuse pattern machinery 5.0 already ships:
+// The two pattern `string.*` ones reuse machinery 5.0 already ships:
 //   - `match` is `find` returning captures / the whole match instead of the
 //     start/end indices — so we call the engine's `str_find` and transform.
 //   - `gmatch` is exactly 5.0's `string.gfind` (renamed in 5.1); we register
@@ -242,13 +243,33 @@ int __fastcall Script_strreplace(void *L) {
     return 2;
 }
 
+// `string.reverse(s)` / `strrev(s)` — return `s` with its bytes reversed.
+// Lua 5.1 added `string.reverse`; 5.0's strlib lacks it. Byte-wise (not
+// UTF-8 aware), matching stock Lua; embedded NULs preserved (bounds from the
+// Lua length).
+int __fastcall Script_string_reverse(void *L) {
+    const char *s = Game::Lua::ToString(L, 1);
+    if (s == nullptr) {
+        Game::Lua::Error(L, "Usage: string.reverse(s)");
+        return 0; // unreachable
+    }
+    const unsigned len = Game::Lua::StrLen(L, 1);
+    std::string out(len, '\0'); // no Error() past this point
+    for (unsigned i = 0; i < len; ++i)
+        out[i] = s[len - 1 - i];
+    Game::Lua::PushLString(L, out.data(), len);
+    return 1;
+}
+
 void RegisterFns() {
     Game::Lua::RegisterTableFunction("string", "match", &Script_string_match);
     Game::Lua::RegisterTableFunction("string", "gmatch", Script_string_gmatch);
+    Game::Lua::RegisterTableFunction("string", "reverse", &Script_string_reverse);
     Game::Lua::RegisterGlobalFunction("strsplit", &Script_strsplit);
     Game::Lua::RegisterGlobalFunction("strjoin", &Script_strjoin);
     Game::Lua::RegisterGlobalFunction("strtrim", &Script_strtrim);
     Game::Lua::RegisterGlobalFunction("strreplace", &Script_strreplace);
+    Game::Lua::RegisterGlobalFunction("strrev", &Script_string_reverse);
 }
 
 // Both states are Lua 5.0 and equally missing these; RegisterTableFunction

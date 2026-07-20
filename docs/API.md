@@ -286,7 +286,10 @@ build instructions.
   - [`strjoin(delimiter, ...)`](#strjoindelimiter-)
   - [`strtrim(str [, chars])`](#strtrimstr--chars)
   - [`strreplace(str, find, replace)`](#strreplacestr-find-replace)
+  - [`string.reverse(s)` / `strrev(s)`](#stringreverses--strrevs)
   - [`math.fmod(x, y)`](#mathfmodx-y)
+  - [`math.modf(x)`](#mathmodfx)
+  - [`math.huge`](#mathhuge)
   - [`coroutine.create(fn)`](#coroutinecreatefn)
   - [`coroutine.resume(co, ...)`](#coroutineresumeco-)
   - [`coroutine.yield(...)`](#coroutineyield)
@@ -6909,6 +6912,17 @@ strreplace("hello world", "o", "0")  -- "hell0 w0rld", 2
 > Not a stock WoW global — a ClassicAPI convenience. For pattern-based
 > replacement use `string.gsub`.
 
+### `string.reverse(s)` / `strrev(s)`
+
+Returns `s` with its bytes reversed. Lua 5.1 added `string.reverse`; 5.0's
+string library lacks it. Byte-wise (not UTF-8 aware), matching stock Lua.
+Registered both on the `string` table and as the `strrev` global.
+
+```lua
+string.reverse("abc")   -- "cba"
+strrev("hello")         -- "olleh"
+```
+
 ### `math.fmod(x, y)`
 
 The floating-point remainder of `x / y` (the quotient truncated toward zero),
@@ -6921,6 +6935,28 @@ written for either name works.
 math.fmod(7, 3)     -- 1
 math.fmod(-7, 3)    -- -1   (result takes the sign of the dividend)
 math.fmod(5.5, 2)   -- 1.5
+```
+
+### `math.modf(x)`
+
+Returns `(integral, fractional)` — the integral part truncated toward zero
+and the fractional part carrying `x`'s sign. Lua 5.1 function, genuinely
+missing from 1.12's math library (not just renamed like `fmod`).
+
+```lua
+math.modf(3.7)    -- 3, 0.7
+math.modf(-3.7)   -- -3, -0.7
+math.modf(5)      -- 5, 0
+```
+
+### `math.huge`
+
+Positive infinity, as the numeric constant `math.huge` (Lua 5.1). Handy as a
+"larger than anything" sentinel in min/max scans.
+
+```lua
+local best = math.huge
+for _, v in ipairs(costs) do best = math.min(best, v) end
 ```
 
 ### `coroutine.*`
