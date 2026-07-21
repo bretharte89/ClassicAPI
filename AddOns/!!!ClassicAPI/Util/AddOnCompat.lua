@@ -39,3 +39,7 @@ if C_AddOns.DoesAddOnExist('pfUI') then
         end
     end)
 end
+
+if C_AddOns.DoesAddOnExist("SpecialTalentUI") then
+    EventUtil.ContinueOnAddOnLoaded("SpecialTalentUI", CAPI_ApplyStandardColorGlobals)
+end

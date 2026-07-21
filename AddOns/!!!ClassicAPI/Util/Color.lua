@@ -108,11 +108,14 @@ for _, v in pairs(ITEM_QUALITY_COLORS) do
     v.color = CreateColor(v.r, v.g, v.b, 1)
 end
 
-do
+function CAPI_ApplyStandardColorGlobals()
     local envTbl = _G
     for _, dbColor in ipairs(C_UIColor.GetColors()) do
-        local color = CreateColor(dbColor.color.r, dbColor.color.g, dbColor.color.b, dbColor.color.a)
-        envTbl[dbColor.baseTag] = color
-        envTbl[dbColor.baseTag.."_CODE"] = color:GenerateHexColorMarkup()
+        if not envTbl[dbColor.baseTag] or not envTbl[dbColor.baseTag].GetRGB then
+            local color = CreateColor(dbColor.color.r, dbColor.color.g, dbColor.color.b, dbColor.color.a)
+            envTbl[dbColor.baseTag] = color
+            envTbl[dbColor.baseTag.."_CODE"] = color:GenerateHexColorMarkup()
+        end
     end
 end
+CAPI_ApplyStandardColorGlobals()

@@ -248,7 +248,7 @@ end
 local function CreateFrame_TradeSkillLink()
 	local f = CreateFrame("Frame", "ClassicAPITradeSkillLinkFrame", UIParent);
 	f:SetSize(FRAME_W, FRAME_H);
-	f:SetPoint("CENTER", 0, 0);
+	f:SetPoint("CENTER");
 	f:SetMovable(true);
 	f:EnableMouse(true);
 	f:SetHitRectInsets(LO.hit[1], LO.hit[2], LO.hit[3], LO.hit[4]);
