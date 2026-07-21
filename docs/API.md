@@ -96,6 +96,7 @@ build instructions.
 - [Events](#events)
   - [`C_EventUtils.IsEventValid(eventName)`](#c_eventutilsiseventvalideventname)
   - [`PLAYER_ENTERING_WORLD` payload (`isInitialLogin`, `isReloadingUi`)](#player_entering_world-payload-isinitiallogin-isreloadingui)
+  - [`PLAYER_TOTEM_UPDATE` event](#player_totem_update-event)
   - [`BAG_UPDATE_DELAYED` event](#bag_update_delayed-event)
   - [`PLAYER_EQUIPMENT_CHANGED` event](#player_equipment_changed-event)
   - [`UPDATE_INVENTORY_DURABILITY` event](#update_inventory_durability-event)
@@ -2265,6 +2266,30 @@ PEW is a no-arg event, so the engine broadcasts it through the
 the payload. The flags are derived from whether the in-game Lua state was
 just (re)built (login/`reload`) and whether we just came through the
 glue/login screen — no `PLAYER_ENTERING_WORLD`-specific engine hook.
+
+### `PLAYER_TOTEM_UPDATE` event
+
+Backports the TBC event (absent from vanilla's table, so reserved as a
+custom event). Fires with `arg1 = totemSlot` (1 Fire, 2 Earth, 3 Water,
+4 Air) whenever a totem is dropped, expires, or is destroyed early
+(killed / Totemic Recall) — the companion event to
+[`GetTotemInfo`](#gettoteminfoslot).
+
+```lua
+local f = CreateFrame("Frame")
+f:RegisterEvent("PLAYER_TOTEM_UPDATE")
+f:SetScript("OnEvent", function()
+    local slot = arg1
+    local have, name, start, duration, icon = GetTotemInfo(slot)
+    -- re-read the changed slot
+end)
+```
+
+Driven by the same [`GetTotemInfo`](#gettoteminfoslot) tracker: the drop
+is detected from `SMSG_SPELL_GO`, removal from the WorldTick object-manager
+scan, and the event is flushed from the tick (so handlers run in a safe
+context, not mid-packet). Removal detection carries up to the tracker's
+scan interval (~250 ms) of latency; drops fire on the next frame.
 
 ### `BAG_UPDATE_DELAYED` event
 
@@ -11246,7 +11271,8 @@ via the `SMSG_SPELL_GO` hook; a slot clears when its duration elapses OR
 when the totem creature disappears early (killed, Totemic Recall, or
 destroyed) — detected by scanning the object manager for the player-owned
 totem creature. Because it's data-driven, Turtle-custom totems are tracked
-automatically.
+automatically. Slot changes fire
+[`PLAYER_TOTEM_UPDATE`](#player_totem_update-event).
 
 ## TradeSkillUI
 

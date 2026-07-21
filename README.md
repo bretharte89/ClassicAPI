@@ -145,6 +145,7 @@ when launching with `-console`), not as Lua functions. See the
 | `PLAYER_STOPPED_MOVING` | *(none)* |
 | `PLAYER_STARTED_TURNING` | *(none)* |
 | `PLAYER_STOPPED_TURNING` | *(none)* |
+| `PLAYER_TOTEM_UPDATE` | `totemSlot` |
 | `QUEST_ACCEPTED` | `questLogIndex, questID` |
 | `QUEST_DATA_LOAD_RESULT` | `questID, success` |
 | `QUEST_REMOVED` | `questID` |

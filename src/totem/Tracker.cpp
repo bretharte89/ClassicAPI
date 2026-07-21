@@ -216,6 +216,33 @@ int __fastcall ScanCallback(ScanCtx *ctx, void * /*unusedEdx*/, uint64_t guid) {
     return 1; // keep scanning — other slots may match other creatures
 }
 
+// PLAYER_TOTEM_UPDATE(totemSlot 1-4) — a TBC event absent from vanilla's
+// table, reserved as a custom event and fired when a slot's state changes
+// (totem dropped, expired, killed, or recalled). Changes are recorded in a
+// dirty mask by the cast path and the clear paths, then flushed from OnTick
+// (WorldTick context — safe to run Lua handlers, unlike mid-packet).
+constexpr const char *kPlayerTotemUpdate = "PLAYER_TOTEM_UPDATE";
+const Event::Custom::AutoReserve _totemUpdate{kPlayerTotemUpdate};
+int g_totemUpdateId = -1;
+uint8_t g_dirtyMask = 0;
+
+void MarkDirty(int slotIdx) {
+    g_dirtyMask |= static_cast<uint8_t>(1u << slotIdx);
+}
+
+void FireDirty() {
+    if (g_dirtyMask == 0)
+        return;
+    if (g_totemUpdateId < 0)
+        g_totemUpdateId = Event::Custom::LookupByName(kPlayerTotemUpdate);
+    if (g_totemUpdateId < 0)
+        return; // slot not claimed yet — keep dirty, retry next tick
+    for (int s = 0; s < kSlots; ++s)
+        if (g_dirtyMask & (1u << s))
+            Event::Custom::Fire(g_totemUpdateId, "%d", s + 1);
+    g_dirtyMask = 0;
+}
+
 void OnTick() {
     const uint32_t now = NowMs();
 
@@ -227,44 +254,45 @@ void OnTick() {
             continue;
         if (t.durationMs != 0 && now - t.startMs >= t.durationMs) {
             t.active = false;
+            MarkDirty(s);
             continue;
         }
         anyActive = true;
     }
-    if (!anyActive)
-        return;
 
-    // Death / removal scan — throttled, and only while a slot is up.
-    if (now - g_lastScanMs < kScanIntervalMs)
-        return;
-    g_lastScanMs = now;
+    // Death / removal scan — throttled, and only while a slot is up. The
+    // object-manager enumerator derefs the manager unconditionally, so it's
+    // gated on the local player existing.
+    if (anyActive && now - g_lastScanMs >= kScanIntervalMs &&
+        *reinterpret_cast<void *volatile *>(Offsets::VAR_LOCAL_PLAYER_PTR) !=
+            nullptr) {
+        const uint64_t player = Unit::Identity::PlayerGuid();
+        if (player != 0) {
+            g_lastScanMs = now;
+            ScanCtx ctx{};
+            ctx.playerGuid = player;
+            for (int s = 0; s < kSlots; ++s)
+                ctx.entries[s] = g_slots[s].active ? g_slots[s].entry : 0;
 
-    // The enumerator derefs the object manager unconditionally.
-    if (*reinterpret_cast<void *volatile *>(Offsets::VAR_LOCAL_PLAYER_PTR) ==
-        nullptr)
-        return;
-    const uint64_t player = Unit::Identity::PlayerGuid();
-    if (player == 0)
-        return;
+            auto Enum = reinterpret_cast<EnumVisibleObjects_t>(
+                Offsets::FUN_CLNT_OBJ_MGR_ENUM_VISIBLE_OBJECTS);
+            Enum(reinterpret_cast<EnumCallback_t>(&ScanCallback), &ctx);
 
-    ScanCtx ctx{};
-    ctx.playerGuid = player;
-    for (int s = 0; s < kSlots; ++s)
-        ctx.entries[s] = g_slots[s].active ? g_slots[s].entry : 0;
-
-    auto Enum = reinterpret_cast<EnumVisibleObjects_t>(
-        Offsets::FUN_CLNT_OBJ_MGR_ENUM_VISIBLE_OBJECTS);
-    Enum(reinterpret_cast<EnumCallback_t>(&ScanCallback), &ctx);
-
-    for (int s = 0; s < kSlots; ++s) {
-        Slot &t = g_slots[s];
-        if (!t.active)
-            continue;
-        if (ctx.present[s])
-            t.seen = true;
-        else if (t.seen)
-            t.active = false; // was up, now gone → died / recalled early
+            for (int s = 0; s < kSlots; ++s) {
+                Slot &t = g_slots[s];
+                if (!t.active)
+                    continue;
+                if (ctx.present[s])
+                    t.seen = true;
+                else if (t.seen) {
+                    t.active = false; // was up, now gone → died / recalled
+                    MarkDirty(s);
+                }
+            }
+        }
     }
+
+    FireDirty();
 }
 
 const Tick::WorldTick::AutoSubscribe _tick{&OnTick};
@@ -383,6 +411,7 @@ void OnPlayerSpellGo(uint32_t spellID) {
         t.entry = static_cast<uint32_t>(misc[i]);
         t.startMs = NowMs();
         t.durationMs = SpellDurationMs(rec);
+        MarkDirty(idx); // totem dropped → PLAYER_TOTEM_UPDATE (fired next tick)
         // The cast spell IS a totem of this element, so it names the slot's
         // tool item directly — capture it (covers the slot even before the
         // spellbook scan runs).
