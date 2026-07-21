@@ -21,6 +21,7 @@ Full per-function reference: **[docs/API.md](docs/API.md)**.
 | [AddOns](docs/API.md#addons) | `C_AddOns.DoesAddOnExist`, `C_AddOns.GetAddOnName`, `C_AddOns.GetAddOnNotes`, `C_AddOns.GetAddOnOptionalDependencies`, `C_AddOns.GetAddOnSecurity`, `C_AddOns.GetAddOnTitle`, `C_AddOns.IsAddOnLoadable`, `C_AddOns.IsAddOnLoaded` |
 | [AuctionHouse](docs/API.md#auctionhouse) | `C_AuctionHouse.PostItem` |
 | [Chat](docs/API.md#chat) | `GetCurrentChatGUID` |
+| [ChatBubbles](docs/API.md#chatbubbles) | `C_ChatBubbles.GetAllChatBubbles` |
 | [Class](docs/API.md#class) | `FillLocalizedClassList` |
 | [Combat](docs/API.md#combat) | `InCombatLockdown` |
 | [CVar](docs/API.md#cvar) | `C_CVar.GetCVarBool` |

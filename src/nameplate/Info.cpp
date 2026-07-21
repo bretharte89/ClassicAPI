@@ -56,6 +56,7 @@
 #include "Offsets.h"
 #include "guid/Guid.h"
 #include "nameplate/Walk.h"
+#include "ui/FrameObject.h"
 
 #include <cstdint>
 
@@ -66,9 +67,6 @@ namespace {
 using NamePlate::Walk::ForEachNamePlatedUnit;
 using NamePlate::Walk::kOffUnitNamePlate;
 
-using LuaRawGetI_t = void(__fastcall *)(void *L, int idx, int n);
-using ScriptRegister_t = void(__fastcall *)(void *this_, void *edx_unused,
-                                              const char *name);
 using TokenToGUID_t = uint64_t(__fastcall *)(const char *token);
 using ResolveByGUID_t = void *(__fastcall *)(int type, const char *debugName,
                                               uint32_t guidLo, uint32_t guidHi,
@@ -115,70 +113,13 @@ static int __fastcall Script_GetNamePlateGUIDs(void *L) {
 // frame-push path. Internal callers (Script_GetNamePlates etc.) call
 // it through the unqualified name (they live in the same namespace).
 //
-// Delegate wrapper construction to the engine's own
-// `FrameScript_Object::ScriptRegister`. First call for a never-seen
-// nameplate builds a `{[0] = lightuserdata}` table with the
-// framescript metatable, `luaL_ref`s it into the registry, and
-// writes the refkey to `nameplate + 0x08` (`OFF_COBJECT_LUA_REGISTRY_REF`).
-// Subsequent calls find a populated refkey and just rawgeti.
-//
-// Why delegate instead of building our own wrapper:
-//
-// - **Single source of truth.** Every code path that pushes this
-//   frame — ours via this function, addons' `CreateFrame("Type",
-//   "name", plate)` extracting the parent, the engine's own internal
-//   pushers — funnels through `rawgeti(REGISTRY, plate+0x08)` and
-//   gets the same Lua table. Earlier "build our own wrapper +
-//   `luaL_ref` it" approach kept a side cache, but pfUI's
-//   `CreateFrame("Button", "name", parent)` inside `NAME_PLATE_CREATED`
-//   ends up causing the engine to register the parent itself —
-//   the engine's wrapper diverges from ours, and later
-//   `GetNamePlateForUnit` calls return the engine's bare wrapper
-//   instead of our decorated one. Addon fields on the wrapper
-//   (`plate.nameplate = styledButton`) disappear from the API's
-//   perspective even though they still exist on the orphaned
-//   table.
-//
-// - **Refcount-pinning is benign here.** `ScriptRegister`
-//   unconditionally increments `nameplate + 0x04`, which normally
-//   keeps the engine from GC-ing the CObject. Nameplates are
-//   pool-managed and never destroyed during a session, so pinning
-//   doesn't actually leak anything. We call `ScriptRegister` at
-//   most once per nameplate pointer (gated by `refKey <= 0`), so
-//   the refcount tops out at one increment per pool slot.
-//
-// Defensive fallback: if the registry slot exists but isn't a table
-// any more (some other code freed it), we re-register. This shouldn't
-// happen in practice — engines only unref on frame destruction —
-// but a stale type check keeps callers from ever seeing a non-table.
+// Thin wrapper over the shared `UI::FrameObject::Push` — nameplates and
+// chat bubbles are both engine-created-in-C++ `CSimpleFrame`s that need
+// the same lazy `ScriptRegister` → `rawgeti` push so addons get the
+// engine's canonical wrapper (see that helper for the pfUI-divergence
+// rationale that motivated delegating to the engine).
 void PushNamePlateFrame(void *L, void *nameplate) {
-    auto rawgeti = reinterpret_cast<LuaRawGetI_t>(
-        Offsets::FUN_FRAMESCRIPT_PUSH_OBJECT);
-    auto scriptRegister = reinterpret_cast<ScriptRegister_t>(
-        static_cast<uintptr_t>(Offsets::FUN_FRAMESCRIPT_OBJECT_SCRIPT_REGISTER));
-
-    int refKey = *reinterpret_cast<const int *>(
-        static_cast<uint8_t *>(nameplate) + Offsets::OFF_COBJECT_LUA_REGISTRY_REF);
-    if (refKey <= 0) {
-        scriptRegister(nameplate, nullptr, nullptr);
-        refKey = *reinterpret_cast<const int *>(
-            static_cast<uint8_t *>(nameplate) + Offsets::OFF_COBJECT_LUA_REGISTRY_REF);
-    }
-
-    rawgeti(L, Game::Lua::REGISTRY_INDEX, refKey);
-    if (Game::Lua::Type(L, -1) == Game::Lua::TYPE_TABLE)
-        return;
-    Game::Lua::SetTop(L, -2);
-
-    // Slot got freed somewhere — re-register to rebuild a fresh
-    // wrapper and slot. Zero the refcount so `ScriptRegister`
-    // re-enters its build branch.
-    *reinterpret_cast<int *>(
-        static_cast<uint8_t *>(nameplate) + Offsets::OFF_COBJECT_LUA_REFCOUNT) = 0;
-    scriptRegister(nameplate, nullptr, nullptr);
-    refKey = *reinterpret_cast<const int *>(
-        static_cast<uint8_t *>(nameplate) + Offsets::OFF_COBJECT_LUA_REGISTRY_REF);
-    rawgeti(L, Game::Lua::REGISTRY_INDEX, refKey);
+    UI::FrameObject::Push(L, nameplate);
 }
 
 // GUID → nameplate Frame pushed on stack. Pushes nil if the GUID

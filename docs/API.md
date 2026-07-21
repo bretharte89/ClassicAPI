@@ -334,6 +334,9 @@ build instructions.
   - [`C_MerchantFrame.IsMerchantItemRefundable(slot)`](#c_merchantframeismerchantitemrefundableslot)
   - [`C_MerchantFrame.IsSellAllJunkEnabled()`](#c_merchantframeissellalljunkenabled)
 
+- [ChatBubbles](#chatbubbles)
+  - [`C_ChatBubbles.GetAllChatBubbles([includeForbidden])`](#c_chatbubblesgetallchatbubblesincludeforbidden)
+
 - [NamePlate](#nameplate)
   - [`C_NamePlate.GetNamePlates()`](#c_nameplategetnameplates)
   - [`C_NamePlate.GetNamePlateGUIDs()`](#c_nameplategetnameplateguids)
@@ -8011,6 +8014,42 @@ discovered, the pieces a map-reveal addon draws over the fogged base map.
 No retail equivalent (retail ships only the explored getter; its inverse,
 `C_Map.GetMapOverlays`, returns *everything*). Same table shape and
 `areaID` semantics as the explored getter.
+
+## ChatBubbles
+
+### `C_ChatBubbles.GetAllChatBubbles([includeForbidden])`
+
+Returns a 1-based table of the currently-active chat-bubble `Frame`
+objects (the speech bubbles above characters who `/say` or `/yell`).
+Modern WoW added this in 7.2.5 to replace the old "iterate over
+`WorldFrame` children and guess which are bubbles" idiom — we hand you
+the exact set instead.
+
+```lua
+for _, bubble in ipairs(C_ChatBubbles.GetAllChatBubbles()) do
+    -- The spoken text lives in the bubble's FontString region.
+    for _, region in ipairs({bubble:GetRegions()}) do
+        if region.GetText and region:GetText() then
+            print(region:GetText())
+        end
+    end
+end
+```
+
+Vanilla 1.12 chat bubbles are `CGChatBubbleFrame`s — full frames the
+engine creates in C++ without ever calling `CreateFrame` (same as
+default nameplates). The returned frames are the engine's **canonical
+wrappers**: real, method-capable (`:GetRegions()`, `:IsShown()`,
+`:GetPoint()`, …), and identical to the object any other addon that
+touches the bubble sees, so decorations survive. The spoken-text
+FontString is parented to the bubble, so it shows up in
+`:GetRegions()`.
+
+`includeForbidden` is accepted for signature parity and ignored —
+vanilla has no forbidden frames, so every active bubble is returned
+regardless. Returns an empty table when no bubbles are showing. A
+bubble whose owner just despawned can linger for one frame before the
+engine prunes it; filter on `bubble:IsShown()` if that matters.
 
 ## NamePlate
 
