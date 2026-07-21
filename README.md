@@ -62,6 +62,7 @@ Full per-function reference: **[docs/API.md](docs/API.md)**.
 | [SpellBook](docs/API.md#spellbook) | `C_SpellBook.GetCurrentLevelSpells`, `C_SpellBook.GetSkillLineName`, `C_SpellBook.GetSkillLineRank`, `C_SpellBook.GetSpellLevelLearned`, `C_SpellBook.GetSpellSkillLine`, `C_SpellBook.IsAutoAttackSpellBookItem`, `C_SpellBook.IsRangedAutoAttackSpellBookItem`, `FindSpellBookSlotByID` |
 | [State](docs/API.md#state) | `CancelShapeshiftForm`, `Dismount`, `GetMirrorTimerInfo`, `GetMirrorTimerProgress`, `GetShapeshiftFormID`, `IsAssistingRitual`, `IsFalling`, `IsInGroup`, `IsInRaid`, `IsLoggedIn`, `IsMounted`, `IsStealthed`, `IsSwimming` |
 | [Talent](docs/API.md#talent) | `GetTalentIDByIndex`, `GetTalentSpellID` |
+| [Targeting](docs/API.md#targeting) | `GetPlayerFacing`, `TargetDirectionEnemy`, `TargetDirectionFriend`, `TargetNearest`, `TargetNearestEnemyPlayer`, `TargetNearestFriendPlayer` |
 | [TaxiMap](docs/API.md#taximap) | `C_TaxiMap.GetTaxiNodesForMap`, `C_TaxiMap.GetAllTaxiNodes` |
 | [Time](docs/API.md#time) | `C_DateAndTime.AdjustTimeByDays`, `C_DateAndTime.AdjustTimeByMinutes`, `C_DateAndTime.CompareCalendarTime`, `C_DateAndTime.GetCalendarTimeFromEpoch`, `C_DateAndTime.GetCurrentCalendarTime`, `C_DateAndTime.GetSecondsUntilDailyReset`, `C_DateAndTime.GetServerTimeLocal`, `C_Timer.After`, `C_Timer.NewTicker`, `C_Timer.NewTimer`, `GetServerTime` |
 | [Totem](docs/API.md#totem) | `GetTotemInfo`, `GetTotemTimeLeft`, `GetTotemDuration`, `TargetTotem` |

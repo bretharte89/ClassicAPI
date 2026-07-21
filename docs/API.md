@@ -448,6 +448,14 @@ build instructions.
   - [`GetTalentSpellID(tabIndex, talentIndex, [rank])`](#gettalentspellidtabindex-talentindex-rank)
   - [`GetTalentIDByIndex(tabIndex, talentIndex)`](#gettalentidbyindextabindex-talentindex)
 
+- [Targeting](#targeting)
+  - [`GetPlayerFacing()`](#getplayerfacing)
+  - [`TargetDirectionEnemy(facing [, coneAngle])`](#targetdirectionenemyfacing--coneangle)
+  - [`TargetDirectionFriend(facing [, coneAngle])`](#targetdirectionfriendfacing--coneangle)
+  - [`TargetNearest([reverse])`](#targetnearestreverse)
+  - [`TargetNearestEnemyPlayer([reverse])`](#targetnearestenemyplayerreverse)
+  - [`TargetNearestFriendPlayer([reverse])`](#targetnearestfriendplayerreverse)
+
 - [TaxiMap](#taximap)
   - [`C_TaxiMap.GetTaxiNodesForMap([mapID])`](#c_taximapgettaxinodesformapmapid)
   - [`C_TaxiMap.GetAllTaxiNodes([uiMapID])`](#c_taximapgetalltaxinodesuimapid)
@@ -10973,6 +10981,74 @@ a different field.
 
 Equivalent to the talentID return slot of `GetTalentInfo` in modern
 WoW (5.0+; not exposed at all in 1.12).
+
+## Targeting
+
+Backports of the post-vanilla `TargetScript` selection functions. Vanilla
+already ships `TargetNearestEnemy/Friend/PartyMember/RaidMember`,
+`TargetLastEnemy/Target`, `AssistUnit`, `TargetUnit`, `ClearTarget`; these
+fill in the ones added in later patches. They're built on the engine's own
+tab-targeting core — the same visible-unit enumeration, per-mode validity
+predicate (reaction/attackability/alive), and selection commit the native
+`TargetNearestEnemy` uses — so hostility semantics match the client exactly.
+
+Not backported (no vanilla equivalent — soft-target / action-camera era):
+`TargetPriorityHighlightStart/End`, `IsTargetLoose`, `TargetToggle`.
+
+### `GetPlayerFacing()`
+
+Returns the player's facing as an angle in radians (`0` … `2*pi`,
+increasing counter-clockwise), or nothing off-world (glue / loading).
+Vanilla never shipped this (only character-create/select facing exist), but
+it's the companion the direction-target functions below need — pass it to
+aim "in front of me."
+
+```lua
+local facing = GetPlayerFacing()   -- e.g. 1.65
+```
+
+Read from the player unit's movement-block orientation field
+(`player + 0x9C4`).
+
+### `TargetDirectionEnemy(facing [, coneAngle])`
+
+Targets the nearest **attackable** unit within a cone centered on `facing`
+(an absolute world angle in radians, as returned by `GetPlayerFacing()`).
+`coneAngle` is the full cone width in radians; omitted, it defaults to
+`pi/2` (90° — 45° to either side).
+
+```lua
+-- Target whatever enemy you're looking at:
+TargetDirectionEnemy(GetPlayerFacing())
+
+-- Wider 180° sweep in front:
+TargetDirectionEnemy(GetPlayerFacing(), math.pi)
+```
+
+Does nothing if no enemy falls inside the cone. "Attackable" uses the
+engine's own reaction check, so it matches what `TargetNearestEnemy` would
+consider a valid enemy (hostile, alive, not a critter).
+
+### `TargetDirectionFriend(facing [, coneAngle])`
+
+Same as `TargetDirectionEnemy`, but selects the nearest **friendly**
+(assistable) unit in the cone.
+
+### `TargetNearest([reverse])`
+
+Cycles the nearest unit you can attack or assist. Repeated calls within ~1s
+step through candidates nearest→farthest (a frozen snapshot, so the order
+is stable mid-cycle); a longer gap or an externally-changed target rebuilds
+and re-targets the nearest. `reverse` (truthy) steps the other way.
+
+### `TargetNearestEnemyPlayer([reverse])`
+
+Like `TargetNearest`, but restricted to hostile **players** (PvP targeting).
+Same cycle behavior and `reverse` flag.
+
+### `TargetNearestFriendPlayer([reverse])`
+
+Like `TargetNearestEnemyPlayer`, but restricted to friendly **players**.
 
 ## TaxiMap
 

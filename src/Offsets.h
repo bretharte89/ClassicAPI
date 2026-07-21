@@ -463,6 +463,30 @@ enum Offsets {
     // (lo) and `guid[1]` (hi) through the pointer.
     FUN_TARGET_BY_GUID = 0x00489A40,
 
+    // Tab-targeting internals, shared with our backported TargetNearest* /
+    // TargetDirection* family (`target/Nearest.cpp`).
+    //
+    // `FUN_TARGET_CANDIDATE_VALID` (0x00493E40) — the engine's per-mode
+    // candidate validity predicate used by the native `TargetNearestEnemy`
+    // / `TargetNearestFriend` cycle. `__fastcall(CGUnit *player /*ecx*/,
+    // CGUnit *candidate /*edx*/, int mode) → int` (nonzero = valid). Modes:
+    // 1 = enemy (attackable + alive + not-critter), 2 = friend (assistable +
+    // alive), 3 = party, 4 = raid. Wraps the reaction cores
+    // `FUN_00606980` (can-attack) / `FUN_006066f0` (can-assist), so calling
+    // it gives us the engine's exact hostility semantics for free.
+    FUN_TARGET_CANDIDATE_VALID = 0x00493E40,
+    // `FUN_SET_SELECTION_BY_GUID` (0x00493540) — canonical target setter the
+    // native tab-cycle commits through. `__cdecl(uint32_t guidLo, uint32_t
+    // guidHi)`. Validates + fires CMSG_SET_SELECTION + client target +
+    // event 0xC3, and maintains the current-selection globals below.
+    // Passing {0,0} clears the target.
+    FUN_SET_SELECTION_BY_GUID = 0x00493540,
+    // Current target-selection GUID (lo/hi), written by
+    // `FUN_SET_SELECTION_BY_GUID`. We read it to detect whether the player's
+    // target changed out from under an in-progress tab-cycle.
+    VAR_CURRENT_SELECTION_GUID_LO = 0x00B4E2D8,
+    VAR_CURRENT_SELECTION_GUID_HI = 0x00B4E2DC,
+
     // Local-player CGObject-like global. Not the same pointer as
     // ResolveUnitToken("player") returns — that one's the canonical
     // CGPlayer_C used by inventory etc. This pointer's +0xC0 field
@@ -1475,6 +1499,15 @@ enum Offsets {
     // base. Bytes verified via the call-site disassembly at
     // `0x0048BACF` / `0x0048BADC`.
     OFF_CGOBJECT_VTBL_GET_POSITION = 0x14,
+
+    // CGUnit movement-block orientation (facing) in radians, 0..2*pi. Lives
+    // right after the {x,y,z} position block (at +0x9B8), i.e. pos+0xC. The
+    // `GetPosition` virtual copies only x/y/z into the caller's buffer, so
+    // read facing off the object directly. Backs `GetPlayerFacing`. Empirically
+    // located by probing the player object across a known 180-degree turn
+    // (value flipped by ~pi, stayed in range); mirrored at +0x9F8 / +0xC98
+    // (last-sent / render copies) — +0x9C4 is the authoritative one.
+    OFF_UNIT_FACING = 0x9C4,
 
     // CGObject `m_objectType` field — 0 = (base) object, 1 = item,
     // 2 = container, 3 = unit, 4 = player, 5 = gameobject, … Read as
