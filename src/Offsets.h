@@ -454,6 +454,15 @@ enum Offsets {
     // pointer the inventory routines expect.
     FUN_RESOLVE_UNIT_TOKEN = 0x00515940,
 
+    // Set the player's current target to a GUID —
+    // `__fastcall(uint64_t *guid)`. Validates the GUID resolves to a unit
+    // (typemask 8) then commits the selection (CMSG_SET_SELECTION +
+    // client-side target). This is what `Script_TargetUnit` (0x004899D0)
+    // calls after resolving its token→GUID; we call it directly with a
+    // GUID we already have (e.g. a totem creature). NOTE: reads `guid[0]`
+    // (lo) and `guid[1]` (hi) through the pointer.
+    FUN_TARGET_BY_GUID = 0x00489A40,
+
     // Local-player CGObject-like global. Not the same pointer as
     // ResolveUnitToken("player") returns — that one's the canonical
     // CGPlayer_C used by inventory etc. This pointer's +0xC0 field

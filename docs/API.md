@@ -465,6 +465,7 @@ build instructions.
 - [Totem](#totem)
   - [`GetTotemInfo(slot)`](#gettoteminfoslot)
   - [`GetTotemTimeLeft(slot)`](#gettotemtimeleftslot)
+  - [`TargetTotem(slot)`](#targettotemslot)
 
 - [TradeSkillUI](#tradeskillui)
   - [`C_TradeSkillUI.GetTradeSkillListLink()`](#c_tradeskilluigettradeskilllistlink)
@@ -11290,6 +11291,20 @@ Computed from the same tracker as [`GetTotemInfo`](#gettoteminfoslot)
 notably it reflects the totem's *full* duration from cast, unaffected by
 any server-side early expiry the client isn't told about (the WorldTick
 scan still clears the slot when the totem creature actually disappears).
+
+### `TargetTotem(slot)`
+
+Targets the player's totem in the given slot (`1` Fire, `2` Earth, `3`
+Water, `4` Air). No-op when the slot has no active totem or the totem
+creature isn't currently visible in the client.
+
+```lua
+TargetTotem(2)   -- target your Earth totem
+```
+
+Looks up the totem creature's live GUID (object-manager scan for the
+player-owned creature of the slot's tracked entry) and sets the target
+through the same engine path `TargetUnit` uses (`CMSG_SET_SELECTION`).
 
 ## TradeSkillUI
 

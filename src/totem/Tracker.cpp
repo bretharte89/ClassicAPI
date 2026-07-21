@@ -216,6 +216,55 @@ int __fastcall ScanCallback(ScanCtx *ctx, void * /*unusedEdx*/, uint64_t guid) {
     return 1; // keep scanning — other slots may match other creatures
 }
 
+// On-demand lookup of the live GUID of the player's totem creature of a
+// given entry (for TargetTotem). Returns 0 when none is visible.
+struct FindGuidCtx {
+    uint64_t playerGuid;
+    uint32_t entry;
+    uint64_t found;
+};
+
+int __fastcall FindGuidCallback(FindGuidCtx *ctx, void * /*unusedEdx*/,
+                                uint64_t guid) {
+    if (!Guid::IsCreature(guid))
+        return 1;
+    if (static_cast<uint32_t>((guid >> 24) & 0xFFFFFFu) != ctx->entry)
+        return 1;
+    auto ObjectPtr =
+        reinterpret_cast<ObjectPtr_t>(Offsets::FUN_CLNT_OBJ_MGR_OBJECT_PTR);
+    void *obj = ObjectPtr(Offsets::TYPEMASK_UNIT, nullptr,
+                          static_cast<uint32_t>(guid),
+                          static_cast<uint32_t>(guid >> 32), 0);
+    if (obj == nullptr)
+        return 1;
+    auto *desc = *reinterpret_cast<const uint8_t *const *>(
+        static_cast<const uint8_t *>(obj) + Offsets::OFF_UNIT_DESCRIPTOR);
+    if (desc == nullptr)
+        return 1;
+    if (*reinterpret_cast<const uint64_t *>(
+            desc + Offsets::OFF_UNIT_FIELD_CREATEDBY) == ctx->playerGuid) {
+        ctx->found = guid;
+        return 0; // stop
+    }
+    return 1;
+}
+
+uint64_t FindTotemGuid(uint32_t entry) {
+    if (entry == 0)
+        return 0;
+    if (*reinterpret_cast<void *volatile *>(Offsets::VAR_LOCAL_PLAYER_PTR) ==
+        nullptr)
+        return 0;
+    const uint64_t player = Unit::Identity::PlayerGuid();
+    if (player == 0)
+        return 0;
+    FindGuidCtx ctx{player, entry, 0};
+    auto Enum = reinterpret_cast<EnumVisibleObjects_t>(
+        Offsets::FUN_CLNT_OBJ_MGR_ENUM_VISIBLE_OBJECTS);
+    Enum(reinterpret_cast<EnumCallback_t>(&FindGuidCallback), &ctx);
+    return ctx.found;
+}
+
 // PLAYER_TOTEM_UPDATE(totemSlot 1-4) — a TBC event absent from vanilla's
 // table, reserved as a custom event and fired when a slot's state changes
 // (totem dropped, expired, killed, or recalled). Changes are recorded in a
@@ -405,10 +454,36 @@ int __fastcall Script_GetTotemTimeLeft(void *L) {
     return 1;
 }
 
+// `TargetTotem(slot)` — target the player's totem in the given slot
+// (1 Fire, 2 Earth, 3 Water, 4 Air). No-op when the slot has no active
+// totem or the totem creature isn't currently visible. Finds the totem
+// creature's live GUID and sets the target via the same engine path
+// `TargetUnit` uses.
+int __fastcall Script_TargetTotem(void *L) {
+    if (!Game::Lua::IsNumber(L, 1)) {
+        Game::Lua::Error(L, "Usage: TargetTotem(slot)");
+        return 0;
+    }
+    const int slot = static_cast<int>(Game::Lua::ToNumber(L, 1));
+    if (slot < 1 || slot > kSlots)
+        return 0;
+    const Slot &t = g_slots[slot - 1];
+    if (!t.active || t.entry == 0)
+        return 0;
+    uint64_t guid = FindTotemGuid(t.entry);
+    if (guid == 0)
+        return 0;
+    using TargetByGuid_t = void(__fastcall *)(const uint64_t *guid);
+    reinterpret_cast<TargetByGuid_t>(
+        static_cast<uintptr_t>(Offsets::FUN_TARGET_BY_GUID))(&guid);
+    return 0;
+}
+
 void RegisterLuaFunctions() {
     Game::Lua::RegisterGlobalFunction("GetTotemInfo", &Script_GetTotemInfo);
     Game::Lua::RegisterGlobalFunction("GetTotemTimeLeft",
                                       &Script_GetTotemTimeLeft);
+    Game::Lua::RegisterGlobalFunction("TargetTotem", &Script_TargetTotem);
 }
 
 const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};

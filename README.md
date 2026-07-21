@@ -63,7 +63,7 @@ Full per-function reference: **[docs/API.md](docs/API.md)**.
 | [Talent](docs/API.md#talent) | `GetTalentIDByIndex`, `GetTalentSpellID` |
 | [TaxiMap](docs/API.md#taximap) | `C_TaxiMap.GetTaxiNodesForMap`, `C_TaxiMap.GetAllTaxiNodes` |
 | [Time](docs/API.md#time) | `C_DateAndTime.AdjustTimeByDays`, `C_DateAndTime.AdjustTimeByMinutes`, `C_DateAndTime.CompareCalendarTime`, `C_DateAndTime.GetCalendarTimeFromEpoch`, `C_DateAndTime.GetCurrentCalendarTime`, `C_DateAndTime.GetSecondsUntilDailyReset`, `C_DateAndTime.GetServerTimeLocal`, `C_Timer.After`, `C_Timer.NewTicker`, `C_Timer.NewTimer`, `GetServerTime` |
-| [Totem](docs/API.md#totem) | `GetTotemInfo`, `GetTotemTimeLeft` |
+| [Totem](docs/API.md#totem) | `GetTotemInfo`, `GetTotemTimeLeft`, `TargetTotem` |
 | [TradeSkillUI](docs/API.md#tradeskillui) | `C_TradeSkillUI.GetTradeSkillListLink`, `C_TradeSkillUI.GetCraftListLink`, `C_TradeSkillUI.GetTradeSkillListRecipes` |
 | [UIColor](docs/API.md#uicolor) | `C_UIColor.GetColors` |
 | [Unit](docs/API.md#unit) | `ClosestUnitPosition`, `GetUnitSpeed`, `UnitClassBase`, `UnitCreatureFamilyID`, `UnitCreatureTypeID`, `UnitDistanceSquared`, `UnitGUID`, `UnitInLineOfSight`, `UnitInRange`, `UnitIsAFK`, `UnitIsDND`, `UnitIsFeignDeath`, `UnitIsInMyGuild`, `UnitIsMinion`, `UnitIsOtherPlayersPet`, `UnitIsPet`, `UnitIsPossessed`, `UnitOwnerGUID`, `UnitPower`, `UnitPowerMax`, `UnitPowerType`, `UnitRaceBase`, `UnitStandState`, `UnitSubName`, `UnitTokenFromGUID` |
