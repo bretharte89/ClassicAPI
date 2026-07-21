@@ -465,6 +465,7 @@ build instructions.
 - [Totem](#totem)
   - [`GetTotemInfo(slot)`](#gettoteminfoslot)
   - [`GetTotemTimeLeft(slot)`](#gettotemtimeleftslot)
+  - [`GetTotemDuration(slot)`](#gettotemdurationslot)
   - [`TargetTotem(slot)`](#targettotemslot)
 
 - [TradeSkillUI](#tradeskillui)
@@ -11291,6 +11292,18 @@ Computed from the same tracker as [`GetTotemInfo`](#gettoteminfoslot)
 notably it reflects the totem's *full* duration from cast, unaffected by
 any server-side early expiry the client isn't told about (the WorldTick
 scan still clears the slot when the totem creature actually disappears).
+
+### `GetTotemDuration(slot)`
+
+Returns the slot's active totem's **total** duration in seconds (its full
+lifetime from cast), or `0` when no totem is active. The companion to
+[`GetTotemTimeLeft`](#gettotemtimeleftslot) (remaining time) — same value
+as `GetTotemInfo`'s 4th return.
+
+```lua
+local total = GetTotemDuration(1)                       -- e.g. 60
+local frac  = GetTotemTimeLeft(1) / GetTotemDuration(1) -- bar fill
+```
 
 ### `TargetTotem(slot)`
 

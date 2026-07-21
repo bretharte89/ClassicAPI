@@ -454,6 +454,26 @@ int __fastcall Script_GetTotemTimeLeft(void *L) {
     return 1;
 }
 
+// `GetTotemDuration(slot)` → the total duration (seconds) of the slot's
+// active totem, or `0` when none. This is the totem's full lifetime from
+// cast (the 4th value of GetTotemInfo); see GetTotemTimeLeft for the
+// remaining time.
+int __fastcall Script_GetTotemDuration(void *L) {
+    if (!Game::Lua::IsNumber(L, 1)) {
+        Game::Lua::Error(L, "Usage: GetTotemDuration(slot)");
+        return 0;
+    }
+    const int slot = static_cast<int>(Game::Lua::ToNumber(L, 1));
+    double seconds = 0.0;
+    if (slot >= 1 && slot <= kSlots) {
+        const Slot &t = g_slots[slot - 1];
+        if (t.active)
+            seconds = static_cast<double>(t.durationMs) / 1000.0;
+    }
+    Game::Lua::PushNumber(L, seconds);
+    return 1;
+}
+
 // `TargetTotem(slot)` — target the player's totem in the given slot
 // (1 Fire, 2 Earth, 3 Water, 4 Air). No-op when the slot has no active
 // totem or the totem creature isn't currently visible. Finds the totem
@@ -483,6 +503,8 @@ void RegisterLuaFunctions() {
     Game::Lua::RegisterGlobalFunction("GetTotemInfo", &Script_GetTotemInfo);
     Game::Lua::RegisterGlobalFunction("GetTotemTimeLeft",
                                       &Script_GetTotemTimeLeft);
+    Game::Lua::RegisterGlobalFunction("GetTotemDuration",
+                                      &Script_GetTotemDuration);
     Game::Lua::RegisterGlobalFunction("TargetTotem", &Script_TargetTotem);
 }
 
