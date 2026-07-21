@@ -259,6 +259,9 @@ local function CreateFrame_TradeSkillLink()
 	f:Hide();
 	tinsert(UISpecialFrames, f:GetName())
 
+	f:SetScript("OnShow", function() PlaySound("igCharacterInfoOpen"); end);
+	f:SetScript("OnHide", function() PlaySound("igCharacterInfoClose"); end);
+
 	local portrait = f:CreateTexture(nil, "BACKGROUND");
 	portrait:SetSize(60, 60);
 	portrait:SetPoint("TOPLEFT", 7, -6);
