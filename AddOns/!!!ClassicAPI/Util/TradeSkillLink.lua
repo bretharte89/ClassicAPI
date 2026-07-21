@@ -296,7 +296,7 @@ local function CreateFrame_TradeSkillLink()
 	local exit = CreateFrame("Button", nil, f, "UIPanelButtonTemplate");
 	exit:SetSize(80, 22);
 	exit:SetPoint(LO.exit[1], f, LO.exit[2], LO.exit[3], LO.exit[4]);
-	exit:SetText(EXIT or "Exit");
+	exit:SetText(EXIT);
 	exit:SetScript("OnClick", function() f:Hide(); end);
 
 	local bar = CreateFrame("StatusBar", nil, f);
