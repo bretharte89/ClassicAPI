@@ -396,13 +396,12 @@ local function CreateFrame_TradeSkillLink()
 		"ClassicAPITradeSkillLinkDetailScroll", f, DETAIL_SCROLL_TEMPLATE);
 	detailScroll:SetSize(LO.detail[3], LO.detail[4]);
 	detailScroll:SetPoint("TOPLEFT", LO.detail[1], LO.detail[2]);
-	-- `scrollBarHideable` lets the engine's ScrollFrame_OnScrollRangeChanged
-	-- (fired by UpdateScrollChildRect in RenderDetail) hide the slider, arrows,
-	-- thumb and borders when the content fits and show them when it overflows.
-	-- The wheel is the template's own OnMouseWheel; enable it once and let it
-	-- clamp to the live range.
+	-- Bar visibility + wheel are driven per-render by SetDetailBarShown (from
+	-- the computed overflow). `scrollBarHideable` still lets the template's
+	-- ScrollFrame_OnScrollRangeChanged manage the slider on range changes.
+	-- Start with the wheel off; the first RenderDetail/ClearDetail sets it.
 	detailScroll.scrollBarHideable = 1;
-	detailScroll:EnableMouseWheel(true);
+	detailScroll:EnableMouseWheel(false);
 	f.detailScroll = detailScroll;
 
 	local detailChild = CreateFrame("Frame",
@@ -508,6 +507,7 @@ local function CreateFrame_TradeSkillLink()
 	-- start never hides), and GetVerticalScrollRange isn't reliably readable
 	-- the same tick as UpdateScrollChildRect.
 	function f:SetDetailBarShown(show)
+		self.detailScroll:EnableMouseWheel(show);
 		local base = "ClassicAPITradeSkillLinkDetailScroll";
 		local sb = getglobal(base .. "ScrollBar");
 		if sb then sb:SetShown(show) end
