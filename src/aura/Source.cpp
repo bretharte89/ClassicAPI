@@ -23,6 +23,7 @@
 #include "player/StatSignal.h"
 #include "spell/Lookup.h"
 #include "tick/WorldTick.h"
+#include "totem/Tracker.h"
 #include "unit/Identity.h"
 
 #include <cstdint>
@@ -229,6 +230,11 @@ void __fastcall SpellGo_h(uint64_t *itemGUID, uint64_t *casterGUID,
     const uint64_t caster = (casterGUID != nullptr) ? *casterGUID : 0;
     if (caster == 0 || spellId == 0)
         return;
+
+    // Feed the totem tracker BEFORE the aura gate below — a totem summon
+    // applies no aura, so it would otherwise be dropped. Player casts only.
+    if (caster == Unit::Identity::PlayerGuid())
+        Totem::Tracker::OnPlayerSpellGo(spellId);
 
     const uint8_t *rec = Spell::Lookup::RecordForID(static_cast<int>(spellId));
     if (!SpellAppliesAura(rec))

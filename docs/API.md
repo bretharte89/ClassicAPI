@@ -461,6 +461,9 @@ build instructions.
   - [`C_DateAndTime.GetServerTimeLocal()`](#c_dateandtimegetservertimelocal)
   - [`C_DateAndTime.GetSecondsUntilDailyReset()`](#c_dateandtimegetsecondsuntildailyreset)
 
+- [Totem](#totem)
+  - [`GetTotemInfo(slot)`](#gettoteminfoslot)
+
 - [TradeSkillUI](#tradeskillui)
   - [`C_TradeSkillUI.GetTradeSkillListLink()`](#c_tradeskilluigettradeskilllistlink)
   - [`C_TradeSkillUI.GetCraftListLink()`](#c_tradeskilluigetcraftlistlink)
@@ -11196,6 +11199,54 @@ wall-clock time). Returns 0 if called before login.
 > See the overview's "Daily reset semantics" note — this uses server
 > midnight, not UTC midnight (though they happen to coincide for
 > Turtle WoW since the server reports UTC-aligned components).
+
+## Totem
+
+### `GetTotemInfo(slot)`
+
+Returns `haveTotem, totemName, startTime, duration, icon, modRate, spellID`
+for one of the four shaman totem slots (`1` Fire, `2` Earth, `3` Water,
+`4` Air).
+
+```lua
+local _, name, start, duration, icon = GetTotemInfo(1)   -- Fire slot
+if name ~= "" then                                       -- a totem IS active
+    local remaining = duration - (GetTime() - start)
+    -- name = "Searing Totem", icon = "Interface\\Icons\\...", etc.
+end
+```
+
+| Return | Meaning |
+|--------|---------|
+| `haveTotem` | `true` if the player carries the slot's **totem tool** (Fire/Earth/Water/Air Totem item) — the documented meaning, **not** whether a totem is summoned. |
+| `totemName` | The active totem spell's localized name (`""` when no totem is out — this is how you test "is a totem active"). |
+| `startTime` | `GetTime()` value when the totem was cast (`0` when none). |
+| `duration` | Total duration in seconds (`0` when none). |
+| `icon` | The active totem spell's icon texture path, or `nil` when none. |
+| `modRate` | Always `1` — vanilla has no per-totem haste. |
+| `spellID` | The active summon spell's ID (`0` when none). |
+
+> **`haveTotem` is tool presence, not summon state.** Matching the live
+> API: `haveTotem` reflects whether you hold the slot's totem **tool** item
+> (`Fire Totem` 5176, `Earth Totem` 5175, `Water Totem` 5177, `Air Totem`
+> 5178) in bags/equipped, independent of whether a totem is currently
+> deployed. The tool item is the totem spell's `Totem[0]` requirement (a
+> *tool*, not a consumed reagent), read from the spell — not hardcoded. To
+> check for an *active* totem, test `totemName ~= ""` (or `startTime > 0`).
+
+Vanilla 1.12 has no client-side totem tracking (the totem bar,
+`PLAYER_TOTEM_UPDATE`, and `GetTotemInfo` are all TBC additions), so this
+is self-tracked but **data-driven**: the slot is read from the summon
+spell's `Spell.dbc` effect (`SUMMON_TOTEM_SLOT1..4` = Fire/Earth/Water/Air),
+duration from `SpellDuration.dbc`, the totem's creature entry (for death
+detection) from the effect's `EffectMiscValue`, and the `haveTotem` tool
+item from the spell's `Totem` field (the totem the spell requires) —
+resolved from the player's spellbook, not a hardcoded table. Casts are observed
+via the `SMSG_SPELL_GO` hook; a slot clears when its duration elapses OR
+when the totem creature disappears early (killed, Totemic Recall, or
+destroyed) — detected by scanning the object manager for the player-owned
+totem creature. Because it's data-driven, Turtle-custom totems are tracked
+automatically.
 
 ## TradeSkillUI
 

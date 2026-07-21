@@ -11,6 +11,8 @@
 // You should have received a copy of the GNU General Public License along with
 // ClassicAPI. If not, see <https://www.gnu.org/licenses/>.
 
+#include "item/Count.h"
+
 #include "Game.h"
 #include "Offsets.h"
 #include "item/Arg.h"
@@ -250,6 +252,15 @@ int __fastcall Script_C_Item_GetItemCount(void *L) {
 }
 
 } // namespace
+
+int InInventory(void *L, int itemID) {
+    if (itemID <= 0)
+        return 0;
+    int total = CountEquipped(itemID, /*includeUses*/ false);
+    for (int bag = 0; bag <= 4; bag++)
+        total += CountInBag(L, bag, itemID, /*includeUses*/ false);
+    return total;
+}
 
 static void RegisterLuaFunctions() {
     Game::Lua::RegisterTableFunction("C_Item", "GetItemCount",
