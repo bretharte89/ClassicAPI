@@ -95,6 +95,7 @@ build instructions.
 
 - [Events](#events)
   - [`C_EventUtils.IsEventValid(eventName)`](#c_eventutilsiseventvalideventname)
+  - [`GetFramesRegisteredForEvent(event)`](#getframesregisteredforeventevent)
   - [`PLAYER_ENTERING_WORLD` payload (`isInitialLogin`, `isReloadingUi`)](#player_entering_world-payload-isinitiallogin-isreloadingui)
   - [`PLAYER_TOTEM_UPDATE` event](#player_totem_update-event)
   - [`BAG_UPDATE_DELAYED` event](#bag_update_delayed-event)
@@ -2245,6 +2246,27 @@ SuperWoWhook, `IsEventValid("UNIT_CASTEVENT")` returns `true` because
 SuperWoWhook patches the binary's event names with its own. This matches
 what `frame:RegisterEvent` will actually accept, which is what addon code
 needs to know.
+
+### `GetFramesRegisteredForEvent(event)`
+
+Returns the frames currently registered for `event`, as multiple return
+values (matching the modern signature — not a table). Returns nothing when
+no frame is registered or the event name is unknown.
+
+```lua
+local f1, f2 = GetFramesRegisteredForEvent("PLAYER_LOGIN")
+for i = 1, select("#", GetFramesRegisteredForEvent("BAG_UPDATE")) do
+    local frame = select(i, GetFramesRegisteredForEvent("BAG_UPDATE"))
+    print(frame:GetName())
+end
+```
+
+Reads the engine's own subscriber chain — the exact list
+`frame:RegisterEvent` appends to — so it stays in sync with real
+registrations, including our `AutoReserve`-backed custom events. Frames
+created purely in C++ (nameplates, etc.) come back as their canonical
+wrapper, so `:GetName()` and other methods work; an anonymous frame's
+`:GetName()` is `nil`, same as on retail.
 
 ### `PLAYER_ENTERING_WORLD` payload (`isInitialLogin`, `isReloadingUi`)
 
