@@ -464,6 +464,7 @@ build instructions.
 
 - [Totem](#totem)
   - [`GetTotemInfo(slot)`](#gettoteminfoslot)
+  - [`GetTotemTimeLeft(slot)`](#gettotemtimeleftslot)
 
 - [TradeSkillUI](#tradeskillui)
   - [`C_TradeSkillUI.GetTradeSkillListLink()`](#c_tradeskilluigettradeskilllistlink)
@@ -11273,6 +11274,22 @@ destroyed) — detected by scanning the object manager for the player-owned
 totem creature. Because it's data-driven, Turtle-custom totems are tracked
 automatically. Slot changes fire
 [`PLAYER_TOTEM_UPDATE`](#player_totem_update-event).
+
+### `GetTotemTimeLeft(slot)`
+
+Returns the seconds remaining before the slot's totem is auto-destroyed,
+or `0` when no totem is active in that slot. Slots: `1` Fire, `2` Earth,
+`3` Water, `4` Air.
+
+```lua
+local remaining = GetTotemTimeLeft(1)   -- Fire slot, e.g. 12.4
+```
+
+Computed from the same tracker as [`GetTotemInfo`](#gettoteminfoslot)
+(`startTime + duration − now`), so it shares that data's caveats — most
+notably it reflects the totem's *full* duration from cast, unaffected by
+any server-side early expiry the client isn't told about (the WorldTick
+scan still clears the slot when the totem creature actually disappears).
 
 ## TradeSkillUI
 

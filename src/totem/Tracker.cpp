@@ -382,8 +382,33 @@ int __fastcall Script_GetTotemInfo(void *L) {
     return 7;
 }
 
+// `GetTotemTimeLeft(slot)` → seconds until the slot's totem is auto-
+// destroyed, or `0` when no totem is active in that slot. Slots: 1 Fire,
+// 2 Earth, 3 Water, 4 Air.
+int __fastcall Script_GetTotemTimeLeft(void *L) {
+    if (!Game::Lua::IsNumber(L, 1)) {
+        Game::Lua::Error(L, "Usage: GetTotemTimeLeft(slot)");
+        return 0;
+    }
+    const int slot = static_cast<int>(Game::Lua::ToNumber(L, 1));
+    double seconds = 0.0;
+    if (slot >= 1 && slot <= kSlots) {
+        const Slot &t = g_slots[slot - 1];
+        if (t.active && t.durationMs != 0) {
+            const uint32_t now = NowMs();
+            const uint32_t end = t.startMs + t.durationMs;
+            if (now < end)
+                seconds = static_cast<double>(end - now) / 1000.0;
+        }
+    }
+    Game::Lua::PushNumber(L, seconds);
+    return 1;
+}
+
 void RegisterLuaFunctions() {
     Game::Lua::RegisterGlobalFunction("GetTotemInfo", &Script_GetTotemInfo);
+    Game::Lua::RegisterGlobalFunction("GetTotemTimeLeft",
+                                      &Script_GetTotemTimeLeft);
 }
 
 const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
