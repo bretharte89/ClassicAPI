@@ -396,29 +396,14 @@ local function CreateFrame_TradeSkillLink()
 		"ClassicAPITradeSkillLinkDetailScroll", f, DETAIL_SCROLL_TEMPLATE);
 	detailScroll:SetSize(LO.detail[3], LO.detail[4]);
 	detailScroll:SetPoint("TOPLEFT", LO.detail[1], LO.detail[2]);
-	detailScroll.scrollBarHideable = 1;  -- template sets this too; belt-and-suspenders
+	-- `scrollBarHideable` lets the engine's ScrollFrame_OnScrollRangeChanged
+	-- (fired by UpdateScrollChildRect in RenderDetail) hide the slider, arrows,
+	-- thumb and borders when the content fits and show them when it overflows.
+	-- The wheel is the template's own OnMouseWheel; enable it once and let it
+	-- clamp to the live range.
+	detailScroll.scrollBarHideable = 1;
+	detailScroll:EnableMouseWheel(true);
 	f.detailScroll = detailScroll;
-	-- Off until a recipe overflows the pane (toggled in RenderDetail).
-	-- The template shows its slider and enables the wheel by default; on
-	-- the roomy Turtle pane that leaves a dead scrollbar that still eats
-	-- wheel events and over-scrolls a hair. Start both disabled.
-	detailScroll:EnableMouseWheel(false);
-	local detailSB = getglobal("ClassicAPITradeSkillLinkDetailScrollScrollBar");
-	if detailSB then
-		detailSB:Hide();
-	end
-	-- The template re-shows its slider when the frame transitions to shown
-	-- (on first open, before the auto-selected recipe's RenderDetail runs),
-	-- leaving a dead scrollbar until the first click. Re-assert the hidden
-	-- state on show unless the current recipe genuinely overflows.
-	detailScroll:SetScript("OnShow", function()
-		f:UpdateDetailScrollbar();
-		RunNextFrame(function()
-			if f:IsShown() then
-				f:UpdateDetailScrollbar();
-			end
-		end);
-	end);
 
 	local detailChild = CreateFrame("Frame",
 		"ClassicAPITradeSkillLinkDetailChild", detailScroll);
@@ -517,18 +502,19 @@ local function CreateFrame_TradeSkillLink()
 		return btn;
 	end
 
-	-- Show the detail slider + enable the wheel only when the current
-	-- recipe overflows the pane (tracked by `detailNeedScroll`).
-	function f:UpdateDetailScrollbar()
-		local need = self.detailNeedScroll and true or false;
-		self.detailScroll:EnableMouseWheel(need);
+	-- Show the detail bar/borders only when the content overflows the pane.
+	-- Driven by our own computed overflow, NOT the engine: scrollBarHideable's
+	-- auto-hide only fires on a range CHANGE (so content that fits from the
+	-- start never hides), and GetVerticalScrollRange isn't reliably readable
+	-- the same tick as UpdateScrollChildRect.
+	function f:SetDetailBarShown(show)
 		local base = "ClassicAPITradeSkillLinkDetailScroll";
 		local sb = getglobal(base .. "ScrollBar");
-		if sb then sb:SetShown(need) end
+		if sb then sb:SetShown(show) end
 		local top = getglobal(base .. "Top");
-		if top then top:SetShown(need) end
+		if top then top:SetShown(show) end
 		local bottom = getglobal(base .. "Bottom");
-		if bottom then bottom:SetShown(need) end
+		if bottom then bottom:SetShown(show) end
 	end
 
 	function f:RenderDetail(entry)
@@ -574,19 +560,21 @@ local function CreateFrame_TradeSkillLink()
 		local total = table.getn(reagents);
 		for i = 1, total do
 			local btn = AcquireReagent(i);
-			local r = reagents[i];
-			local name, tex, link = itemInfo(r.itemID);
+			local reagent = reagents[i];
+			local name, tex, link = itemInfo(reagent.itemID);
 			btn:SetNormalTexture(tex or "Interface\\Icons\\INV_Misc_QuestionMark");
 			btn.itemLink = link;
-			btn.nameText:SetText(name or ("item:" .. r.itemID));
-			local need = r.count or 1;
-			local have = C_Item.GetItemCount(r.itemID) or 0;
+			btn.nameText:SetText(name or ("item:" .. reagent.itemID));
+			local need = reagent.count or 1;
+			local have = C_Item.GetItemCount(reagent.itemID) or 0;
 			if have >= need then
-				btn:GetNormalTexture():SetVertexColor(1, 1, 1);
-				btn.nameText:SetTextColor(HIGHLIGHT_FONT_COLOR:GetRGB());
+				local r, g, b = HIGHLIGHT_FONT_COLOR:GetRGB()
+				btn:GetNormalTexture():SetVertexColor(r, g, b);
+				btn.nameText:SetTextColor(r, g, b);
 			else
-				btn:GetNormalTexture():SetVertexColor(0.5, 0.5, 0.5);
-				btn.nameText:SetTextColor(GRAY_FONT_COLOR:GetRGB());
+				local r, g, b = GRAY_FONT_COLOR:GetRGB()
+				btn:GetNormalTexture():SetVertexColor(r, g, b);
+				btn.nameText:SetTextColor(r, g, b);
 			end
 			local haveText = (have >= 100) and "*" or tostring(have);
 			btn.count:SetText(haveText .. " /" .. need);
@@ -597,29 +585,32 @@ local function CreateFrame_TradeSkillLink()
 			self.reagents[i]:Hide();
 		end
 
-		-- Grow the scroll child to the content height so the pane scrolls
-		-- once the header + reagent rows exceed the visible area. Reagent
-		-- row 0 sits ~67px below the child top (icon + label); add the
-		-- wrapped description height for spell recipes.
-		local descH = (descText ~= "") and self.prodDesc:GetHeight() or 0;
-		local rows = math.ceil(total / 2);
-		local contentH = 67 + descH + rows * REAGENT_ROW_HEIGHT + 8;
-		self.detailChild:SetHeight(math.max(contentH, LO.detail[4]));
-		-- Reset to the top and manage the slider explicitly: a range that
-		-- stays 0 (content fits, e.g. Turtle's roomy pane) never fires the
-		-- range-changed event that `scrollBarHideable` relies on, so the
-		-- slider would otherwise sit visible-but-useless. Show it only when
-		-- the content actually overflows.
-		self.detailNeedScroll = contentH > LO.detail[4];
+		local function applyContentHeight()
+			local contentH = LO.detail[4];
+			if total > 0 then
+				local childTop = self.detailChild:GetTop();
+				local lastBtn = self.reagents[total];
+				local lastBottom = lastBtn and lastBtn:GetBottom();
+				if childTop and lastBottom then
+					-- +22: ~12px name-plate overhang below the icon + ~10px pad.
+					contentH = (childTop - lastBottom) + 22;
+				end
+			end
+			self.detailChild:SetHeight(math.max(contentH, LO.detail[4]));
+			-- Recompute the scroll range from the child's new height, then
+			-- show the bar only if the content actually overflows the pane.
+			self.detailScroll:UpdateScrollChildRect();
+			self:SetDetailBarShown(contentH > LO.detail[4] + 0.5);
+		end
+		applyContentHeight();
 		local sb = getglobal("ClassicAPITradeSkillLinkDetailScrollScrollBar");
 		if sb then
 			sb:SetValue(0);
 		end
 		self.detailScroll:SetVerticalScroll(0);
-		self:UpdateDetailScrollbar();
 		RunNextFrame(function()
-			if self:IsShown() then
-				self:UpdateDetailScrollbar();
+			if self:IsShown() and self.selectedSpellID == entry.spellID then
+				applyContentHeight();
 			end
 		end)
 	end
@@ -642,8 +633,8 @@ local function CreateFrame_TradeSkillLink()
 			self.reagents[i]:Hide();
 		end
 		self.detailChild:SetHeight(LO.detail[4]);
-		self.detailNeedScroll = false;
-		self:UpdateDetailScrollbar();
+		self.detailScroll:UpdateScrollChildRect();
+		self:SetDetailBarShown(false);
 		self.detailScroll:SetVerticalScroll(0);
 	end
 
