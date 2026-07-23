@@ -2446,6 +2446,23 @@ enum Offsets {
     VAR_TAXIPATH_COUNT = 0x00C0D69C,
     OFF_TAXIPATH_FROM = 0x04,
     OFF_TAXIPATH_TO = 0x08,
+    OFF_TAXIPATH_COST = 0x0C,
+
+    // TaxiPathNode.dbc — the per-path flight waypoints. 1-based
+    // record-pointer array (records/count slots per docs/DBCs.md). Record
+    // (verified against the extracted DBC + the loading-screen spline
+    // reader FUN_004075A0, which reads mapID@+0xC, X@+0x10, Y@+0x14):
+    //   {ID@+0, pathID@+4, nodeIndex@+8, mapID@+0xC,
+    //    X@+0x10, Y@+0x14, Z@+0x18 (float), flags@+0x1C, delay@+0x20}
+    // Waypoints of a path share pathID and order by nodeIndex.
+    VAR_TAXIPATHNODE_RECORDS = 0x00C0D6AC,
+    VAR_TAXIPATHNODE_COUNT = 0x00C0D6B0,
+    OFF_TAXIPATHNODE_PATH_ID = 0x04,
+    OFF_TAXIPATHNODE_INDEX = 0x08,
+    OFF_TAXIPATHNODE_MAP = 0x0C,
+    OFF_TAXIPATHNODE_X = 0x10,
+    OFF_TAXIPATHNODE_Y = 0x14,
+    OFF_TAXIPATHNODE_Z = 0x18,
 
     // Engine player-info cache — populated by the
     // SMSG_NAME_QUERY_RESPONSE handler (opcode 0x51) at 0x005551A0,

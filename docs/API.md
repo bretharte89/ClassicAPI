@@ -460,6 +460,8 @@ build instructions.
 - [TaxiMap](#taximap)
   - [`C_TaxiMap.GetTaxiNodesForMap([mapID])`](#c_taximapgettaxinodesformapmapid)
   - [`C_TaxiMap.GetAllTaxiNodes([uiMapID])`](#c_taximapgetalltaxinodesuimapid)
+  - [`C_TaxiMap.GetTaxiPaths()`](#c_taximapgettaxipaths)
+  - [`C_TaxiMap.GetTaxiPathWaypoints(pathID)`](#c_taximapgettaxipathwaypointspathid)
 
 - [Time](#time)
   - [`GetServerTime()`](#getservertime)
@@ -11185,6 +11187,50 @@ This is the interactive counterpart to `GetTaxiNodesForMap`: session-gated
 and player-relative (its whole point is the open master's reachable set),
 which is why a static database like pfQuest uses `GetTaxiNodesForMap`
 instead.
+
+### `C_TaxiMap.GetTaxiPaths()`
+
+Returns every flight path (directed edge) in `TaxiPath.dbc` as an array of
+tables — the taxi routing graph. No flight master needed; reads the DBC
+directly.
+
+```lua
+local paths = C_TaxiMap.GetTaxiPaths()
+-- paths[i] = { pathID = 94, fromNodeID = 8, toNodeID = 16, cost = 110 }
+```
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `pathID` | number | `TaxiPath.dbc` id — pass to `GetTaxiPathWaypoints` |
+| `fromNodeID` | number | source `TaxiNodes.dbc` id |
+| `toNodeID` | number | destination `TaxiNodes.dbc` id |
+| `cost` | number | flight cost in copper (the routing weight) |
+
+Directed — `A→B` and `B→A` are two separate entries with their own path IDs
+and geometry. Combine with `GetTaxiNodesForMap` (the node table) to build a
+weighted graph, and with `GetTaxiPathWaypoints` to measure real distances.
+
+### `C_TaxiMap.GetTaxiPathWaypoints(pathID)`
+
+Returns the waypoint polyline of one flight path as an array of world
+coordinates, ordered by node index (flight order).
+
+```lua
+local wp = C_TaxiMap.GetTaxiPathWaypoints(94)
+-- wp[i] = { x = -8851.66, y = 498.55, z = 111.26, mapID = 0 }
+```
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `x`, `y`, `z` | number | world position (yards) |
+| `mapID` | number | continent (`Map.dbc` id) |
+
+Returns nothing for an unknown `pathID` or an empty path. Sum the 3D distances
+between consecutive waypoints for the path's length; vanilla taxi flight
+speed is 32 yd/s, so `length / 32 ≈ flight seconds` for a single hop.
+(Multi-hop trips are shorter than the sum of their segments — the server cuts
+the corner at each intermediate flight master via data not present in any
+client file, so a client-side estimate of a chained route is an upper bound.)
 
 ## Time
 
