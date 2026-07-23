@@ -3987,6 +3987,10 @@ enum Offsets {
     // the frame into the matching entry's chain.
     VAR_EVENT_TABLE_BASE_PTR = 0x00CEEF68,
     VAR_EVENT_TABLE_COUNT = 0x00CEEF64,
+    // The FrameScript_EventObject is a `{cap@+0, count@+4, data@+8}` at
+    // 0x00CEEF60, so COUNT/BASE above are its +4/+8. The +0 capacity mirror
+    // is updated alongside them when `EnsureCapacity` grows the table.
+    VAR_EVENT_TABLE_CAP = 0x00CEEF60,
     EVENT_ENTRY_STRIDE = 0x10,
     OFF_EVENT_ENTRY_NAME = 0x00,
     OFF_EVENT_ENTRY_HEAD = 0x0C,
@@ -4026,6 +4030,16 @@ enum Offsets {
     // mismatch). Instead, `Event::Custom` claims NULL slots from the live
     // table after the rebuild settles. Kept for reference.
     FUN_REBUILD_EVENT_TABLE = 0x00703D90,
+
+    // Event-table allocator — `__thiscall(EventObject *this, uint32 count)`.
+    // Called by `RebuildEventTable` to (re)size the entry array. SuperWoW and
+    // nampower co-hook it to destructively clamp the FrameXML count (`> 200`;
+    // glue is smaller) to 700. We deliberately DON'T hook it: a destructive
+    // clamp can't be beaten in-chain (it overwrites whatever ran before it,
+    // and hook order isn't controllable). Instead `Event::Custom::EnsureCapacity`
+    // reallocates the entry buffer directly via Storm + swaps the base/count
+    // globals, bypassing this clamp entirely. Kept for reference / RE trail.
+    FUN_FRAMESCRIPT_SET_EVENT_COUNT = 0x007053B0,
 
     // `FireEvent` — the engine's event dispatcher. 149 callers in the
     // binary. `__cdecl void(int eventID, const char *format, ...)`.
@@ -4239,6 +4253,16 @@ enum Offsets {
     // so the engine's reload-teardown `SMemFree` sees blocks that came
     // from `SMemAlloc` (which it requires).
     FUN_STORM_SSTRDUP = 0x0064A620,
+
+    // Storm allocator/free — the same pair the engine uses for the event
+    // table (see RebuildEventTable / SetEventCount). Both `__stdcall`, 4 args
+    // (`ret 0x10`). `Event::Custom::EnsureCapacity` uses them to reallocate
+    // the event table's entry buffer directly, bypassing SetEventCount's
+    // clamp. SMemAlloc's flag bit 8 (`& 8`) zero-fills the block.
+    //   void*  __stdcall SMemAlloc(uint size, const char *file, int line, int flags)
+    //   char   __stdcall SMemFree (void *ptr, const char *file, int line, int flags)
+    FUN_STORM_SMEMALLOC = 0x006462E0,
+    FUN_STORM_SMEMFREE = 0x00646430,
 
     // Talent system — per-player talent state populated at login from
     // (class, race) + Talent.dbc / TalentTab.dbc. The engine maintains

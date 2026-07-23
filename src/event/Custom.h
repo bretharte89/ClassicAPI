@@ -124,4 +124,23 @@ void EnableWrites();
 // slots point into the old layout and need to re-claim.
 void PrepareForReload();
 
+// On-demand event-table expansion. Called once from `LoadScriptFunctions_h`
+// AFTER module registration (so every reservation, incl. the lazily-reserved
+// TTS ones, is counted) and BEFORE any frame registers (so all chains are
+// empty and a buffer move is safe). If the live table has fewer NULL slots
+// than we've reserved, it grows the table by the deficit — by reallocating
+// the buffer with the engine's own Storm allocator and swapping the base/
+// count globals, NOT by routing a size through `SetEventCount`. That
+// bypasses SuperWoW/nampower's destructive `= 700` clamp entirely, so it's
+// independent of DLL load / hook order.
+//
+// Normally a no-op: the engine's low NULL gaps (~200) dwarf our reservation
+// count, so claim-NULL alone suffices and this never grows. It's a
+// last-resort durability valve for the case where many claim-based DLLs have
+// drained the shared gap pool. Defensive throughout: reads the table fresh,
+// verifies all chains are empty before touching anchors (aborts otherwise),
+// frees only the old buffer (never the shared name strings), and publishes
+// base before count.
+void EnsureCapacity();
+
 } // namespace Event::Custom
