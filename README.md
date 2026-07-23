@@ -63,7 +63,7 @@ Full per-function reference: **[docs/API.md](docs/API.md)**.
 | [State](docs/API.md#state) | `CancelShapeshiftForm`, `Dismount`, `GetMirrorTimerInfo`, `GetMirrorTimerProgress`, `GetShapeshiftFormID`, `IsAssistingRitual`, `IsFalling`, `IsInGroup`, `IsInRaid`, `IsLoggedIn`, `IsMounted`, `IsStealthed`, `IsSwimming` |
 | [Talent](docs/API.md#talent) | `GetTalentIDByIndex`, `GetTalentSpellID` |
 | [Targeting](docs/API.md#targeting) | `GetPlayerFacing`, `TargetDirectionEnemy`, `TargetDirectionFriend`, `TargetNearest`, `TargetNearestEnemyPlayer`, `TargetNearestFriendPlayer` |
-| [TaxiMap](docs/API.md#taximap) | `C_TaxiMap.GetTaxiNodesForMap`, `C_TaxiMap.GetAllTaxiNodes`, `C_TaxiMap.GetTaxiPaths`, `C_TaxiMap.GetTaxiPathWaypoints` |
+| [TaxiMap](docs/API.md#taximap) | `C_TaxiMap.GetTaxiNodesForMap`, `C_TaxiMap.GetAllTaxiNodes`, `C_TaxiMap.GetTaxiPaths`, `C_TaxiMap.GetTaxiPathWaypoints`, `C_TaxiMap.GetTaxiRoute` |
 | [Time](docs/API.md#time) | `C_DateAndTime.AdjustTimeByDays`, `C_DateAndTime.AdjustTimeByMinutes`, `C_DateAndTime.CompareCalendarTime`, `C_DateAndTime.GetCalendarTimeFromEpoch`, `C_DateAndTime.GetCurrentCalendarTime`, `C_DateAndTime.GetSecondsUntilDailyReset`, `C_DateAndTime.GetServerTimeLocal`, `C_Timer.After`, `C_Timer.NewTicker`, `C_Timer.NewTimer`, `GetServerTime` |
 | [Totem](docs/API.md#totem) | `GetTotemInfo`, `GetTotemTimeLeft`, `GetTotemDuration`, `TargetTotem` |
 | [TradeSkillUI](docs/API.md#tradeskillui) | `C_TradeSkillUI.GetTradeSkillListLink`, `C_TradeSkillUI.GetCraftListLink`, `C_TradeSkillUI.GetTradeSkillListRecipes` |

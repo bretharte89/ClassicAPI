@@ -2438,6 +2438,29 @@ enum Offsets {
     // "DISTANT" / other) — the node's reachability for the open session.
     FUN_TAXI_NODE_TYPE = 0x004DC4E0,
 
+    // Per-slot computed route (the chain that TakeTaxiNode sends to the
+    // server). Derived from FUN_004dc8d0 (the TakeTaxiNode worker) and the
+    // route builder FUN_004dbce0:
+    //   +0x0C (byte)  nonzero when the multi-hop route array below is built
+    //   +0x14 (int*)  array of TaxiNodes.dbc IDs, current->dest in flight
+    //                 order, length at +0x18
+    //   +0x18 (int)   route length (node count; hops = count - 1)
+    // A direct hop (a TaxiPath edge exists current->dest) is flown as just
+    // {current, dest} and does NOT populate +0x14 — see VAR_TAXI_ADJACENCY.
+    OFF_TAXI_SLOT_MULTIHOP = 0x0C,
+    OFF_TAXI_SLOT_ROUTE = 0x14,
+    OFF_TAXI_SLOT_ROUTE_COUNT = 0x18,
+
+    // Pointer to the CURRENT flight master's TaxiNodes.dbc record (id @ +0);
+    // the origin of every route. Used by FUN_004dc8d0 / FUN_004dbce0.
+    VAR_TAXI_CURRENT_REC = 0x00BB4A80,
+
+    // Node x node -> pathID adjacency matrix (256-wide rows, int cells; cell
+    // [from*0x100 + to] is the direct TaxiPath id, or 0 if none). Backs the
+    // direct-hop test FUN_004dbad0. IDs are 1..256.
+    VAR_TAXI_ADJACENCY = 0x00B7365C,
+    TAXI_ADJACENCY_DIM = 0x100,
+
     // TaxiPath.dbc (4 fields, 0x10 bytes): {id, fromNode@+0x04, toNode@+0x08,
     // cost}. A real flight master is a node some flight path connects to;
     // Northshire Abbey / spurious duplicate rows / standalone markers are not

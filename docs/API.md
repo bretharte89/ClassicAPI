@@ -462,6 +462,7 @@ build instructions.
   - [`C_TaxiMap.GetAllTaxiNodes([uiMapID])`](#c_taximapgetalltaxinodesuimapid)
   - [`C_TaxiMap.GetTaxiPaths()`](#c_taximapgettaxipaths)
   - [`C_TaxiMap.GetTaxiPathWaypoints(pathID)`](#c_taximapgettaxipathwaypointspathid)
+  - [`C_TaxiMap.GetTaxiRoute(slotIndex)`](#c_taximapgettaxiroutepslotindex)
 
 - [Time](#time)
   - [`GetServerTime()`](#getservertime)
@@ -11231,6 +11232,30 @@ speed is 32 yd/s, so `length / 32 ≈ flight seconds` for a single hop.
 (Multi-hop trips are shorter than the sum of their segments — the server cuts
 the corner at each intermediate flight master via data not present in any
 client file, so a client-side estimate of a chained route is an upper bound.)
+
+### `C_TaxiMap.GetTaxiRoute(slotIndex)`
+
+Returns the node chain the client would actually fly to a taxi-map slot, as an
+array of `TaxiNodes.dbc` IDs in flight order (`{ currentNodeID, …, destNodeID }`).
+`slotIndex` is the legacy `1..NumTaxiNodes()` index (the same one
+`TaxiNodeName`/`TakeTaxiNode` take). **Only meaningful while the taxi map is
+open.**
+
+```lua
+local route = C_TaxiMap.GetTaxiRoute(slotIndex)
+-- route = { 8, 16, 43, 66 }  (Thelsamar -> Refuge Pointe -> Aerie Peak -> Chillwind)
+```
+
+This is the exact chain `TakeTaxiNode(slotIndex)` would send to the server —
+mirrors the client's own routing decision: a single direct hop when a `TaxiPath`
+edge exists (`{ current, dest }`), otherwise the client's precomputed multi-hop
+route (which, per character, may detour around flight points you haven't
+discovered). Returns nothing when the map is closed, the slot is out of range,
+it's the current node, or no route exists.
+
+Pairs with `GetTaxiPaths` (each consecutive `(from, to)` names a `pathID`) and
+`GetTaxiPathWaypoints` (that path's geometry) to measure a chained trip without
+matching flight-map pixel coordinates back to nodes.
 
 ## Time
 

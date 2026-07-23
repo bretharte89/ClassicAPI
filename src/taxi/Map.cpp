@@ -366,6 +366,80 @@ int __fastcall Script_GetAllTaxiNodes(void *L) {
     return 1;
 }
 
+// Direct-edge test — mirrors FUN_004dbad0: a 256x256 [from][to] matrix of
+// TaxiPath IDs (0 = no direct flight path). IDs outside 1..256 are never direct.
+bool DirectEdge(int from, int to) {
+    if (from <= 0 || from > Offsets::TAXI_ADJACENCY_DIM ||
+        to <= 0 || to > Offsets::TAXI_ADJACENCY_DIM)
+        return false;
+    const int *adj = reinterpret_cast<const int *>(Offsets::VAR_TAXI_ADJACENCY);
+    return adj[from * Offsets::TAXI_ADJACENCY_DIM + to] != 0;
+}
+
+// `C_TaxiMap.GetTaxiRoute(slotIndex)` — the TaxiNodes.dbc ID chain the client
+// would fly to the taxi-map slot `slotIndex` (1..NumTaxiNodes), in flight
+// order { currentNodeID, ..., destNodeID }. This mirrors TakeTaxiNode's own
+// decision (FUN_004dc8d0): a direct hop when a TaxiPath edge exists, otherwise
+// the client's precomputed multi-hop route array. It is the exact node list
+// TakeTaxiNode would hand the server, so an addon can identify every hop
+// without matching flight-map coordinates back to nodes. Returns nothing when
+// no taxi map is open, the slot is out of range, it is the current node, or no
+// route exists.
+int __fastcall Script_GetTaxiRoute(void *L) {
+    if (!Game::Lua::IsNumber(L, 1))
+        return 0;
+    const int slot1 = static_cast<int>(Game::Lua::ToNumber(L, 1));
+    const int count =
+        *reinterpret_cast<const int *>(Offsets::VAR_TAXI_NODE_COUNT);
+    if (count <= 0 || slot1 < 1 || slot1 > count)
+        return 0;
+
+    const auto *arrayBase =
+        reinterpret_cast<const uint8_t *>(Offsets::VAR_TAXI_NODE_ARRAY);
+    const uint8_t *slotRec =
+        arrayBase + (slot1 - 1) * Offsets::TAXI_NODE_STRIDE;
+
+    const uint8_t *curRec = *reinterpret_cast<const uint8_t *const *>(
+        Offsets::VAR_TAXI_CURRENT_REC);
+    const uint8_t *dstRec = *reinterpret_cast<const uint8_t *const *>(
+        slotRec + Offsets::OFF_TAXI_SLOT_RECORD);
+    if (curRec == nullptr || dstRec == nullptr)
+        return 0;
+    const int currentID = IntField(curRec, 0);
+    const int destID = IntField(dstRec, 0);
+    if (currentID == 0 || destID == 0 || currentID == destID)
+        return 0;
+
+    // Collect the chain exactly as FUN_004dc8d0 (TakeTaxiNode) would send it.
+    int ids[64];
+    int n = 0;
+    if (DirectEdge(currentID, destID)) {
+        ids[n++] = currentID;
+        ids[n++] = destID;
+    } else if (*(slotRec + Offsets::OFF_TAXI_SLOT_MULTIHOP) != 0) {
+        const int *route = *reinterpret_cast<const int *const *>(
+            slotRec + Offsets::OFF_TAXI_SLOT_ROUTE);
+        const int rc = *reinterpret_cast<const int *>(
+            slotRec + Offsets::OFF_TAXI_SLOT_ROUTE_COUNT);
+        if (route == nullptr || rc < 2)
+            return 0;
+        const int cap = rc < 64 ? rc : 64;
+        for (int i = 0; i < cap; ++i)
+            ids[n++] = route[i];
+    } else {
+        return 0; // reachable node with no computed route (shouldn't happen)
+    }
+
+    Game::Lua::SetTop(L, 0);
+    Game::Lua::NewTable(L);
+    for (int i = 0; i < n; ++i) {
+        Game::Lua::PushNumber(L, static_cast<double>(i + 1));
+        Game::Lua::PushNumber(L, static_cast<double>(ids[i]));
+        Game::Lua::SetTable(L, -3);
+    }
+    return 1;
+}
+
 void RegisterLuaFunctions() {
     static const Game::Lua::EnumIntegerEntry kFaction[] = {
         {"Neutral", FACTION_NEUTRAL},
@@ -385,6 +459,8 @@ void RegisterLuaFunctions() {
                                      &Script_GetTaxiNodesForMap);
     Game::Lua::RegisterTableFunction("C_TaxiMap", "GetAllTaxiNodes",
                                      &Script_GetAllTaxiNodes);
+    Game::Lua::RegisterTableFunction("C_TaxiMap", "GetTaxiRoute",
+                                     &Script_GetTaxiRoute);
 }
 
 const Game::ModuleAutoRegister _autoreg{&RegisterLuaFunctions};
