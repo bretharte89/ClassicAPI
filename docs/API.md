@@ -161,6 +161,7 @@ build instructions.
 
 - [GameTooltip](#gametooltip)
   - [`GameTooltip:SetSpellByID(spellID)`](#gametooltipsetspellbyidspellid)
+  - [`GameTooltip:AddSpellByID(spellID)`](#gametooltipaddspellbyidspellid)
   - [`GameTooltip:SetTalentByID(talentID)`](#gametooltipsettalentbyidtalentid)
   - [`GameTooltip:SetInventoryItemByID(itemID)`](#gametooltipsetinventoryitembyiditemid)
   - [`GameTooltip:SetHyperlinkCompareItem("itemLink" [, offset, shiftButton, comparisonTooltip])`](#gametooltipsethyperlinkcompareitemitemlink--offset-shiftbutton-comparisontooltip)
@@ -3786,6 +3787,32 @@ GameTooltip:SetOwner(UIParent, "ANCHOR_CURSOR")
 GameTooltip:SetSpellByID(133)  -- Fireball
 GameTooltip:Show()
 ```
+
+### `GameTooltip:AddSpellByID(spellID)`
+
+The append counterpart to [`SetSpellByID`](#gametooltipsetspellbyidspellid):
+adds a spell's full tooltip (name, cast time, cost, range, description) to
+the *current* tooltip **without clearing** the existing lines. Works for any
+`spellID`, learned or not. Lets you compose tooltips — e.g. a header line
+plus a spell block.
+
+```lua
+GameTooltip:SetOwner(UIParent, "ANCHOR_CURSOR")
+GameTooltip:AddLine("Rank 3 grants:")
+GameTooltip:AddSpellByID(133)  -- Fireball, appended below the header
+GameTooltip:Show()
+```
+
+Unlike `SetSpellByID`, this does **not** update what
+[`GetSpell`](#gametooltipgetspell) reports — the appended spell isn't the
+tooltip's "primary" spell, so `GetSpell` keeps reflecting whatever `SetX`
+call (if any) built the base tooltip. Silent no-op for `spellID <= 0` or an
+unknown spell.
+
+> Vanilla's tooltip builder only exposes "append" via its internal talent
+> "next rank" preview, which emits a `Next rank:` header instead of the
+> spell name; we overwrite that header line with the real name so the
+> appended block reads normally.
 
 ### `GameTooltip:GetItem()`
 

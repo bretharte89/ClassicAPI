@@ -55,6 +55,71 @@ static int __fastcall Script_GameTooltipSetSpellByID(void *L) {
     return 0;
 }
 
+// `GameTooltip:AddSpellByID(spellID)` — APPENDS a spell's tooltip to the
+// current one instead of clearing+rebuilding (the `SetSpellByID` behavior).
+// The natural pair to `SetSpellByID`; lets callers compose tooltips like
+// `AddLine(talentName) + AddSpellByID(rankSpellID)`.
+//
+// `BuildSpellTooltip`'s last arg (`param_7`) gates the clear: `0` calls the
+// per-tooltip Clear (`FUN_00530050`) first — that's `SetSpellByID`; non-zero
+// SKIPS the clear and appends. The append path is the engine's talent
+// "next rank" preview, so it (a) emits a `"\nNext rank:"` header line
+// instead of the spell name, and (b) does NOT stash the displayed spellID at
+// `+0x39C` (so `GetSpell` keeps reflecting the base tooltip — correct for an
+// append). We fix (a) by overwriting that header line — which lands at index
+// `numLines`-before-the-build (0-based) — with the real spell name via the
+// line pool's left-text FontString. Verified against `FUN_0052E610`.
+void AppendByID(void *L, int spellID) {
+    if (spellID <= 0)
+        return;
+    void *tooltipObj = Game::Lua::ResolveObject(L, 1);
+    if (tooltipObj == nullptr)
+        return;
+    auto *tt = static_cast<uint8_t *>(tooltipObj);
+
+    const int before = *reinterpret_cast<const int *>(
+        tt + Offsets::OFF_GAMETOOLTIP_NUM_LINES);
+
+    auto BuildSpellTooltip =
+        reinterpret_cast<BuildSpellTooltip_t>(Offsets::FUN_GAMETOOLTIP_BUILD_SPELL_TOOLTIP);
+    BuildSpellTooltip(tooltipObj, spellID, 0, 0, 0, 0, 0, /*param_7 (append)=*/1);
+
+    const int after = *reinterpret_cast<const int *>(
+        tt + Offsets::OFF_GAMETOOLTIP_NUM_LINES);
+    if (after <= before)
+        return; // nothing appended (bad spellID / missing Spell.dbc record)
+
+    const uint8_t *record = Spell::Lookup::RecordForID(spellID);
+    if (record == nullptr)
+        return;
+    const int locale = *reinterpret_cast<const int *>(Offsets::VAR_LOCALE_INDEX);
+    const char *name = *reinterpret_cast<const char *const *>(
+        record + OFF_SPELL_NAME + locale * 4);
+    if (name == nullptr || name[0] == '\0')
+        return;
+
+    // Left-text FontString array: descriptor at +0x324, data ptr at +0x8.
+    auto **textLeft = *reinterpret_cast<void ***>(
+        tt + Offsets::OFF_GAMETOOLTIP_TEXTLEFT_DESC + 8);
+    if (textLeft == nullptr)
+        return;
+    void *fs = textLeft[before];
+    if (fs == nullptr)
+        return;
+    using SetText_t = void(__thiscall *)(void *fs, const char *text, int flag);
+    reinterpret_cast<SetText_t>(Offsets::FUN_FONTSTRING_SET_TEXT)(fs, name, 0);
+}
+
+static int __fastcall Script_GameTooltipAddSpellByID(void *L) {
+    if (Game::Lua::Type(L, 1) != Game::Lua::TYPE_TABLE ||
+        !Game::Lua::IsNumber(L, 2)) {
+        Game::Lua::Error(L, "Usage: GameTooltip:AddSpellByID(spellID)");
+        return 0;
+    }
+    AppendByID(L, static_cast<int>(Game::Lua::ToNumber(L, 2)));
+    return 0;
+}
+
 // `GameTooltip:GetSpell()` → (name, rank, spellID) for whichever spell
 // the tooltip is currently displaying, or nothing if it isn't showing
 // a spell. BuildSpellTooltip writes the spellID to `tooltip+0x39C`;
@@ -126,6 +191,7 @@ static int __fastcall Script_GameTooltipHasSpell(void *L) {
 
 static const Game::Lua::FrameMethodEntry g_methods[] = {
     {"SetSpellByID", &Script_GameTooltipSetSpellByID},
+    {"AddSpellByID", &Script_GameTooltipAddSpellByID},
     {"GetSpell", &Script_GameTooltipGetSpell},
     {"HasSpell", &Script_GameTooltipHasSpell},
 };

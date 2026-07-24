@@ -26,4 +26,13 @@ namespace Spell::Tooltip {
 // so we render the rank-1 spell tooltip instead).
 void ShowByID(void *L, int spellID);
 
+// Like `ShowByID` but APPENDS the spell's tooltip to the current one
+// (no clear), and overwrites the engine's talent "next rank" header with
+// the real spell name. Backs `GameTooltip:AddSpellByID`. Silent no-op if
+// `spellID <= 0`, stack[1] isn't a frame object, or the build added no
+// lines. Does not stash the displayed spellID (so `GetSpell` still
+// reflects the base tooltip). Useful for cross-class talent tooltips
+// (`AddLine(talentName) + AppendByID(rankSpellID)`).
+void AppendByID(void *L, int spellID);
+
 } // namespace Spell::Tooltip
