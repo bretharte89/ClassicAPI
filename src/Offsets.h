@@ -3988,8 +3988,9 @@ enum Offsets {
     VAR_EVENT_TABLE_BASE_PTR = 0x00CEEF68,
     VAR_EVENT_TABLE_COUNT = 0x00CEEF64,
     // The FrameScript_EventObject is a `{cap@+0, count@+4, data@+8}` at
-    // 0x00CEEF60, so COUNT/BASE above are its +4/+8. The +0 capacity mirror
-    // is updated alongside them when `EnsureCapacity` grows the table.
+    // 0x00CEEF60, so COUNT/BASE above are its +4/+8. (CAP is unused now —
+    // an EnsureCapacity grow-the-table valve that wrote it was removed;
+    // see the events "claim-NULL is the sole mechanism" note in CLAUDE.md.)
     VAR_EVENT_TABLE_CAP = 0x00CEEF60,
     EVENT_ENTRY_STRIDE = 0x10,
     OFF_EVENT_ENTRY_NAME = 0x00,
@@ -4034,11 +4035,9 @@ enum Offsets {
     // Event-table allocator — `__thiscall(EventObject *this, uint32 count)`.
     // Called by `RebuildEventTable` to (re)size the entry array. SuperWoW and
     // nampower co-hook it to destructively clamp the FrameXML count (`> 200`;
-    // glue is smaller) to 700. We deliberately DON'T hook it: a destructive
-    // clamp can't be beaten in-chain (it overwrites whatever ran before it,
-    // and hook order isn't controllable). Instead `Event::Custom::EnsureCapacity`
-    // reallocates the entry buffer directly via Storm + swaps the base/count
-    // globals, bypassing this clamp entirely. Kept for reference / RE trail.
+    // glue is smaller) to 700. We deliberately DON'T hook it and don't resize
+    // the table at all — `Event::Custom` only claims NULL slots from the ~200
+    // low gaps the engine leaves, which always suffices. Kept for reference.
     FUN_FRAMESCRIPT_SET_EVENT_COUNT = 0x007053B0,
 
     // `FireEvent` — the engine's event dispatcher. 149 callers in the
@@ -4254,11 +4253,11 @@ enum Offsets {
     // from `SMemAlloc` (which it requires).
     FUN_STORM_SSTRDUP = 0x0064A620,
 
-    // Storm allocator/free — the same pair the engine uses for the event
-    // table (see RebuildEventTable / SetEventCount). Both `__stdcall`, 4 args
-    // (`ret 0x10`). `Event::Custom::EnsureCapacity` uses them to reallocate
-    // the event table's entry buffer directly, bypassing SetEventCount's
-    // clamp. SMemAlloc's flag bit 8 (`& 8`) zero-fills the block.
+    // Storm allocator/free. Both `__stdcall`, 4 args (`ret 0x10`).
+    // SMemAlloc's flag bit 8 (`& 8`) zero-fills the block. (Duplicates of
+    // FUN_STORM_SMEM_ALLOC / FUN_STORM_SMEM_FREE above, same addresses;
+    // currently unused — the EnsureCapacity buffer realloc that used them
+    // was removed. Left as reference.)
     //   void*  __stdcall SMemAlloc(uint size, const char *file, int line, int flags)
     //   char   __stdcall SMemFree (void *ptr, const char *file, int line, int flags)
     FUN_STORM_SMEMALLOC = 0x006462E0,

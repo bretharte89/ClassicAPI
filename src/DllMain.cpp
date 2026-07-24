@@ -60,13 +60,6 @@ static bool __fastcall FrameScript_Initialize_h() {
 static void __fastcall LoadScriptFunctions_h() {
     LoadScriptFunctions_o();
     Game::RunModuleRegistrations();
-    // Now that every module has reserved its events (incl. the lazily-
-    // reserved TTS ones), and before any frame has registered, ensure the
-    // event table has enough NULL slots for our reservations — growing it
-    // on-demand if a crowded install has drained the shared gap pool. No-op
-    // in the common case. Must run here: reservations are complete and all
-    // chains are still empty (a prerequisite for the safe buffer move).
-    Event::Custom::EnsureCapacity();
     // Permit `Event::Custom::TryClaim` to actually write to the event
     // table from here on. Earlier writes (during the engine's own
     // boot-time `RegisterEvent` flurry, plus SuperWoWhook/etc.) can
