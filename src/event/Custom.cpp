@@ -55,6 +55,14 @@ bool g_writesEnabled = false;
 // purely a backstop if some future install somehow drains the gap pool.
 bool g_warnedTableFull = false;
 
+// One grow attempt per in-game table build. Reset in `PrepareForReload`
+// (the table is rebuilt fresh on every /reload + logout). See `Grow`.
+bool g_growLatched = false;
+// Debug: force a grow on the next table build regardless of headroom, so
+// the (otherwise dormant) grow path can actually be exercised in-game.
+// Armed by `_classicapi_ForceEventGrow`, consumed by the next `Grow`.
+bool g_forceGrowNext = false;
+
 // Engine's SStrDup at `FUN_STORM_SSTRDUP` — uses `SMemAlloc` internally
 // and is exactly what the engine itself does when filling event table
 // entries. Reload teardown's `SMemFree(entry.name)` validates that the
@@ -67,6 +75,23 @@ char *SStrDup(const char *s) {
                                           int line);
     auto fn = reinterpret_cast<SStrDup_t>(Offsets::FUN_STORM_SSTRDUP);
     return fn(s, __FILE__, __LINE__);
+}
+
+// Storm allocator/free — the same pair the engine uses for the event-table
+// buffer (see RebuildEventTable), so its reload teardown `SMemFree`s our
+// grown buffer exactly as its own. Both `__stdcall`, 4 args (`ret 0x10`).
+// SMemAlloc flag bit 8 zero-fills (matching SetEventCount's fresh entries).
+void *SMemAlloc(unsigned size) {
+    using SMemAlloc_t = void *(__stdcall *)(unsigned size, const char *file,
+                                            int line, int flags);
+    auto fn = reinterpret_cast<SMemAlloc_t>(Offsets::FUN_STORM_SMEMALLOC);
+    return fn(size, __FILE__, __LINE__, 8 /* zero-fill */);
+}
+void SMemFree(void *ptr) {
+    using SMemFree_t = int(__stdcall *)(void *ptr, const char *file, int line,
+                                        int flags);
+    auto fn = reinterpret_cast<SMemFree_t>(Offsets::FUN_STORM_SMEMFREE);
+    fn(ptr, __FILE__, __LINE__, 0);
 }
 
 // Walk the engine's event table from the LOW end looking for a NULL-name
@@ -104,16 +129,116 @@ int TryClaim(const char *eventName) {
         }
     }
     // Writes are enabled and the table is valid, but every slot is taken —
-    // real capacity exhaustion. Warn once so it's diagnosable.
+    // real capacity exhaustion despite `Grow`. Warn once so it's diagnosable.
     if (!g_warnedTableFull) {
         g_warnedTableFull = true;
         Debug::Log::Printf(
             "[event] table full (%d slots, no NULL left) — cannot claim '%s'"
-            " and any further custom events. Raise the FrameXML event count"
-            " (Event::Capacity) or reduce reservations.",
+            " and any further custom events; even Grow couldn't make room.",
             count, eventName ? eventName : "?");
     }
     return -1;
+}
+
+// On-demand event-table grow. Correctly TIMED: called once per in-game
+// table build from `RetryClaims` (the `frame:RegisterEvent` hook), on the
+// FIRST such call — which is AFTER `RebuildEventTable` has built the fresh
+// table (frames can only register once it exists) but BEFORE any frame has
+// joined a chain (it's the first registration, and we run before the
+// original registers it). So every chain is still an empty self-sentinel,
+// and the buffer can be moved safely.
+//
+// (This is what the removed `EnsureCapacity` got wrong: it ran from
+// `LoadScriptFunctions_h`, BEFORE `RebuildEventTable`, so it saw the stale
+// previous/glue table and always aborted — it never actually grew. The
+// realloc logic itself was fine; only the timing was broken.)
+//
+// Grows only when the engine's low NULL gaps are fewer than our
+// reservations — which never happens in practice (~200 gaps vs ~46
+// reservations), so this is a dormant durability valve. `g_forceGrowNext`
+// (debug) forces it so the path can be exercised. It grows by reallocating
+// the entry buffer with the engine's own Storm allocator and swapping the
+// `{cap@0, count@4, base@8}` globals at `0x00CEEF60` — bypassing
+// SetEventCount's destructive `= 700` clamp. All consumers (RegisterEvent,
+// the dispatcher, SuperWoW, nampower) read the base pointer fresh, so the
+// swap is picked up everywhere; the engine's reload teardown `SMemFree`s
+// our buffer and frees the (shared) name strings via its per-entry helper,
+// exactly as its own.
+void Grow() {
+    if (g_growLatched || !g_writesEnabled)
+        return;
+    g_growLatched = true; // one attempt per build, whether or not it grows
+
+    const int count = *reinterpret_cast<int *>(Offsets::VAR_EVENT_TABLE_COUNT);
+    auto *base = *reinterpret_cast<uint8_t **>(Offsets::VAR_EVENT_TABLE_BASE_PTR);
+    if (base == nullptr || count <= 0 || g_reservedCount <= 0)
+        return;
+
+    int nulls = 0;
+    for (int i = 0; i < count; ++i)
+        if (*reinterpret_cast<const char *const *>(
+                base + i * Offsets::EVENT_ENTRY_STRIDE +
+                Offsets::OFF_EVENT_ENTRY_NAME) == nullptr)
+            ++nulls;
+
+    const bool force = g_forceGrowNext;
+    g_forceGrowNext = false;
+    if (nulls >= g_reservedCount && !force)
+        return; // plenty of room — the common (only) real case
+
+    // Growing moves the buffer, invalidating every entry's self-referential
+    // list anchor, so it's safe ONLY while all chains are empty. We run
+    // before the first registration, so that holds — but VERIFY it (a live
+    // chain means someone registered earlier via a path we didn't intercept;
+    // moving the buffer would corrupt their subscription). Abort if so and
+    // fall back to claim-NULL.
+    for (int i = 0; i < count; ++i) {
+        const uint32_t head = *reinterpret_cast<const uint32_t *>(
+            base + i * Offsets::EVENT_ENTRY_STRIDE + Offsets::OFF_EVENT_ENTRY_HEAD);
+        if (head != 0 && (head & 1) == 0) { // populated chain (not 0 / sentinel)
+            Debug::Log::Printf(
+                "[event] grow aborted — chain live at slot %d (not first-reg)", i);
+            return;
+        }
+    }
+
+    constexpr int kMargin = 16;
+    const int deficit = (nulls < g_reservedCount) ? (g_reservedCount - nulls) : 0;
+    const int newCount = count + deficit + kMargin;
+    auto *newBuf = static_cast<uint8_t *>(
+        SMemAlloc(static_cast<unsigned>(newCount) * Offsets::EVENT_ENTRY_STRIDE));
+    if (newBuf == nullptr)
+        return; // alloc failed — keep the old table; claiming still works
+
+    // Rebuild each entry at its NEW address, mirroring SetEventCount's own
+    // per-entry init: copy the name pointer (shared string, not duplicated);
+    // the `+0x04` field stays 0 (zero-filled, matching the engine); re-init
+    // the anchor as an empty self-sentinel at the new location. Old entries
+    // past the copy and all new entries are already zero-filled + get fresh
+    // anchors. Safe because every chain is empty.
+    for (int i = 0; i < newCount; ++i) {
+        auto *e = reinterpret_cast<uint32_t *>(
+            newBuf + i * Offsets::EVENT_ENTRY_STRIDE);
+        if (i < count) // copy name; new slots stay null
+            e[0] = *reinterpret_cast<const uint32_t *>(
+                base + i * Offsets::EVENT_ENTRY_STRIDE);
+        const uint32_t anchor = static_cast<uint32_t>(
+            reinterpret_cast<uintptr_t>(&e[2])); // entry+0x08
+        e[2] = anchor;      // self-referential list anchor
+        e[3] = anchor | 1;  // empty-chain sentinel head (+0x0C)
+    }
+
+    // Publish base BEFORE count so the globals never advertise more entries
+    // than the buffer holds. Then free the OLD buffer only — the name
+    // strings live on in newBuf and are freed by the reload teardown.
+    *reinterpret_cast<uint8_t **>(Offsets::VAR_EVENT_TABLE_BASE_PTR) = newBuf;
+    *reinterpret_cast<int *>(Offsets::VAR_EVENT_TABLE_CAP) = newCount;
+    *reinterpret_cast<int *>(Offsets::VAR_EVENT_TABLE_COUNT) = newCount;
+    SMemFree(base);
+
+    Debug::Log::Printf("[event] grew table %d -> %d (%d NULL, %d reserved%s)",
+                       count, newCount, nulls, g_reservedCount,
+                       force ? ", FORCED" : "");
 }
 
 } // namespace
@@ -158,6 +283,11 @@ int LookupByName(const char *name) {
 }
 
 void RetryClaims() {
+    // Grow the table first if the low gap pool is short (dormant valve).
+    // Runs at most once per table build; on the first call every chain is
+    // still empty (this is the first registration), which is the only safe
+    // time to move the buffer.
+    Grow();
     for (int i = 0; i < g_reservedCount; ++i) {
         if (g_reserved[i].slot < 0)
             g_reserved[i].slot = TryClaim(g_reserved[i].name);
@@ -171,6 +301,7 @@ void PrepareForReload() {
         g_reserved[i].slot = -1;
     g_writesEnabled = false;
     g_warnedTableFull = false;  // fresh table after the rebuild — re-arm
+    g_growLatched = false;      // re-arm the one-shot grow for the new table
 }
 
 // Diagnostic Lua functions — registered via the auto-register pattern
@@ -216,10 +347,24 @@ int __fastcall Script_DumpAllEvents(void *) {
     return 0;
 }
 
+// `_classicapi_ForceEventGrow()` — arms a one-shot forced table grow for
+// the NEXT in-game table build, so the (otherwise dormant) grow path can be
+// exercised: call it, then `/reload`. The grow fires at the first
+// `RegisterEvent` after the rebuild (chains still empty) and logs
+// `[event] grew table N -> M (..., FORCED)`. Diagnostic only.
+int __fastcall Script_ForceEventGrow(void *) {
+    g_forceGrowNext = true;
+    Debug::Log::Printf(
+        "[event] force-grow armed — /reload to trigger it on the next build");
+    return 0;
+}
+
 void RegisterDiagnostics() {
     Game::Lua::RegisterGlobalFunction("_classicapi_DumpSlot", &Script_DumpSlot);
     Game::Lua::RegisterGlobalFunction("_classicapi_DumpAllEvents",
                                       &Script_DumpAllEvents);
+    Game::Lua::RegisterGlobalFunction("_classicapi_ForceEventGrow",
+                                      &Script_ForceEventGrow);
 }
 
 const Game::ModuleAutoRegister _autoreg{&RegisterDiagnostics};
